@@ -41,7 +41,6 @@ export function gateView() {
         <div class="muted">${FACTION_TAGLINE[f.id] ?? "另辟蹊径"}</div>
         <h3>${esc(f.name)}</h3>
         <p>${esc(f.motto)}</p>
-        <div class="muted gate-hint">点此以${esc(f.name)}开府</div>
       </button>`,
     )
     .join("");
@@ -49,10 +48,9 @@ export function gateView() {
     <div class="muted">沛炫味修仙经营 · 网页复刻</div>
     <h1>造化仙府</h1>
     <p>我辈修士，渡劫修仙。选一阵营开府：建洞府、开灵田、招仙友，御兽潮、登天塔。</p>
-    <label for="dao-name">道号</label>
-    <input id="dao-name" name="dao-name" maxlength="8" placeholder="无名仙尊" autocomplete="off"
-      enterkeyhint="done" aria-describedby="dao-hint" />
-    <div id="dao-hint" class="muted">留空则称「无名仙尊」；道号会随你走完整个仙途。</div>
+    <label>道号 <input id="dao-name" name="dao-name" maxlength="8" placeholder="无名仙尊" autocomplete="off"
+      enterkeyhint="done" aria-describedby="dao-hint" /></label>
+    <p id="dao-hint" class="gate-hint">留空则称「无名仙尊」。点选下方族牌，即刻开府。</p>
     <div class="factions">${cards}</div>
   </div></div>`;
 }
@@ -64,16 +62,15 @@ function plotCell(state, grid, x, y, ui) {
   const sel = ui.selPlot && ui.selPlot.x === x && ui.selPlot.y === y;
   if (!b) {
     return `<div class="plot ${sel ? "sel" : ""}" data-act="plot" data-x="${x}" data-y="${y}"
-      role="button" tabindex="0" title="空地 (${x},${y})"><span class="muted plot-empty">空</span></div>`;
+      role="button" tabindex="0" aria-label="空地 ${x},${y}" title="空地 (${x},${y})"></div>`;
   }
   const def = mansion.buildingDef(b.type);
   const worker = state.disciples.find((d) => d.buildingId === b.id);
   const title = `${def?.name ?? b.type} Lv.${b.level} · ${worker ? `驻守 ${worker.name}` : "无人驻守"}`;
-  return `<div class="plot filled ${sel ? "sel" : ""}" data-act="plot" data-x="${x}" data-y="${y}" data-id="${b.id}"
-    role="button" tabindex="0" title="${esc(title)}">
-    <span class="glyph">${esc(def?.glyph ?? "府")}</span><span class="pname">${esc(def?.name ?? b.type)}</span>
+  return `<div class="plot filled ${worker ? "staffed" : ""} ${sel ? "sel" : ""}" data-act="plot" data-x="${x}" data-y="${y}"
+    data-id="${b.id}" role="button" tabindex="0" aria-label="${esc(title)}" title="${esc(title)}">
+    <span class="glyph">${esc(def?.glyph ?? "府")}</span><span>${esc(def?.name ?? b.type)}</span>
     <span class="lv">Lv.${b.level}</span>
-    <span class="staff-dot ${worker ? "on" : ""}" aria-hidden="true"></span>
   </div>`;
 }
 
