@@ -86,7 +86,7 @@
 
 `tokens.css` 新增一层**语义别名令牌**,全部引自基色,组件端只取语义名;调色只动令牌层。
 铁律一的补充口径:`color-mix(in srgb, var(--令牌) N%, transparent)` 视同取令牌,不算裸色。
-本节所有新增均为着色,不动盒模型、零新动效——窄屏断点与 `prefers-reduced-motion` 行为不变。
+本节新增以着色为主,仅两处轻排版(分组题压线的 0.25rem 底衬、评签 `::before` 自书评语),零新动效——窄屏断点与 `prefers-reduced-motion` 行为不变。
 
 ### 三新筑地色(`--bld-*`)
 
@@ -106,7 +106,7 @@
 
 ### 风水评签(`--fengshui-*`)
 
-摘要行每秒产量数字(`.rate-line b`)鎏金,与顶栏资源筹码同语汇。风水分徽章 `.fengshui[data-tier]` 备而不用:上吉 `good` 泥金 / 中平 `fair` 石青淡彩 / 下乘 `poor` 朱砂,药丸描边取同色 45% 透明。档位由 UI 依 0-100 分落 `data-tier`,建议 ≥70 上吉、≥35 中平、其余下乘;现版摘要为纯文本,接入时把「风水 s/100」包进 `<span class="fengshui" data-tier="…">` 即可。
+摘要行每秒产量数字(`.rate-line b`)鎏金,与顶栏资源筹码同语汇。风水分徽章 `.fengshui[data-tier]` 视觉已齐、只候 DOM:上吉 `good` 泥金 / 中平 `fair` 石青淡彩 / 下乘 `poor` 朱砂,药丸描边取同色 45% 透明,再铺同色 8% 淡染。评语(上吉/中平/下乘)由 `::before` 依 `data-tier` 楷体自书,UI 不必拼评语文案——评语 + 分数 + 档色三信号并用,不靠单一颜色。接入时把「风水 s/100」包进 `<span class="fengshui" data-tier="…">` 即得完整评签,档位建议 ≥70 上吉、≥35 中平、其余下乘;未落 `data-tier` 退为素签,老浏览器不识 `color-mix` 时丢描边/淡染、保留分档文字色。
 
 ### 法器槽位(`--slot-*`)
 
@@ -116,7 +116,14 @@
 | 防御 defend | `--slot-defend(-ink)` | 石青 `--azurite` |
 | 通用 util | `--slot-util(-ink)` | 青莲 `--lotus` |
 
-已佩法器(`.art-card.in`)与上阵弟子同语汇:鎏金侧栏 + 淡金渐染。`data-slot` 钩子(`.art-card.in[data-slot]`、`.d-chip[data-slot]`、`h4.sub[data-slot]`)备而不用——AD-8 槽位改造给卡片、槽签 chip、分组题补上 `data-slot` 后,侧栏与槽签自动转槽色。**槽位色与品阶色分工**:品阶 chip(金品/红品)沿用金/朱文字,槽位另用朱/石青/青莲三色,二者不混用。
+已佩法器(`.art-card.in`)默认与上阵弟子同语汇:鎏金侧栏 + 淡金渐染。`data-slot` 钩子的视觉已补齐、只候 DOM——UI 层(AD-8 改造)给四处落上 `data-slot` 即自动转槽色,样式零改动:
+
+- `.art-card.in[data-slot]` 已佩卡片:侧栏、描边、渐染整卡转槽色,比例与金版一致(描边 50% / 渐染 10%);
+- `.d-chip[data-slot]` 槽签 chip:槽色文字 + 55% 描边 + 9% 淡染;
+- `h4.sub[data-slot]` 法器名录分组题:槽色文字压 currentColor 笔锋线(与战场标题同语汇;旧版误写 `border-color`,而 `h4.sub` 无边框,已改压底一线);
+- `.slot-row[data-slot]` 槽位盘行:行名与计数转槽色,已佩格 `.slot-cell.filled` 改槽色 45% 描边 + 10% 淡染;空格与「未佩 / 无槽 / 已满」保持素虚框——金仍是「可交互」的专用信号。
+
+退化口径:未落 `data-slot` 时规则不命中,观感与现版一致;老浏览器不识 `color-mix` 的声明整条失效,回落 `.art-card.in` 与 `.slot-cell.filled` 的既有金底——退化仍是完整视觉,故不设字面量回落。**槽位色与品阶色分工**:品阶 chip(金品/红品)沿用金/朱文字,槽位另用朱/石青/青莲三色,二者不混用。
 
 ## 动效
 

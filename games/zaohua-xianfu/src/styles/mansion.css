@@ -151,9 +151,12 @@
   color: var(--paper-dim);
 }
 
-/* 沙盘摘要:每秒产量鎏金;风水评签 .fengshui 为徽章钩子,
-   档位由 UI 依 0-100 分落 data-tier(建议 ≥70 上吉 / ≥35 中平 / 其余 下乘),
-   现版摘要为纯文本,规则备而不用。 */
+/* 沙盘摘要:每秒产量鎏金;风水评签 .fengshui 视觉已齐,只候 DOM——
+   UI 依 0-100 分落 data-tier(建议 ≥70 上吉 / ≥35 中平 / 其余 下乘),
+   把「风水 s/100」包进 <span class="fengshui" data-tier="…"> 即得完整评签。
+   评语(上吉/中平/下乘)由 ::before 依档楷体自书,UI 只落分数;
+   评语 + 分数 + 档色三信号并用,不靠单一颜色。未落 data-tier 退为素签;
+   老浏览器不识 color-mix 时描边/淡染声明失效,回落素签描边,文字色仍分档。 */
 .panel-summary .rate-line b {
   color: var(--gold-bright);
   font-weight: 600;
@@ -168,17 +171,34 @@
   white-space: nowrap;
   color: var(--paper-dim);
 }
+.fengshui[data-tier]::before {
+  font-family: var(--font-title);
+  letter-spacing: 0.06em;
+  margin-right: 0.3em;
+}
 .fengshui[data-tier="good"] {
   color: var(--fengshui-good);
   border-color: color-mix(in srgb, var(--fengshui-good) 45%, transparent);
+  background: color-mix(in srgb, var(--fengshui-good) 8%, transparent);
+}
+.fengshui[data-tier="good"]::before {
+  content: "上吉";
 }
 .fengshui[data-tier="fair"] {
   color: var(--fengshui-fair);
   border-color: color-mix(in srgb, var(--fengshui-fair) 45%, transparent);
+  background: color-mix(in srgb, var(--fengshui-fair) 8%, transparent);
+}
+.fengshui[data-tier="fair"]::before {
+  content: "中平";
 }
 .fengshui[data-tier="poor"] {
   color: var(--fengshui-poor);
   border-color: color-mix(in srgb, var(--fengshui-poor) 45%, transparent);
+  background: color-mix(in srgb, var(--fengshui-poor) 8%, transparent);
+}
+.fengshui[data-tier="poor"]::before {
+  content: "下乘";
 }
 
 /* ------------------------------------------------------------
@@ -221,33 +241,97 @@
   box-shadow: inset 3px 0 0 var(--gold);
 }
 
-/* 法器槽位三色(attack 朱 / defend 石青 / util 青莲):
-   现 DOM 未带 data-slot,规则备而不用;AD-8 槽位改造给卡片/chip/分组题
-   补上 data-slot 后,佩戴侧栏与槽签即自动转槽色。品阶 chip(金品/红品)
-   沿用金/朱文字,与槽色不混用。 */
+/* 法器槽位三色(attack 朱 / defend 石青 / util 青莲):视觉已齐,只候 DOM。
+   AD-8 改造由 UI 层给已佩卡片、槽签 chip、分组题、槽位盘行落 data-slot,
+   落上即自动转槽色;未落时以下规则不命中,观感与现版一致。
+   退化口径:老浏览器不识 color-mix 的声明整条失效,回落 .art-card.in 与
+   .slot-cell.filled 的既有金底——退化仍是完整视觉,故不设字面量回落。
+   品阶 chip(金品/红品)沿用金/朱文字,与槽色不混用。 */
+
+/* 已佩卡片:侧栏、描边、渐染整卡转槽色(比例与 .art-card.in 金版一致) */
 .art-card.in[data-slot="attack"] {
+  border-color: color-mix(in srgb, var(--slot-attack) 50%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--slot-attack) 10%, transparent),
+    transparent 55%
+  );
   box-shadow: inset 3px 0 0 var(--slot-attack);
 }
 .art-card.in[data-slot="defend"] {
+  border-color: color-mix(in srgb, var(--slot-defend) 50%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--slot-defend) 10%, transparent),
+    transparent 55%
+  );
   box-shadow: inset 3px 0 0 var(--slot-defend);
 }
 .art-card.in[data-slot="util"] {
+  border-color: color-mix(in srgb, var(--slot-util) 50%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--slot-util) 10%, transparent),
+    transparent 55%
+  );
   box-shadow: inset 3px 0 0 var(--slot-util);
 }
-.d-chip[data-slot="attack"],
-h4.sub[data-slot="attack"] {
+
+/* 槽签 chip:槽色文字 + 描边 + 淡染 */
+.d-chip[data-slot="attack"] {
   color: var(--slot-attack-ink);
   border-color: color-mix(in srgb, var(--slot-attack) 55%, transparent);
+  background: color-mix(in srgb, var(--slot-attack) 9%, transparent);
 }
-.d-chip[data-slot="defend"],
-h4.sub[data-slot="defend"] {
+.d-chip[data-slot="defend"] {
   color: var(--slot-defend-ink);
   border-color: color-mix(in srgb, var(--slot-defend) 55%, transparent);
+  background: color-mix(in srgb, var(--slot-defend) 9%, transparent);
 }
-.d-chip[data-slot="util"],
-h4.sub[data-slot="util"] {
+.d-chip[data-slot="util"] {
   color: var(--slot-util-ink);
   border-color: color-mix(in srgb, var(--slot-util) 55%, transparent);
+  background: color-mix(in srgb, var(--slot-util) 9%, transparent);
+}
+
+/* 分组题:槽色文字压 currentColor 笔锋线(与战场标题同语汇)。
+   旧版在此写 border-color,但 h4.sub 无边框,声明落空,故改压底一线。 */
+h4.sub[data-slot] {
+  padding-bottom: 0.25rem;
+  background: linear-gradient(90deg, currentColor, transparent 72%) left bottom / 100% 1px
+    no-repeat;
+}
+h4.sub[data-slot="attack"] {
+  color: var(--slot-attack-ink);
+}
+h4.sub[data-slot="defend"] {
+  color: var(--slot-defend-ink);
+}
+h4.sub[data-slot="util"] {
+  color: var(--slot-util-ink);
+}
+
+/* 槽位盘行:行名与计数转槽色,已佩格改槽色描边 + 淡染;
+   空格与「未佩 / 无槽 / 已满」保持素虚框——金仍是可交互专用信号。 */
+.slot-row[data-slot="attack"] {
+  --slot-c: var(--slot-attack);
+  --slot-ink-c: var(--slot-attack-ink);
+}
+.slot-row[data-slot="defend"] {
+  --slot-c: var(--slot-defend);
+  --slot-ink-c: var(--slot-defend-ink);
+}
+.slot-row[data-slot="util"] {
+  --slot-c: var(--slot-util);
+  --slot-ink-c: var(--slot-util-ink);
+}
+.slot-row[data-slot] .slot-name,
+.slot-row[data-slot] .slot-name b {
+  color: var(--slot-ink-c);
+}
+.slot-row[data-slot] .slot-cell.filled {
+  border-color: color-mix(in srgb, var(--slot-c) 45%, transparent);
+  background: color-mix(in srgb, var(--slot-c) 10%, transparent);
 }
 
 /* ------------------------------------------------------------
