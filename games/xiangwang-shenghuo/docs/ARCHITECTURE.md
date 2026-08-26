@@ -93,9 +93,9 @@ function rootReducer(state, action) {
 | 时基 | 载体字段 | 驱动 | 使用者 |
 | --- | --- | --- | --- |
 | A. 游戏日历 | `meta.gameMinutes`（0–1439，日内）、`meta.day`（1 起）、`meta.season` | `advanceTime(state, dtMs)` 按 `dtMs / hourMs * 60` 累加 | 昼夜氛围、季节判定、心愿刷新计时、嘉宾离店 |
-| B. 绝对纪元 ms | `plots[].plantedAt/doneAt`、`jobs[].doneAt`、`pets[].readyAt` | 命令函数注入的 `nowMs` 快照 | 作物生长、生产队列、宠物 CD |
+| B. 绝对纪元 ms | `plots[].plantedAt/doneAt/wiltAt`、`jobs[].doneAt`、`pets[].readyAt` | 命令函数注入的 `nowMs` 快照 | 作物生长、枯萎宽限、生产队列、宠物 CD |
 
-规则：**新计时字段必须二选一并登记**。选 B 的字段必须加入 `EPOCH_FIELDS` 清单（§4.4 离线重排依赖它）。绝对游戏分钟用 `absGameMinutes(meta) = (meta.day - 1) * 1440 + meta.gameMinutes` 换算，不落盘。
+规则：**新计时字段必须二选一并登记**。选 B 的字段必须加入 `EPOCH_FIELDS` 清单（§4.4 离线结算依赖它）。绝对游戏分钟用 `absGameMinutes(meta) = (meta.day - 1) * 1440 + meta.gameMinutes` 换算，不落盘。
 
 ### 4.2 常量（`src/core/engine.js` 导出，改值即改这里）
 
@@ -104,7 +104,8 @@ function rootReducer(state, action) {
 | `HOUR_MS_DEFAULT` | `6000` | 1 游戏时 = 6s 真实（设置可改 3000/12000，其余值忽略） |
 | `DAY_HOURS` | `24` | 1 游戏日 = 24 游戏时 ≈ 144s 真实 |
 | `DAYS_PER_SEASON` | `7` | 1 季 = 7 日 ≈ 16.8min 真实；春→夏→秋→冬循环 |
-| `OFFLINE_CAP_MS` | `28_800_000` | 离线补偿上限 = 8 **真实**小时（新增，见 §4.4） |
+| `OFFLINE_CAP_MS` | `28_800_000` | 离线补偿上限 = 8 **真实**小时（见 §4.4；farm 现有本地同名常量 Round 2 改为 import 去重） |
+| `WILT_GRACE_MS`（farm 内） | `45_000` | 错季作物的枯萎宽限（真实 ms）：错季即起倒计时，超时枯萎 |
 | 帧 dt 钳制 | `200` ms | `main.js` 循环 `dt = min(200, now - last)`，卡顿不补时 |
 | 自动存档 | `15_000` ms | `setInterval(writeSave)`；另在 `pagehide`/`visibilitychange:hidden` 立即写（Round 2 补） |
 
@@ -113,46 +114,54 @@ function rootReducer(state, action) {
 | 步 | 调用 | 说明 |
 | --- | --- | --- |
 | 1 | `advanceTime(state, dt)` → `{ state, crossedDay, crossedSeason }` | 只动 meta 三字段；跨多日循环内自动处理 |
-| 2 | `tickPlots(state, dt, now)` | growing 且 `now >= doneAt` → ready。**先于枯萎**：同帧既到期又换季的作物判熟不判枯 |
-| 3 | `crossedSeason` 时 `wiltOffSeason(state)` | growing、非温室、新季不在 `crop.seasons` → `wilted`（保留 cropId 供 UI 显示，`plantedAt/doneAt = 0`） |
-| 4 | `crossedDay` 时嘉宾离店检查 | `guests[].leaveDay <= day` → 移除 + log（Round 2） |
-| 5 | `tickProduction(state, dt, now)` | running 且 `now >= doneAt` → done |
-| 6 | `tickVillage(state)` | 心愿按绝对游戏分钟补位（`API_CONTRACT.md §5.1`） |
-| 7 | `finalize` | 见 §3.3 |
+| 2 | `tickPlots(state, dt, now)` | ① growing 且 `now >= doneAt` → ready；② 枯萎宽限管理：当季清 `wiltAt`，错季起算/推进 `wiltAt = max(doneAt, now) + WILT_GRACE_MS`，超时 → wilted（`API_CONTRACT.md §3.8`）。熟化先于枯萎判定 |
+| 3 | `crossedDay` 时嘉宾离店检查 | `guests[].leaveDay <= day` → 移除 + log（Round 2） |
+| 4 | `tickProduction(state, dt, now)` | running 且 `now >= doneAt` → done；顺带清理旧档 `collected` 残单 |
+| 5 | `tickVillage(state)` | 心愿按绝对游戏分钟补位（`API_CONTRACT.md §5.1`） |
+| 6 | `finalize` | 见 §3.3 |
+
+跨季不做一次性批量枯萎：错季惩罚完全由 `tickPlots` 的 `wiltAt` 宽限机制持续处理（换季导致的错季同样命中），基线草案的 `wiltOffSeason(state)` 作废。
 
 ### 4.4 离线补偿（新增 `applyOfflineCatchup`，语义唯一）
 
 启动流程（`main.js`）：读档得 `{ savedAt, state }` → `hydrate(state)` → `dispatch({ type: "meta/offline", payload: { savedAt, now: Date.now() } })`。
 
-算法（`core/engine.js` 的 `applyOfflineCatchup(state, savedAt, nowMs)`）：
+算法（`core/engine.js` 的 `applyOfflineCatchup(state, savedAt, nowMs)`，编排者；farm 域细节由已落地的 `catchUpPlots` 承担）：
 
-| 步 | 操作 | 公式 |
+| 步 | 操作 | 公式 / 语义 |
 | --- | --- | --- |
 | 1 | 计流逝 | `elapsed = max(0, nowMs - savedAt)` |
-| 2 | 封顶 | `effective = min(elapsed, OFFLINE_CAP_MS)`；`shift = elapsed - effective` |
-| 3 | 时间戳重排 | `shift > 0` 时，`EPOCH_FIELDS` 中每个 **> 0** 的字段一律 `+= shift`。重排后各计时器恰好只前进 `effective` |
-| 4 | 推进日历 | `advanceTime(state, effective)` |
-| 5 | 结算 | 依次跑 §4.3 的第 2/3/5/6 步（`now = nowMs`，`dt = effective`）；枯萎按最终季节判一次 |
-| 6 | 汇报 | 追加一条 log 摘要；返回 `{ state, offlineMs: effective, capped: shift > 0 }` |
+| 2 | 封顶 | `effective = min(elapsed, OFFLINE_CAP_MS)`；`capped = elapsed > effective` |
+| 3 | 推进日历 | `advanceTime(state, effective)`——**上限只作用于游戏日历**，防离线一周把季节滚出天际 |
+| 4 | 农田结算 | `catchUpPlots(state, savedAt, nowMs)`（`API_CONTRACT.md §3.10`）：作物照常成熟（doneAt 是绝对时间戳）；离线**不判枯萎**，`wiltAt > savedAt` 的倒计时顺延为 `nowMs + WILT_GRACE_MS` 重新起算 |
+| 5 | 生产/心愿结算 | `tickProduction(state, effective, nowMs)`（工单到期转 done）→ `tickVillage(state)`（心愿补位） |
+| 6 | 汇报 | 追加一条 log 摘要；返回 `{ state, offlineMs: effective, capped }` |
 
-`EPOCH_FIELDS`（v1）：`plots[].plantedAt`、`plots[].doneAt`、`jobs[].doneAt`、`pets[].readyAt`。
+不做时间戳重排（+shift）：所有 B 时基计时器都是**一次性**的（工单收取、再投喂、再播种都需玩家操作），离线全部走完也不产生复利，让它们自然到期最简单；唯一会惩罚玩家的计时器 `wiltAt` 用"离线赦免 + 回来重算"处理。
+
+`EPOCH_FIELDS`（v1 登记表，新 B 时基字段必须补进此表并在本节声明离线语义）：
+
+| 字段 | 离线语义 |
+| --- | --- |
+| `plots[].plantedAt` / `plots[].doneAt` | 自然到期（照常成熟） |
+| `plots[].wiltAt` | 赦免：顺延为 `nowMs + WILT_GRACE_MS`（catchUpPlots） |
+| `jobs[].doneAt` | 自然到期（转 done 等收取） |
+| `pets[].readyAt` | 自然到期（CD 仅 20s，必然可摸） |
 
 数值示例（默认 `hourMs = 6000`）：
 
-| 离线真实时长 | effective | 游戏日历前进 | 结果 |
+| 离线真实时长 | offlineMs | 游戏日历前进 | 结果 |
 | --- | --- | --- | --- |
-| 30 min | 30 min | 12.5 游戏日 | 全部到期作物/工单转 ready/done；心愿补满 |
+| 30 min | 30 min | 12.5 游戏日 | 到期作物/工单转 ready/done；心愿补满；枯萎倒计时顺延 |
 | 8 h | 8 h | 200 游戏日 | 同上；季节按最终日期取模 |
-| 24 h | **8 h**（封顶） | 200 游戏日 | `capped = true`；计时器只走 8h，多余 16h 通过 +shift 抹掉 |
-
-设计取舍：离线不自动续产（工单收取、再投喂都需玩家操作），所以放开日历快进无经济风险；封顶只为防时间戳溢出性滚雪球与"离线一周全熟"的挂机膨胀。
+| 24 h | **8 h**（封顶） | 200 游戏日 | `capped = true`；日历只走 8h 等量，计时器仍自然到期 |
 
 ### 4.5 跨日 / 跨季事件效果表
 
 | 事件 | 效果 | 实现点 |
 | --- | --- | --- |
-| `crossedDay` | 嘉宾离店检查；无其他强制效果 | tick 管线第 4 步 |
-| `crossedSeason` | ① `wiltOffSeason`；② UI 换肤（`root.dataset.season` 已有）；③ log 换季文案 | tick 管线第 3 步 / UI |
+| `crossedDay` | 嘉宾离店检查；无其他强制效果 | tick 管线第 3 步 |
+| `crossedSeason` | ① UI 换肤（`root.dataset.season` 已有）；② log 换季文案。枯萎**不在此**：由 `tickPlots` 的 `wiltAt` 宽限持续处理 | tick 管线第 2 步 / UI |
 | 处于冬季（持续态，非事件） | `feedAnimal` 饲料消耗 +20%（余数累积，`API_CONTRACT.md §4.4`） | feedAnimal 内判 `meta.season === "winter"` |
 
 ## 5. 存档 v1 与迁移
@@ -207,7 +216,7 @@ export function deserialize(raw) {
 | 原则 | 内容 |
 | --- | --- |
 | 数据源 | `src/data/guests.js` 的 `buff: { target, factor }`；target ∈ `farm / kitchen / wish / livestock` |
-| 计算器 | 新模块 `src/core/buffs.js`：`buffFactor(state, target)` = 在座嘉宾中匹配 target 的 `factor` **连乘**，钳制 `[0.5, 2]`；无嘉宾 = 1。放 core 是为让三个系统无环引用 |
+| 计算器 | 新模块 `src/core/buffs.js`：`buffFactor(state, target)` = 在座嘉宾中匹配 target 的 `factor` **连乘**，钳制 `[0.5, 2]`；无嘉宾 = 1。放 core 是为让三个系统无环引用。过渡期：farm 的 `applyGuestFarmBuff`（仅下限 0.5）与 production 的 `livestockYieldMultiplier`（无钳制）已落地，Round 2 改为 `buffFactor` 的薄封装统一口径 |
 | 快照原则 | buff 在**动作发生瞬间**读取并固化进时长/数量（种植时长、工单 doneAt、投喂 qty）。嘉宾中途离店**不回溯**已开始的计时 |
 | 应用点 | 恰好 4 处，公式与函数逐条见 `API_CONTRACT.md §8`：farm 生长（×0.85）、kitchen 工单时长（×0.8）、wish 刷新间隔（×0.85）、livestock 产量（×1.1 余数累积） |
 | 禁止 | 在 tick 函数里每帧读 buff 重算 doneAt（会导致嘉宾进出反复拉扯计时器） |
@@ -236,7 +245,7 @@ export function deserialize(raw) {
 | --- | --- |
 | 时间注入 | 所有生成时间戳的命令加末位 `nowMs = Date.now()`；tick 已有 `now` 第 3 参。测试传固定值 |
 | 随机注入 | `cook`（黑暗料理 0.08）、`deliverWish` 掉落（Round 2）加末位 `rand = Math.random`。测试传 `() => 0.99` 等定值 |
-| 余数累积器 | 分数收益不用随机：`state.acc.{livestockYield, winterFeed}` 累积小数、溢出取整（`API_CONTRACT.md §4.4`），长期期望精确等于系数 |
+| 余数累积器 | 分数收益不用随机：`state.production.livestockCarry`（已落地，ε=1e-9）与 `production.winterFeedCarry`（R2）累积小数、溢出取整（`API_CONTRACT.md §4.4`），长期期望精确等于系数 |
 | 必测不变量 | ① 任何失败信封 `state === 入参`；② resources/inv 恒非负；③ `meta.level === levelForXp(meta.xp)`；④ `deserialize(serialize(s)).state` 深等于 s（hydrate 后）；⑤ 离线 24h → `offlineMs === OFFLINE_CAP_MS`；⑥ 产业链三条可跑通（米→鸡、豆→豆腐、麦→面包）；⑦ xp 单调不减 |
 | 边界测试 | 静态断言 `systems/**` 源码不含 `document.`、`localStorage`、`Math.random(`、`Date.now()`（除默认参数位）——GPT-sol-1 用正则实现 |
 
