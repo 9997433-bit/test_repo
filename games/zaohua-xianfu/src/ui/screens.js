@@ -1,11 +1,26 @@
-import { BUILDING_TYPES, GRID_SIZE, upgradeCost, buildCost, mansionCap } from "../data/buildings.js";
 import { FACTIONS, HEROES, heroById } from "../data/heroes.js";
 import { ARTIFACTS, artifactById } from "../data/artifacts.js";
 import { REALMS } from "../data/realms.js";
-import { occupancy } from "../mansion/layout.js";
-import { produce } from "../mansion/production.js";
 import { breakthroughChance } from "../progression/realm.js";
+import { postKind, recommendKind, yieldBreakdown } from "../disciples/assign.js";
+import { canTrain, discipleFlavor, professionTitle, trainCost, trainShortfall } from "../disciples/roster.js";
+import { scriptureRate, xpNeeded } from "../disciples/train.js";
 import { fmt } from "./hud.js";
+import * as mansion from "./adapters.js";
+import {
+  RARITY_LABEL,
+  RES_LABEL,
+  SLOT_LABEL,
+  affordable,
+  bar,
+  chip,
+  costText,
+  esc,
+  etaText,
+  pctOf,
+  recruitCost,
+  roleLabel,
+} from "./util.js";
 
 export const TABS = [
   ["mansion", "仙府"],
@@ -17,13 +32,16 @@ export const TABS = [
   ["artifacts", "法器"],
 ];
 
+const FACTION_TAGLINE = { mortal: "零氪稳", divine: "成型强", demon: "高爆发" };
+
 export function gateView() {
   const cards = Object.values(FACTIONS)
     .map(
       (f) => `<button class="faction" data-act="pick-faction" data-faction="${f.id}">
-        <div class="muted">${f.id === "mortal" ? "零氪稳" : f.id === "divine" ? "成型强" : "高爆发"}</div>
-        <h3>${f.name}</h3>
-        <p>${f.motto}</p>
+        <div class="muted">${FACTION_TAGLINE[f.id] ?? "另辟蹊径"}</div>
+        <h3>${esc(f.name)}</h3>
+        <p>${esc(f.motto)}</p>
+        <div class="muted gate-hint">点此以${esc(f.name)}开府</div>
       </button>`,
     )
     .join("");
@@ -31,124 +49,354 @@ export function gateView() {
     <div class="muted">沛炫味修仙经营 · 网页复刻</div>
     <h1>造化仙府</h1>
     <p>我辈修士，渡劫修仙。选一阵营开府：建洞府、开灵田、招仙友，御兽潮、登天塔。</p>
-    <label>道号 <input id="dao-name" maxlength="8" placeholder="无名仙尊" /></label>
+    <label for="dao-name">道号</label>
+    <input id="dao-name" name="dao-name" maxlength="8" placeholder="无名仙尊" autocomplete="off"
+      enterkeyhint="done" aria-describedby="dao-hint" />
+    <div id="dao-hint" class="muted">留空则称「无名仙尊」；道号会随你走完整个仙途。</div>
     <div class="factions">${cards}</div>
   </div></div>`;
 }
 
-export function mansionView(state, ui) {
-  const grid = occupancy(state.buildings);
-  const cells = [];
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
-      const b = grid[y][x];
-      const sel = ui.selPlot && ui.selPlot.x === x && ui.selPlot.y === y;
-      if (b) {
-        const def = BUILDING_TYPES[b.type];
-        cells.push(`<div class="plot filled ${sel ? "sel" : ""}" data-act="plot" data-x="${x}" data-y="${y}" data-id="${b.id}">
-          <span class="glyph">${def.glyph}</span><span>${def.name}</span><span class="lv">Lv.${b.level}</span>
-        </div>`);
-      } else {
-        cells.push(`<div class="plot ${sel ? "sel" : ""}" data-act="plot" data-x="${x}" data-y="${y}"></div>`);
-      }
-    }
+/* ---------------------------------------------------------------- 仙府 */
+
+function plotCell(state, grid, x, y, ui) {
+  const b = grid[y]?.[x] ?? null;
+  const sel = ui.selPlot && ui.selPlot.x === x && ui.selPlot.y === y;
+  if (!b) {
+    return `<div class="plot ${sel ? "sel" : ""}" data-act="plot" data-x="${x}" data-y="${y}"
+      role="button" tabindex="0" title="空地 (${x},${y})"><span class="muted plot-empty">空</span></div>`;
   }
-  const cap = mansionCap(state.buildings.find((b) => b.type === "mansion")?.level ?? 1);
-  const rates = produce(state, 1);
-  const selected = state.buildings.find((b) => b.id === ui.selBuilding);
-  const empty = ui.selPlot && !selected;
-  let detail = `<p class="muted">点选地块营造或升级。洞府上限 Lv.${cap.maxBuildingLevel} · 地块 ${state.buildings.length}/${cap.plots}</p>
-    <p>每秒：灵气 ${fmt(rates.qi)} · 灵草 ${fmt(rates.herb)} · 灵木 ${fmt(rates.wood)} · 灵矿 ${fmt(rates.ore)}</p>`;
-  if (selected) {
-    const def = BUILDING_TYPES[selected.type];
-    const cost = upgradeCost(selected.type, selected.level + 1);
-    const worker = state.disciples.find((d) => d.buildingId === selected.id);
-    detail += `<div class="card"><h3>${def.name} · ${selected.level} 级</h3><p>${def.desc}</p>
-      <p>驻守：${worker ? worker.name : "无人"}</p>
-      <button class="gold" data-act="upgrade" data-id="${selected.id}">升级（木${cost.wood} 矿${cost.ore} 石${cost.stone}）</button>
-      <div class="build-list">${state.disciples
-        .map(
-          (d) =>
-            `<button data-act="assign" data-did="${d.id}" data-bid="${selected.id}">派 ${d.name}</button>`,
-        )
-        .join("")}</div></div>`;
-  } else if (empty) {
-    detail += `<div class="card"><h3>营造 (${ui.selPlot.x},${ui.selPlot.y})</h3><div class="build-list">${Object.values(BUILDING_TYPES)
-      .map((t) => {
-        const c = buildCost(t.id);
-        return `<button data-act="build" data-type="${t.id}">${t.name} 木${c.wood}</button>`;
-      })
-      .join("")}</div></div>`;
-  }
-  return `<div class="grid-2"><div class="card"><h3>仙府沙盘</h3><div class="plot-grid">${cells.join("")}</div></div><div>${detail}
-    <div class="card" style="margin-top:0.8rem"><h3>府报</h3><ul class="log-list">${state.log.map((l) => `<li>${l.text}</li>`).join("")}</ul></div></div></div>`;
+  const def = mansion.buildingDef(b.type);
+  const worker = state.disciples.find((d) => d.buildingId === b.id);
+  const title = `${def?.name ?? b.type} Lv.${b.level} · ${worker ? `驻守 ${worker.name}` : "无人驻守"}`;
+  return `<div class="plot filled ${sel ? "sel" : ""}" data-act="plot" data-x="${x}" data-y="${y}" data-id="${b.id}"
+    role="button" tabindex="0" title="${esc(title)}">
+    <span class="glyph">${esc(def?.glyph ?? "府")}</span><span class="pname">${esc(def?.name ?? b.type)}</span>
+    <span class="lv">Lv.${b.level}</span>
+    <span class="staff-dot ${worker ? "on" : ""}" aria-hidden="true"></span>
+  </div>`;
 }
 
-export function disciplesView(state) {
-  const locked = HEROES.filter((h) => h.faction === state.meta.faction && !state.unlockedHeroes.includes(h.id));
-  const cards = state.disciples
-    .map((d) => {
-      const h = heroById(d.heroId);
-      const b = state.buildings.find((x) => x.id === d.buildingId);
-      return `<div class="hero-card"><div><b>${d.name}</b> · ${h?.role ?? ""}
-        <div class="muted">勤勉 ${d.diligent} · 武力 ${d.force} · 专业 ${d.profession}</div>
-        <div class="muted">派遣：${b ? BUILDING_TYPES[b.type].name : "闲云"}</div></div>
-        <button data-act="train" data-did="${d.id}">传功</button></div>`;
+function buildingDetail(state, b, ui) {
+  const def = mansion.buildingDef(b.type);
+  const level = Math.max(1, b.level ?? 1);
+  const mlevel = mansion.mansionLevel(state.buildings);
+  const maxLevel = mansion.maxLevelFor(b.type, mlevel);
+  const atMax = level >= maxLevel;
+  const cost = mansion.upgradeCost(b.type, level + 1);
+  const lack = mansion.costShortfall(state.resources, cost);
+  const canPay = Object.keys(lack).length === 0;
+  const worker = state.disciples.find((d) => d.buildingId === b.id) ?? null;
+  const row = mansion.breakdownRows(state).find((r) => r.id === b.id) ?? null;
+
+  const perSec = row
+    ? Object.entries(row.perSec)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${RES_LABEL[k] ?? k} <b>${fmt(v)}</b>/秒`)
+        .join(" · ")
+    : "不产资源，只长弟子修业";
+  const factors = row
+    ? [
+        ["弟子", row.workerMul],
+        ["等级", row.levelMul],
+        ["邻接", row.adjacency],
+        ["府邸", row.aura],
+      ]
+        .filter(([, v]) => Number.isFinite(v) && Math.abs(v - 1) > 0.001)
+        .map(([label, v]) => `${label} ${pctOf(v)}`)
+        .join(" · ")
+    : "";
+
+  const candidates = [...state.disciples]
+    .map((d) => ({ d, mul: yieldBreakdown(d, b).total }))
+    .sort((a, z) => z.mul - a.mul)
+    .map(({ d, mul }) => {
+      const here = d.buildingId === b.id;
+      return `<button data-act="assign" data-did="${d.id}" data-bid="${b.id}" ${here ? "disabled" : ""}
+        title="${esc(d.name)} 驻守此处产出 ${pctOf(mul)}">${here ? "驻守中 " : "派 "}${esc(d.name)} <span class="gold">${pctOf(mul)}</span></button>`;
     })
     .join("");
-  const shop = locked
-    .map(
-      (h) =>
-        `<div class="hero-card"><div><b>${h.name}</b> · ${h.skill}<div class="muted">${h.skillDesc}</div></div>
-        <button class="primary" data-act="recruit" data-hid="${h.id}">礼聘 6仙玉</button></div>`,
-    )
-    .join("");
-  return `<div class="grid-2"><div class="card"><h3>在府弟子</h3>${cards || "<p class='muted'>尚无弟子</p>"}</div>
-    <div class="card"><h3>可邀仙友</h3>${shop || "<p class='muted'>本阵营仙友已齐。</p>"}</div></div>`;
+
+  return `<div class="card">
+    <h3>${esc(def?.name ?? b.type)} · ${level} 级 <span class="muted">(${b.x},${b.y})</span></h3>
+    <p class="muted">${esc(def?.desc ?? "")}</p>
+    <p>产出：${perSec}${factors ? ` <span class="muted">（${factors}）</span>` : ""}</p>
+    <p>驻守：${worker ? `<b>${esc(worker.name)}</b> <span class="gold">${pctOf(yieldBreakdown(worker, b).total)}</span>` : "<span class='muted'>无人</span>"}
+      ${worker ? `<button data-act="assign" data-did="${worker.id}" data-bid="">撤守</button>` : ""}</p>
+    ${
+      atMax
+        ? `<p class="muted">已达当前上限 Lv.${maxLevel}${b.type === "mansion" ? "" : "，先升洞府仙居"}。</p>`
+        : `<button class="gold" data-act="upgrade" data-id="${b.id}" ${canPay ? "" : "disabled"}>
+            升级 Lv.${level + 1}（${costText(cost, RES_LABEL)}）</button>
+          ${canPay ? "" : `<span class="muted"> 尚缺 ${costText(lack, RES_LABEL)}</span>`}`
+    }
+    <h4 class="sub">派遣驻守</h4>
+    <div class="build-list">${candidates || "<span class='muted'>府中无弟子</span>"}</div>
+  </div>`;
 }
 
+function buildDetail(state, ui) {
+  const mlevel = mansion.mansionLevel(state.buildings);
+  const list = mansion
+    .catalog(mlevel, { resources: state.resources, buildings: state.buildings })
+    .map((c) => {
+      const note = c.buildable ? costText(c.cost, RES_LABEL) : c.reason;
+      return `<button data-act="build" data-type="${c.id}" ${c.buildable ? "" : "disabled"}
+        title="${esc(c.desc ?? "")}">${esc(c.glyph)} ${esc(c.name)} <span class="muted">${esc(note)}</span></button>`;
+    })
+    .join("");
+  return `<div class="card"><h3>营造 (${ui.selPlot.x},${ui.selPlot.y})</h3>
+    <p class="muted">灵脉环绕灵田、聚灵阵挨着丹房锻造，邻接乘区会立刻反映在产量上。</p>
+    <div class="build-list">${list}</div></div>`;
+}
+
+export function mansionView(state, ui = {}) {
+  const grid = mansion.occupancy(state.buildings);
+  const size = mansion.GRID_SIZE;
+  const cells = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) cells.push(plotCell(state, grid, x, y, ui));
+  }
+  const mlevel = mansion.mansionLevel(state.buildings);
+  const cap = mansion.mansionCap(mlevel);
+  const rates = mansion.rates(state);
+  const score = mansion.layoutScore(state.buildings);
+  const selected = state.buildings.find((b) => b.id === ui.selBuilding) ?? null;
+  const empty = ui.selPlot && !selected;
+
+  const summary = `<div class="card panel-summary">
+    <p class="muted">点选地块营造或升级。建筑上限 Lv.${cap.maxBuildingLevel} · 地块 ${state.buildings.length}/${cap.plots}${
+      score === null ? "" : ` · 风水 ${score}/100`
+    }</p>
+    <p class="rate-line">每秒：灵气 <b>${fmt(rates.qi)}</b> · 灵草 <b>${fmt(rates.herb)}</b> · 灵木 <b>${fmt(rates.wood)}</b> · 灵矿 <b>${fmt(rates.ore)}</b> · 灵石 <b>${fmt(rates.stone)}</b></p>
+  </div>`;
+  const detail = selected ? buildingDetail(state, selected, ui) : empty ? buildDetail(state, ui) : "";
+
+  return `<div class="grid-2">
+    <div class="card"><h3>仙府沙盘</h3><div class="plot-grid">${cells.join("")}</div></div>
+    <div class="side-stack">${summary}${detail}
+      <div class="card"><h3>府报</h3><ul class="log-list" data-keep-scroll="log">${state.log
+        .map((l) => `<li>${esc(l.text)}</li>`)
+        .join("")}</ul></div>
+    </div></div>`;
+}
+
+/* ---------------------------------------------------------------- 弟子 */
+
+function postLine(state, d, rowById) {
+  const b = state.buildings.find((x) => x.id === d.buildingId) ?? null;
+  if (!b) {
+    const rec = recommendKind(d);
+    return `<div class="d-post idle"><span class="muted">闲云野鹤</span> · 建议 <b>${esc(rec.kind.name)}</b>
+      <span class="muted">（${esc(rec.kind.types.map(mansion.buildingName).join("、"))}，看${esc(rec.kind.keyName)}）</span></div>`;
+  }
+  const def = mansion.buildingDef(b.type);
+  const bd = yieldBreakdown(d, b);
+  const parts = bd.parts
+    .filter((p) => p.add > 0)
+    .map((p) => `${p.label} ${pctOf(1 + p.add)}`)
+    .join(" + ");
+  const row = rowById.get(b.id);
+  const out = row
+    ? Object.entries(row.perSec)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${RES_LABEL[k] ?? k} ${fmt(v)}/秒`)
+        .join(" · ")
+    : "只长修业";
+  const gain = row
+    ? Object.entries(row.perSec).reduce((s, [, v]) => s + v, 0) * (1 - 1 / (bd.total || 1))
+    : 0;
+  return `<div class="d-post"><span class="muted">驻守</span> <b>${esc(def?.name ?? b.type)} Lv.${b.level}</b>
+    · 加成 <b class="gold">${pctOf(bd.total)}</b> <span class="muted">（${parts || "无"}）</span>
+    <div class="muted">本岗 ${out}${gain > 0 ? ` · 其中此弟子贡献 ${fmt(gain)}/秒` : ""}</div></div>`;
+}
+
+function xpLine(state, d, rate) {
+  const need = xpNeeded(d.profession);
+  const xp = Math.min(need, d.xp ?? 0);
+  const assigned = Boolean(d.buildingId);
+  const eta = assigned && rate > 0 ? etaText((need - xp) / rate) : "";
+  const note = !rate
+    ? "府中无藏经楼，修业不长（洞府 Lv.3 解锁）"
+    : !assigned
+      ? "闲云弟子不积修业，派驻任一建筑即可"
+      : `藏经楼 +${rate.toFixed(2)}/秒 · 约 ${eta}晋阶`;
+  return `<div class="d-xp">${bar(xp / need, "thin")}
+    <span class="muted">修业 ${fmt(xp)} / ${need} · ${esc(note)}</span></div>`;
+}
+
+function assignPanel(state, d) {
+  const options = [...state.buildings]
+    .map((b) => ({ b, mul: yieldBreakdown(d, b).total, worker: state.disciples.find((x) => x.buildingId === b.id) }))
+    .sort((a, z) => Number(Boolean(a.worker)) - Number(Boolean(z.worker)) || z.mul - a.mul)
+    .map(({ b, mul, worker }) => {
+      const here = worker?.id === d.id;
+      const def = mansion.buildingDef(b.type);
+      const occupied = worker && !here ? ` <span class="muted">现驻 ${esc(worker.name)}</span>` : "";
+      return `<button data-act="assign" data-did="${d.id}" data-bid="${b.id}" ${here ? "disabled" : ""}>
+        ${esc(def?.name ?? b.type)} Lv.${b.level} <span class="gold">${pctOf(mul)}</span>${occupied}</button>`;
+    })
+    .join("");
+  return `<div class="card assign-panel">
+    <p class="muted">选择 ${esc(d.name)} 的驻地：百分比为该弟子在此建筑的产出加成，顶替他人会让对方变回闲云。</p>
+    <div class="build-list">${options || "<span class='muted'>府中尚无建筑</span>"}</div>
+    ${d.buildingId ? `<button data-act="assign" data-did="${d.id}" data-bid="">撤回府中</button>` : ""}
+  </div>`;
+}
+
+function discipleCard(state, d, ui, rate, rowById) {
+  const h = heroById(d.heroId);
+  const flavor = discipleFlavor(d);
+  const cost = trainCost(d.profession);
+  const can = canTrain(state.resources, d);
+  const lack = trainShortfall(state.resources, d);
+  const lackText = [lack.pills ? `丹药${Math.ceil(lack.pills)}` : "", lack.herb ? `灵草${Math.ceil(lack.herb)}` : ""]
+    .filter(Boolean)
+    .join(" ");
+  const inParty = state.party.includes(d.heroId);
+  const open = ui.selDisciple === d.id;
+  const fac = FACTIONS[h?.faction];
+
+  return `<div class="hero-card disciple-card ${open ? "in" : ""}">
+    <div class="d-main">
+      <div class="d-head"><b>${esc(d.name)}</b>
+        ${chip(roleLabel(h?.role))}
+        ${chip(`${professionTitle(d.profession)} · 专业 ${d.profession}`, "gold")}
+        ${inParty ? chip("已上阵", "cin") : ""}
+        ${fac ? chip(fac.name) : ""}
+      </div>
+      <div class="muted d-flavor">${esc(flavor.root)} · ${esc(flavor.temper)}${h?.skill ? ` · 道法「${esc(h.skill)}」` : ""}</div>
+      <div class="d-stats">
+        <span title="灵田/木坊/石坊产量看勤勉">勤勉 <b>${d.diligent}</b></span>
+        <span title="丹房/锻造房/聚灵阵产量看武力">武力 <b>${d.force}</b></span>
+        <span title="所有岗位通吃，可由传功或藏经楼提升">专业 <b>${d.profession}</b></span>
+        ${h ? `<span title="上阵时的战斗属性">攻 <b>${h.atk}</b> 生 <b>${h.hp}</b> 防 <b>${h.def}</b></span>` : ""}
+      </div>
+      ${h?.skillDesc ? `<div class="muted d-skill">${esc(h.skill)}：${esc(h.skillDesc)}</div>` : ""}
+      ${postLine(state, d, rowById)}
+      ${xpLine(state, d, rate)}
+    </div>
+    <div class="d-acts">
+      <button class="gold" data-act="train" data-did="${d.id}" ${can ? "" : "disabled"}
+        title="专业每级提升所有岗位产量">传功 <span class="cost">丹${cost.pills} 草${cost.herb}</span></button>
+      ${can ? "" : `<span class="muted lack">缺 ${esc(lackText)}</span>`}
+      <button data-act="sel-disciple" data-did="${d.id}" aria-expanded="${open}">${open ? "收起派遣" : "派遣"}</button>
+      ${d.buildingId ? `<button data-act="assign" data-did="${d.id}" data-bid="">撤回</button>` : ""}
+    </div>
+  </div>${open ? assignPanel(state, d) : ""}`;
+}
+
+function vacancyLine(state) {
+  const vacancies = state.buildings.filter(
+    (b) => (mansion.buildingDef(b.type)?.staff ?? 1) > 0 && !state.disciples.some((d) => d.buildingId === b.id),
+  );
+  if (!vacancies.length) return `<p class="muted">各处皆有人驻守。</p>`;
+  const names = vacancies.map((b) => `${mansion.buildingName(b.type)} Lv.${b.level}`).join("、");
+  return `<p class="muted">空缺岗位：${esc(names)}</p>`;
+}
+
+function recruitCard(state, h) {
+  const cost = recruitCost(h);
+  const ok = affordable(state.resources, cost);
+  return `<div class="hero-card recruit-card">
+    <div class="d-main">
+      <div class="d-head"><b>${esc(h.name)}</b>${chip(roleLabel(h.role))}${chip(esc(h.skill), "gold")}</div>
+      <div class="muted d-skill">${esc(h.skillDesc)}</div>
+      <div class="d-stats"><span>攻 <b>${h.atk}</b></span><span>生 <b>${h.hp}</b></span><span>防 <b>${h.def}</b></span></div>
+    </div>
+    <div class="d-acts">
+      <button class="primary" data-act="recruit" data-hid="${h.id}" ${ok ? "" : "disabled"}>礼聘 <span class="cost">${costText(cost, RES_LABEL)}</span></button>
+      ${ok ? "" : `<span class="muted lack">仙玉或灵石不足</span>`}
+    </div>
+  </div>`;
+}
+
+export function disciplesView(state, ui = {}) {
+  const rate = scriptureRate(state);
+  const rowById = new Map(mansion.breakdownRows(state).map((r) => [r.id, r]));
+  const posted = state.disciples.filter((d) => state.buildings.some((b) => b.id === d.buildingId));
+  const cards = state.disciples.map((d) => discipleCard(state, d, ui, rate, rowById)).join("");
+  const locked = HEROES.filter((h) => h.faction === state.meta.faction && !state.unlockedHeroes.includes(h.id));
+  const shop = locked.map((h) => recruitCard(state, h)).join("");
+
+  return `<div class="grid-2">
+    <div class="card">
+      <h3>在府弟子 <span class="muted">${state.disciples.length} 人 · 驻守 ${posted.length} · 闲云 ${
+        state.disciples.length - posted.length
+      }</span></h3>
+      ${vacancyLine(state)}
+      ${cards || "<p class='muted'>尚无弟子</p>"}
+    </div>
+    <div class="side-stack">
+      <div class="card"><h3>可邀仙友</h3>${shop || "<p class='muted'>本阵营仙友已齐。</p>"}</div>
+      <div class="card"><h3>用人之道</h3>
+        <ul class="tip-list">
+          <li><b>${esc(postKind("field").name)}</b>（灵田/木坊/石坊）吃 <b>勤勉</b>：每点 +1.8%。</li>
+          <li><b>${esc(postKind("alchemy").name)}</b>（丹房/锻造房/聚灵阵）吃 <b>武力</b>：每点 +1%。</li>
+          <li><b>${esc(postKind("scripture").name)}</b>（藏经楼）吃 <b>专业</b>：每级 +8%。</li>
+          <li><b>专业</b>可由传功（丹药+灵草）立刻提升，或由藏经楼慢慢熬出来。</li>
+          <li>一座建筑只容一名弟子；顶替时原驻守自动变回闲云。</li>
+        </ul>
+      </div>
+    </div></div>`;
+}
+
+/* ---------------------------------------------------------------- 其余 */
+
 export function cultivateView(state) {
-  const r = REALMS[state.realm.index];
-  const pct = Math.min(100, ((state.realm.exp ?? 0) / r.exp) * 100);
+  const r = REALMS[Math.max(0, Math.min(REALMS.length - 1, state.realm.index))];
+  const ratio = (state.realm.exp ?? 0) / r.exp;
   const chance = breakthroughChance(state);
-  return `<div class="card"><h3>${r.name} · 第 ${state.realm.layer} 层</h3>
-    <div class="hpbar"><i style="width:${pct}%"></i></div>
+  const ready = chance > 0;
+  return `<div class="card"><h3>${esc(r.name)} · 第 ${state.realm.layer}/${r.layers} 层</h3>
+    ${bar(ratio)}
     <p>修为 ${fmt(state.realm.exp)} / ${r.exp} · 心魔 ${state.realm.heartDemon ?? 0} · 破境率 ${(chance * 100).toFixed(0)}%</p>
-    <button class="gold" data-act="cultivate">吐纳（-4 灵气）</button>
-    <button class="primary" data-act="breakthrough">破境</button>
-    <p class="muted">失败不掉境，丹药折损，心魔使下次更稳。</p></div>`;
+    <button class="gold" data-act="cultivate" ${(state.resources.qi ?? 0) >= 4 ? "" : "disabled"}>吐纳（-4 灵气）</button>
+    <button class="primary" data-act="breakthrough" ${ready ? "" : "disabled"}>破境</button>
+    <p class="muted">${ready ? "修为已满，可试破境。" : "修为未满，先行吐纳。"}失败不掉境，丹药折损，心魔使下次更稳。</p></div>`;
 }
 
 export function partyView(state) {
   const list = state.unlockedHeroes
     .map((id) => {
       const h = heroById(id);
+      if (!h) return "";
       const on = state.party.includes(id);
-      return `<div class="hero-card ${on ? "in" : ""}"><div><b>${h.name}</b> · ${h.role}
-        <div class="muted">${h.skill}：${h.skillDesc}</div></div>
-        <button data-act="toggle-party" data-hid="${id}">${on ? "撤下" : "上阵"}</button></div>`;
+      const isMc = id.startsWith("mc-");
+      return `<div class="hero-card ${on ? "in" : ""}">
+        <div class="d-main">
+          <div class="d-head"><b>${esc(h.name)}</b>${chip(roleLabel(h.role))}${isMc ? chip("主角", "cin") : ""}</div>
+          <div class="muted d-skill">${esc(h.skill)}：${esc(h.skillDesc)}</div>
+          <div class="d-stats"><span>攻 <b>${h.atk}</b></span><span>生 <b>${h.hp}</b></span><span>防 <b>${h.def}</b></span></div>
+        </div>
+        <div class="d-acts">
+          <button data-act="toggle-party" data-hid="${id}" ${isMc && on ? "disabled" : ""}>${on ? "撤下" : "上阵"}</button>
+        </div>
+      </div>`;
     })
     .join("");
-  return `<div class="card"><h3>阵容 ${state.party.length}/6（主角不可缺）</h3>${list}</div>`;
+  return `<div class="card"><h3>阵容 ${state.party.length}/6 <span class="muted">主角常驻，不可撤下</span></h3>${list}</div>`;
 }
 
 function combatPanel(state) {
   const c = state.combat;
   if (!c) return "";
-  const last = c.result.frames.at(-1);
+  const last = c.result.frames?.at(-1);
+  if (!last) return "";
   const a = last.units.filter((u) => u.side === "a");
   const b = last.units.filter((u) => u.side === "b");
   const col = (arr) =>
     arr
       .map(
-        (u) => `<div class="fighter ${u.alive ? "" : "dead"}"><b>${u.name}</b>
-        <div class="hpbar"><i style="width:${Math.max(0, (u.hp / u.maxHp) * 100)}%"></i></div>
+        (u) => `<div class="fighter ${u.alive ? "" : "dead"}"><b>${esc(u.name)}</b>
+        ${bar(u.hp / u.maxHp)}
         <span class="muted">${fmt(u.hp)} / ${fmt(u.maxHp)}</span></div>`,
       )
       .join("");
+  const win = c.result.winner === "a";
   return `<div class="card battlefield" style="margin-top:0.8rem">
     <div class="side-col"><h4>仙府</h4>${col(a)}</div>
-    <div class="vs">${c.result.winner === "a" ? "胜" : "败"}</div>
+    <div class="vs">${win ? "胜" : "败"}</div>
     <div class="side-col"><h4>敌阵</h4>${col(b)}</div>
     <div style="grid-column:1/-1"><button class="gold" data-act="resolve">领取战报</button></div>
   </div>`;
@@ -170,18 +418,27 @@ export function artifactsView(state) {
   const cards = ARTIFACTS.map((a) => {
     const own = state.ownedArtifacts.includes(a.id);
     const eq = state.equipped.includes(a.id);
-    return `<div class="art-card"><div><b>${a.name}</b> · ${a.slot} · ${a.rarity}
-      <div class="muted">${a.desc}</div></div>
-      <button ${own ? "" : "disabled"} data-act="equip" data-aid="${a.id}">${eq ? "已佩" : own ? "佩戴" : "未获"}</button></div>`;
+    return `<div class="art-card ${eq ? "in" : ""}">
+      <div class="d-main">
+        <div class="d-head"><b>${esc(a.name)}</b>${chip(esc(SLOT_LABEL[a.slot] ?? a.slot))}${chip(
+          esc(RARITY_LABEL[a.rarity] ?? a.rarity),
+          a.rarity === "red" ? "cin" : "gold",
+        )}</div>
+        <div class="muted d-skill">${esc(a.desc)}</div>
+      </div>
+      <div class="d-acts">
+        <button ${own ? "" : "disabled"} data-act="equip" data-aid="${a.id}">${eq ? "已佩" : own ? "佩戴" : "未获"}</button>
+      </div></div>`;
   }).join("");
-  const names = state.equipped.map((id) => artifactById(id)?.name).join("、");
-  return `<div class="card"><h3>法器四槽</h3><p>当前：${names || "无"}</p>${cards}</div>`;
+  const names = state.equipped.map((id) => artifactById(id)?.name).filter(Boolean).join("、");
+  return `<div class="card"><h3>法器四槽 <span class="muted">${state.equipped.length}/4</span></h3>
+    <p>当前：${esc(names) || "无"}</p>${cards}</div>`;
 }
 
 export function screen(tab, state, ui) {
   switch (tab) {
     case "disciples":
-      return disciplesView(state);
+      return disciplesView(state, ui);
     case "cultivate":
       return cultivateView(state);
     case "party":

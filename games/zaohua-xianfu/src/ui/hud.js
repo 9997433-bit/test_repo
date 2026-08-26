@@ -1,3 +1,5 @@
+import * as mansion from "./adapters.js";
+
 const RES = [
   ["qi", "灵气"],
   ["stone", "灵石"],
@@ -15,7 +17,22 @@ export function fmt(n) {
   return v.toFixed(v >= 10 ? 0 : 1);
 }
 
+/** 速率常在小数点后打转，仙玉这类慢产要多留一位。 */
+export function fmtRate(n) {
+  const v = Number(n) || 0;
+  if (v >= 10) return v.toFixed(0);
+  if (v >= 0.1) return v.toFixed(2);
+  return v.toFixed(3);
+}
+
 export function renderHud(state) {
   if (!state.meta.faction) return "";
-  return RES.map(([k, label]) => `<span>${label} <b>${fmt(state.resources[k])}</b></span>`).join("");
+  const rates = mansion.rates(state) ?? {};
+  return RES.map(([k, label]) => {
+    const rate = rates[k] ?? 0;
+    const perSec = rate > 0.0005 ? `${fmtRate(rate)}/秒` : "无产出";
+    return `<span title="${label} · ${perSec}">${label} <b>${fmt(state.resources[k])}</b>${
+      rate > 0.0005 ? `<i class="rate">+${fmtRate(rate)}/秒</i>` : ""
+    }</span>`;
+  }).join("");
 }
