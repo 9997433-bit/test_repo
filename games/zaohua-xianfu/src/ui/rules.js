@@ -150,6 +150,25 @@ export function dropProgress(state) {
 
 /* ---------------------------------------------------------------- 藏经楼 */
 
+function probeDisciple(id, buildingId, xp) {
+  return {
+    id,
+    heroId: "mc-mortal",
+    name: id,
+    diligent: 10,
+    force: 10,
+    profession: 1,
+    xp,
+    buildingId,
+    unlocked: true,
+  };
+}
+
+/**
+ * 一府之内摆齐四种处境，一次 TICK 问清全部修业规则：
+ * 满条的驻楼弟子（会不会白升专业）、空条的驻楼弟子（修业到底涨不涨）、
+ * 驻灵田的弟子与闲云弟子（修业是不是只发给藏经楼里的人）。
+ */
 function scriptureProbeState() {
   const base = defaultState();
   return {
@@ -157,44 +176,48 @@ function scriptureProbeState() {
     meta: { ...base.meta, faction: "mortal", startedAt: 0, lastTick: 0 },
     buildings: [
       { id: "b-mansion", type: "mansion", level: 3, x: 2, y: 2 },
-      { id: "b-scripture", type: "scripture", level: 3, x: 3, y: 2 },
+      { id: "b-hall-full", type: "scripture", level: 3, x: 3, y: 2 },
+      { id: "b-hall-fresh", type: "scripture", level: 3, x: 4, y: 2 },
+      { id: "b-field", type: "field", level: 1, x: 2, y: 3 },
     ],
     disciples: [
-      {
-        id: "probe",
-        heroId: "mc-mortal",
-        name: "探",
-        diligent: 10,
-        force: 10,
-        profession: 1,
-        xp: xpNeeded(1),
-        buildingId: "b-scripture",
-        unlocked: true,
-      },
+      probeDisciple("full", "b-hall-full", xpNeeded(1)),
+      probeDisciple("fresh", "b-hall-fresh", 0),
+      probeDisciple("field", "b-field", 0),
+      probeDisciple("idle", null, 0),
     ],
   };
 }
 
 let scriptureRuleCache = null;
 
-/** { autoPromote } —— 驻守弟子的修业积满后，藏经楼会不会白送一级专业。 */
+/**
+ * { autoPromote, accrues, hallOnly }
+ * autoPromote=true 表示修业积满会白送一级专业；hallOnly=true 表示只有驻藏经楼者积修业。
+ */
 export function scriptureRule() {
   if (scriptureRuleCache) return scriptureRuleCache;
   const state = scriptureProbeState();
   let after = null;
   try {
-    after = reduce(state, { type: "TICK", dt: 1, now: 1000 })?.disciples?.[0] ?? null;
+    after = reduce(state, { type: "TICK", dt: 1, now: 1000 })?.disciples ?? null;
   } catch {
     after = null;
   }
-  if (!after) {
+  if (!Array.isArray(after) || !after.length) {
     // 核心层没走通就退一步问弟子层自己，至少不会把没有的规则说成有。
     try {
-      after = scriptureXp(state, 1)?.[0] ?? null;
+      after = scriptureXp(state, 1) ?? [];
     } catch {
-      after = null;
+      after = [];
     }
   }
-  scriptureRuleCache = { autoPromote: (after?.profession ?? 1) > 1 };
+  const at = (id) => after.find((d) => d?.id === id) ?? null;
+  const grew = (id) => (at(id)?.xp ?? 0) > 0;
+  scriptureRuleCache = {
+    autoPromote: (at("full")?.profession ?? 1) > 1,
+    accrues: grew("fresh"),
+    hallOnly: !grew("field") && !grew("idle"),
+  };
   return scriptureRuleCache;
 }

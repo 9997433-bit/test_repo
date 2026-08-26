@@ -59,6 +59,9 @@
       .d-post.idle { color: var(--paper-dim); }
       .d-xp { margin-top: 0.35rem; font-size: 0.75rem; }
       .d-xp .hpbar.thin { height: 5px; margin-bottom: 0.15rem; }
+      .d-xp .ready { color: var(--gold-bright); font-weight: 600; }
+      /* 风水评签在摘要行里与正文同基线，配色由 styles/mansion.css 依 data-tier 落 */
+      .panel-summary .fengshui { margin-left: 0.15rem; vertical-align: baseline; }
       .d-acts { display: flex; flex-direction: column; align-items: stretch; gap: 0.3rem; flex: 0 0 auto; }
       .d-acts .cost { font-size: 0.72rem; opacity: 0.85; }
       .d-acts .lack { font-size: 0.7rem; text-align: center; }
@@ -112,6 +115,25 @@
         color: var(--paper);
       }
       .slot-cell.none { border-style: solid; border-color: var(--line); }
+      /* 槽色三味只认 data-slot：色值取自 tokens.css，调色不动此处 */
+      .slot-cell.filled[data-slot="attack"] {
+        border-color: color-mix(in srgb, var(--slot-attack) 55%, transparent);
+        background: color-mix(in srgb, var(--slot-attack) 12%, transparent);
+        color: var(--slot-attack-ink);
+      }
+      .slot-cell.filled[data-slot="defend"] {
+        border-color: color-mix(in srgb, var(--slot-defend) 55%, transparent);
+        background: color-mix(in srgb, var(--slot-defend) 12%, transparent);
+        color: var(--slot-defend-ink);
+      }
+      .slot-cell.filled[data-slot="util"] {
+        border-color: color-mix(in srgb, var(--slot-util) 55%, transparent);
+        background: color-mix(in srgb, var(--slot-util) 12%, transparent);
+        color: var(--slot-util-ink);
+      }
+      .slot-name[data-slot="attack"] b { color: var(--slot-attack-ink); }
+      .slot-name[data-slot="defend"] b { color: var(--slot-defend-ink); }
+      .slot-name[data-slot="util"] b { color: var(--slot-util-ink); }
       .art-card.in {
         border-color: rgba(212, 160, 23, 0.5);
         background: linear-gradient(90deg, rgba(212, 160, 23, 0.1), transparent 55%);

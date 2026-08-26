@@ -19,8 +19,20 @@ export function bar(ratio, cls = "") {
   return `<div class="hpbar ${cls}"><i style="width:${clampPct(ratio).toFixed(1)}%"></i></div>`;
 }
 
-export function chip(text, cls = "") {
-  return `<span class="d-chip ${cls}">${text}</span>`;
+export function chip(text, cls = "", attrs = "") {
+  return `<span class="d-chip ${cls}"${attrs ? ` ${attrs}` : ""}>${text}</span>`;
+}
+
+/** 风水评签档位，阈值与 styles/mansion.css 的 .fengshui[data-tier] 三色对齐。 */
+export const FENGSHUI_TIERS = [
+  { min: 70, tier: "good", label: "上吉" },
+  { min: 35, tier: "fair", label: "中平" },
+  { min: -Infinity, tier: "poor", label: "下乘" },
+];
+
+export function fengshuiTier(score) {
+  if (!Number.isFinite(score)) return null;
+  return FENGSHUI_TIERS.find((t) => score >= t.min) ?? FENGSHUI_TIERS.at(-1);
 }
 
 export const ROLE_LABEL = {

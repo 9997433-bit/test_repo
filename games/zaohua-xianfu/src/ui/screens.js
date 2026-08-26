@@ -4,7 +4,7 @@ import { REALMS } from "../data/realms.js";
 import { breakthroughChance } from "../progression/realm.js";
 import { postKind, recommendKind, yieldBreakdown } from "../disciples/assign.js";
 import { canTrain, discipleFlavor, professionTitle, trainCost, trainShortfall } from "../disciples/roster.js";
-import { scriptureRate, xpNeeded } from "../disciples/train.js";
+import { scriptureRate, xpProgress } from "../disciples/train.js";
 import { fmt } from "./hud.js";
 import * as mansion from "./adapters.js";
 import { SLOTS, artifactSource, dropProgress, equipPreview, scriptureRule, slotBoard } from "./rules.js";
@@ -18,6 +18,7 @@ import {
   costText,
   esc,
   etaText,
+  fengshuiTier,
   pctOf,
   recruitCost,
   roleLabel,
@@ -148,6 +149,14 @@ function buildDetail(state, ui) {
     <div class="build-list">${list}</div></div>`;
 }
 
+/** 风水评签：分数落三档，档位写进 data-tier 交给样式层上色。 */
+function fengshuiBadge(score) {
+  const tier = fengshuiTier(score);
+  if (!tier) return "";
+  return `<span class="fengshui" data-tier="${tier.tier}"
+    title="全府吃邻接的产出建筑平均乘区折成 0-100 分：70 分上吉，35 分中平，其下下乘">风水 ${score}/100 · ${tier.label}</span>`;
+}
+
 export function mansionView(state, ui = {}) {
   const grid = mansion.occupancy(state.buildings);
   const size = mansion.GRID_SIZE;
@@ -163,9 +172,9 @@ export function mansionView(state, ui = {}) {
   const empty = ui.selPlot && !selected;
 
   const summary = `<div class="card panel-summary">
-    <p class="muted">点选地块营造或升级。建筑上限 Lv.${cap.maxBuildingLevel} · 地块 ${state.buildings.length}/${cap.plots}${
-      score === null ? "" : ` · 风水 ${score}/100`
-    }</p>
+    <p class="muted">点选地块营造或升级。建筑上限 Lv.${cap.maxBuildingLevel} · 地块 ${state.buildings.length}/${
+      cap.plots
+    } ${fengshuiBadge(score)}</p>
     <p class="rate-line">每秒：灵气 <b>${fmt(rates.qi)}</b> · 灵草 <b>${fmt(rates.herb)}</b> · 灵木 <b>${fmt(rates.wood)}</b> · 灵矿 <b>${fmt(rates.ore)}</b> · 灵石 <b>${fmt(rates.stone)}</b></p>
   </div>`;
   const detail = selected ? buildingDetail(state, selected, ui) : empty ? buildDetail(state, ui) : "";
@@ -209,20 +218,25 @@ function postLine(state, d, rowById) {
     <div class="muted">本岗 ${out}${gain > 0 ? ` · 其中此弟子贡献 ${fmt(gain)}/秒` : ""}</div></div>`;
 }
 
-function xpLine(state, d, rate) {
-  const need = xpNeeded(d.profession);
-  const xp = Math.min(need, d.xp ?? 0);
-  const assigned = Boolean(d.buildingId);
-  const eta = assigned && rate > 0 ? etaText((need - xp) / rate) : "";
-  const auto = scriptureRule().autoPromote;
-  const full = auto ? `约 ${eta}后自动晋阶，不耗丹药` : `约 ${eta}修业积满，晋阶仍需传功`;
-  const note = !rate
-    ? "府中无藏经楼，修业不长（洞府 Lv.3 解锁）"
-    : !assigned
-      ? "闲云弟子不积修业，派驻任一建筑即可"
-      : `藏经楼 +${rate.toFixed(2)}/秒 · ${full}`;
-  return `<div class="d-xp">${bar(xp / need, "thin")}
-    <span class="muted">修业 ${fmt(xp)} / ${need} · ${esc(note)}</span></div>`;
+function xpLine(state, d, hallRate) {
+  const rule = scriptureRule();
+  const p = xpProgress(state, d);
+  const eta = etaText(p.remainSec);
+  const full = rule.autoPromote ? `约 ${eta}后自动晋阶，不耗丹药` : `约 ${eta}修业积满，晋阶仍需传功`;
+  const note = p.ready
+    ? rule.autoPromote
+      ? "修业已满"
+      : "修业已满，可传功晋阶（修业不再累积）"
+    : p.rate > 0
+      ? `藏经楼 +${p.rate.toFixed(2)}/秒 · ${full}`
+      : !hallRate
+        ? "府中无藏经楼，修业不长（洞府 Lv.3 解锁）"
+        : rule.hallOnly
+          ? "只有驻藏经楼的弟子积修业，改派可换条路晋阶"
+          : "此岗不积修业";
+  const readyTag = p.ready && !rule.autoPromote ? `<b class="ready">可晋阶</b> · ` : "";
+  return `<div class="d-xp">${bar(p.ratio, "thin")}
+    <span class="muted">修业 ${fmt(p.xp)} / ${p.need} · ${readyTag}${esc(note)}</span></div>`;
 }
 
 function assignPanel(state, d) {
@@ -256,15 +270,18 @@ function discipleCard(state, d, ui, rate, rowById) {
   const inParty = state.party.includes(d.heroId);
   const open = ui.selDisciple === d.id;
   const fac = FACTIONS[h?.faction];
-  const profHint = scriptureRule().autoPromote
+  const rule = scriptureRule();
+  const ready = xpProgress(state, d).ready;
+  const profHint = rule.autoPromote
     ? "所有岗位通吃：传功即刻加一级，驻守藏经楼熬满修业也能免费晋阶"
-    : "所有岗位通吃：由传功提升";
+    : "所有岗位通吃：只由传功提升；藏经楼熬满的只是修业，丹药照付";
 
   return `<div class="hero-card disciple-card ${open ? "in" : ""}">
     <div class="d-main">
       <div class="d-head"><b>${esc(d.name)}</b>
         ${chip(roleLabel(h?.role))}
         ${chip(`${professionTitle(d.profession)} · 专业 ${d.profession}`, "gold")}
+        ${ready && !rule.autoPromote ? chip("修业满", "cin") : ""}
         ${inParty ? chip("已上阵", "cin") : ""}
         ${fac ? chip(fac.name) : ""}
       </div>
@@ -282,7 +299,11 @@ function discipleCard(state, d, ui, rate, rowById) {
     <div class="d-acts">
       <button class="gold" data-act="train" data-did="${d.id}" ${can ? "" : "disabled"}
         title="${esc(`即刻 +1 专业，专业每级提升所有岗位产量。${
-          scriptureRule().autoPromote ? "不急则可让他驻守吃藏经楼修业，慢些但不花钱。" : ""
+          rule.autoPromote
+            ? "不急则可让他驻守吃藏经楼修业，慢些但不花钱。"
+            : ready
+              ? "修业已满，此时传功不浪费一分修业。"
+              : "藏经楼的修业只把条熬满，晋阶仍走这里付账。"
         }`)}">传功 <span class="cost">丹${cost.pills} 草${cost.herb}</span></button>
       ${can ? "" : `<span class="muted lack">缺 ${esc(lackText)}</span>`}
       <button data-act="sel-disciple" data-did="${d.id}" aria-expanded="${open}">${open ? "收起派遣" : "派遣"}</button>
@@ -345,7 +366,10 @@ export function disciplesView(state, ui = {}) {
               ? `<li><b>藏经楼</b>：府中建起后（洞府 Lv.3），已驻守的弟子${
                   rate > 0 ? `按 ${rate.toFixed(2)}/秒` : "自行"
                 }积修业，满则自行晋阶，一文不花——赶进度才用传功。</li>`
-              : `<li><b>藏经楼</b>：已驻守的弟子会积修业，但晋阶仍要传功点化。</li>`
+              : `<li><b>藏经楼</b>：${
+                  scriptureRule().hallOnly ? "只有驻在楼里的那名弟子" : "已驻守的弟子"
+                }积修业${rate > 0 ? `（府中 ${rate.toFixed(2)}/秒，再乘他的专业加成）` : "（洞府 Lv.3 解锁）"}；
+                修业积满只是「可晋阶」，晋阶照旧要传功付丹药灵草。</li>`
           }
           <li>一座建筑只容一名弟子；顶替时原驻守自动变回闲云。</li>
         </ul>
@@ -457,9 +481,13 @@ function artifactCard(state, a) {
       : preview.kind === "blocked"
         ? `<div class="muted art-src">${esc(SLOT_LABEL[a.slot] ?? a.slot)}槽暂未开放，佩戴不生效</div>`
         : "";
-  return `<div class="art-card ${eq ? "in" : ""}">
+  return `<div class="art-card ${eq ? "in" : ""}" data-slot="${esc(a.slot)}">
     <div class="d-main">
-      <div class="d-head"><b>${esc(a.name)}</b>${chip(esc(SLOT_LABEL[a.slot] ?? a.slot))}${chip(
+      <div class="d-head"><b>${esc(a.name)}</b>${chip(
+        esc(SLOT_LABEL[a.slot] ?? a.slot),
+        "",
+        `data-slot="${esc(a.slot)}"`,
+      )}${chip(
         esc(RARITY_LABEL[a.rarity] ?? a.rarity),
         a.rarity === "red" ? "cin" : "gold",
       )}${eq ? chip("已入槽", "cin") : own ? "" : chip("未获")}</div>
@@ -473,22 +501,25 @@ function artifactCard(state, a) {
 }
 
 function slotCells(group, shared) {
+  const slot = `data-slot="${esc(group.slot)}"`;
   const filled = group.items
     .map(
-      (a) => `<span class="slot-cell filled" title="${esc(`${a.name} · ${a.desc}`)}">${esc(a.name)}</span>`,
+      (a) => `<span class="slot-cell filled" ${slot} title="${esc(`${a.name} · ${a.desc}`)}">${esc(a.name)}</span>`,
     )
     .join("");
-  if (shared) return filled || `<span class="slot-cell none">未佩</span>`;
-  const free = Array.from({ length: group.free }, () => `<span class="slot-cell">空</span>`).join("");
-  return `${filled}${free}` || `<span class="slot-cell none">无槽</span>`;
+  if (shared) return filled || `<span class="slot-cell none" ${slot}>未佩</span>`;
+  const free = Array.from({ length: group.free }, () => `<span class="slot-cell" ${slot}>空</span>`).join("");
+  return `${filled}${free}` || `<span class="slot-cell none" ${slot}>无槽</span>`;
 }
 
 function slotBoardHtml(board) {
   const shared = board.rule.shared;
   const rows = board.groups
     .map(
-      (g) => `<div class="slot-row">
-        <span class="slot-name">${g.label} <b>${g.items.length}</b>${shared ? "" : `/${g.cap}`}</span>
+      (g) => `<div class="slot-row" data-slot="${esc(g.slot)}">
+        <span class="slot-name" data-slot="${esc(g.slot)}">${g.label} <b>${g.items.length}</b>${
+          shared ? "" : `/${g.cap}`
+        }</span>
         <div class="slot-cells">${slotCells(g, shared)}</div>
       </div>`,
     )
@@ -525,9 +556,9 @@ export function artifactsView(state) {
     if (!list.length) return "";
     const owned = list.filter((a) => state.ownedArtifacts.includes(a.id)).length;
     const on = board.groups.find((g) => g.slot === slot);
-    return `<h4 class="sub">${SLOT_LABEL[slot]} <span class="muted">已得 ${owned}/${list.length} · 入槽 ${
-      on?.items.length ?? 0
-    }</span></h4>
+    return `<h4 class="sub" data-slot="${esc(slot)}">${SLOT_LABEL[slot]} <span class="muted">已得 ${owned}/${
+      list.length
+    } · 入槽 ${on?.items.length ?? 0}</span></h4>
       ${list.map((a) => artifactCard(state, a)).join("")}`;
   }).join("");
   const rest = ARTIFACTS.filter((a) => !SLOT_LABEL[a.slot])
