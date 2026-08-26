@@ -4,31 +4,57 @@
 
 | 游戏 | 目录 | 端口 | 本轮状态 |
 | --- | --- | --- | --- |
-| 我的花园世界 | `games/my-garden-world/` | 5173 | Round 1–3 完成，217 测全绿，见 `PROGRESS.my-garden-world.md` |
-| 超能下蛋鸭 | `games/chao-neng-xia-dan-ya/` | 4174 | Round 1–3 完成，L1，待合入 main |
-| 灵画师 | `games/linghuashi/` | 4173 | Round 1–3 完成（见下文归档） |
-| 赵云与阿斗 | `games/zhao-yun-adou/` | 4180 | 见 `round1/BRIEF.md` / `round2/BRIEF.md` 附录 |
-| 蘑菇屋·慢生活 | `games/xiangwang-shenghuo/` | 4175 | Round 1–3 完成，58 测 / 1 skip，见 `PROGRESS.xiangwang-shenghuo.md` |
+| 三国：冰河时代 | `games/sanguo-ice-age/` | 4176 | Round 1–3 完成，24 测 / 10 探针全绿 |
+| 我的花园世界 | `games/my-garden-world/` | 5173 | Round 1–3 完成，见 `PROGRESS.my-garden-world.md` |
+| 超能下蛋鸭 | `games/chao-neng-xia-dan-ya/` | 4174 | Round 1–3 完成，L1 |
+| 灵画师 | `games/linghuashi/` | 4173 | Round 1–3 完成 |
+| 赵云与阿斗 | `games/zhao-yun-adou/` | 4180 | 见该目录 brief |
+| 蘑菇屋·慢生活 | `games/xiangwang-shenghuo/` | 4175 | Round 1–3 完成 |
+
+---
+
+# 三国：冰河时代 — 编排进度
+
+- **任务名**: sanguo-ice-age
+- **工作分支**: `cursor/sanguo-ice-age-e5a4`
+- **游戏目录**: `/workspace/games/sanguo-ice-age/`（与仓库内其他游戏隔离）
+- **编排角色**: Parent Orchestrator
+- **循环**: Round 1 → 2 → 3，每轮 10 并发子代理（4 fable / 4 opus-fast / 2 gpt-sol）
+
+## 目标
+
+在独立目录中实现一款可玩的网页 SLG，模仿《三国：冰河时代》：火炉生存城建、四资源、寒潮民心、魏蜀吴群武将、步骑弓自动战、霜夜城视觉。
+
+## Round 状态
+
+| Round | 状态 | 简报 |
+|-------|------|------|
+| 1 初始构建与基线探索 | 完成 | 可玩 UI + 双核未打通 |
+| 2 靶向重构与深度优化 | 完成 | 桥接激活，22/22 |
+| 3 SOTA 打磨与最终验收 | 完成 | HUD 接通 + Juice，24/24 |
+
+## 测试
+
+```bash
+cd games/sanguo-ice-age
+node tests/runner.mjs   # 24/24
+node tests/probes.mjs   # 10/10
+node tests/bench.mjs
+python3 -m http.server 4176 --bind 127.0.0.1
+```
+
+## Round 3 全局总结
+
+嵌套 `state.js` 为唯一事实源；`projectView` 投影 HUD；tick 顺序 climate→city→economy→population→quests。17 地块 Canvas、任务托盘、失败重开、导入导出、橙红招贤高光、寒潮四拍、熄火暗场。残留：坏档备份键、pity 未系统化。
 
 ---
 
 # 超能下蛋鸭 SOTA 复刻 · 编排进度
 
-- 目标：在独立目录 `games/chao-neng-xia-dan-ya/` 实现《超能下蛋鸭》SOTA 级网页复刻。
-- 工作分支：`cursor/chao-neng-xia-dan-ya-799d` / 逻辑名 `agent/chao-neng-xia-dan-ya`
-- 模型：fable → `claude-fable-5-thinking-xhigh`；opus-fast → `claude-opus-5-thinking-high-fast`；gpt-sol → `gpt-5.6-sol-xhigh-fast`
-
-| 轮次 | 状态 | 简报 |
-| --- | --- | --- |
-| Round 1 | 完成 | `round1/BRIEF.md` |
-| Round 2 | 完成 | `round2/BRIEF.md` |
-| Round 3 | 完成 | `round3/BRIEF.md` · L1 |
-| 归档合并 | 进行中 | 与 main 无业务冲突后合入 |
-
----
+- 目录：`games/chao-neng-xia-dan-ya/`
+- 工作分支：`cursor/chao-neng-xia-dan-ya-799d`
 
 # 灵画师 SOTA 复刻（main 已归档）
 
 - 目录：`games/linghuashi/`
 - 分支：`cursor/linghuashi-sota-a345`
-- Round 1–3 完成。vitest 105/105。详见该游戏目录 `docs/`。
