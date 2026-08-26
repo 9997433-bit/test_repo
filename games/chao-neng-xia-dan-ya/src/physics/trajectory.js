@@ -2,6 +2,10 @@
  * 弹道预测：用与实际积分完全相同的代码路径跑一个「幽灵蛋」，
  * 保证虚线预览与真实落点一致（同一份重力、力场、碰撞解算）。
  *
+ * 同源保证：预测与 `stepWorld` 都只经由 `advanceEgg` 推进，
+ * 谁也拿不到私有的积分分支；幽灵蛋另起一条时间轴（`ctx.time`），
+ * 穿透冷却、命中冷却因此与实弹按同样的节奏推进。
+ *
  * 幽灵蛋不入 `world.eggs`，不写事件、不改世界统计、不破坏砖块。
  * GDD 要求：瞄准虚线最多预览 3 次反弹。
  */
@@ -11,7 +15,7 @@ import {
   PREDICT_MAX_STEPS,
   PREDICT_SAMPLE_EVERY,
 } from "./constants.js";
-import { createEgg, createStepContext, stepEgg } from "./world.js";
+import { advanceEgg, createEgg, createStepContext, resetStepContext } from "./world.js";
 
 const ghostCtx = createStepContext(false);
 
@@ -26,6 +30,32 @@ function normalizeArgs(a, b, c, d) {
   return { world: c, origin: a, velocity: b, options: d };
 }
 
+/** 把接触快照转成瞄准 UI 直接可用的命中点 */
+function toHit(contact, pointIndex) {
+  if (!contact) return null;
+  return {
+    x: contact.x,
+    y: contact.y,
+    nx: contact.nx,
+    ny: contact.ny,
+    /** 命中瞬间的蛋心与入射速度（reflect 之前） */
+    ex: contact.ex,
+    ey: contact.ey,
+    vx: contact.vx,
+    vy: contact.vy,
+    speed: contact.speed,
+    impact: contact.impact,
+    bodyId: contact.bodyId,
+    kind: contact.kind,
+    team: contact.team,
+    enemy: contact.enemy,
+    step: contact.step,
+    time: contact.time,
+    /** 在 points 数组中的大致位置，方便描准星 */
+    index: pointIndex,
+  };
+}
+
 /**
  * 详细版预测。
  * @returns {{
@@ -35,7 +65,14 @@ function normalizeArgs(a, b, c, d) {
  *   steps: number,
  *   duration: number,
  *   end: {x:number,y:number,vx:number,vy:number},
- *   reason: "bounces"|"out"|"steps"|"sensor"|"empty"
+ *   reason: "bounces"|"out"|"steps"|"enemy"|"sensor"|"empty",
+ *   contacts: Array<object>,
+ *   contactCount: number,
+ *   enemyContacts: number,
+ *   hitsEnemy: boolean,
+ *   firstHit: object|null,
+ *   firstEnemyHit: object|null,
+ *   impact: [number,number]|null
  * }}
  */
 export function predictTrajectoryDetailed(origin, velocity, world, options) {
@@ -59,6 +96,13 @@ export function predictTrajectoryDetailed(origin, velocity, world, options) {
     duration: 0,
     end: { x: start.x ?? 0, y: start.y ?? 0, vx: 0, vy: 0 },
     reason: "empty",
+    contacts: [],
+    contactCount: 0,
+    enemyContacts: 0,
+    hitsEnemy: false,
+    firstHit: null,
+    firstEnemyHit: null,
+    impact: null,
   };
   if (!w) return empty;
 
@@ -88,15 +132,22 @@ export function predictTrajectoryDetailed(origin, velocity, world, options) {
   const ctx = opts.context || ghostCtx;
   ctx.emit = false;
   ctx.ghost = true;
+  ctx.collect = true;
+  // 幽灵蛋从当前世界时刻起跑，冷却窗口与实弹对齐
+  resetStepContext(ctx, w.time);
 
   const b = w.bounds;
+  const stopOnEnemy = opts.stopOnEnemy === true;
   let reason = "steps";
   let steps = 0;
   let sinceSample = 0;
+  let firstHit = null;
+  let firstEnemyHit = null;
 
   for (let i = 0; i < maxSteps; i++) {
     const before = ghost.bounces;
-    stepEgg(w, ghost, dt, ctx);
+    const contactsBefore = ctx.contacts.length;
+    advanceEgg(w, ghost, dt, ctx);
     steps++;
     sinceSample++;
     const bounced = ghost.bounces > before;
@@ -108,6 +159,19 @@ export function predictTrajectoryDetailed(origin, velocity, world, options) {
     } else if (sinceSample >= sampleEvery) {
       points.push({ x: ghost.x, y: ghost.y });
       sinceSample = 0;
+    }
+
+    // 命中点在 reflect 之前就已落账，这里只是把它挑出来
+    if (ctx.contacts.length > contactsBefore) {
+      for (let k = contactsBefore; k < ctx.contacts.length; k++) {
+        const c = ctx.contacts[k];
+        if (!firstHit) firstHit = toHit(c, points.length - 1);
+        if (!firstEnemyHit && c.enemy) firstEnemyHit = toHit(c, points.length - 1);
+      }
+      if (stopOnEnemy && firstEnemyHit) {
+        reason = "enemy";
+        break;
+      }
     }
 
     if (ghost.bounces >= maxBounces) {
@@ -130,6 +194,7 @@ export function predictTrajectoryDetailed(origin, velocity, world, options) {
     points.push({ x: ghost.x, y: ghost.y });
   }
 
+  const impactPoint = firstEnemyHit ?? firstHit;
   return {
     points,
     bouncePoints,
@@ -138,6 +203,15 @@ export function predictTrajectoryDetailed(origin, velocity, world, options) {
     duration: steps * dt,
     end: { x: ghost.x, y: ghost.y, vx: ghost.vx, vy: ghost.vy },
     reason,
+    /** 沿途所有接触快照，按发生顺序 */
+    contacts: ctx.contacts.slice(),
+    contactCount: ghost.contacts,
+    enemyContacts: ghost.enemyContacts,
+    hitsEnemy: ghost.enemyContacts > 0,
+    firstHit,
+    firstEnemyHit,
+    /** core/sim.js 兼容形态：优先给敌人首命中点 */
+    impact: impactPoint ? [impactPoint.x, impactPoint.y] : null,
   };
 }
 

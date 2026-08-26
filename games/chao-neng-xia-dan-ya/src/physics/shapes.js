@@ -89,7 +89,7 @@ export function normalizeBody(body) {
   if (body._norm !== 1) {
     if (!body.shape) {
       const t = body.type;
-      if (t === "aabb" || t === "box" || t === "rect") body.shape = "aabb";
+      if (t === "aabb" || t === "box" || t === "rect" || t === "enemy") body.shape = "aabb";
       else if (t === "circle" || t === "peg" || t === "portal") body.shape = "circle";
       else if (t === "segment" || t === "line" || t === "wall" || t === "ramp") body.shape = "segment";
       else if (body.x1 !== undefined) body.shape = "segment";
@@ -99,7 +99,13 @@ export function normalizeBody(body) {
     if (!body.kind) {
       body.kind =
         body.material ||
-        (body.shape === "circle" ? "peg" : body.shape === "segment" ? "wall" : "brick");
+        (body.type === "enemy"
+          ? "enemy"
+          : body.shape === "circle"
+            ? "peg"
+            : body.shape === "segment"
+              ? "wall"
+              : "brick");
     }
     const mat = MATERIAL[body.kind] || MATERIAL.brick;
     body.id = body.id ?? bodyId(body.kind.slice(0, 2));
@@ -123,6 +129,13 @@ export function normalizeBody(body) {
       body.hh = num(body.hh, h / 2);
       body.x = num(body.x, 0);
       body.y = num(body.y, 0);
+      // 关卡数据常用左上角锚点（core/sim.js 的敌人/砖就是这样），
+      // 物理层统一用中心，转换一次后打上标记避免二次偏移。
+      if (body.anchor === "topleft") {
+        body.x += body.hw;
+        body.y += body.hh;
+        body.anchor = "center";
+      }
     } else if (body.shape === "circle") {
       body.r = num(body.r, num(body.radius, 6));
       body.x = num(body.x, 0);
@@ -198,7 +211,10 @@ export function makeRamp(opts) {
   return makeSegment({ thickness: 8, ...opts, kind: opts.kind || "ramp" });
 }
 
-/** 砖：AABB，可碎（hp>0 且 breakable） */
+/**
+ * 砖：AABB，可碎（hp>0 且 breakable）。
+ * `anchor: "topleft"` 时按关卡数据的左上角坐标摆放。
+ */
 export function makeBrick(opts) {
   const body = baseBody("aabb", opts.kind || "brick", {
     breakable: opts.breakable !== false,
@@ -211,8 +227,10 @@ export function makeBrick(opts) {
   body.h = h;
   body.hw = w / 2;
   body.hh = h / 2;
-  body.x = opts.x ?? 0;
-  body.y = opts.y ?? 0;
+  const anchorTopLeft = opts.anchor === "topleft";
+  body.x = (opts.x ?? 0) + (anchorTopLeft ? body.hw : 0);
+  body.y = (opts.y ?? 0) + (anchorTopLeft ? body.hh : 0);
+  body.anchor = "center";
   return computeAABB(body);
 }
 
@@ -226,6 +244,70 @@ export function makeBombBrick(opts) {
     kind: opts.kind || "brick",
     explosive: true,
   });
+}
+
+/**
+ * 敌人碰撞盒：AABB 静态体，`kind === "enemy"`、`team === "enemy"`。
+ *
+ * 物理层只认「几何 + 生死」，血量与伤害归 combat；这里给 hp 只是为了
+ * `damageStatic` 能统一处理死亡与移除。敌人会漂移/下压，外部改完坐标
+ * 记得调用 `markStaticsDirty(world)`（或 `syncEnemyBody`）刷新宽相。
+ *
+ * @param {object} opts
+ * @param {"center"|"topleft"} [opts.anchor] 坐标锚点，默认中心
+ * @param {object} [opts.data] 战斗层的敌人对象，物理层原样透传
+ */
+export function makeEnemy(opts = {}) {
+  const w = opts.w ?? opts.width ?? 44;
+  const h = opts.h ?? opts.height ?? 44;
+  const body = baseBody("aabb", opts.kind || "enemy", {
+    breakable: opts.breakable ?? (opts.hp ?? 0) > 0,
+    ...opts,
+    team: opts.team ?? "enemy",
+  });
+  body.w = w;
+  body.h = h;
+  body.hw = w / 2;
+  body.hh = h / 2;
+  const anchorTopLeft = opts.anchor === "topleft";
+  body.x = (opts.x ?? 0) + (anchorTopLeft ? body.hw : 0);
+  body.y = (opts.y ?? 0) + (anchorTopLeft ? body.hh : 0);
+  body.anchor = "center";
+  return computeAABB(body);
+}
+
+/** 是否为敌人碰撞盒（kind 或 team 命中即可，兼容外部直接 push 的鸭子类型） */
+export function isEnemyBody(body) {
+  return !!body && (body.kind === "enemy" || body.type === "enemy" || body.team === "enemy");
+}
+
+/**
+ * 把静态体挪到新位置并刷新包围盒（敌人漂移 / 每回合下压用）。
+ * 返回是否真的动过，调用方据此决定要不要 `markStaticsDirty(world)`。
+ * @param {"center"|"topleft"} [anchor] 仅对 aabb 有意义
+ */
+export function moveBody(body, x, y, anchor = "center") {
+  const isBox = body.shape === "aabb";
+  const nx = anchor === "topleft" && isBox ? x + body.hw : x;
+  const ny = anchor === "topleft" && isBox ? y + body.hh : y;
+  if (body.shape === "segment") {
+    const cx = (body.x1 + body.x2) / 2;
+    const cy = (body.y1 + body.y2) / 2;
+    if (cx === nx && cy === ny) return false;
+    const dx = nx - cx;
+    const dy = ny - cy;
+    body.x1 += dx;
+    body.x2 += dx;
+    body.y1 += dy;
+    body.y2 += dy;
+    computeAABB(body);
+    return true;
+  }
+  if (body.x === nx && body.y === ny) return false;
+  body.x = nx;
+  body.y = ny;
+  computeAABB(body);
+  return true;
 }
 
 /** 冰面：低摩擦 AABB，不可碎 */
