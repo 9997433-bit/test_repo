@@ -57,13 +57,27 @@
     contour(ctx);
   }
 
+  /** Accepts '#rrggbb', '#rgb' or 'rgb(r,g,b)' and returns [r, g, b]. */
+  function parseColor(color) {
+    if (color.charCodeAt(0) === 35) {
+      var hex = color.slice(1);
+      if (hex.length === 3) {
+        hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+      }
+      var n = parseInt(hex, 16) | 0;
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    var open = color.indexOf('(');
+    var parts = color.slice(open + 1, color.indexOf(')')).split(',');
+    return [parseInt(parts[0], 10) | 0, parseInt(parts[1], 10) | 0, parseInt(parts[2], 10) | 0];
+  }
+
+  function clamp255(v) { return v < 0 ? 0 : (v > 255 ? 255 : Math.round(v)); }
+
   function shade(color, amount) {
-    // color is '#rrggbb'
-    var n = parseInt(color.slice(1), 16);
-    var r = Math.max(0, Math.min(255, ((n >> 16) & 255) + amount));
-    var g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amount));
-    var b = Math.max(0, Math.min(255, (n & 255) + amount));
-    return 'rgb(' + r + ',' + g + ',' + b + ')';
+    var c = parseColor(color);
+    return 'rgb(' + clamp255(c[0] + amount) + ',' + clamp255(c[1] + amount) +
+      ',' + clamp255(c[2] + amount) + ')';
   }
 
   function shadow(ctx, x, yGround, r, tilt) {
@@ -352,10 +366,11 @@
     var body = c.def.color;
     if (c.slowTimer > 0) body = mix(body, '#7fd8ff', 0.35);
     if (c.poisonTimer > 0) body = mix(body, '#8ce05a', 0.3);
-    var flash = c.hurtFlash > 0;
+    // Getting hit brightens the body itself; an overlay blob at this size just
+    // hides the unit under constant fire.
+    if (c.hurtFlash > 0) body = mix(body, '#fff2d0', 0.5);
 
     ctx.save();
-    if (flash) { ctx.globalAlpha = 1; }
     var bob = Math.sin(time * 7 + c.id) * (c.flying ? 0 : r * 0.06);
 
     switch (c.def.shape) {
@@ -444,11 +459,6 @@
         [x - r * 0.6, cy - r * 0.35]
       ], '#ffd76a');
     }
-    if (flash) {
-      ctx.globalAlpha = 0.45;
-      ell(ctx, x, y - r, r * 1.3, r * 1.4, '#ffffff', 0.45);
-      ctx.globalAlpha = 1;
-    }
     ctx.restore();
 
     if (c.rootTimer > 0) {
@@ -475,12 +485,11 @@
   }
 
   function mix(a, b, t) {
-    var na = parseInt(a.slice(1), 16);
-    var nb = parseInt(b.slice(1), 16);
-    var r = Math.round(((na >> 16) & 255) * (1 - t) + ((nb >> 16) & 255) * t);
-    var g = Math.round(((na >> 8) & 255) * (1 - t) + ((nb >> 8) & 255) * t);
-    var bl = Math.round((na & 255) * (1 - t) + (nb & 255) * t);
-    return 'rgb(' + r + ',' + g + ',' + bl + ')';
+    var ca = parseColor(a);
+    var cb = parseColor(b);
+    return 'rgb(' + clamp255(ca[0] * (1 - t) + cb[0] * t) + ',' +
+      clamp255(ca[1] * (1 - t) + cb[1] * t) + ',' +
+      clamp255(ca[2] * (1 - t) + cb[2] * t) + ')';
   }
 
   // ---------------------------------------------------------------- hero

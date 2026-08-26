@@ -105,8 +105,7 @@
     this.renderer.setGame(this.game);
     this.minimap.setGame(this.game);
     this.minimap.setTerrain(this.renderer.terrain);
-    this.camera.zoom = 1.05;
-    this.camera.centerOn(this.game.worldW * 0.42, this.game.worldH * 0.5);
+    this.frameMap();
     this.hud.last = {};
     this.hud.renderWavePreview();
     this.card.setPage('races');
@@ -139,7 +138,21 @@
   App.prototype.resize = function () {
     var w = global.innerWidth;
     var h = global.innerHeight;
+    var top = document.getElementById('topbar');
+    var bottom = document.getElementById('bottombar');
+    this.camera.setInsets(
+      top ? top.getBoundingClientRect().height : 0,
+      bottom ? bottom.getBoundingClientRect().height : 0
+    );
     this.renderer.resize(w, h);
+    if (!this.started) this.frameMap();
+  };
+
+  /** Pull back far enough that the whole battlefield is on screen. */
+  App.prototype.frameMap = function () {
+    if (!this.game) return;
+    this.camera.setZoom(this.camera.fitZoom());
+    this.camera.centerOn(this.game.worldW / 2, this.game.worldH / 2);
   };
 
   // --------------------------------------------------------------- input

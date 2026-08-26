@@ -51,7 +51,8 @@
   Camera.prototype.resize = function (w, h) {
     this.vw = w;
     this.vh = h;
-    this.minZoom = Math.max(Config.CAMERA.minZoom, this.fitZoom() * 0.9);
+    // Always allow pulling back far enough to see the whole battlefield.
+    this.minZoom = Math.min(Config.CAMERA.minZoom, this.fitZoom() * 0.95);
     this.zoom = clamp(this.zoom, this.minZoom, this.maxZoom);
     this.clamp();
   };

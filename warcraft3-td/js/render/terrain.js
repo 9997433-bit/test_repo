@@ -113,17 +113,17 @@
 
     // --- cliff rim + vignette ------------------------------------------
     var rim = ctx.createLinearGradient(0, 0, 0, H);
-    rim.addColorStop(0, 'rgba(12,20,10,0.42)');
-    rim.addColorStop(0.07, 'rgba(12,20,10,0)');
-    rim.addColorStop(0.93, 'rgba(12,20,10,0)');
-    rim.addColorStop(1, 'rgba(12,20,10,0.42)');
+    rim.addColorStop(0, 'rgba(12,20,10,0.34)');
+    rim.addColorStop(0.055, 'rgba(12,20,10,0)');
+    rim.addColorStop(0.945, 'rgba(12,20,10,0)');
+    rim.addColorStop(1, 'rgba(12,20,10,0.34)');
     ctx.fillStyle = rim;
     ctx.fillRect(0, 0, W, H);
     var rim2 = ctx.createLinearGradient(0, 0, W, 0);
-    rim2.addColorStop(0, 'rgba(12,20,10,0.38)');
-    rim2.addColorStop(0.06, 'rgba(12,20,10,0)');
-    rim2.addColorStop(0.94, 'rgba(12,20,10,0)');
-    rim2.addColorStop(1, 'rgba(12,20,10,0.38)');
+    rim2.addColorStop(0, 'rgba(12,20,10,0.3)');
+    rim2.addColorStop(0.045, 'rgba(12,20,10,0)');
+    rim2.addColorStop(0.955, 'rgba(12,20,10,0)');
+    rim2.addColorStop(1, 'rgba(12,20,10,0.3)');
     ctx.fillStyle = rim2;
     ctx.fillRect(0, 0, W, H);
 
