@@ -1,44 +1,320 @@
+/* =============================================================
+   蘑菇屋 · 慢生活 — 设计令牌（Fable-2 / 美术）
+   -------------------------------------------------------------
+   结构：基底（木/纸/灯火） → 季节原色 --s-* → 相位派生（color-mix）
+   #app 同时携带 [data-season] 与 [data-phase]，两组令牌在同一元素上
+   解析，因此 4 季 × 3 相位 = 12 套调色自动成立。
+   详见 docs/ART_DIRECTION.md。
+   ============================================================= */
+
 :root {
-  --soil: #6b4b32;
-  --wood: #8a5a36;
-  --wood-dark: #4a2f1c;
-  --paper: #f4e6c8;
-  --ink: #2c2118;
+  color-scheme: light;
+
+  /* ---- 木与纸（不随季节变化的物件基底） ---- */
+  --wood-1: #a9744a;   /* 亮橡木 · 受光面 */
+  --wood-2: #8a5a36;   /* 主体木色 */
+  --wood-3: #5d3a22;   /* 深胡桃 · 描边 */
+  --wood-4: #3c2415;   /* 焦木 · 阴影/门框 */
+  --paper: #f6ead0;    /* 米纸 */
+  --paper-2: #ead9b6;  /* 旧纸 */
+  --ink: #33261a;      /* 墨 */
+  --ink-soft: #6f5b44; /* 淡墨（ghost 文案） */
+
+  /* ---- 灯火 ---- */
+  --lamp: #ffd98a;
+  --lamp-hot: #ffb054;
+  --fire: #d4683f;
   --gold: #e6c36b;
+  --gold-bright: #f5cf6e;
+
+  /* ---- 兼容别名（旧代码仍可引用） ---- */
+  --soil: #6b4b32;
+  --wood: var(--wood-2);
+  --wood-dark: var(--wood-4);
   --leaf: #7dae5a;
-  --sky: #b7d6ee;
   --dusk: #e7a66b;
   --night: #1b2433;
-  --fire: #c45c3e;
-  --panel: color-mix(in srgb, var(--paper) 88%, white);
+  --sky: var(--sky-lo);
+
+  /* ---- 面板与牌匾 ---- */
+  --panel: color-mix(in srgb, var(--paper) 92%, white);
+  --panel-edge: var(--wood-3);
+  --plaque-hi: var(--wood-1);
+  --plaque-lo: var(--wood-3);
+
+  /* ---- 阴影 / 圆角 / 尺寸 ---- */
   --shadow: 0 10px 30px rgba(44, 33, 24, 0.18);
+  --shadow-soft: 0 4px 14px rgba(44, 33, 24, 0.16);
   --radius: 16px;
-  --font: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+  --radius-s: 10px;
+  --tap: 44px; /* 最小触控热区 */
+
+  /* ---- 动效 ---- */
+  --dur-1: 160ms;
+  --dur-2: 340ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.45, 0.05, 0.35, 1);
+
+  --font: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong",
+    "SimSun", serif;
+
+  /* ---- 季节原色（默认 = 春，防首帧无属性时开天窗） ---- */
+  --s-sky-hi: #9fd4ee;
+  --s-sky-lo: #dff0d9;
+  --s-horizon: #f7ecd2;
+  --s-foliage: #7cb265;
+  --s-foliage-2: #5c8f57;
+  --s-ground: #86a95c;
+  --s-ground-2: #78994f;
+  --s-soil: #7c5836;
+  --s-soil-2: #6a4a2d;
+  --s-mist: #f2fbff;
+  --accent: #f2b8c6;
+  --flower-1: #f6c1cf;
+  --flower-2: #fff3e0;
 }
 
-[data-season="spring"] { --leaf: #7dae5a; --sky: #c9e4c5; --accent: #f3c1b6; }
-[data-season="summer"] { --leaf: #2f6b4f; --sky: #8ec5e6; --accent: #e6c36b; }
-[data-season="autumn"] { --leaf: #d97b3f; --sky: #f0c48a; --accent: #c4a574; }
-[data-season="winter"] { --leaf: #8aa4b8; --sky: #dfe7ef; --accent: #c45c3e; }
+/* =============================================================
+   季节原色 · [data-season] 落在 #app 上
+   ============================================================= */
+
+[data-season="spring"] {
+  --s-sky-hi: #9fd4ee;
+  --s-sky-lo: #dff0d9;
+  --s-horizon: #f7ecd2;
+  --s-foliage: #7cb265;
+  --s-foliage-2: #5c8f57;
+  --s-ground: #86a95c;
+  --s-ground-2: #78994f;
+  --s-soil: #7c5836;
+  --s-soil-2: #6a4a2d;
+  --s-mist: #f2fbff;
+  --accent: #f2b8c6; /* 花瓣粉 */
+  --flower-1: #f6c1cf;
+  --flower-2: #fff3e0;
+  --leaf: #7dae5a;
+}
+
+[data-season="summer"] {
+  --s-sky-hi: #5fa8e0;
+  --s-sky-lo: #bfe3f2;
+  --s-horizon: #f2e8c8;
+  --s-foliage: #3f7d4e;
+  --s-foliage-2: #2f6444;
+  --s-ground: #5f9048;
+  --s-ground-2: #527f3e;
+  --s-soil: #6d4c30;
+  --s-soil-2: #5c3f27;
+  --s-mist: #eaf6ff;
+  --accent: #ecc25f; /* 稻金 */
+  --flower-1: #f2df8a;
+  --flower-2: #ffffff;
+  --leaf: #2f6b4f;
+}
+
+[data-season="autumn"] {
+  --s-sky-hi: #a9c3d6;
+  --s-sky-lo: #f0ddb4;
+  --s-horizon: #f6d9a0;
+  --s-foliage: #c8813d;
+  --s-foliage-2: #9c6a3a;
+  --s-ground: #b3924f;
+  --s-ground-2: #a3823f;
+  --s-soil: #77522f;
+  --s-soil-2: #654427;
+  --s-mist: #f6e3c2;
+  --accent: #d97b3f; /* 柿橙 */
+  --flower-1: #d8b56a;
+  --flower-2: #b8722f;
+  --leaf: #d97b3f;
+}
+
+[data-season="winter"] {
+  --s-sky-hi: #b9c9da;
+  --s-sky-lo: #e9eff5;
+  --s-horizon: #f4ece2;
+  --s-foliage: #8ba3b5;
+  --s-foliage-2: #6e8699;
+  --s-ground: #e8edf2;
+  --s-ground-2: #d8e2ea;
+  --s-soil: #6e6259;
+  --s-soil-2: #5d5249;
+  --s-mist: #ffffff;
+  --accent: #cd5f3c; /* 炭火 */
+  --flower-1: rgba(255, 255, 255, 0.85);
+  --flower-2: rgba(214, 231, 250, 0.8);
+  --leaf: #8aa4b8;
+}
+
+/* =============================================================
+   相位派生 · [data-phase] 同样落在 #app 上
+   白日 = 原色直通；黄昏 / 夜晚用 color-mix 统一压色温
+   ============================================================= */
+
+:root,
+[data-phase="day"] {
+  --sky-hi: var(--s-sky-hi);
+  --sky-lo: var(--s-sky-lo);
+  --horizon: var(--s-horizon);
+  --foliage: var(--s-foliage);
+  --foliage-2: var(--s-foliage-2);
+  --ground-1: var(--s-ground);
+  --ground-2: var(--s-ground-2);
+  --soil-1: var(--s-soil);
+  --soil-2: var(--s-soil-2);
+  --mist: var(--s-mist);
+  --mist-a: 0.35;
+  --glass: #cfe6f2; /* 白日窗玻璃映着天色 */
+  --celestial: #fff3c4;
+  --celestial-glow: rgba(255, 236, 170, 0.45);
+  --celestial-x: 76%;
+  --celestial-y: 20%;
+  --celestial-size: 74px;
+  --lamp-a: 0; /* 灯火强度：白日熄灯 */
+  --wash: radial-gradient(
+    120% 90% at 50% 0%,
+    rgba(255, 255, 255, 0) 55%,
+    rgba(66, 44, 22, 0.1)
+  );
+}
+
+[data-phase="dusk"] {
+  --sky-hi: color-mix(in oklab, var(--s-sky-hi) 30%, #6e4a78);
+  --sky-lo: color-mix(in oklab, var(--s-sky-lo) 30%, #f19153);
+  --horizon: color-mix(in oklab, var(--s-horizon) 35%, #ffb45e);
+  --foliage: color-mix(in oklab, var(--s-foliage) 62%, #7c4b2e);
+  --foliage-2: color-mix(in oklab, var(--s-foliage-2) 60%, #5d3a30);
+  --ground-1: color-mix(in oklab, var(--s-ground) 66%, #8a5432);
+  --ground-2: color-mix(in oklab, var(--s-ground-2) 66%, #7a4a2c);
+  --soil-1: color-mix(in oklab, var(--s-soil) 70%, #4c3220);
+  --soil-2: color-mix(in oklab, var(--s-soil-2) 70%, #3e2819);
+  --mist: color-mix(in srgb, var(--s-mist) 60%, #ffb46e);
+  --mist-a: 0.45;
+  --glass: #ffd27e;
+  --celestial: #ff9e4f;
+  --celestial-glow: rgba(255, 150, 80, 0.5);
+  --celestial-x: 24%;
+  --celestial-y: 58%;
+  --celestial-size: 110px;
+  --lamp-a: 0.85;
+  --wash: linear-gradient(
+    180deg,
+    rgba(112, 64, 120, 0.14),
+    rgba(255, 146, 64, 0.16) 55%,
+    rgba(84, 40, 22, 0.22)
+  );
+  /* 黄昏 UI 微暖 */
+  --paper: #f4e3c2;
+  --panel: #f6e7c9;
+}
 
 [data-phase="night"] {
-  --sky: #1b2433;
-  --paper: #2a241c;
-  --ink: #f4e6c8;
+  color-scheme: dark;
+  --sky-hi: color-mix(in oklab, var(--s-sky-hi) 12%, #0b1322);
+  --sky-lo: color-mix(in oklab, var(--s-sky-lo) 16%, #1c2940);
+  --horizon: color-mix(in oklab, var(--s-horizon) 18%, #253753);
+  --foliage: color-mix(in oklab, var(--s-foliage) 34%, #141f28);
+  --foliage-2: color-mix(in oklab, var(--s-foliage-2) 32%, #101a23);
+  --ground-1: color-mix(in oklab, var(--s-ground) 36%, #1a2430);
+  --ground-2: color-mix(in oklab, var(--s-ground-2) 36%, #16202b);
+  --soil-1: color-mix(in oklab, var(--s-soil) 42%, #151c26);
+  --soil-2: color-mix(in oklab, var(--s-soil-2) 42%, #10161f);
+  --mist: color-mix(in srgb, var(--s-mist) 40%, #2a3a55);
+  --mist-a: 0.3;
+  --glass: var(--lamp);
+  --celestial: #eef3ff; /* 月亮 */
+  --celestial-glow: rgba(210, 225, 255, 0.35);
+  --celestial-x: 78%;
+  --celestial-y: 16%;
+  --celestial-size: 56px;
+  --lamp-a: 1;
+  --wash: radial-gradient(
+      60% 46% at 16% 64%,
+      rgba(255, 190, 110, 0.12),
+      rgba(255, 190, 110, 0) 60%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(9, 15, 29, 0.34),
+      rgba(9, 15, 29, 0.16) 45%,
+      rgba(9, 15, 29, 0.34)
+    );
+  /* 夜间 UI：暖黑纸 + 米色墨，蘑菇屋窗内的感觉 */
+  --paper: #2e2820;
+  --paper-2: #262019;
+  --ink: #f2e6cc;
+  --ink-soft: #cbb894;
+  --panel: #332c22;
+  --panel-edge: #1f1913;
+  --plaque-hi: #6b4426;
+  --plaque-lo: #422818;
+  --shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 
-* { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; }
+/* =============================================================
+   基础重置 + 无障碍
+   ============================================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
 body {
   font-family: var(--font);
   color: var(--ink);
-  background: var(--sky);
+  background: #171009; /* 深木底，避免加载白闪 */
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
-button, select {
+
+button,
+select {
   font: inherit;
   cursor: pointer;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
-button:focus-visible, .plot:focus-visible, .bldg:focus-visible {
-  outline: 3px solid var(--gold);
+
+:is(button, select, a, [tabindex]):focus-visible {
+  outline: 3px solid var(--gold-bright);
   outline-offset: 2px;
+  border-radius: var(--radius-s);
+}
+
+[data-phase="night"] :is(button, select, a, [tabindex]):focus-visible {
+  outline-color: var(--lamp);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--gold) 55%, transparent);
+}
+
+/* 减少动态：全部动画/过渡归零，粒子静止但仍可见 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 高对比偏好：描边加深 */
+@media (prefers-contrast: more) {
+  button,
+  select {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+  }
 }

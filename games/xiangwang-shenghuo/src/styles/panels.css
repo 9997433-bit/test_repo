@@ -1,0 +1,307 @@
+/* =============================================================
+   界面木作 · 顶梁 / 木牌面板 / 按钮（Fable-2）
+   基调：深木横梁托着米纸面板，按钮是打磨过的小木块。
+   夜晚整套随 tokens 换成灯下暖黑纸。
+   ============================================================= */
+
+/* ---------- 顶梁 ---------- */
+
+.topbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  color: #f6ead0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(20, 10, 4, 0.16) 0 2px,
+      transparent 2px 11px
+    ),
+    linear-gradient(180deg, #6d4426, #4a2d18);
+  border-bottom: 3px solid var(--wood-4);
+  box-shadow: var(--shadow);
+  position: relative;
+  z-index: 8;
+}
+
+.topbar .brand {
+  font-size: 1.18rem;
+  letter-spacing: 0.1em;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-shadow: 0 1px 0 rgba(20, 10, 4, 0.6);
+}
+
+/* 梁下小灯笼，夜晚更亮 */
+.topbar .brand::before {
+  content: "";
+  width: 12px;
+  height: 14px;
+  border-radius: 50% / 45%;
+  background: radial-gradient(circle at 40% 32%, #ff9a5c, #d84b2a 78%);
+  border-top: 3px solid var(--wood-4);
+  box-shadow: 0 0 calc(4px + 12px * var(--lamp-a))
+    calc(1px + 3px * var(--lamp-a)) rgba(255, 140, 70, 0.6);
+}
+
+.meters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.meters span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 10, 4, 0.32);
+  border: 1px solid rgba(246, 234, 208, 0.18);
+  padding: 5px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.meters span::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.meters span:nth-of-type(1)::before { background: #f6ead0; opacity: 0.7; }
+.meters span:nth-of-type(2)::before { background: #b8e29a; }
+.meters span:nth-of-type(3)::before { background: var(--gold-bright); }
+.meters span:nth-of-type(4)::before { background: #f2a0b4; }
+.meters span:nth-of-type(5)::before { background: #ff9a5c; }
+.meters span:nth-of-type(6)::before { background: #9ec5e8; }
+
+/* ---------- 木质按钮（顶梁 + 面板通用） ---------- */
+
+.meters button,
+.panel button {
+  padding: 8px 14px;
+  border: 1px solid var(--wood-4);
+  border-radius: var(--radius-s);
+  color: #f6ead0;
+  text-shadow: 0 1px 0 rgba(30, 15, 5, 0.5);
+  background:
+    repeating-linear-gradient(
+      94deg,
+      rgba(60, 36, 21, 0.12) 0 2px,
+      transparent 2px 8px
+    ),
+    linear-gradient(180deg, var(--plaque-hi), var(--plaque-lo));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.28),
+    inset 0 -3px 5px rgba(30, 15, 5, 0.32),
+    var(--shadow-soft);
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out),
+    filter var(--dur-1) var(--ease-out);
+}
+
+.meters button:hover,
+.panel button:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+
+.meters button:active,
+.panel button:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 2px 5px rgba(30, 15, 5, 0.45),
+    var(--shadow-soft);
+}
+
+/* ---------- 面板坞（底部长廊） ---------- */
+
+.dock {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(20, 10, 4, 0.1) 0 3px,
+      transparent 3px 74px
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--paper-2) 82%, var(--wood-2)),
+      color-mix(in srgb, var(--paper-2) 66%, var(--wood-3))
+    );
+  border-top: 3px solid var(--wood-4);
+  position: relative;
+  z-index: 8;
+}
+
+.panel {
+  position: relative;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(120, 90, 50, 0.03) 0 3px,
+      transparent 3px 6px
+    ),
+    var(--panel);
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--paper) 60%, transparent),
+    inset 0 0 26px rgba(120, 90, 50, 0.08),
+    var(--shadow);
+  min-height: 180px;
+}
+
+/* 四角木钉 */
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e8c98a, #7a5220 78%);
+}
+
+.panel::before { left: 9px; }
+.panel::after { right: 9px; }
+
+/* 小木匾章节标题 */
+.panel h2 {
+  display: inline-block;
+  margin: 0 0 10px;
+  padding: 5px 14px;
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #f6ead0;
+  text-shadow: 0 1px 0 rgba(30, 15, 5, 0.5);
+  border: 1px solid var(--wood-4);
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(
+      94deg,
+      rgba(60, 36, 21, 0.12) 0 2px,
+      transparent 2px 8px
+    ),
+    linear-gradient(180deg, var(--plaque-hi), var(--plaque-lo));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.25),
+    inset 0 -2px 4px rgba(30, 15, 5, 0.3);
+}
+
+.panel h2:not(:first-child) {
+  margin-top: 14px;
+}
+
+.panel p {
+  margin: 6px 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.row > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ghost {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+/* ---------- 村里的闲话（日志卷轴） ---------- */
+
+.log {
+  max-height: 132px;
+  overflow-y: auto;
+  margin: 0 0 4px;
+  padding: 4px 6px 4px 2px;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--wood-2) transparent;
+}
+
+.log li {
+  position: relative;
+  padding: 3px 0 3px 18px;
+  font-size: 0.92rem;
+  border-bottom: 1px dashed color-mix(in srgb, var(--ink) 16%, transparent);
+  animation: log-in var(--dur-2) var(--ease-out);
+}
+
+.log li:first-child {
+  color: var(--ink);
+}
+
+.log li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0.72em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50% 50% 50% 4px;
+  transform: rotate(-38deg);
+  background: var(--leaf);
+  opacity: 0.85;
+}
+
+.log::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--wood-2) 75%, transparent);
+  border-radius: 999px;
+}
+
+/* ---------- 农具 / 种子条 ---------- */
+
+.tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tools button::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50% 50% 50% 3px;
+  transform: rotate(-38deg);
+  background: linear-gradient(135deg, #9ed488, #4e9a4a);
+}
+
+@keyframes log-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
