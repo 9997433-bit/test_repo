@@ -99,3 +99,27 @@
 4. UI：温室改造入口、种子等级置灰、`feedCost`、收获飘字 `.xw-fx`、`meta/settings` 时速、NPC 剪影钩子。
 5. 测试：解封 minLevel 首板、冬饲、分品种结转、8h 生长封顶；offline-smoke 转绿。
 6. Fable-4 终验：T0–T11 按现树重写通过条件；Fable-1 把 R2 工单标 DONE/DEAD。
+
+## 《Round 3 结论简报》与全局收口
+
+### 本轮落地
+
+- 离线生长 8h 封顶转绿（`offline-smoke ok:true`），枯萎写中文日志。
+- 工具 25%+保底、交付后空位按 2 游戏时补 1 格；开局工具 锹1/斧0/锯0。
+- 温室改造入口、种子等级置灰、投喂读 `feedCost`、时速 3/6/12、收获飘字、院子剪影。
+- 契约 22 项工单 DONE/DEAD；手测脚本对齐现树。
+- 门禁：vitest 58 passed / 1 skip；probe / bench / 三链 / wish-board / offline-smoke 全绿。
+
+### 仍开放的小口
+
+- `village/skip`（换一个）会绕过补位节拍。
+- 库存非正数校验仍 skip。
+- 环境音未做；交单庆祝飘字未发。
+
+### 运行
+
+```bash
+cd games/xiangwang-shenghuo && npm install && npm test && npm run dev
+```
+
+默认端口 `4174`。游戏只存在于该目录，不污染仓库根或其他游戏。
