@@ -23,6 +23,19 @@ export function clear(node) {
   return node;
 }
 
+/**
+ * 忽略 null / undefined / false 的 append。
+ * 原生 `Node.append(null)` 会插入一个 "null" 文本节点，条件渲染时很容易漏出来，
+ * 所以屏幕一律走这里，语义和 `el()` 的 children 保持一致。
+ */
+export function mount(parent, ...children) {
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    parent.append(typeof child === "string" || typeof child === "number" ? String(child) : child);
+  }
+  return parent;
+}
+
 export function button(label, onClick, opts = {}) {
   return el(
     "button",

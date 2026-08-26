@@ -1,12 +1,12 @@
 import { BUFF_LABEL, SEAS, createFishing, fishReward } from "../../modes/index.js";
-import { button, clear, el } from "../dom.js";
+import { button, clear, el, mount } from "../dom.js";
 import { screenHeader } from "../widgets.js";
 
 export const fishingScreen = {
   id: "fishing",
   mount(app, root) {
     const body = el("div", { class: "scroll-body" });
-    root.append(screenHeader(app, "佛系钓鱼", "节奏收杆 · 钓怪物球换战斗 BUFF"), body);
+    mount(root, screenHeader(app, "佛系钓鱼", "节奏收杆 · 钓怪物球换战斗 BUFF"), body);
 
     let session = null;
     let marker = null;
@@ -14,7 +14,7 @@ export const fishingScreen = {
     let statusText = null;
 
     function seaSelect() {
-      clear(body).append(
+      mount(clear(body), 
         el("p", { class: "hint", text: "标记来回移动，在绿色判定区内收杆。正中心为完美（3 分），边缘 1 分。5 次机会。" }),
         app.save.fishBuff
           ? el("p", { class: "buff-note", text: `当前渔获：${app.save.fishBuff.name}（剩余 ${app.save.fishBuff.battles} 场）` })
@@ -40,7 +40,7 @@ export const fishingScreen = {
       marker = el("i", { class: "fish-marker" });
       statusText = el("p", { class: "fish-status", text: `剩余 ${session.castsLeft} 次 · 得分 ${session.score}` });
       const track = el("div", { class: "fish-track", onclick: () => strike() }, [zone, marker]);
-      clear(body).append(
+      mount(clear(body), 
         el("h3", { text: session.sea.name }),
         track,
         statusText,
@@ -82,7 +82,7 @@ export const fishingScreen = {
       app.persist();
       app.audio.play("win");
       const label = BUFF_LABEL[reward.buff.kind]?.(reward.buff.value) ?? "";
-      clear(body).append(
+      mount(clear(body), 
         el("div", { class: "result-card win" }, [
           el("h2", { class: "result-title", text: "渔获！" }),
           el("h3", { text: reward.fish.name }),

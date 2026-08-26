@@ -9,7 +9,7 @@ import {
   rollDraft,
   stageByIndex,
 } from "../../modes/index.js";
-import { button, clear, el } from "../dom.js";
+import { button, clear, el, mount } from "../dom.js";
 import { createRenderer } from "../render.js";
 import { heroCanvas } from "../widgets.js";
 
@@ -36,7 +36,7 @@ export const battleScreen = {
     const level = buildLevel(app, params);
     const loadout = app.loadout(mode === "rogue" ? { flatLevel: 5 } : {});
     if (!loadout.heroes.length) {
-      root.append(el("p", { class: "hint", text: "队伍为空，请先编队。" }), button("去编队", () => app.navigate("team")));
+      mount(root, el("p", { class: "hint", text: "队伍为空，请先编队。" }), button("去编队", () => app.navigate("team")));
       return {};
     }
 
@@ -79,7 +79,7 @@ export const battleScreen = {
     ]);
     const hint = el("div", { class: "aim-hint", text: "按住画面拖拽瞄准，松手发射（空格也可发射）" });
 
-    root.append(canvas, hudTop, hint, dock, ultBtn);
+    mount(root, canvas, hudTop, hint, dock, ultBtn);
 
     const heroButtons = battle.heroes.map((hero, i) => {
       const ring = el("i", { class: "energy-ring" });
@@ -91,7 +91,7 @@ export const battleScreen = {
       ]);
       return { node, ring, hero };
     });
-    dock.append(...heroButtons.map((h) => h.node));
+    mount(dock, ...heroButtons.map((h) => h.node));
 
     function selectHero(i) {
       if (battle.selectHero(i)) syncHud();
@@ -157,7 +157,7 @@ export const battleScreen = {
       app.audio.play("ui");
       app.modal((box, close) => {
         const resume = () => { battle.paused = false; close(); };
-        box.append(
+        mount(box, 
           el("h3", { text: "暂停" }),
           el("p", { class: "muted small", text: `${level.name} · 回合 ${battle.turn}` }),
           el("div", { class: "detail-actions" }, [
@@ -179,7 +179,7 @@ export const battleScreen = {
       const options = rollDraft(battle, app.save.owned, level.id);
       app.audio.play("charged");
       app.modal((box, close) => {
-        box.append(
+        mount(box, 
           el("h3", { text: `第 ${battle.wave} 波 · 三选一` }),
           el("div", { class: "draft-row" },
             options.map((opt) =>

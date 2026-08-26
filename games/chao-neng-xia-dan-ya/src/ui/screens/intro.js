@@ -1,11 +1,11 @@
 import { ARTIFACTS, RAID_SECONDS, RAID_TIERS } from "../../modes/index.js";
-import { button, el, fmt } from "../dom.js";
+import { button, el, fmt, mount } from "../dom.js";
 import { screenHeader } from "../widgets.js";
 
 export const rogueIntroScreen = {
   id: "rogueIntro",
   mount(app, root) {
-    root.append(
+    mount(root, 
       screenHeader(app, "极限挑战", "肉鸽无尽波次 · 养成不生效"),
       el("div", { class: "scroll-body" }, [
         el("div", { class: "info-box" }, [
@@ -37,7 +37,7 @@ export const rogueIntroScreen = {
 export const raidIntroScreen = {
   id: "raidIntro",
   mount(app, root) {
-    root.append(
+    mount(root, 
       screenHeader(app, "讨伐魔王", `${RAID_SECONDS} 秒极限输出`),
       el("div", { class: "scroll-body" }, [
         el("div", { class: "info-box" }, [

@@ -13,7 +13,7 @@ import {
   tryLevelUp,
   tryStarUp,
 } from "../../core/progress.js";
-import { button, clear, el, stars } from "../dom.js";
+import { button, clear, el, mount, stars } from "../dom.js";
 import { bondList, elementTag, heroCanvas, heroCard, raceName, schoolTag, screenHeader } from "../widgets.js";
 
 export const teamScreen = {
@@ -22,7 +22,7 @@ export const teamScreen = {
     let selectedSlot = 0;
     let filter = "all";
     const body = el("div", { class: "scroll-body" });
-    root.append(screenHeader(app, "编队", "5 人上场 · 同流派激活羁绊"), body);
+    mount(root, screenHeader(app, "编队", "5 人上场 · 同流派激活羁绊"), body);
 
     function pickSlot(i) {
       selectedSlot = i;
@@ -61,7 +61,7 @@ export const teamScreen = {
           const cap = levelCapForStar(star);
           const atCap = lv >= cap;
           const nextPerk = hero.starPerks?.find((p) => p.star === star + 1) ?? null;
-          clear(box).append(
+          mount(clear(box), 
             el("div", { class: "detail-head" }, [
               heroCanvas(hero, 96, "full"),
               el("div", {}, [
@@ -156,7 +156,7 @@ export const teamScreen = {
         ),
       );
 
-      clear(body).append(
+      mount(clear(body), 
         el("p", { class: "hint", text: `点上方槽位选择要替换的位置（当前第 ${selectedSlot + 1} 位），再点下方英雄查看详情并上阵。` }),
         slotRow,
         bondList(bonds),

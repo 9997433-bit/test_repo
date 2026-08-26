@@ -1,6 +1,6 @@
 import { HERO_CATALOG, getHero } from "../../core/catalog.js";
 import { STAGES, TOWER_FLOORS, raidTier } from "../../modes/index.js";
-import { button, el, fmt, stars } from "../dom.js";
+import { button, el, fmt, mount, stars } from "../dom.js";
 import { heroCanvas, statRow } from "../widgets.js";
 
 function pickUnlock(save) {
@@ -85,7 +85,7 @@ export const resultScreen = {
   mount(app, root, params = {}) {
     const { mode = "adventure", level, result, params: battleParams = {} } = params;
     if (!result || !level) {
-      root.append(el("p", { class: "hint", text: "没有结算数据" }), button("返回主菜单", () => app.navigate("menu")));
+      mount(root, el("p", { class: "hint", text: "没有结算数据" }), button("返回主菜单", () => app.navigate("menu")));
       return {};
     }
     const gained = applyRewards(app, mode, level, result, battleParams);
@@ -112,7 +112,7 @@ export const resultScreen = {
     const nextIndex = (battleParams.stageIndex ?? 0) + 1;
     const hasNext = mode === "adventure" && victory && nextIndex <= STAGES.length;
 
-    root.append(
+    mount(root, 
       el("div", { class: `result-card ${victory ? "win" : "lose"}` }, [
         el("h2", { class: "result-title", text: title }),
         el("p", { class: "muted", text: level.name }),

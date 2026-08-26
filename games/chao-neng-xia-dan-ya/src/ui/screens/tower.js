@@ -1,12 +1,12 @@
 import { TOWER_FLOORS, sweepReward, towerTheme } from "../../modes/index.js";
-import { button, clear, el, fmt } from "../dom.js";
+import { button, clear, el, fmt, mount } from "../dom.js";
 import { screenHeader } from "../widgets.js";
 
 export const towerScreen = {
   id: "tower",
   mount(app, root) {
     const body = el("div", { class: "scroll-body" });
-    root.append(screenHeader(app, "试炼之塔", `当前 ${app.save.towerFloor} 层 / 共 ${TOWER_FLOORS} 层`), body);
+    mount(root, screenHeader(app, "试炼之塔", `当前 ${app.save.towerFloor} 层 / 共 ${TOWER_FLOORS} 层`), body);
 
     function sweep(floor) {
       const r = sweepReward(floor);
@@ -66,7 +66,7 @@ export const towerScreen = {
         }),
       );
 
-      clear(body).append(
+      mount(clear(body), 
         el("p", { class: "hint", text: "已通过的层可点击扫荡快速结算资源；当前层点击进入挑战。每 10 层是守层魔王。" }),
         grid,
         el("div", { class: "row-actions" }, [

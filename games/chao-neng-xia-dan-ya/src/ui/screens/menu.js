@@ -1,6 +1,6 @@
 import { HERO_CATALOG, computeBonds } from "../../core/catalog.js";
 import { MODES, TOTAL_STAGES } from "../../modes/index.js";
-import { button, el } from "../dom.js";
+import { button, el, mount } from "../dom.js";
 import { bondList, heroCanvas } from "../widgets.js";
 
 export const menuScreen = {
@@ -50,7 +50,7 @@ export const menuScreen = {
       button("设置", () => app.navigate("settings"), { icon: "⚙" }),
     ]);
 
-    root.append(
+    mount(root, 
       logo,
       squad,
       bondList(bonds),

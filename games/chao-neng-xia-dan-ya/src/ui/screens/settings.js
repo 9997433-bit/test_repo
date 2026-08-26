@@ -1,5 +1,5 @@
 import { SAVE_KEY, pref } from "../../core/store.js";
-import { button, el } from "../dom.js";
+import { button, el, mount } from "../dom.js";
 import { screenHeader } from "../widgets.js";
 
 function toggle(label, desc, value, onChange) {
@@ -21,7 +21,7 @@ export const settingsScreen = {
       app.audio.play("ui");
     };
 
-    root.append(
+    mount(root, 
       screenHeader(app, "设置", `存档键 ${SAVE_KEY}`),
       el("div", { class: "scroll-body" }, [
         toggle("音效", "WebAudio 实时合成，无外部音频资产", pref(app.save, "sfx"), (v) => { set("sfx", v); app.audio.setSfx(v); }),
@@ -43,7 +43,7 @@ export const settingsScreen = {
           el("p", { class: "muted small", text: `金币 ${Math.round(app.save.gold)} · 通关 ${app.save.adventureStage - 1} · 塔层 ${app.save.towerFloor} · 肉鸽最高 ${app.save.bestRogueWave} 波 · 讨伐最高 ${app.save.bestRaidDamage}` }),
           button("清空存档", () => {
             app.modal((box, close) => {
-              box.append(
+              mount(box, 
                 el("h3", { text: "确认清空存档？" }),
                 el("p", { class: "muted small", text: "所有养成、进度与图鉴都会重置，且无法撤销。" }),
                 el("div", { class: "detail-actions" }, [

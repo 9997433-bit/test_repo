@@ -1,7 +1,7 @@
 import { HERO_CATALOG, RACES, SCHOOLS, computeRaceTech } from "../../core/catalog.js";
 import { ENEMY_LIST } from "../../core/bestiary.js";
 import { dexBonus } from "../../core/progress.js";
-import { button, clear, el } from "../dom.js";
+import { button, clear, el, mount } from "../dom.js";
 import { elementTag, heroCanvas, raceName, schoolTag, screenHeader } from "../widgets.js";
 
 export const codexScreen = {
@@ -10,7 +10,7 @@ export const codexScreen = {
     let tab = "heroes";
     const body = el("div", { class: "scroll-body" });
     const owned = () => Object.values(app.save.dex ?? {}).filter(Boolean).length;
-    root.append(screenHeader(app, "图鉴", "收集度提供全局攻击加成（上限 +15%）"), body);
+    mount(root, screenHeader(app, "图鉴", "收集度提供全局攻击加成（上限 +15%）"), body);
 
     function heroesTab() {
       const bonus = dexBonus(app.save, HERO_CATALOG.length);
@@ -58,7 +58,7 @@ export const codexScreen = {
     function show(hero, has) {
       app.audio.play("ui");
       app.modal((box, close) => {
-        box.append(
+        mount(box, 
           el("div", { class: "detail-head" }, [
             heroCanvas(hero, 96, "full"),
             el("div", {}, [
@@ -79,7 +79,7 @@ export const codexScreen = {
     }
 
     function render() {
-      clear(body).append(
+      mount(clear(body), 
         el("div", { class: "filter-row" }, [
           el("button", { type: "button", class: `chip ${tab === "heroes" ? "on" : ""}`, onclick: () => { tab = "heroes"; render(); }, text: "英雄" }),
           el("button", { type: "button", class: `chip ${tab === "enemies" ? "on" : ""}`, onclick: () => { tab = "enemies"; render(); }, text: "敌人" }),

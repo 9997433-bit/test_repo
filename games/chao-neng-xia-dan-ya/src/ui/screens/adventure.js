@@ -1,5 +1,5 @@
 import { CHAPTERS, STAGES, stagesOfChapter } from "../../modes/index.js";
-import { button, clear, el, stars } from "../dom.js";
+import { button, clear, el, mount, stars } from "../dom.js";
 import { screenHeader } from "../widgets.js";
 
 export const adventureScreen = {
@@ -8,7 +8,7 @@ export const adventureScreen = {
     const save = app.save;
     let chapter = params.chapter ?? Math.min(CHAPTERS.length, Math.ceil(save.adventureStage / 4));
     const body = el("div", { class: "scroll-body" });
-    root.append(screenHeader(app, "冒险关卡", `进度 ${save.adventureStage - 1}/${STAGES.length}`), body);
+    mount(root, screenHeader(app, "冒险关卡", `进度 ${save.adventureStage - 1}/${STAGES.length}`), body);
 
     function render() {
       const tabs = el("div", { class: "chapter-tabs" },
@@ -56,7 +56,7 @@ export const adventureScreen = {
         }),
       );
 
-      clear(body).append(
+      mount(clear(body), 
         tabs,
         el("div", { class: "chapter-info" }, [
           el("h3", { text: `第 ${info.id} 章 · ${info.name}` }),
