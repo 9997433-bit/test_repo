@@ -99,24 +99,27 @@ export function createRenderer(canvas) {
 
   /** 命中准星：四角括号 + 呼吸圆环，比一个实心点好读得多 */
   function reticle(x, y, radius, color) {
-    const pulse = radius + Math.sin(t * 9) * 2;
+    const pulse = radius + Math.sin(t * 9) * 2.5;
     ctx.save();
     ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
     ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 0.95;
     ctx.beginPath();
     ctx.arc(x, y, pulse, 0, Math.PI * 2);
     ctx.stroke();
+    circle(ctx, x, y, 2.5, color);
 
     ctx.translate(x, y);
-    ctx.rotate(t * 0.9);
-    const arm = pulse + 7;
-    const tick = 6;
+    ctx.rotate(t * 1.1);
+    const arm = pulse + 10;
+    ctx.lineWidth = 3;
     for (let i = 0; i < 4; i++) {
       ctx.rotate(Math.PI / 2);
       ctx.beginPath();
-      ctx.moveTo(arm - tick, 0);
+      ctx.moveTo(arm - 9, 0);
       ctx.lineTo(arm, 0);
       ctx.stroke();
     }
