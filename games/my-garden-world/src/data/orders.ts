@@ -58,6 +58,37 @@ export const ORDER_TEMPLATES: OrderTemplate[] = [
   { id: "g-rosewedding", kind: "group", title: "梦幻婚典百花轿", hint: "梦幻玫瑰坐镇，山茶相衬，共五枝", minLevel: 12, timeMs: 240_000, coin: 430, exp: 82, waterReward: 12, weight: 1, flowerIds: ["dream-rose", "camellia"], flowerCount: 5 },
 ];
 
+// ---------- 连环剧情单「百花盛会」（五折） ----------
+// 与常驻模板分池：不进 ORDER_TEMPLATES，不参与随机抽取与同款去重。
+// 语义：一次只挂一折，交付第 n 折后放出第 n+1 折；超时不扣口碑、原折顺延重挂
+//（自家盛会的客人不会拂袖而去）。守则与常驻模板一致（coin > 0；timeMs > 10_000；
+// 点名花材解锁阶 ≤ 本折 minLevel），另循 chapter 从 1 起严格递增、minLevel 非降。
+// 奖励按一次性里程碑标定：全链合计 1305 金 / 260 经验，压轴 530 金高出常驻榜首
+//（430 金）属有意为之。接线见 docs/GDD.md「Round 3 接线清单 D」。
+export interface StoryOrderTemplate extends OrderTemplate {
+  /** 第几折（从 1 起、严格递增）；交付第 n 折才放出第 n+1 折。 */
+  chapter: number;
+  /** 折子引文：挂单时的剧情一句，UI 可放在订单卡 hint 之上（可选展示）。 */
+  prologue: string;
+}
+
+export const STORY_CHAIN: StoryOrderTemplate[] = [
+  { id: "story-invite", chapter: 1, kind: "resident", title: "里正送来盛会请帖", hint: "以一枝墨梅回帖应约", prologue: "县里要办百花盛会。里正亲自登门：「废园重开的事，满城都传遍了——请帖在此，望花坊以花回帖。」", minLevel: 5, timeMs: 150_000, coin: 125, exp: 30, waterReward: 5, weight: 1, flowerIds: ["plum"], flowerCount: 1 },
+  { id: "story-trial", chapter: 2, kind: "custom", title: "花行行首来试手艺", hint: "作品评分 ≥ 75", prologue: "花行行首闻讯而来，要亲眼看看回帖之人的本事。「盛会不收虚名，插一瓶给我看。」", minLevel: 6, timeMs: 160_000, coin: 130, exp: 34, waterReward: 7, weight: 1, requireScore: 75 },
+  { id: "story-brocade", chapter: 3, kind: "silk", title: "绸缎庄为彩楼收花", hint: "睡莲定纹样，再添两枝任意花材", prologue: "盛会彩楼要披十丈锦。绸缎庄掌柜指名睡莲入纹样：「池光入锦，彩楼才算活了。」", minLevel: 7, timeMs: 170_000, coin: 170, exp: 30, waterReward: 14, weight: 1, flowerIds: ["waterlily"], flowerCount: 3 },
+  { id: "story-parade", chapter: 4, kind: "group", title: "盛会前夜扎迎宾花轿", hint: "牡丹坐镇、彼岸花压色，共四枝", prologue: "会期前夜，四乡宾客的花轿都聚到城门。管事的只有一句话：「头一顶轿子，要让人一眼记住。」", minLevel: 8, timeMs: 210_000, coin: 350, exp: 66, waterReward: 12, weight: 1, flowerIds: ["peony", "spider-lily"], flowerCount: 4 },
+  { id: "story-gala", chapter: 5, kind: "group", title: "百花盛会压轴大作", hint: "星辰郁金香与牡丹领衔，共六枝", prologue: "盛会当日，主台交给了你。满城看花人翘首：从荒园到今日，这一瓶，是花坊的答卷。", minLevel: 10, timeMs: 260_000, coin: 530, exp: 100, waterReward: 15, weight: 1, flowerIds: ["star-tulip", "peony"], flowerCount: 6 },
+];
+
+/**
+ * 下一折剧情单：chaptersDone 为已交付折数（存档 storyChapter），
+ * 等级未到或全链完结返回 undefined。纯函数，便于接线与测试。
+ */
+export function nextStoryChapter(chaptersDone: number, level: number): StoryOrderTemplate | undefined {
+  const next = STORY_CHAIN[chaptersDone];
+  return next && next.minLevel <= level ? next : undefined;
+}
+
 /**
  * 按 weight 从候选池中抽一张模板（roll ∈ [0,1)，由调用方注入随机数，保持纯函数可测）。
  * 接线（systems/orders.ts spawnOrders）：把 `pool[Math.floor(Math.random() * pool.length)]`
