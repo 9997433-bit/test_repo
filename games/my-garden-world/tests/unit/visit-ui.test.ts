@@ -4,19 +4,17 @@ import { createInitialState, type GameState } from "../../src/engine/state";
 import type { PanelHandlers, PanelSelection } from "../../src/ui/panels";
 
 /**
- * 访邻面板（ui/panels.ts）与 HUD 入口（ui/hud.ts）的 UI 契约。
+ * 访邻面板（ui/panels.ts）的 UI 契约：入口是 dock「访邻」印章，
+ * 走的仍是 app.ts 那条 renderPanel 通路。
  * 玩法规则本身归 engine/neighbors.ts，这里只验渲染、点按与番外折的接线。
  */
 
 type Panels = typeof import("../../src/ui/panels");
-type Hud = typeof import("../../src/ui/hud");
 
 /** 每例都换一套新模块：面板与番外折都有「本次会话只弹一次」的内存态。 */
-async function freshUi(): Promise<{ panels: Panels; hud: Hud }> {
+async function freshUi(): Promise<Panels> {
   vi.resetModules();
-  const panels = await import("../../src/ui/panels");
-  const hud = await import("../../src/ui/hud");
-  return { panels, hud };
+  return await import("../../src/ui/panels");
 }
 
 const noop = (): void => {};
@@ -45,16 +43,20 @@ function openedState(level = 5): GameState {
   return state;
 }
 
-/** 造一座最小的 .app：访邻浮层与番外折都挂在它上面。 */
-function appRoot(): { root: HTMLElement; header: HTMLElement } {
+/**
+ * 造一座最小的 .app（番外折挂在它上面），并照 app.ts 的样子把访邻花笺
+ * 渲进 `.sheets`：收起就是清空容器，与真的 `panel = null` 同一效果。
+ */
+function openVisit(panels: Panels, state: GameState): { root: HTMLElement; host: HTMLElement; sheet: HTMLElement } {
   const root = document.createElement("div");
   root.className = "app";
-  const header = document.createElement("header");
-  const sheets = document.createElement("div");
-  sheets.className = "sheets";
-  root.append(header, sheets);
+  const host = document.createElement("div");
+  host.className = "sheets";
+  root.append(host);
   document.body.append(root);
-  return { root, header };
+  const close = (): void => panels.renderPanel(host, null, state, selection(), handlers());
+  panels.renderPanel(host, panels.VISIT_PANEL, state, selection(), handlers({ close }));
+  return { root, host, sheet: host.querySelector<HTMLElement>(".sheet")! };
 }
 
 function plotBtn(host: ParentNode, idx: number): HTMLButtonElement {
@@ -70,10 +72,8 @@ beforeEach(() => {
 
 describe("访邻名录", () => {
   it("列出三位邻居，未到阶的留剪影卡", async () => {
-    const { panels } = await freshUi();
-    const host = document.createElement("div");
-
-    panels.renderPanel(host, panels.VISIT_PANEL, openedState(1), selection(), handlers());
+    const panels = await freshUi();
+    const { host } = openVisit(panels, openedState(1));
 
     const cards = [...host.querySelectorAll<HTMLButtonElement>(".neighbor-card")];
     expect(cards).toHaveLength(3);
@@ -87,10 +87,9 @@ describe("访邻名录", () => {
   });
 
   it("串门进园：横幅、动作条与邻家花圃都在，首次弹一折番外", async () => {
-    const { panels } = await freshUi();
-    const { root } = appRoot();
+    const panels = await freshUi();
     const state = openedState();
-    const sheet = panels.openVisitSheet(root, state);
+    const { root, sheet } = openVisit(panels, state);
 
     sheet.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
 
@@ -106,10 +105,9 @@ describe("访邻名录", () => {
 
 describe("邻家园中的活计", () => {
   it("帮浇水记在存档里，圃面换成已浇且不可再点", async () => {
-    const { panels } = await freshUi();
-    const { root } = appRoot();
+    const panels = await freshUi();
     const state = openedState();
-    const sheet = panels.openVisitSheet(root, state);
+    const { sheet } = openVisit(panels, state);
     sheet.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
 
     const thirsty = neighborGarden(state, "sister")!.plots.find((p) => p.thirsty)!;
@@ -126,10 +124,9 @@ describe("邻家园中的活计", () => {
   });
 
   it("摘花入自家花匣，圃面挂借花笺，并弹「借花一枝」番外", async () => {
-    const { panels } = await freshUi();
-    const { root } = appRoot();
+    const panels = await freshUi();
     const state = openedState();
-    const sheet = panels.openVisitSheet(root, state);
+    const { root, sheet } = openVisit(panels, state);
     sheet.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
     // 先收起「篱外人家」，同屏只允许一折番外
     root.querySelector<HTMLButtonElement>(".modal.side-story .cta")!.click();
@@ -145,10 +142,9 @@ describe("邻家园中的活计", () => {
   });
 
   it("一家只借一枝：摘过之后摘花动作条置灰并给出缘由", async () => {
-    const { panels } = await freshUi();
-    const { root } = appRoot();
+    const panels = await freshUi();
     const state = openedState();
-    const sheet = panels.openVisitSheet(root, state);
+    const { sheet } = openVisit(panels, state);
     sheet.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
 
     sheet.querySelector<HTMLButtonElement>('.visit-tool[data-tool="pick"]')!.click();
@@ -161,11 +157,10 @@ describe("邻家园中的活计", () => {
   });
 
   it("回自家园退回名录，并报一句串门小记", async () => {
-    const { panels } = await freshUi();
+    const panels = await freshUi();
     const { onGameEvent } = await import("../../src/engine/events");
-    const { root } = appRoot();
     const state = openedState();
-    const sheet = panels.openVisitSheet(root, state);
+    const { sheet } = openVisit(panels, state);
     sheet.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
     const thirsty = neighborGarden(state, "sister")!.plots.find((p) => p.thirsty)!;
     plotBtn(sheet, thirsty.idx).click();
@@ -183,32 +178,10 @@ describe("邻家园中的活计", () => {
   });
 });
 
-describe("HUD 访邻入口", () => {
-  it("开园前不露出，开园后点开与收起访邻花笺", async () => {
-    const { panels, hud } = await freshUi();
-    const { root, header } = appRoot();
-    const view = hud.createHud(header);
-    const state = openedState();
-    state.tutorialDone = false;
-
-    view.update(state);
-    const btn = root.querySelector<HTMLButtonElement>(".pill-visit")!;
-    expect(btn.hidden).toBe(true);
-
-    state.tutorialDone = true;
-    view.update(state);
-    expect(btn.hidden).toBe(false);
-
-    btn.click();
-    expect(panels.visitSheetEl(root)).not.toBeNull();
-    btn.click();
-    expect(panels.visitSheetEl(root)).toBeNull();
-  });
-
-  it("Esc 先从邻家退回名录，再退出串门", async () => {
-    const { panels } = await freshUi();
-    const { root } = appRoot();
-    const sheet = panels.openVisitSheet(root, openedState());
+describe("访邻花笺的开合", () => {
+  it("Esc 先从邻家退回名录，再收起花笺", async () => {
+    const panels = await freshUi();
+    const { host, sheet } = openVisit(panels, openedState());
     sheet.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
     expect(sheet.querySelector(".visit-banner")).not.toBeNull();
 
@@ -217,21 +190,28 @@ describe("HUD 访邻入口", () => {
     expect(sheet.querySelectorAll(".neighbor-card")).toHaveLength(3);
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(panels.visitSheetEl(root)).toBeNull();
+    expect(host.querySelector(".sheet")).toBeNull();
   });
 
-  it("去点 dock 就当回自家园，两张花笺不叠着", async () => {
-    const { panels } = await freshUi();
-    const { root } = appRoot();
-    const dock = document.createElement("nav");
-    dock.className = "dock";
-    const dockBtn = document.createElement("button");
-    dock.append(dockBtn);
-    root.append(dock);
-    panels.openVisitSheet(root, openedState());
+  it("收起后再开从名录进，不落在上回那家院里", async () => {
+    const panels = await freshUi();
+    const state = openedState();
+    const { host } = openVisit(panels, state);
+    host.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
+    expect(host.querySelector(".visit-banner")).not.toBeNull();
 
-    dockBtn.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    // 换去别的 dock 面板，再回来
+    panels.renderPanel(host, "bag", state, selection(), handlers());
+    panels.renderPanel(host, panels.VISIT_PANEL, state, selection(), handlers());
 
-    expect(panels.visitSheetEl(root)).toBeNull();
+    expect(host.querySelector(".visit-banner")).toBeNull();
+    expect(host.querySelectorAll(".neighbor-card")).toHaveLength(3);
+  });
+
+  it("花笺带 visit-sheet 印记，供 CSS 按当前动作换圃色", async () => {
+    const panels = await freshUi();
+    const { sheet } = openVisit(panels, openedState());
+
+    expect(sheet.classList.contains("visit-sheet")).toBe(true);
   });
 });

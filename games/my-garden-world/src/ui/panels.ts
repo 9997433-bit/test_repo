@@ -562,72 +562,38 @@ export function renderVisit(sheet: HTMLElement, state: GameState, onClose: () =>
   sheet.replaceChildren();
   sheet.setAttribute("aria-labelledby", VISIT_TITLE_ID);
   const rerender = (): void => renderVisit(sheet, state, onClose);
+  bindVisitEsc(sheet, state, onClose);
   sheet.append(head(def ? `${def.name}的园子` : TITLES.visit, onClose, VISIT_TITLE_ID));
   if (def) renderNeighborGarden(sheet, state, def.id, rerender);
   else renderNeighborList(sheet, state, rerender);
 }
 
-// ---------- 访邻浮层：dock 按钮落地前的入口（见 ui/hud.ts） ----------
-
-let detachVisitSheet: (() => void) | null = null;
-
-export function visitSheetEl(root: HTMLElement): HTMLElement | null {
-  return root.querySelector<HTMLElement>(`.${VISIT_SHEET_CLASS}`);
-}
-
-export function closeVisitSheet(root: HTMLElement): void {
-  detachVisitSheet?.();
-  detachVisitSheet = null;
-  visitSheetEl(root)?.remove();
-  visitFocus = null;
-}
+/** 当前在场的那张访邻花笺；花笺被 app 换掉后 isConnected 转假，监听自行作废。 */
+let escVisit: { sheet: HTMLElement; state: GameState; onClose: () => void } | null = null;
+let escVisitBound = false;
 
 /**
- * 把访邻面板作为浮层挂在 `.app` 上（而不是 app.ts 的 `.sheets` 容器里）：
- * 那个容器每帧由 app 按自己的 panel 状态重建，浮层挂进去会被抹掉。
- * 样式仍复用 `.sheet` 花笺，与 dock 面板同一套观感。
+ * Esc：园中先退回名录，名录再收起花笺（与 docs/UX.md 五「只收最上面一层」一致）。
+ * 监听只装一次挂在 document 上——花笺由 app.ts 逐次重建，逐张装监听会漏摘。
  */
-export function openVisitSheet(root: HTMLElement, state: GameState): HTMLElement {
-  closeVisitSheet(root);
-  // 借 dock 面板自己的收起按钮请它让位——app 的 panel 状态不归本模块管
-  root.querySelector<HTMLButtonElement>(".sheets .sheet-close")?.click();
-  const sheet = document.createElement("section");
-  sheet.className = `sheet ${VISIT_SHEET_CLASS}`;
-  sheet.setAttribute("role", "region");
-  renderVisit(sheet, state, () => closeVisitSheet(root));
-  root.append(sheet);
-
-  // Esc：园中先退回名录，名录再退出串门（与 UX.md 五「只收最上面一层」一致）
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key !== "Escape") return;
+function bindVisitEsc(sheet: HTMLElement, state: GameState, onClose: () => void): void {
+  escVisit = { sheet, state, onClose };
+  if (escVisitBound || typeof document === "undefined") return;
+  escVisitBound = true;
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !escVisit) return;
+    const live = escVisit;
+    if (!live.sheet.isConnected) {
+      escVisit = null;
+      return;
+    }
     if (visitFocus) {
       visitFocus = null;
-      renderVisit(sheet, state, () => closeVisitSheet(root));
+      renderVisit(live.sheet, live.state, live.onClose);
     } else {
-      closeVisitSheet(root);
+      live.onClose();
     }
-  };
-  // 去点 dock 就等于回自家园，两张花笺不叠着
-  const onDock = (e: Event): void => {
-    if ((e.target as HTMLElement | null)?.closest?.(".dock")) closeVisitSheet(root);
-  };
-  document.addEventListener("keydown", onKey);
-  root.addEventListener("pointerdown", onDock);
-  detachVisitSheet = (): void => {
-    document.removeEventListener("keydown", onKey);
-    root.removeEventListener("pointerdown", onDock);
-  };
-  return sheet;
-}
-
-/** 开则收、收则开；返回开启后的状态。 */
-export function toggleVisitSheet(root: HTMLElement, state: GameState): boolean {
-  if (visitSheetEl(root)) {
-    closeVisitSheet(root);
-    return false;
-  }
-  openVisitSheet(root, state);
-  return true;
+  });
 }
 
 const TITLES: Record<Exclude<AnyPanelId, null>, string> = {
@@ -642,13 +608,16 @@ const TITLES: Record<Exclude<AnyPanelId, null>, string> = {
 
 export function renderPanel(host: HTMLElement, id: AnyPanelId, state: GameState, sel: PanelSelection, h: PanelHandlers): void {
   host.replaceChildren();
+  // 收起花笺就算回了自家园：下次点「访邻」重新从名录进，不落在上回那家院里
+  if (id !== VISIT_PANEL) visitFocus = null;
   if (!id) return;
   const sheet = document.createElement("section");
   sheet.className = "sheet";
   sheet.setAttribute("role", "region");
   sheet.setAttribute("aria-labelledby", "sheet-title");
   if (id === VISIT_PANEL) {
-    // 访邻自带页头（名录 / 某家园子两页轮换）
+    // 访邻自带页头（名录 / 某家园子两页轮换）；visit-sheet 供 CSS 按当前动作换圃色
+    sheet.classList.add(VISIT_SHEET_CLASS);
     renderVisit(sheet, state, h.close);
     host.append(sheet);
     return;

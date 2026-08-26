@@ -2,7 +2,6 @@ import type { GameState } from "../engine/state";
 import { clockLabel, seasonLabel } from "../engine/time";
 import { WATER_CAP, xpToLevel } from "../engine/state";
 import { SPIRIT_ATTR, spiritById, spiritPortrait } from "../systems/spirits";
-import { toggleVisitSheet } from "./panels";
 
 interface Field {
   key: string;
@@ -74,25 +73,7 @@ export function createHud(el: HTMLElement): HudController {
     nodes.set(f.key, { pill, txt, mark, text: "", markKey: "", shown: true });
   }
 
-  // 访邻入口：dock 的「访邻」印章尚未落地（app.ts 的按钮表不在本轮可改文件内），
-  // 先在资源栏尾巴上挂一枚，开园后现身；dock 接上后把这一段摘掉即可。
-  const visit = document.createElement("button");
-  visit.type = "button";
-  visit.className = "pill pill-visit";
-  visit.style.cursor = "pointer";
-  visit.textContent = "邻 访邻";
-  visit.hidden = true;
-  visit.setAttribute("aria-label", "串门去邻家花园");
-  let latest: GameState | null = null;
-  visit.addEventListener("click", () => {
-    if (root && latest) toggleVisitSheet(root, latest);
-  });
-  pills.append(visit);
-
   const update = (state: GameState): void => {
-    latest = state;
-    // 与教程尾折的 visit 门控同步：开园之前不露出串门入口
-    if (visit.hidden === state.tutorialDone) visit.hidden = !state.tutorialDone;
     for (const f of FIELDS) {
       const n = nodes.get(f.key)!;
       const shown = f.show ? f.show(state) : true;
