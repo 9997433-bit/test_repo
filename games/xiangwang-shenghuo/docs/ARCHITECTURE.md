@@ -1,6 +1,6 @@
 # 架构（实施级 · Round 2 定稿）
 
-> 本文与 `API_CONTRACT.md` 共同构成实现契约。基准 = **`4b97e21` 提交的落地代码**（Round 1 收尾 + Round 2 首波并行落地：冬饲/作物门槛/温室地块制/心愿过滤/家具/确定性 id）。与 Round 1 契约草案冲突之处，本版一律以落地代码为准重新裁决；被废弃的旧条目集中列在 `API_CONTRACT.md §10.3`，不再散落。Round 2 变更点标 `【R2】` 并指名所有者（见 `OWNERSHIP.md`）。
+> 本文与 `API_CONTRACT.md` 共同构成实现契约。基准 = **`918239d` 提交的落地代码**（Round 1 收尾 + Round 2 两波并行落地：首波 冬饲/作物门槛/温室地块制/心愿过滤/确定性 id；第二波 离线接线/厨房菜单/摊位与家具 UI/全部收获/levels.js/经济校准数据）。与 Round 1 契约草案冲突之处，本版一律以落地代码为准重新裁决；被废弃的旧条目集中列在 `API_CONTRACT.md §10.3`，不再散落。Round 2 变更点标 `【R2】` 并指名所有者（见 `OWNERSHIP.md`）。
 
 ## 0. 铁律（六条，违反即打回）
 
@@ -11,18 +11,18 @@
 | 3 | 时间与随机必须可注入：末位默认参数 `nowMs = Date.now()`，或 payload 内 `now` / `rng` 字段（village 落地惯例）。函数体内不得直接调用 `Date.now()` / `Math.random()`（默认参数位除外）；未注入 rng 时允许用 `village/rng.js` 的状态派生哈希（天然确定） | 边界静态测试（R2-20） | ✅ 全部合规（production 首波已补 nowMs 并去掉 `makeJobId` 的 Math.random） |
 | 4 | 失败路径必须返回**传入的同一个 state 引用**（`state` 字段 `===` 入参），不得部分改写 | `expect(r.state).toBe(s)` | ✅ |
 | 5 | state 必须 JSON 可序列化：无函数 / Date / Map / Set / NaN / Infinity / undefined 值 | 存档 roundtrip 测试 | ✅ |
-| 6 | 数值唯一事实源在 `src/data/**`。`GDD.md` 的表格只是镜像，冲突时以 data 为准 | code review | ⚠️ 等级表仍在 `core/engine.js`（R2-3 移入 `data/levels.js`） |
+| 6 | 数值唯一事实源在 `src/data/**`。`GDD.md` 的表格只是镜像，冲突时以 data 为准 | code review | ⚠️ 两处双份数值待收敛：等级表（`data/levels.js` ✅ 已落地，engine 仍持重复表，R2-3 残留）；心愿掉率/补位间隔（`data/wishes.js` 校准常量 ✅ 已落地，village 仍用本地 0.35/2 小时口径，R2-22） |
 
 ## 1. 目录与所有权
 
 ```
 games/xiangwang-shenghuo/
 ├─ src/main.js              组合根：reducer + 启动 + 循环 + 键盘 + 存档定时（Opus-4）
-├─ src/core/                store / engine / save / events(冻结)；【R2】+ buffs / reasons（Opus-4）
-├─ src/data/                crops/animals/recipes/buildings/guests/wishes/items/dishes/furniture；【R2】+ levels（Fable-3）
+├─ src/core/                store / engine / save / offline✅ / furniture✅ / events(冻结)；【R2】+ buffs / reasons（Opus-4）
+├─ src/data/                crops/animals/recipes/buildings/guests/wishes/items/dishes/furniture/levels✅（Fable-3 校数）
 ├─ src/systems/farm/        开垦、播种、生长、收获、枯萎、扩地、离线折算（Opus-1）
 ├─ src/systems/production/  工厂队列、畜牧投喂、工位（Opus-2）
-├─ src/systems/village/     心愿、嘉宾、烹饪、建造、宠物、摊位、rng.js；【R2】+ 家具（Opus-3）
+├─ src/systems/village/     心愿、嘉宾、烹饪、建造、宠物、摊位、rng.js（Opus-3；家具已上收 core，R2-21 删残余）
 ├─ src/ui/screens.js        骨架 + 增量渲染 + 事件委托（Opus-4）
 ├─ src/styles/  src/audio/  四季皮肤与音效（Fable-2 / Opus-4）
 ├─ tests/                   vitest 6 个文件（GPT-sol-1）
@@ -79,7 +79,7 @@ Round 1 草案的 `route/applyResult/finalize` 三段管线**作废**，落地�
 | `applyAction(state, action)` | 按 type 分派到系统函数；未知 type 返回原 state 引用（**必须**） |
 | `applyResult(state, result, fxKind)` | `result.ok === false` → `toast(message/reason)`；成功 → 采用 `result.state` 并写 `ui.fx` |
 | `advanceTutorial(state, minStep)` | 引导只前进不后退；播种/收获等动作成功时推进 |
-| 等级重算 | 仅在 `meta/tick` 分支末尾：`level = levelFor(meta.xp)`，升级时加 log + fx。**裁决**：等级派生允许滞后至多一个 tick（≤100ms 真实），系统内等级门槛判定读 `meta.level` 即可，不需要 finalize 每 dispatch 重算 |
+| `finalize(state)` ✅ | `meta/tick` 与 `meta/offline` 共用收尾（仅此两分支）：① `applyFurnitureWarmth`（core/furniture）把温馨兜到家具保底之上；② `level = levelFor(meta.xp)` 重算，升级时加 log + fx。**裁决不变**：等级派生允许滞后至多一个 tick（≤100ms 真实），系统内等级门槛判定读 `meta.level` 即可，不需要每 dispatch 重算 |
 
 ## 4. 时钟
 
@@ -102,8 +102,8 @@ Round 1 草案的 `route/applyResult/finalize` 三段管线**作废**，落地�
 | 帧 dt 钳制 | `500` ms | main.js | `dt = min(500, now - last)`，卡顿不补时 |
 | `AUTOSAVE_MS` | `15_000` | main.js | 定时写档；另有 `visibilitychange:hidden` 与 `pagehide` 立即写（已落地 ✅） |
 | `WILT_GRACE_MS` | `45_000` | farm | 错季枯萎宽限（真实 ms） |
-| `OFFLINE_CAP_MS` | `28_800_000` | farm 本地【R2-2】上收 core/engine | 离线折算上限 = 8 真实小时（farm 改 import 去重） |
-| `WISH_REFRESH_HOURS` | `2` | village | 心愿补位间隔 = 2 游戏时 × hourMs × wish buff |
+| `OFFLINE_CAP_MS` | `28_800_000` | core/engine ✅（farm 本地重复，R2-2 残留去重） | 离线折算上限 = 8 真实小时 |
+| `WISH_REFRESH_HOURS` | `2` | village 本地（事实源 `data/wishes.js` 的 `WISH_REFRESH_MIN = 120` ✅，R2-22 改读） | 心愿补位间隔 = 2 游戏时 × hourMs × wish buff |
 | `PET_COOLDOWN_MS` | `20_000` | village | 摸宠物 CD |
 
 ### 4.3 `meta/tick` 管线（顺序固定，禁止重排）
@@ -114,42 +114,46 @@ Round 1 草案的 `route/applyResult/finalize` 三段管线**作废**，落地�
 | 2 | `tickPlots(state, dt, now)` | ① growing 且 `now >= doneAt` → ready；② 当季清 `wiltAt`，错季起算/推进 `wiltAt`，超时 → wilted。【R2-17】枯萎时补一条 log |
 | 3 | `tickProduction(state, dt, now)` | running 到期转 done；顺带清旧档 `collected` 残单 |
 | 4 | `tickVillage(state, dt, nowMs)` | `rolloverDays`（嘉宾离店 + 心愿 3 日过期 + 温馨每日 −1）→ `refillWishSlot`（补位计时，`API_CONTRACT.md §5.10`） |
-| 5 | 等级重算 | `levelFor(meta.xp)`；升级 → log + fx |
+| 5 | `finalize` ✅ | 家具温馨兜底（`applyFurnitureWarmth`）+ 等级重算 `levelFor(meta.xp)`；升级 → log + fx |
 
 【R2-18】`meta/tick` 的 payload 增加可选 `now`，管线透传 `payload.now ?? Date.now()`，使 reducer 级重放可确定（现状第 2–4 步各自默认 `Date.now()`）。
 
 跨季不做一次性批量枯萎：错季惩罚完全由 `tickPlots` 的 `wiltAt` 宽限机制持续处理。
 
-### 4.4 离线补偿（R2-2，语义唯一；farm 的 `catchUpPlots` 已落地 ✅，编排与接线缺失）
+### 4.4 离线补偿（主体落地 ✅：`core/offline.js` + `meta/offline`；残留 R2-2 farm 常量去重、R2-2b 生长封顶）
 
-启动流程（`main.js`，落地后取代现状的“直接开跑”）：
+启动流程（`main.js` 落地版 ✅——离线结算**必须**抢在首个 tick 前，否则人不在家的枯萎倒计时先被判死）：
 
 ```js
 const loaded = readSave();
 const store = createStore(loaded?.state || createInitialState(), reducer);
-if (loaded) store.dispatch({ type: "meta/offline", payload: { savedAt: loaded.savedAt } });
+if (loaded) {
+  const before = store.getState();
+  store.dispatch({ type: "meta/offline", payload: { savedAt: loaded.savedAt, now: Date.now() } });
+  if (store.getState() === before) /* 刚存完就刷新 → 结算无事发生 */ toast("接着上次的日子过。");
+}
 store.dispatch({ type: "meta/tick", payload: { dt: 0 } });
 ```
 
-算法（`core/engine.js` 新增 `applyOfflineCatchup`，精确签名见 `API_CONTRACT.md §2.2`）：
+算法（`core/offline.js` 的 `applyOfflineCatchup(state, savedAt, nowMs, systems)` ✅，精确签名见 `API_CONTRACT.md §2.2`；`systems` 由组合根注入 `{ catchUpPlots, tickProduction, tickVillage }`——core 不反向依赖 systems，缺哪个跳过哪步）：
 
-| 步 | 操作 | 公式 / 语义 |
-| --- | --- | --- |
-| 1 | 计流逝 | `elapsed = max(0, nowMs - savedAt)`；`savedAt` 非有限数 → 原样返回 `{ state, offlineMs: 0, capped: false }` |
-| 2 | 封顶 | `effective = min(elapsed, OFFLINE_CAP_MS)`；`capped = elapsed > effective` |
-| 3 | 推进日历 | `advanceTime(state, effective)`——上限只作用于游戏日历 |
-| 4 | 农田结算 | `catchUpPlots(state, savedAt, nowMs)`：作物照常成熟（doneAt 为绝对时间戳）；离线不判枯萎，`wiltAt > savedAt` 的顺延为 `≥ nowMs + WILT_GRACE_MS` 重新起算（已落地语义，原样采用） |
-| 5 | 生产/村落结算 | `tickProduction(state, effective, nowMs)` → `tickVillage(state, effective, nowMs)`（rolloverDays 自动处理离线跨日的嘉宾离店/心愿过期/温馨衰减；nextWishAt 过期则补 1 单，板空则补满） |
-| 6 | 汇报 | log 追加一条离线摘要（capped 时注明“按 8 小时结算”）；返回 `{ state, offlineMs: effective, capped }` |
+| 步 | 操作 | 公式 / 语义 | 状态 |
+| --- | --- | --- | --- |
+| 1 | 计流逝 | `offlineSpan(savedAt, nowMs)`：`elapsed = max(0, nowMs - savedAt)`；`savedAt` 非有限数按 nowMs 处理；`offlineMs <= 0` → 原引用返回 `{ state, offlineMs: 0, capped: false }` | ✅ |
+| 2 | 封顶 | `offlineMs = min(elapsed, OFFLINE_CAP_MS)`；`capped = elapsed > offlineMs` | ✅ |
+| 3 | 推进日历 | `advanceTime(state, offlineMs)`——上限作用于游戏日历 | ✅ |
+| 4 | 农田结算 | `catchUpPlots(state, savedAt, nowMs)`：离线不判枯萎，`wiltAt > savedAt` 的顺延为 `≥ nowMs + WILT_GRACE_MS` 重新起算 ✅；【R2-2b】生长同样按 8h 封顶——封顶窗口内熟不了的 growing 地块把时间戳顺延 overflow，回来接着长（`API_CONTRACT.md §3.10`，offline-smoke 探针即验收） | ✅ / 封顶 TODO |
+| 5 | 生产/村落结算 | `tickProduction(state, offlineMs, nowMs)` → `tickVillage(state, offlineMs, nowMs)`（rolloverDays 自动处理离线跨日的嘉宾离店/心愿过期/温馨衰减；nextWishAt 过期则补 1 单，板空则补满） | ✅ |
+| 6 | 汇报 | `applyOfflineCatchup` 自带一条 log「你出门 N 小时…」（capped 注明「超过 8 小时的部分不另算」）；main.js 的 `meta/offline` 分支再走 `finalize` 并 toast 摘要（几块地熟了/几件活做好了） | ✅ |
 
-不做时间戳重排（+shift）：B 时基计时器都是一次性的（收取/再投喂/再播种都要玩家操作），自然到期即可；唯一会惩罚玩家的 `wiltAt` 用“离线赦免 + 回来重算”。
+时间戳重排裁决（第二波收窄）：jobs/pets/心愿计时是一次性且有界的（收取/再投喂都要玩家操作），自然到期即可，**不**重排；农田生长会被反复利用刷进度，按 R2-2b 封顶顺延；`wiltAt` 用“离线赦免 + 回来重算”。
 
 `EPOCH_FIELDS`（v2 登记表；新 B 时基字段必须补进此表并声明离线语义）：
 
 | 字段 | 离线语义 |
 | --- | --- |
-| `plots[].plantedAt` / `plots[].doneAt` | 自然到期（照常成熟） |
-| `plots[].wiltAt` | 赦免：顺延为 `nowMs + WILT_GRACE_MS`（catchUpPlots） |
+| `plots[].plantedAt` / `plots[].doneAt` | 封顶窗口内自然成熟；窗口外顺延 overflow【R2-2b】（现状：一律自然到期） |
+| `plots[].wiltAt` | 赦免：顺延为 `nowMs + WILT_GRACE_MS`（catchUpPlots ✅） |
 | `jobs[].doneAt` | 自然到期（转 done 等收取） |
 | `pets[].readyAt` | 自然到期（CD 20s，必然可摸） |
 | `village.nextWishAt` | 自然到期（回来后按 refillWishSlot 规则补位） |
@@ -161,7 +165,7 @@ store.dispatch({ type: "meta/tick", payload: { dt: 0 } });
 | --- | --- | --- | --- |
 | 30 min | 30 min | 12.5 游戏日 | 到期作物/工单转 ready/done；心愿补位；嘉宾按 untilDay 离店；枯萎倒计时顺延 |
 | 8 h | 8 h | 200 游戏日 | 同上；季节按最终日期取模 |
-| 24 h | **8 h**（封顶） | 200 游戏日 | `capped = true`；日历只走 8h 等量，B 时基计时器仍自然到期 |
+| 24 h | **8 h**（封顶） | 200 游戏日 | `capped = true`；工单/宠物/心愿计时自然到期；8h 内熟不了的作物顺延 16h 回来接着长【R2-2b】 |
 
 ## 5. 存档 v1 与迁移
 
@@ -173,7 +177,7 @@ store.dispatch({ type: "meta/tick", payload: { dt: 0 } });
 | 文档结构 | `{ "v": 1, "savedAt": <epoch ms>, "state": <State v1> }`（`tests/save.test.js` 冻结此形状） |
 | serialize 特例 | `ui.toast` / `ui.fx` 落盘前置 null（瞬时视图态不回放） |
 | 写档时机 | 15s 定时 + “记下这一天”按钮/S 键 + `visibilitychange:hidden` + `pagehide` |
-| 读档时机 | 仅启动一次：`readSave` → `deserialize`（内部 `hydrate`）→【R2-2】`meta/offline` |
+| 读档时机 | 仅启动一次：`readSave` → `deserialize`（内部 `hydrate`）→ `meta/offline`（先于首个 tick）✅ |
 | 坏档兜底 | JSON 解析失败 / `v !== 1` / 无 state → 返回 null，新开局，零报错（落地 ✅） |
 
 ### 5.2 迁移管线（Opus-4，R2-16）
@@ -199,8 +203,8 @@ const MIGRATIONS = {
 
 | 项 | 裁决 |
 | --- | --- |
-| 现状 | `core/engine.js` 导出 `LEVELS = [0,40,100,180,280,420,600,820,1100,1450]`、`levelFor(xp)`、`levelProgress(xp)`；main.js 与 screens.js 从 engine import |
-| 目标（R2-3） | 新模块 `src/data/levels.js`（Fable-3）持有 `XP_TABLE` 与派生函数（精确签名 `API_CONTRACT.md §2.4`）；`core/engine.js` 改为薄再导出（`LEVELS = XP_TABLE`、`levelFor = levelForXp`、`levelProgress`），main.js/screens.js **不改 import**——这是等级表的双读期，UI 迁移 import 后删再导出 |
+| 现状 | `src/data/levels.js` ✅ 已落地（`XP_TABLE`/`levelForXp`/`xpForNext`，`918239d`）；但 `core/engine.js` 仍持有**重复**的 `LEVELS` 表 + `levelFor(xp)`/`levelProgress(xp)`，main.js 与 screens.js 仍从 engine import——两份数值靠人肉同步，改一处漏一处即翻车 |
+| 目标（R2-3 残留） | `levelProgress` 迁入 levels.js；`core/engine.js` 改薄再导出（`LEVELS = XP_TABLE`、`levelFor = levelForXp`、`levelProgress`），main.js/screens.js **不改 import**——这是等级表的双读期，UI 迁移 import 后删再导出（精确签名 `API_CONTRACT.md §2.4`） |
 | 派生规则 | `meta.level` = `levelForXp(meta.xp)`，由 `meta/tick` 第 5 步重算（滞后 ≤1 tick，见 §3.3 裁决）；任何系统禁止手写 `meta.level` |
 | XP 授予点 | 收获 `crop.xp` ✅；心愿 `wish.xp`（含 tier 缩放）✅；生产收取 `job.xp`（快照 → recipe.xp → animal.xp 回退链 ✅） |
 | 解锁判定 | 一律读 data，全部生效 ✅：`building.unlockLevel` / `recipe.unlockLevel` / `crop.unlockLevel`（plant + `canPlant` 查询）/ `wish.minLevel·maxLevel`（wishCandidates）/ `furniture.unlockLevel`（placeFurniture） |
@@ -219,12 +223,12 @@ const MIGRATIONS = {
 
 ### 8.1 import 允许矩阵（行 = 谁，列 = 可 import 什么）
 
-| | `core/store` | `core/save` | `core/engine` | `core/buffs·reasons` | `data/**` | `systems/**` | `ui/**` | `audio/**` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `main.js`（组合根） | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `ui/**` | ❌ | ❌ | ✅ 只读（levelProgress、TUTORIAL_TOTAL） | ✅ 只读 | ✅ 展示用 | ❌ | ✅ | ❌ |
-| `systems/**` | ✅ 纯助手 | ❌ | ✅ 常量 | ✅ | ✅ | ⚠️ 禁互引 | ❌ | ❌ |
-| `data/**` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| | `core/store` | `core/save` | `core/engine` | `core/offline` | `core/furniture·buffs·reasons` | `data/**` | `systems/**` | `ui/**` | `audio/**` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `main.js`（组合根） | ✅ | ✅ | ✅ | ✅（唯一消费方） | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `ui/**` | ❌ | ❌ | ✅ 只读（levelProgress、TUTORIAL_TOTAL） | ❌ | ✅ 只读查询（furniture 的 placedFurniture/isPlaced/furnitureWarmth ✅ 在用） | ✅ 展示用 | ❌ | ✅ | ❌ |
+| `systems/**` | ✅ 纯助手 | ❌ | ✅ 常量 | ❌（offline 编排 systems，反向即环） | ✅ | ✅ | ⚠️ 禁互引 | ❌ | ❌ |
+| `data/**` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 
 ### 8.2 渲染契约（落地版，取代“整屏 innerHTML”旧描述）
 
@@ -246,7 +250,7 @@ const MIGRATIONS = {
 | 时间注入 | farm：末位 `now = Date.now()` ✅；village：`refreshWishes/tickVillage` 末位 `nowMs` ✅、`petPlay` 走 payload `now` ✅（落地惯例，保持不改）；production：`enqueueJob/feedAnimal` 末位 `nowMs` ✅ |
 | 随机注入 | village 全域用 `rng.js`：`rollWith(rng, ...parts)`——注入了 `rng`（payload 字段）用注入的，否则由状态派生 FNV 哈希，**同一存档同一时刻结果恒定**。测试传 `() => 0.99` 等定值。production 的 `makeJobId` 已确定性（nowMs 进制串 + 线性探测防撞）✅——`systems/**` 现已零内嵌时钟/随机 |
 | 余数累积器 | 分数收益不用随机：`production.livestockCarry`（✅ 按 productId 分桶，ε=1e-9）与 `production.winterFeedCarry`（✅ 冬饲 0.2/次记账）累积小数、溢出取整，长期期望精确等于系数 |
-| 必测不变量 | ① 失败信封 `state === 入参`；② resources/inv 恒非负；③ tick 后 `meta.level === levelFor(meta.xp)`；④ `deserialize(serialize(s))` 深等于 `{savedAt, state}`；⑤ 离线 24h → `offlineMs === OFFLINE_CAP_MS`（R2-2 后）；⑥ 三链可跑通（米→鸡、豆→豆腐、麦→面包，chain-smoke ✅）；⑦ xp 单调不减；⑧ 同一存档同一参数的 `cook`/`deliverWish` 结果确定 |
+| 必测不变量 | ① 失败信封 `state === 入参`；② resources/inv 恒非负；③ tick 后 `meta.level === levelFor(meta.xp)`；④ `deserialize(serialize(s))` 深等于 `{savedAt, state}`；⑤ 离线 24h → `offlineMs === OFFLINE_CAP_MS`（`applyOfflineCatchup` ✅ 可断言；生长封顶探针 offline-smoke 现值 ok:false，随 R2-2b 转绿）；⑥ 三链可跑通（米→鸡、豆→豆腐、麦→面包，chain-smoke ✅）；⑦ xp 单调不减；⑧ 同一存档同一参数的 `cook`/`deliverWish` 结果确定 |
 | reason 断言 | 双读期规则见 `API_CONTRACT.md §0.2`——测试经 `expectReason` 助手同时接受机器码与中文，迁移完成后收紧为只认机器码 |
 | 边界静态测试（R2-20） | `systems/**` 源码禁含 `document.`、`localStorage`、内嵌 `Math.random(` / `Date.now()`（默认参数位除外）——前置违规已清零，随时可落 |
 

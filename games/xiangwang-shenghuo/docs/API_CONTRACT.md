@@ -1,6 +1,6 @@
 # API 契约（实施级 · Round 2 定稿）
 
-> 与 `ARCHITECTURE.md` 配套。签名与行为以 **`4b97e21` 提交的落地代码为基准**（Round 1 收尾 + Round 2 首波并行落地已对账）：已落地的行为在本版即契约（标 ✅），余下变更点标 `【R2-n】`（工单编号见 §10.2）并指名所有者。实现者不得偏离本文的签名、reason 码、公式与字段名。Round 1 草案中被落地代码推翻的条目集中在 §10.3，一律作废。
+> 与 `ARCHITECTURE.md` 配套。签名与行为以 **`918239d` 提交的落地代码为基准**（Round 1 收尾 + Round 2 两波并行落地已对账：首波 `baf4247..4b97e21` 冬饲/作物门槛/温室地块制/心愿过滤；第二波 `9d68a4e`+`918239d` 离线接线/厨房菜单/摊位与家具 UI/全部收获/levels.js/经济校准数据）：已落地的行为在本版即契约（标 ✅），余下变更点标 `【R2-n】`（工单编号见 §10.2）并指名所有者。实现者不得偏离本文的签名、reason 码、公式与字段名。Round 1 草案中被落地代码推翻的条目集中在 §10.3，一律作废。
 
 ## 0. 约定与术语
 
@@ -11,6 +11,7 @@
 | 命令（玩家动作） | 信封 `Envelope` | `plant` `enqueueJob` `deliverWish` `stallSell` `placeFurniture` |
 | 查询（selector，只读无副作用） | 裸值，**永不**返回信封 | `canCraft` `canPlant` `seasonFactor` `feedCost` `guestCapacity` `wishSlots` `kitchenMenu` `furnitureWarmth` |
 | 节拍（tick / 离线结算驱动） | 裸完整 nextState | `tickPlots` `tickProduction` `tickVillage` `catchUpPlots` `advanceTime`（含元组）`refreshWishes` |
+| 编排（唯一一个） | 三元组 `{ state, offlineMs, capped }` | `applyOfflineCatchup`（§2.2，✅ 落地于 `core/offline.js`） |
 
 ### 0.2 信封 `Envelope` 与 reason 机器码双读期（本节即迁移时刻表）
 
@@ -45,7 +46,7 @@
 | --- | --- | --- | --- |
 | D0 | Opus-4 | 落地 `core/reasons.js`（§2.2）：`REASONS` 全表 + `msg(code)` + `fail(state, reason, extras)`。同时把 `main.js` 的 `applyResult` 飘字改为 `result.message \|\| msg(result.reason)`——`msg` 对未知码原样返回，所以中文 reason（未知码）与机器码都能正确显示 | UI 先兼容双格式，系统才能分批迁移而不把机器码怼到玩家脸上 |
 | D1 | GPT-sol-1 | 测试改双读：新增助手 `expectReason(result, code)` ≙ 断言 `result.ok === false && result.state === 入参 && (result.reason === code \|\| result.reason === REASONS[code])`；把上表 `toEqual` 整信封断言拆成逐字段断言 | 测试先松，系统改动才不会一夜全红 |
-| D2 | Opus-1/2/3 + Opus-4(store.js) | 各系统按任意顺序、任意批次迁移：失败路径统一 `return fail(state, "域.代码", extras)`。动态插值文案（如“屋里只坐得下 N 位”）改为 §7 静态文案，动态数值放 extras | D0/D1 已就位，随时可并行 |
+| D2 | Opus-1/2/3 + Opus-4(store.js + core/furniture.js) | 各系统按任意顺序、任意批次迁移：失败路径统一 `return fail(state, "域.代码", extras)`。动态插值文案（如“屋里只坐得下 N 位”）改为 §7 静态文案，动态数值放 extras。注意 `core/furniture.js` 的 5 条中文 reason 也在迁移面内 | D0/D1 已就位，随时可并行 |
 | D3 | GPT-sol-1 | 全系统迁移完成后收紧：`expectReason` 只认机器码；新增静态断言——`systems/**` 与 `core/store.js` 源码中 `reason:` 后不得出现汉字（正则 `reason:\s*"[^"]*[\u4e00-\u9fff]`） | 关闭双读期，防回潮 |
 
 双读期起点 = D0 合入，终点 = D3 合入。期间任何新代码**直接写机器码**（不允许再新增中文 reason）。
@@ -90,9 +91,9 @@
 | `wishes[]` | `{ ...池条目, wishId, needs(缩放后), coin, xp, tier, status: "open"\|"accepted", createdDay }` | `[]`（首 tick 补满） | A（createdDay） | village |
 | `guests[]` | `{ id, sinceDay, untilDay }` | `[]` | A | village |
 | `pets[]` | `{ id, name, kind: "dog"\|"cat", readyAt }` | 小花/小团 | B | village |
-| `furniture[]` | `{ id, room, day }[]`（已摆家具；读取端兼容纯 string 条目） | `[]`（懒建，hydrate 补【R2-16】） | — | village(placeFurniture) |
+| `furniture[]` | **`string[]`（家具 id）**——`core/furniture.placeFurniture` 写入（`village/furnish` 接线 ✅）；village 读取端兼容旧 `{id,…}` 对象条目（无存量，R2-21 去重后删兼容） | `[]`（懒建，hydrate 补【R2-16】） | — | core/furniture(placeFurniture) |
 | `log[]` | string，≤40 条，新的在前 | 1 条开场白 | — | 全体经 pushLog |
-| `ui` | `{ seed, selected, toast, fx, rerolls }`；toast/fx 落盘置 null | `createInitialUi()` | — | main.js/UI 动作 |
+| `ui` | `{ seed, selected, toast, fx, rerolls, sellId, sellQty, serveTo }`；toast/fx 落盘置 null；`sellId`(string\|null)/`sellQty`(int ≥1) = 摊位选中货与件数、`serveTo`(guestId\|null) = 厨房点名端菜对象 ✅ | `createInitialUi()` | — | main.js/UI 动作（`meta/sell` `meta/serve` §6） |
 
 兼容注记：`itemId` 全集 = `data/wishes.js` 的 `ITEM_NAMES` 键集，新物品先登记该表再登记 `data/items.js` 的 `BASE_PRICES`；家具 id 不进 `inv`，只进 `state.furniture`。
 
@@ -109,17 +110,21 @@
 | store.js | `spendInv(state, needs): Envelope` | 失败 `core.inv_short`（D2 前为“材料不够”）；原子性：不足时不动任何键 |
 | engine.js | `createInitialState(): State`、`createInitialUi()` | §1 初值列 |
 | engine.js | `advanceTime(state, dtMs): { state, crossedDay, crossedSeason }` | 只动 meta 三字段 |
-| engine.js | `LEVELS`、`levelFor(xp)`、`levelProgress(xp)`、`TUTORIAL_TOTAL = 4` | 【R2-3】改为 data/levels.js 的薄再导出，签名不变 |
-| engine.js | 常量 `HOUR_MS_DEFAULT / DAY_HOURS / DAYS_PER_SEASON` | 6000 / 24 / 7 |
-| save.js | `SAVE_KEY`、`serialize(state)`、`deserialize(raw)`、`hydrate(saved, base?)`、`writeSave(state)`、`readSave()`、`clearSave()` | `deserialize` 返回 `{savedAt, state} \| null`，内部已过 hydrate |
+| engine.js | `LEVELS`、`levelFor(xp)`、`levelProgress(xp)`、`TUTORIAL_TOTAL = 4` | 【R2-3 残留】改为 data/levels.js 的薄再导出，签名不变（levels.js 已落地 §2.4） |
+| engine.js | 常量 `HOUR_MS_DEFAULT / DAY_HOURS / DAYS_PER_SEASON / OFFLINE_CAP_MS` | 6000 / 24 / 7 / 28_800_000（✅ 第二波上收 engine；farm 本地重复待去重） |
+| engine.js | `absGameMinutes(meta)` | **死代码**：第二波误重新引入、全库零调用方（§10.3 早已作废），【R2-19】一并删除 |
+| offline.js ✅ | `offlineSpan(savedAt, nowMs = Date.now()): { elapsed, offlineMs, capped }`、`humanGap(ms): string`、`applyOfflineCatchup`（§2.2） | 第二波新模块；`humanGap` 输出「N 分钟 / N 小时 N 分钟」中文时长 |
+| furniture.js ✅ | `placedFurniture(state): string[]`、`isPlaced(state, furnitureId): boolean`、`furnitureWarmth(state): number`、`applyFurnitureWarmth(state): State`、`placeFurniture(state, { furnitureId }): Envelope`（§5.9） | 第二波新模块，家具**唯一**接线实现；`applyFurnitureWarmth` 在 main.js `finalize` 里每 tick/offline 收尾兜温馨下限 |
+| save.js | `SAVE_KEY`、`serialize(state)`、`deserialize(raw)`、`hydrate(saved, base?)`、`writeSave(state)`、`readSave()`、`clearSave()` | `deserialize` 返回 `{savedAt, state} \| null`，内部已过 hydrate；hydrate 的 `ui` 已与 `createInitialUi()` 合并（新键 sellId/sellQty/serveTo 自动补齐 ✅） |
 | events.js | `createBus()` | 冻结不用，禁新增依赖 |
+| index.js | 桶导出 `events / store / save / engine / offline / furniture` ✅ | |
 
-### 2.2 【R2 新增】core 导出（本文即规格，精确签名）
+### 2.2 core 新增导出（✅ = 第二波已落地；其余本文即规格）
 
 | 模块 | 签名 | 规格 |
 | --- | --- | --- |
-| engine.js 【R2-2】 | `export const OFFLINE_CAP_MS = 28_800_000` | 8 真实小时。farm 已导出同名常量（offline-smoke 在用），改为 `export { OFFLINE_CAP_MS } from "../../core/engine.js"` 再导出，farm 导出面不变（Opus-1 配合） |
-| engine.js 【R2-2】 | `export function applyOfflineCatchup(state, savedAt, nowMs = Date.now()): { state, offlineMs: number, capped: boolean }` | 编排算法 = `ARCHITECTURE.md §4.4` 六步；`savedAt` 非有限数 → `{ state, offlineMs: 0, capped: false }`（state 原引用）；plots 域委托 farm 的 `catchUpPlots`（§3.10） |
+| engine.js ✅ | `export const OFFLINE_CAP_MS = 28_800_000` | 8 真实小时，已落地。【R2-2 残留】farm 仍持本地同值常量（offline-smoke 在用），改为 `export { OFFLINE_CAP_MS } from "../../core/engine.js"` 再导出去重，farm 导出面不变（Opus-1） |
+| **offline.js** ✅ | `export function applyOfflineCatchup(state, savedAt, nowMs = Date.now(), systems = {}): { state, offlineMs, capped }` | 落点从拟议的 engine.js 改为独立模块（§10.3）：`systems = { catchUpPlots?, tickProduction?, tickVillage? }` 由组合根注入——core 不反向依赖 systems，缺哪个函数就跳过哪一步。编排 = `ARCHITECTURE.md §4.4` 六步；`offlineMs <= 0`（含 savedAt 非有限数）→ `{ state 原引用, offlineMs: 0, capped: false }`；成功时自带一条离线 log（capped 注明「超过 8 小时的部分不另算」） |
 | buffs.js 【R2-4】 | `export function buffFactor(state, target): number` | 遍历 `state.guests`，`guestById(g.id)?.buff.target === target` 的 `factor` 连乘（非有限/≤0 跳过），结果 `Math.min(2, Math.max(0.5, x))`；无匹配 = 1。**语义已由三个系统的本地实现统一落地** ✅（farm `applyGuestFarmBuff`、production 内部 `guestBuffFactor`、village 导出 `guestBuffFactor` 均为连乘 + 钳 [0.5, 2]）；本模块的意义只剩去重：三处改薄封装，导出名保留 |
 | reasons.js 【R2-1/D0】 | `export const REASONS: Record<code, string>` | 全量码表 = §7，冻结 |
 | reasons.js 【R2-1/D0】 | `export const msg = (code) => REASONS[code] ?? code` | 未知码原样返回（双读期关键） |
@@ -139,17 +144,18 @@
 | `meta.hourMs` 非法值（∉ {3000, 6000, 12000}） | `6000` |
 | 温室旧档迁移【R2-11 联动】 | `buildings.greenhouse.built` 且无任何温室地块 → 按数组序**免费**补 `greenhouse: true` 至 `GREENHOUSE_PLOT_CAP`(3) 块——温室从“全场免疫”收紧为“地块制”，老档不因规则收紧净损失 |
 
-### 2.4 `src/data/levels.js`（R2-3，Fable-3 实现，本文即规格）
+### 2.4 `src/data/levels.js`（R2-3；模块已落地 ✅ `918239d`，经 `data/index.js` 桶再导出）
 
 ```js
+// —— 已落地 ✅（签名冻结）——
 export const XP_TABLE = [0, 40, 100, 180, 280, 420, 600, 820, 1100, 1450]; // 下标 i = Lv.(i+1) 门槛
-export const MAX_LEVEL = XP_TABLE.length;                                   // 10
-export function levelForXp(xp): number;    // 1..MAX_LEVEL；xp < 0 按 0 处理
-export function xpForNext(level): number;  // 升到 level+1 的累计门槛；level >= MAX_LEVEL → Infinity
-export function levelProgress(xp): { level, base, next, pct }; // 满级 { next: null, pct: 100 }（与 engine 落地版行为逐位一致）
+export function levelForXp(xp): number;    // 1..10；线性扫表，xp < 0 落在 Lv.1
+export function xpForNext(level): number;  // = XP_TABLE[level] ?? Infinity（满级 Infinity）
+// —— R2-3 残留（Fable-3 + Opus-4）——
+export function levelProgress(xp): { level, base, next, pct }; // 从 engine 迁入，行为与 engine 落地版逐位一致；满级 { next: null, pct: 100 }
 ```
 
-engine.js 双读期薄再导出：`export { XP_TABLE as LEVELS, levelForXp as levelFor, levelProgress } from "../data/levels.js"`。UI/main 改 import 后删除再导出。
+R2-3 残留：`levelProgress` 迁入本模块 + engine.js 改薄再导出（`export { XP_TABLE as LEVELS, levelForXp as levelFor, levelProgress } from "../data/levels.js"`）+ 删除 engine 本地重复表（现状双份数值靠人肉同步，改一处漏一处即翻车）。UI/main 改 import 后删除再导出。旧规格中的 `MAX_LEVEL` 常量作废——落地版未导出、无使用方（§10.3）。
 
 ## 3. Farm 契约（`src/systems/farm/index.js`，Opus-1）
 
@@ -159,7 +165,7 @@ engine.js 双读期薄再导出：`export { XP_TABLE as LEVELS, levelForXp as le
 | --- | --- | --- |
 | `OFF_SEASON_FACTOR` | 0.55 | 错季倍速 |
 | `WILT_GRACE_MS` | 45_000 | 枯萎宽限（真实 ms） |
-| `OFFLINE_CAP_MS` | 28_800_000 | 【R2-2】改为 core/engine 的再导出 |
+| `OFFLINE_CAP_MS` | 28_800_000 | 【R2-2 残留】engine 已有同值常量 ✅，farm 改为再导出去重 |
 | `GREENHOUSE_PLOT_CAP / GREENHOUSE_COIN / GREENHOUSE_SAW` | 3 / 80 / 1 | 温室地块上限与单块改造费 |
 | `isGreenhousePlot(plot): boolean` | `plot.greenhouse === true` 或 id 匹配 `/^g\d+$/` | **温室建筑本身不再让全村免疫**（Round 1 行为已废） |
 | `greenhousePlotCount(state): number` | 已罩进温室的地块数 | 卡 CAP 用 |
@@ -209,7 +215,7 @@ plot   = { status: "growing", cropId, plantedAt: now, doneAt: now + grow,
 
 失败码：`farm.not_ready`（非 ready 且未到 doneAt）/ `farm.plot_empty`（crop 不存在）。成功：`inv[yieldId] += yieldQty`；`xp += crop.xp`；plot 复位；log 一条。
 
-### 3.5 `harvestAll(state, now = Date.now()): Envelope` ✅（函数落地，【R2-14】接线 action + 工具条按钮，Opus-4）
+### 3.5 `harvestAll(state, now = Date.now()): Envelope` ✅（R2-14 已收官：`farm/harvest_all` action + 工具条「全部收获（N）」按钮 + H 快捷键 + 成功推进教程步 3）
 
 逐块尝试 `harvest`。全失败 → `{ ok: false, reason: "farm.nothing_ready", state, count: 0 }`；否则 `{ ok: true, state, count }`。
 
@@ -250,7 +256,9 @@ plot   = { status: "growing", cropId, plantedAt: now, doneAt: now + grow,
 
 成功：扣 80 金 + 1 锯；`plot.greenhouse = true` 且 `wiltAt = 0`（罩上玻璃当场免枯萎）；log 一条。不可撤销。UI：温室详情面板列地块与「罩进温室」按钮（【R2-11】Opus-4）。
 
-### 3.10 `catchUpPlots(state, savedAt, now = Date.now()): State` — 节拍 ✅（读档后一次，由 `applyOfflineCatchup` 调用）
+### 3.10 `catchUpPlots(state, savedAt, now = Date.now()): State` — 节拍（读档后一次，`applyOfflineCatchup` 已实际调用 ✅）
+
+落地版 ✅：
 
 ```
 away = clamp(now - savedAt, 0, OFFLINE_CAP_MS)；savedAt 非有限数按 now 处理
@@ -258,6 +266,17 @@ away === 0 → tickPlots(state, 0, now)
 否则：所有 wiltAt > savedAt 的地块 wiltAt = max(wiltAt, now + WILT_GRACE_MS)   // 人不在家不判枯
       然后 tickPlots(state, away, now)
 ```
+
+【R2-2b 裁决变更，Opus-1】落地版把 `now` 直传 tickPlots，`doneAt <= now` 的地块**不论离线多久都熟**——`scripts/offline-smoke.mjs` 因此 `ok:false`（SOTA A6 缺口实证）。本版裁决与探针/验收口径对齐，补生长封顶：
+
+```
+overflow = max(0, (now - savedAt) - away)                    // 超出封顶窗口的真实时长
+对 status === "growing" 且 doneAt > savedAt + away 的地块：   // 封顶窗口内本来就熟不了的
+  plantedAt += overflow；doneAt += overflow；wiltAt 若 >0 同步 += overflow
+其余地块照旧自然到期；然后按上面的赦免 + tickPlots 流程走
+```
+
+语义：离线最多白得 8 小时生长进度，剩余时长回来接着长（探针两断言：封顶窗口内 → ready；窗口外 → 仍 growing）。jobs/pets/心愿计时**不**封顶（见 `ARCHITECTURE.md §4.4`——它们是一次性且有界的）。
 
 ## 4. Production 契约（`src/systems/production/index.js`，Opus-2）
 
@@ -361,7 +380,7 @@ qty   = max(1, floor(total + ε))
 | `wishSlots(state): number` | `3 + (warmth >= 100 ? 1 : 0)`——温馨 ≥100 常驻第 4 心愿格 ✅ |
 | `kitchenRecipe(recipeId): Recipe \| null` | 接受配方 id / 菜品 id / 产物 id 三种写法，只认 kitchen 出品 ✅ |
 | `kitchenMenu(state): 菜单行[]` | 全部厨房菜谱 + 呈现层数据（name/inputs/warmth/happiness/desc/unlocked/unlockLevel），供 UI 直接铺菜单 ✅ |
-| `placedFurniture(state)` / `hasFurniture(state, id)` / `furnitureWarmth(state)` | 已摆家具列表 / 是否已摆 / 温馨保底盘（家具 warmth 之和）✅ |
+| `placedFurniture(state)` / `hasFurniture(state, id)` / `furnitureWarmth(state)` | village 本地副本（双形状兼容），仅 `rolloverDays` 保底在用；规范实现在 `core/furniture.js`（§5.9），【R2-21】改 import 去重 |
 
 ### 5.1 心愿生成与补位 ✅
 
@@ -371,7 +390,7 @@ qty   = max(1, floor(total + ε))
 | --- | --- |
 | 选单（确定性，禁随机） | `candidates = wishCandidates(state)`；空位起始下标 `start = wrap(meta.day + 板上已有数, len)`，板上已有同 id 则向后线性探测；`wishId = `${base.id}_d${day}_${seq}``，seq = `village.wishSeq` 递增 |
 | tier 缩放 | `tier = min(3, 1 + max(0, floor((level - 4) / 3)))`（Lv1–6 = 1，Lv7–9 = 2，Lv10 = 3）；`needs ×tier`；`coin = round(base.coin × tier × (tier > 1 ? 1.1 : 1))`；`xp = round(base.xp × tier)` |
-| 补位间隔 | `wishIntervalMs = max(1000, round(2 游戏时 × meta.hourMs × guestBuffFactor(state, "wish")))`——灯哥 0.85 在此生效（默认 12s 真实 → 10.2s） |
+| 补位间隔 | `wishIntervalMs = max(1000, round(2 游戏时 × meta.hourMs × guestBuffFactor(state, "wish")))`——灯哥 0.85 在此生效（默认 12s 真实 → 10.2s）。数值事实源已上收 `data/wishes.js` 的 `WISH_REFRESH_MIN = 120`（=2 游戏时）✅，village 本地 `WISH_REFRESH_HOURS = 2` 改读数据表【R2-22】 |
 | 补位节拍（`refillWishSlot`，tickVillage 调用） | open ≥ wishSlots → 原 state；板空 → 立即补满；`nextWishAt` 未设 → 设定后等待；`nowMs >= nextWishAt` → 补 1 单 |
 | 过期 | `rolloverDays`：`day - createdDay >= 3` 的 open 单撤下 + log |
 
@@ -391,16 +410,18 @@ qty   = max(1, floor(total + ε))
 | 状态非 done | `village.wish_done` |
 | `hasInv(needs)` | `village.wish_short` |
 
-成功（✅ 落地公式）：
+成功（✅ 落地公式；掉落数值处于双口径期，见下）：
 
 ```
 coins = max(1, round(wish.coin × happinessMult(state)))
 扣 needs；coin += coins；happiness += 1；xp += wish.xp；移除该单；log 一条
-掉落（rollWith 确定性）：
+掉落（rollWith 确定性）——现状落地口径：
   rollWith(rng, "wish-gift", …)  < 0.35 → 工具 +1（pickWeighted：锹 0.4 / 斧 0.35 / 锯 0.25，直接进 resources）
   rollWith(rng, "wish-pearl", …) < 0.04 → pearl += 1
 extras: { coins, gifts: string[] }
 ```
+
+【R2-22 掉落校准，Opus-3 + Opus-4】`918239d` 已把校准后的数值事实源落进 `data/wishes.js`（未接线，village 仍用本地 0.35 口径）：`WISH_TOOL_DROP = 0.25`、`WISH_PEARL_DROP = 0.04`、`TOOL_DROP_WEIGHTS`（锹 0.4 / **锯 0.35 / 斧 0.25**，权重按全程需求比反转）、保底 `TOOL_PITY_ORDER = ["axe","saw","shovel"]`（新档前 3 次交单按序必掉）+ `TOOL_PITY_DROUGHT = 6`（连续 6 单未掉工具，下一单按权重必掉）。接线时同步：village 本地常量改 import 数据表；engine 开局工具 2/1/1 → **1/0/0**（保底取代「开局白送」权宜）；保底计数需在 `state.village` 增字段（pityStep/drought，hydrate 补 0）。接线前后 T0/T1/T2 数值不同，验收按双口径记录（`ACCEPTANCE.md`）。
 
 锹/斧/锯**只**产自心愿掉落——这是后续作坊建材的唯一来源，概率改动属经济表变更须过 Fable-3。【R2-9】移除末尾立即补满（§5.1）。
 
@@ -465,7 +486,7 @@ favorite = !dark && guest?.favorite === recipe.outputId                      // 
 失败码：`village.pet_missing` / `village.pet_rest`（`readyAt > now`）。
 成功：`coin += 3 + (petyard 已建 ? 2 : 0)`；`happiness += (kind === "cat" ? 2 : 1)`；`readyAt = now + 20_000`；log 一条；extras `{ coin }`。
 
-### 5.8 `stallSell(state, { itemId, qty = 1 } = {}): Envelope` ✅（逻辑齐全，缺 UI —【R2-13】）
+### 5.8 `stallSell(state, { itemId, qty = 1 } = {}): Envelope` ✅（R2-13 已收官：系统 + UI 全落地）
 
 | 前置（按序） | 失败码 |
 | --- | --- |
@@ -476,28 +497,34 @@ favorite = !dark && guest?.favorite === recipe.outputId                      // 
 
 成功：`coin += round(stallPrice(itemId, qty) × guestBuffFactor(state, "stall"))`（茶婆婆 1.1；`stallPrice = round(基准价 × qty × 1.15)`，事实源 `data/items.js`）；`inv[itemId] -= qty`；log 一条；extras `{ coin }`。
 
-【R2-13】UI 接线（Opus-4，精确规格）：
+摊位 UI 落地版 ✅（本表即契约，实现者按此对账；旧拟稿的 `data-qty` 属性与「成功走 applyResult」作废 §10.3）：
 
-| 件 | 规格 |
+| 件 | 落地形态 |
 | --- | --- |
-| reducer | `village/stall` → `applyResult(state, stallSell(state, payload), "collect")` |
-| handlers | `sell(itemId, qty = 1)` → `dispatch({ type: "village/stall", payload: { itemId, qty } })` |
-| 委托 | `mount()` 增 `else if (act === "sell") call(h.sell, id, Number(btn.dataset.qty) || 1)` |
-| 面板 | `detailBuilding` 对 `id === "stall"` 分支到新 `detailStall(state)`：列出 `inv` 中 `priceOf > 0` 的物品，每行显示单价（`stallPrice(id, 1)`）与「卖 1」/「卖全部」（`data-act="sell" data-id data-qty`）；`priceOf === 0` 的物品不出现；茶婆婆在座时标注 ×1.1。**现状 bug 一并修**：stall 无 `slots` 定义却落进工位面板（`def.slots \|\| 2` 兜底显示假工位） |
+| UI 态 | `ui.sellId / ui.sellQty` 由纯 UI 动作 `meta/sell` 维护：payload `{ itemId }` = 选货（换货从 1 件重数）；`{ step: ±1 }` = 加减件数；`{ qty: "max" }` = 全库存。件数恒钳 `[1, 库存]`，库存为 0 时清选中 |
+| reducer | `village/stall` 失败走 `applyResult`；**成功不走** `applyResult`——写回 `ui.sellId/sellQty`（卖光清选中、未卖光钳到剩余），toast「摊上收进 N 金币」（tone good，fx collect） |
+| handlers | `pickSell(itemId)` / `sellQty(step)` / `sellMax()` / `sell(itemId, qty)`——`sell` 在 handler 层补全参数（缺 itemId 取 `ui.sellId`，无选中飘「先在货架上挑一样东西」；qty 缺省取 `ui.sellQty`，`"max"` 取全库存，钳 [1, 库存]） |
+| 委托 data-act | `sellpick`(data-id=货) / `sellstep`(data-id=±1) / `sellmax` / `sell`(data-id=货, data-b="max"\|件数) |
+| 面板 | `detailStall(state, ui)`：未建 → `unbuiltPanel`；货架列 `priceOf > 0` 的库存按单价降序（`data-act="sellpick"`，行内标 `stallPrice(id,1)` 金/个）；选中后出成交行（− / 件数 / + / 全都要 / 「卖出 N 件 · 约 M 金」）；`priceOf === 0` 的物品归入脚注「没人收：…」；页眉注明摊价 = 基准价 115% 且有嘉宾加成 |
+| 假工位 bug ✅ | 已修：无 slots/无配方/无牲口/无工单的建筑（stall、社区、民居……）走 `detailPlainBuilding`（`KIND_NOTE` 一句话文案），不再落进 `def.slots \|\| 2` 兜底的假工位面板 |
 
-### 5.9 `placeFurniture(state, { furnitureId } = {}): Envelope` ✅（系统已落地，规范名 `placeFurniture`，`place` 为别名；缺 UI —【R2-12】）
+### 5.9 家具：`placeFurniture(state, { furnitureId } = {}): Envelope` ✅（R2-12 已收官；**规范实现 = `core/furniture.js`**，仲裁见下）
+
+**双实现仲裁**：第二波出现两套并行实现——village 的 `place`（落盘 `{id, room, day}` 对象）与 `core/furniture.js` 的 `placeFurniture`（落盘 `string` id）。main.js 的 `village/furnish` 接的是 **core 版**，本版裁定 core 版为唯一契约；village 侧写入端（`place` / `placeFurniture` 导出）为死代码【R2-21 删除，api.test 未断言可安全删】。village 读取端（`furnitureWarmth` 等，rolloverDays 日衰减保底在用）暂保留双形状兼容，R2-21 改 import core/furniture 后删兼容。
 
 | 前置（按序） | 失败码 |
 | --- | --- |
 | `furnitureById(furnitureId)` 存在 | `village.furniture_unknown` |
-| `!hasFurniture(state, furnitureId)` | `village.furniture_owned` |
+| `!isPlaced(state, furnitureId)` | `village.furniture_owned` |
 | `meta.level >= def.unlockLevel` | `village.level_low` |
 | 资源类花费（coin/pearl）足够 | `village.res_short` |
 | 库存类花费（cloth/wool）足够 | `village.inv_short` |
 
-成功：复用 `splitCost` 扣两类花费；`furniture += { id, room: def.room, day }`；`warmth += def.warmth`；log 一条；extras `{ warmth }`。家具不进 `inv`、不可拆除（v1 裁决：只加不减，省一套摆放 UI）。
-温馨保底联动 ✅：`rolloverDays` 日衰减为 `warmth = max(furnitureWarmth(state), warmth - 跨日数)`——家具是温馨的地板。
-【R2-12】UI（Opus-4）：蘑菇屋详情面板新增「添置家什」区，按 room 分组列出未摆家具，`data-act="furnish"`。
+成功 ✅：复用 `splitCost` 扣两类花费；`furniture += def.id`（**string**，不进 `inv`）；`warmth += def.warmth`；log 一条；extras `{ warmth }`。不可拆除（v1 裁决：只加不减，省一套摆放 UI）。
+
+温馨保底双闸 ✅：① `core/furniture.applyFurnitureWarmth` 在 main.js `finalize`（`meta/tick` 与 `meta/offline` 收尾）把 `resources.warmth` 兜到 `furnitureWarmth(state)` 之上；② village `rolloverDays` 日衰减为 `warmth = max(furnitureWarmth(state), warmth - 跨日数)`——家具是温馨的地板。
+
+UI 落地版 ✅：蘑菇屋面板「屋里摆什么」区（`furnitureSection`）——按 room 分组（堂屋/灶间/院子/客房，`ROOM_NAME`），每件列温馨值/造价/描述，按钮态 = 已摆上 / 等 Lv.N / 差 X / 摆上，`data-act="place"`（旧拟稿 `data-act="furnish"` 作废，action 仍名 `village/furnish`）；区头显示「已摆 n/总数 · 温馨保底 N」。
 
 ### 5.10 `tickVillage(state, dtMs, nowMs = Date.now()): State` — 节拍 ✅
 
@@ -516,7 +543,7 @@ favorite = !dark && guest?.favorite === recipe.outputId                      // 
 | `farm/till` | `{ plotId }` | `till` | ✅（【R2-10】改直传信封） |
 | `farm/plant` | `{ plotId, cropId }` | `plant` | ✅ 成功推进教程步 2 |
 | `farm/harvest` | `{ plotId }` | `harvest` | ✅ 成功推进教程步 3 |
-| `farm/harvest_all` | `{}` | `harvestAll` | 【R2-14】+ 工具条按钮 |
+| `farm/harvest_all` | `{}` | `harvestAll` | ✅ 工具条按钮 + H 键；成功推进教程步 3 |
 | `farm/expand` | `{}` | `expandPlot` | ✅ |
 | `farm/cover` | `{ plotId? }` | `expandGreenhousePlot` | 【R2-11】接线 + 温室面板 |
 | `prod/enqueue` | `{ buildingId, recipeId }` | `enqueueJob` | ✅ |
@@ -526,15 +553,17 @@ favorite = !dark && guest?.favorite === recipe.outputId                      // 
 | `village/deliver` | `{ wishId }` | `deliverWish` | ✅ |
 | `village/skip` | `{ wishId }` | 撕单 + `refreshWishes` 立即补 1（借 `ui.rerolls` 移位抽签，日期改回） | ✅ 换单立即补是有意为之（区别于交付，§5.1） |
 | `village/invite` | `{ guestId }` | `inviteGuest` | ✅ |
-| `village/cook` | `{ recipeId, guestId }` | `cook` | ✅ 菜谱可选（UI 传 recipeId） |
+| `village/cook` | `{ recipeId, guestId }` | `cook` | ✅ guestId 由 handler 的 `serveTarget` 补全：点名（ui.serveTo）→ 爱吃这道菜的 → 屋里第一位 |
 | `village/build` | `{ buildingId }` | `build` | ✅ |
 | `village/pet` | `{ petId }` | `petPlay` | ✅ |
-| `village/stall` | `{ itemId, qty }` | `stallSell` | 【R2-13】 |
-| `village/furnish` | `{ furnitureId }` | `placeFurniture` | 【R2-12】 |
+| `village/stall` | `{ itemId, qty }` | `stallSell` | ✅ 成功路径特例（不走 applyResult，§5.8） |
+| `village/furnish` | `{ furnitureId }` | `placeFurniture`（**core/furniture**） | ✅ |
 | `meta/tick` | `{ dt, now? }` | `ARCHITECTURE.md §4.3` 管线 | ✅（【R2-18】透传 now） |
-| `meta/offline` | `{ savedAt, now? }` | `applyOfflineCatchup` | 【R2-2】启动时一次 |
+| `meta/offline` | `{ savedAt, now }` | `applyOfflineCatchup`（注入 catchUpPlots/tickProduction/tickVillage）→ `finalize` → 摘要 toast（几块地熟了/几件活好了；capped 注明 8h 封顶） | ✅ 启动仅一次、**先于**首个 `meta/tick`；`offlineMs = 0` 时返回原引用（main 补「接着上次的日子过」toast） |
 | `meta/mute` | `{}` | `meta.muted` 取反 | ✅ |
 | `meta/seed` | `{ cropId }` | 写 `ui.seed` | ✅ |
+| `meta/sell` | `{ itemId? , step?, qty?: "max" }` | 纯 UI 态：维护 `ui.sellId/sellQty`（§5.8） | ✅ |
+| `meta/serve` | `{ guestId }` | 纯 UI 态：切换 `ui.serveTo`（点同一人取消点名） | ✅ |
 | `meta/select` | `{ id }` | 写 `ui.selected`；教程末步联动 | ✅ |
 | `meta/tutorial` | `{}` | 跳过教程（step = 4） | ✅ |
 | `meta/toast` | `{ text, tone?, fx? }` | 组合根内部飘字 | ✅ |
@@ -591,22 +620,22 @@ reducer 对未知 type **必须**返回原 state 引用（静默）。旧草案�
 | `village.guest_full` | 屋里坐满了，先添间客房 | inviteGuest | 现为动态「屋里只坐得下 N 位…」→ 静态化，cap 进 extras |
 | `village.not_kitchen` | 厨房不会做这个 | cook | 同 |
 | `village.not_built` | 厨房还没盖起来 | cook | 同 |
-| `village.level_low` | 小镇等级不够 | cook/build/placeFurniture | 同 |
+| `village.level_low` | 小镇等级不够 | cook/build（village）、placeFurniture（core/furniture） | 同 |
 | `village.food_short` | 食材不够，别让客人饿着 | cook | 同 |
 | `village.building_unknown` | 没有这种建筑 | build | 同 |
 | `village.already_built` | 已经有了 | build | 同 |
 | `village.pop_short` | 人手不够，还张罗不起来 | build | 现为动态「人手不够，要 N 个人…」→ 静态化，need 进 extras |
 | `village.pop_capped` | 人口到顶了，先盖社区 | build | 同 |
-| `village.res_short` | 建材或金币不够 | build/placeFurniture | build 同；placeFurniture 现为「金币或材料不够」→ 归一 |
-| `village.inv_short` | 库存不够 | build/placeFurniture | 同 |
+| `village.res_short` | 建材或金币不够 | build（village）、placeFurniture（core/furniture） | build 同；placeFurniture 现为「金币或材料不够」→ 归一 |
+| `village.inv_short` | 库存不够 | build（village）、placeFurniture（core/furniture） | 同 |
 | `village.pet_missing` | 它跑去田埂了 | petPlay | 同 |
 | `village.pet_rest` | 它还想再躺会儿 | petPlay | 同 |
 | `village.stall_missing` | 摊位还没支起来 | stallSell | 同 |
 | `village.qty_invalid` | 至少也得摆一件出去 | stallSell | 同 |
 | `village.stock_short` | 货不够 | stallSell | 同 |
 | `village.worthless` | 这个卖不出价 | stallSell | 同 |
-| `village.furniture_unknown` | 没有这件家具 | placeFurniture | 同 |
-| `village.furniture_owned` | 这件已经摆上了 | placeFurniture | 同 |
+| `village.furniture_unknown` | 没有这件家具 | placeFurniture（core/furniture） | 同 |
+| `village.furniture_owned` | 这件已经摆上了 | placeFurniture（core/furniture） | 同 |
 
 ## 8. 嘉宾 buff 应用点（恰好 7 处，公式即规格；`bf = buffFactor(state, target)`）
 
@@ -628,13 +657,17 @@ reducer 对未知 type **必须**返回原 state 引用（静默）。旧草案�
 | --- | --- |
 | farm | `till` `plant` `harvest` `expandPlot` `tickPlots` `seasonFactor`；probe 可选位 `catchUpPlots` `harvestAll`；另契约冻结 `wilt` `applyGuestFarmBuff` `canPlant` `isGreenhousePlot` `greenhousePlotCount` `expandGreenhousePlot` 与常量 `OFF_SEASON_FACTOR` `WILT_GRACE_MS` `OFFLINE_CAP_MS` `GREENHOUSE_PLOT_CAP` `GREENHOUSE_COIN` `GREENHOUSE_SAW` |
 | production | `enqueueJob` `collectJob` `feedAnimal` `unlockSlot` `tickProduction` `canCraft`；另 `buildingSlots` `freeSlots` `livestockYieldMultiplier` `feedCost` `winterFeedCarry` `livestockCarry` `MAX_SLOTS` `WINTER_FEED_SURCHARGE` |
-| village | `acceptWish` `deliverWish` `refreshWishes` `inviteGuest` `cook` `build` `petPlay` `stallSell` `tickVillage`；另 `guestCapacity` `guestBuffFactor` `wishCandidates` `wishSlots` `happinessMult` `kitchenRecipe` `kitchenMenu` `placeFurniture`（别名 `place`）`placedFurniture` `hasFurniture` `furnitureWarmth` 与 4 个常量 |
-| core/engine | `createInitialState` `advanceTime`（另 §2.1 全部） |
-| data | `CROPS` `RECIPES` `BUILDINGS` `ANIMALS`（另 `GUESTS` `WISH_POOL` `ITEM_NAMES` `BASE_PRICES` `stallPrice` `priceOf` `DISHES` `FURNITURE` 及各 `xxxById`） |
+| village | `acceptWish` `deliverWish` `refreshWishes` `inviteGuest` `cook` `build` `petPlay` `stallSell` `tickVillage`；另 `guestCapacity` `guestBuffFactor` `wishCandidates` `wishSlots` `happinessMult` `kitchenRecipe` `kitchenMenu` 与 4 个常量。**解冻**：家具五件套（`place`/`placeFurniture`/`placedFurniture`/`hasFurniture`/`furnitureWarmth`）——core/furniture 版胜出（§5.9），api.test 未断言，R2-21 删写入端、读取端改 import |
+| core/engine | `createInitialState` `advanceTime` `OFFLINE_CAP_MS`（另 §2.1 全部；`absGameMinutes` 除外——死代码待删） |
+| core/offline ✅ | `applyOfflineCatchup` `offlineSpan` `humanGap`（main.js 与 §6 `meta/offline` 在用） |
+| core/furniture ✅ | `placeFurniture` `placedFurniture` `isPlaced` `furnitureWarmth` `applyFurnitureWarmth`（main.js + screens.js 在用） |
+| data | `CROPS` `RECIPES` `BUILDINGS` `ANIMALS`（另 `GUESTS` `WISH_POOL` `ITEM_NAMES` `BASE_PRICES` `stallPrice` `priceOf` `STALL_MARKUP` `DISHES` `dishByRecipe` `FURNITURE` 及各 `xxxById`） |
+| data/levels ✅ | `XP_TABLE` `levelForXp` `xpForNext`（§2.4；engine 再导出后 UI/main 迁移 import） |
+| data/wishes（数值事实源，R2-22 接线前即冻结） | `WISH_REFRESH_MIN` `WISH_TOOL_DROP` `WISH_PEARL_DROP` `TOOL_DROP_WEIGHTS` `TOOL_PITY_ORDER` `TOOL_PITY_DROUGHT`；data/animals 另有 `WINTER_FEED_SURCHARGE`（production 本地同值常量改 import，随 R2-22 批次） |
 
 ## 10. Round 1 → Round 2 差异台账
 
-### 10.1 已落地（DONE，本版契约已收编；★ = Round 2 首波并行落地，`baf4247..4b97e21`）
+### 10.1 已落地（DONE，本版契约已收编；★ = Round 2 首波 `baf4247..4b97e21`，★★ = 第二波 `9d68a4e`+`918239d`）
 
 | 项 | 落点 |
 | --- | --- |
@@ -651,49 +684,63 @@ reducer 对未知 type **必须**返回原 state 引用（静默）。旧草案�
 | 工位 / 畜牧收取修复 + collectXp 回退链；★ 冬季饲料 +20%（winterFeedCarry 记账 + feedCost 查询）；★ 畜牧余数按产品分桶；★ enqueueJob/feedAnimal 末位 nowMs + makeJobId 确定性（systems 已零内嵌时钟/随机）；★ kitchen 工时 buff（字面量） | production |
 | ★ 三系统 buff 口径统一（连乘 + 钳 [0.5, 2]，各自本地实现） | farm/production/village |
 | 自动存档三通道 + hydrate 骨架 + 坏档兜底 | main.js / core/save |
+| ★★ 离线折算全链：`core/offline.js`（offlineSpan/humanGap/applyOfflineCatchup，systems 注入）+ `meta/offline` 启动派发（先于首 tick）+ 摘要 toast/log + engine `OFFLINE_CAP_MS` | core/offline + engine + main.js |
+| ★★ 家具接线：`core/furniture.js`（string id 落盘 + applyFurnitureWarmth 兜底）+ `village/furnish` + 蘑菇屋「屋里摆什么」分间面板 | core/furniture + main.js + ui |
+| ★★ 摊位 UI：`detailStall` 货架/成交行 + `meta/sell` UI 态 + `village/stall` 接线；假工位 bug 修复（`detailPlainBuilding`） | main.js + ui |
+| ★★ 厨房整本菜单：`detailKitchen`（全菜谱卡片 + 库存对照 + 最爱标注）+「端给谁」点名（`meta/serve` + serveTarget 回退链） | main.js + ui |
+| ★★ `farm/harvest_all` 接线 + 工具条「全部收获」+ H 键（R2-14 收官） | main.js + ui |
+| ★★ `finalize` 收尾统一（tick 与 offline 共用：家具温馨兜底 + 等级重算）；地块 wilted 态可视化（枯地/要重翻文案） | main.js + ui |
+| ★★ `data/levels.js`（XP_TABLE/levelForXp/xpForNext）+ 经济校准数据契约（w_veg 14→10 金/8→5 xp、白菜跨春、掉率 0.25/保底常量——数据落地待接线 R2-22） | data |
 | 12 套四季×昼夜皮肤；54 tests 绿；★ production.test.js、offline-smoke、wish-board 脚本 | styles / tests / scripts |
 
 ### 10.2 Round 2 剩余工单（TODO，编号被全文引用；依赖：D0→D1→D2→D3 见 §0.2）
 
 | # | 内容 | 所有者 | 状态 |
 | --- | --- | --- | --- |
-| R2-1 | `core/reasons.js` + 双读迁移四步（§0.2，D1 影响面 7 处断言） | Opus-4 → GPT-sol-1 → Opus-1/2/3 → GPT-sol-1 | TODO |
-| R2-2 | 离线接线：`OFFLINE_CAP_MS` 上收 engine（farm 改再导出）、`applyOfflineCatchup`（§2.2）、`meta/offline` 启动派发 | Opus-4 + Opus-1 | TODO（catchUpPlots 纯函数 ✅） |
-| R2-3 | `data/levels.js`（§2.4）+ engine 薄再导出 | Fable-3 + Opus-4 | TODO |
+| R2-1 | `core/reasons.js` + 双读迁移四步（§0.2，D1 影响面 7 处断言；D2 含 core/furniture.js） | Opus-4 → GPT-sol-1 → Opus-1/2/3 → GPT-sol-1 | TODO |
+| R2-2 | 离线常量去重：farm `OFFLINE_CAP_MS` 改 engine 再导出（接线主体 ★★ 已收官） | Opus-1 | 残留 |
+| R2-2b | `catchUpPlots` 生长封顶：超出封顶窗口的 growing 地块顺延 overflow（§3.10 裁决，offline-smoke 转 ok:true，SOTA A6） | Opus-1 | TODO |
+| R2-3 | `levelProgress` 迁入 `data/levels.js` + engine 薄再导出 + 删 engine 重复表（模块与 XP_TABLE ★★ 已落地） | Fable-3 + Opus-4 | 残留 |
 | R2-4 | buff 收官：`core/buffs.js` 落地 + 三处本地实现改薄封装（语义已统一，纯去重）；enqueueJob kitchen 字面量 → `buffFactor(state, buildingId)`（覆盖 weavery）；cook 翻车率 ×kitchen（§5.5 裁决） | Opus-4 + Opus-2 + Opus-3 + Opus-1 | 口径 ✅ / 收敛 TODO |
-| R2-7 | `canPlant` UI 接线：种子条按等级置灰（系统门槛 ✅） | Opus-4 | UI TODO |
-| R2-9 | `deliverWish` 停止立即补满（§5.1，联动 economy.test 断言） | Opus-3 + GPT-sol-1 | TODO |
+| R2-7 | `canPlant` UI 接线：种子条按等级置灰（系统门槛 ✅；现状种子条只有反季/缺钱两种态） | Opus-4 | UI TODO |
+| R2-9 | `deliverWish` 停止立即补满（§5.1，联动 economy.test 断言；现状 L280 仍尾调 refreshWishes） | Opus-3 + GPT-sol-1 | TODO |
 | R2-10 | `till` 信封化（§3.2，联动 main.js 删预检） | Opus-1 + Opus-4 | TODO |
 | R2-11 | 温室 UI：`farm/cover` 接线 + 温室面板（系统 `expandGreenhousePlot` ✅）+ hydrate 旧档迁移（§2.3） | Opus-4 | UI/迁移 TODO |
-| R2-12 | 家具 UI：`village/furnish` 接线 + 蘑菇屋家什区（系统 `placeFurniture` ✅） | Opus-4 | UI TODO |
-| R2-13 | 摊位 UI：`village/stall` 接线 + `detailStall` 面板 + 假工位 bug（§5.8） | Opus-4 | TODO |
-| R2-14 | `farm/harvest_all` 接线 + 工具条按钮 | Opus-4 | TODO |
 | R2-15 | `meta/settings`（hourMs 白名单 3000/6000/12000）+ 设置入口 | Opus-4 | TODO |
 | R2-16 | hydrate 增补表（§2.3）+ `SAVE_VERSION`/`MIGRATIONS` | Opus-4 | TODO |
 | R2-17 | `tickPlots` 枯萎写日志 | Opus-1 | TODO |
 | R2-18 | `meta/tick` 透传 `payload.now` | Opus-4 | TODO |
-| R2-19 | 删除 main.js `collectLivestock` 死代码 | Opus-4 | TODO |
-| R2-20 | 边界静态测试（禁 document/localStorage/内嵌 Date.now/Math.random）——R2-6 已完成，随时可落 | GPT-sol-1 | TODO |
+| R2-19 | 死代码清理：main.js `collectLivestock` 兜底（collectJob 已认畜牧单）+ engine `absGameMinutes`（第二波误重新引入，零调用方） | Opus-4 | TODO |
+| R2-20 | 边界静态测试（禁 document/localStorage/内嵌 Date.now/Math.random）——前置违规已清零，随时可落 | GPT-sol-1 | TODO |
+| R2-21 | 家具去重：删 village 写入端（`place`/`placeFurniture` 导出，api.test 未断言）；village 读取端改 import core/furniture 并删双形状兼容（§5.9） | Opus-3 | TODO |
+| R2-22 | 经济校准接线（数据契约 ★★ 已冻结）：village 掉落改读 `WISH_TOOL_DROP`/`TOOL_DROP_WEIGHTS` + 保底（`TOOL_PITY_ORDER`/`TOOL_PITY_DROUGHT`，village 增计数字段）；`WISH_REFRESH_HOURS` 改读 `WISH_REFRESH_MIN`；engine 开局工具 2/1/1 → 1/0/0；production `WINTER_FEED_SURCHARGE` 改 import data/animals（§5.3） | Opus-3 + Opus-2 + Opus-4 | TODO |
 
-已完成收编（原工单号保留备查）：R2-5 冬饲 ★、R2-6 production 注入/确定性 id ★、R2-7 系统侧作物门槛 ★、R2-8 心愿 minLevel ★、R2-11 系统侧温室地块制 ★、R2-12 系统侧家具 ★。
+已完成收编（原工单号保留备查）：R2-5 冬饲 ★、R2-6 production 注入/确定性 id ★、R2-7 系统侧作物门槛 ★、R2-8 心愿 minLevel ★、R2-11 系统侧温室地块制 ★、R2-12 家具（系统 ★ + core/UI ★★）、R2-13 摊位 UI ★★、R2-14 全部收获 ★★。
 
-P2（不阻塞 SOTA，滚入下一轮）：favorite 续住与温馨经济复衡（Fable-3）；货运码头 / 节日广场玩法；`prefers-reduced-motion`；环境音；扩建/工具掉落节奏复衡。
+P2（不阻塞 SOTA，滚入下一轮）：favorite 续住与温馨经济复衡（Fable-3）；货运码头 / 节日广场玩法；`prefers-reduced-motion`；环境音。
 
 ### 10.3 已废条目（旧草案 → 本版删除，防止实现者按旧文施工）
 
 | 旧条目 | 处置 |
 | --- | --- |
-| rootReducer 三段式（route/applyResult/finalize）、失败写 log | 落地为 applyAction + toast 飘字，`ARCHITECTURE.md §3.3` |
-| `absGameMinutes(meta)`、顶层 `wishNextAt`（游戏分钟） | 作废：心愿计时落地为 `village.nextWishAt`（纪元 ms） |
+| rootReducer 三段式（route/applyResult/finalize）、失败写 log | 落地为 applyAction + toast 飘字，`ARCHITECTURE.md §3.3`（第二波新增的 `finalize` 只是 tick/offline 共用收尾，非旧三段式复活） |
+| `absGameMinutes(meta)`、顶层 `wishNextAt`（游戏分钟） | 作废：心愿计时落地为 `village.nextWishAt`（纪元 ms）。注意 `9d68a4e` 把 `absGameMinutes` 重新写进了 engine——零调用方，仍属作废，【R2-19】删除 |
 | `guests[].leaveDay` | 改名 `untilDay`（落盘前改名，不升存档版本） |
-| deliverWish 掉落 3% 珍珠 / 10% 工具、末位 `rand` 参数 | 落地为 4% / 35%、payload `rng` + 状态哈希 |
+| deliverWish 掉落 3% 珍珠 / 10% 工具、末位 `rand` 参数 | 落地为 4% / 35%、payload `rng` + 状态哈希；35% 与权重再被数据契约校准为 25% + 保底（R2-22，双口径见 §5.3） |
 | inviteGuest 的 level ≥ 4 门槛 | 作废：容量曲线（guestCapacity）控节奏 |
 | 温室「建成即全场免疫」；本文上一版拟的 `setGreenhouse` 免费开关（cap 4） | 落地为 `expandGreenhousePlot` 付费改造（80 金 + 锯，cap 3，不可撤销） |
 | “buff 应用点恰好 4 处” | 扩为 7 处（§8），新增 stall / weavery / cook 翻车率 |
 | `production.livestockCarry` 单一 number | 落地为按 productId 分桶（旧档 number 兼容读） |
 | 音效决策读 `action.type` | 落地为 `ui.fx` 信号 |
-| 初始工具 1/0/0、帧 dt 钳制 200ms | 落地为 2/1/1、500ms + 100ms 累积 |
-| `src/data/prices.js`、`wishes.js` 追加 `WISH_REFRESH_MIN = 120` | 已由 `data/items.js` 与 village 的 `WISH_REFRESH_HOURS = 2` 取代 |
+| 帧 dt 钳制 200ms | 落地为 500ms + 100ms 累积 |
+| 初始工具「落地 2/1/1 即终态」 | 撤销：数据契约恢复 1/0/0 为目标（保底掉落取代开局白送，R2-22）；2/1/1 仅为接线前现状 |
+| `src/data/prices.js` | 已由 `data/items.js` 取代（`WISH_REFRESH_MIN = 120` 上一版误一并作废——`918239d` 已落进 `wishes.js` 为事实源，恢复有效） |
 | 心愿选单公式 `(day * 7 + open.length) % pool` | 落地为 `wrap(day + 板上已有数, len)` + 线性探测 + wishSeq 流水号 |
 | `wiltOffSeason(state)` 批量枯萎 | 早已作废，宽限机制取代 |
 | stallSell 拒卖文案「这东西没人收」 | 落地改回「这个卖不出价」（§7 以落地为准） |
+| `applyOfflineCatchup` 拟落 `core/engine.js`、三参签名 | 落地为 `core/offline.js` 四参（`systems` 注入，core 不反向依赖 systems，§2.2） |
+| 家具落盘 `{ id, room, day }` 对象（village 版写入端） | 落地为 string id 数组（core/furniture 版接线胜出，§5.9；village 写入端 R2-21 删除） |
+| 摊位 UI 拟稿：`data-qty` 属性、「卖 1 / 卖全部」两按钮、成功走 applyResult | 落地为 `meta/sell` UI 态 + 件数 stepper + `data-b`；成功路径特例（§5.8） |
+| 家具 UI 拟稿 `data-act="furnish"` | 落地为 `data-act="place"`（action 名 `village/furnish` 不变） |
+| `data/levels.js` 拟导出 `MAX_LEVEL` | 作废：落地版未导出、无使用方（§2.4） |
+| 离线「B 时基计时器一律自然到期」的一揽子裁决 | 收窄：仅 jobs/pets/心愿计时自然到期；农田生长按 8h 封顶顺延（R2-2b，§3.10，与 offline-smoke/SOTA A6 对齐） |
