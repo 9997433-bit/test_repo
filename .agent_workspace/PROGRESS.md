@@ -128,7 +128,8 @@
 
 - Fable-2 夜幕单源已合入 `56fc7e3`：CSS `--night-ink` + `html[data-phase]` 全量 0.14/0.3；画布 `drawWeatherOverlay` 尾部 `day < -0.05` 整幅夜色仍在，属 Opus-1 地界催办。
 - Fable-3 事件/居民/B30 已在工作分支（`9468e32`/`9562878`/`5611a96`）。父机已 `vitest -u` 重录「满编挑战终局 Boss」：潮汐领主 maxHp 4241→6696，满编★5 仍胜但 8 回合 5 残变为 11 回合 4 残（山姆阵亡）。`npm test` 40/40，`probe` 8/8。
-- 已派出 Opus-3 终局接口 `bc-855f3193-1aba-5438-9042-37af9dafb631`（只写 heroes/combat，落地 `resolveRaid`）。Opus-2 海区收口仍在跑。
+- 已派出 Opus-3 终局接口 `bc-855f3193-1aba-5438-9042-37af9dafb631`（只写 heroes/combat，落地 `resolveRaid`）。
+- Opus-2 海区收口已合入 `2737f01`：`diveDrain` 单源、`canDive` 终检 `E_BUSY`、`finishDive` 按 `diveRecord.settled` 幂等。契约 `E_BUSY`/`runId`/`settled` 待 Fable-1 收编。
 
 ## Round 3 派发记录
 
@@ -139,7 +140,7 @@
 | Fable-3 事件居民 | 已完成 · 已合入 `9468e32`/`9562878`/`5611a96`（B30 墙 + 事件/居民表） | `bc-13289e90-e12b-5ce4-9413-6009d810472c` |
 | Fable-4 终验 | 已完成 · 文档已合入 `faf3af6` | `bc-228a10a2-038e-5d71-9efb-9b0467d7042f` |
 | Opus-1 量子巡检 | 已完成 · 已合并 `cursor/r3-opus1-quantum-patrol-and-save-normalize-18ac` | `bc-d42ff8c8-646c-5173-bf98-e1ccb3d318ac` |
-| Opus-2 海区收口 | 运行中 | `bc-12ca2af4-5d0b-5170-bb85-3304022144e7` |
+| Opus-2 海区收口 | 已完成 · 已合并 `cursor/r3-opus2-dive-closeout-44e7` | `bc-12ca2af4-5d0b-5170-bb85-3304022144e7` |
 | Opus-3 终局接口 | 运行中 | `bc-855f3193-1aba-5438-9042-37af9dafb631` |
 | Opus-4 契约鱼屏 | 已完成 · 已合并 `cursor/cww-r3-fish-dive-ui-dc04` | `bc-bd06dcac-7146-5d39-9e5e-2b1848a8dc04` |
 | GPT-sol-1 天气伤病测 | 已完成 · 已合入 `665977a`（40 测） | `bc-642fb9d2-a722-5646-a6c6-6e188b0fa3bc` |
