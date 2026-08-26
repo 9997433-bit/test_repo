@@ -1,6 +1,6 @@
 # 架构（实施级 · Round 2 定稿）
 
-> 本文与 `API_CONTRACT.md` 共同构成实现契约。基准 = **`548e6c6` 提交的落地代码**（Round 1 收尾）。与 Round 1 契约草案冲突之处，本版一律以落地代码为准重新裁决；被废弃的旧条目集中列在 `API_CONTRACT.md §10.3`，不再散落。Round 2 变更点标 `【R2】` 并指名所有者（见 `OWNERSHIP.md`）。
+> 本文与 `API_CONTRACT.md` 共同构成实现契约。基准 = **`4b97e21` 提交的落地代码**（Round 1 收尾 + Round 2 首波并行落地：冬饲/作物门槛/温室地块制/心愿过滤/家具/确定性 id）。与 Round 1 契约草案冲突之处，本版一律以落地代码为准重新裁决；被废弃的旧条目集中列在 `API_CONTRACT.md §10.3`，不再散落。Round 2 变更点标 `【R2】` 并指名所有者（见 `OWNERSHIP.md`）。
 
 ## 0. 铁律（六条，违反即打回）
 
@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | 1 | 单一 store。系统模块（`src/systems/**`）是纯函数，**禁止**触碰 `document` / `window` / `localStorage` / Audio / import 任何 `src/ui/**`、`src/audio/**` | 边界静态测试（R2-20） | ✅ 全部合规 |
 | 2 | 命令函数一律返回信封 `{ ok, reason, message?, state, ...extras }`；节拍/查询返回裸值。跨模块边界禁止返回裸 patch | 单测断言返回形状 | ⚠️ 唯一例外 `farm.till` 返回裸 state（R2-10 信封化） |
-| 3 | 时间与随机必须可注入：末位默认参数 `nowMs = Date.now()`，或 payload 内 `now` / `rng` 字段（village 落地惯例）。函数体内不得直接调用 `Date.now()` / `Math.random()`（默认参数位除外）；未注入 rng 时允许用 `village/rng.js` 的状态派生哈希（天然确定） | 边界静态测试（R2-20） | ⚠️ production 的 `enqueueJob` / `feedAnimal` / `makeJobId` 内嵌 `Date.now()`，`makeJobId` 内嵌 `Math.random()`（R2-6） |
+| 3 | 时间与随机必须可注入：末位默认参数 `nowMs = Date.now()`，或 payload 内 `now` / `rng` 字段（village 落地惯例）。函数体内不得直接调用 `Date.now()` / `Math.random()`（默认参数位除外）；未注入 rng 时允许用 `village/rng.js` 的状态派生哈希（天然确定） | 边界静态测试（R2-20） | ✅ 全部合规（production 首波已补 nowMs 并去掉 `makeJobId` 的 Math.random） |
 | 4 | 失败路径必须返回**传入的同一个 state 引用**（`state` 字段 `===` 入参），不得部分改写 | `expect(r.state).toBe(s)` | ✅ |
 | 5 | state 必须 JSON 可序列化：无函数 / Date / Map / Set / NaN / Infinity / undefined 值 | 存档 roundtrip 测试 | ✅ |
 | 6 | 数值唯一事实源在 `src/data/**`。`GDD.md` 的表格只是镜像，冲突时以 data 为准 | code review | ⚠️ 等级表仍在 `core/engine.js`（R2-3 移入 `data/levels.js`） |
@@ -25,8 +25,8 @@ games/xiangwang-shenghuo/
 ├─ src/systems/village/     心愿、嘉宾、烹饪、建造、宠物、摊位、rng.js；【R2】+ 家具（Opus-3）
 ├─ src/ui/screens.js        骨架 + 增量渲染 + 事件委托（Opus-4）
 ├─ src/styles/  src/audio/  四季皮肤与音效（Fable-2 / Opus-4）
-├─ tests/                   vitest 5 个文件（GPT-sol-1）
-└─ scripts/                 probe / bench / chain-smoke（GPT-sol-2）
+├─ tests/                   vitest 6 个文件（GPT-sol-1）
+└─ scripts/                 probe / bench / chain-smoke / offline-smoke / wish-board（GPT-sol-2）
 ```
 
 ## 2. 数据流（落地版，唯一环路）
@@ -202,8 +202,8 @@ const MIGRATIONS = {
 | 现状 | `core/engine.js` 导出 `LEVELS = [0,40,100,180,280,420,600,820,1100,1450]`、`levelFor(xp)`、`levelProgress(xp)`；main.js 与 screens.js 从 engine import |
 | 目标（R2-3） | 新模块 `src/data/levels.js`（Fable-3）持有 `XP_TABLE` 与派生函数（精确签名 `API_CONTRACT.md §2.4`）；`core/engine.js` 改为薄再导出（`LEVELS = XP_TABLE`、`levelFor = levelForXp`、`levelProgress`），main.js/screens.js **不改 import**——这是等级表的双读期，UI 迁移 import 后删再导出 |
 | 派生规则 | `meta.level` = `levelForXp(meta.xp)`，由 `meta/tick` 第 5 步重算（滞后 ≤1 tick，见 §3.3 裁决）；任何系统禁止手写 `meta.level` |
-| XP 授予点 | 收获 `crop.xp` ✅；心愿 `wish.xp`（含 tier 缩放）✅；生产收取 `job.xp`（畜牧 = animal.xp ✅，加工 = recipe.xp ?? 0 ✅，配方表当前未配 xp 即为 0） |
-| 解锁判定 | 一律读 data：`building.unlockLevel` ✅ / `recipe.unlockLevel` ✅ / `crop.unlockLevel`（❌ R2-7 接入 plant）/ `wish.minLevel`（❌ R2-8 接入 wishCandidates）/ `furniture.unlockLevel`（R2-12） |
+| XP 授予点 | 收获 `crop.xp` ✅；心愿 `wish.xp`（含 tier 缩放）✅；生产收取 `job.xp`（快照 → recipe.xp → animal.xp 回退链 ✅） |
+| 解锁判定 | 一律读 data，全部生效 ✅：`building.unlockLevel` / `recipe.unlockLevel` / `crop.unlockLevel`（plant + `canPlant` 查询）/ `wish.minLevel·maxLevel`（wishCandidates）/ `furniture.unlockLevel`（placeFurniture） |
 
 ## 7. 嘉宾 buff 架构
 
@@ -211,7 +211,7 @@ const MIGRATIONS = {
 | --- | --- |
 | 数据源 | `data/guests.js` 的 `buff: { target, factor }`；target 全集 = `farm / kitchen / wish / livestock / stall / weavery`（6 个，Round 1 草案“恰好 4 处”作废） |
 | 计算器（R2-4） | `core/buffs.js` 的 `buffFactor(state, target)`：在座嘉宾匹配 target 的 factor **连乘**，钳 `[0.5, 2]`；无匹配 = 1。精确签名 `API_CONTRACT.md §2.2` |
-| 过渡期 | 三个已落地的本地实现口径不一：farm `applyGuestFarmBuff`（连乘、仅下限 0.5）、production `livestockYieldMultiplier`（连乘、无钳制）、village `guestBuffFactor`（**只取首个匹配**、无钳制）。R2-4 全部改为 `buffFactor` 薄封装，导出名保留（api.test 冻结） |
+| 过渡期 | 三个系统的本地实现**口径已统一** ✅（首波落地：均为连乘 + 钳 [0.5, 2]）：farm `applyGuestFarmBuff`、production 内部 `guestBuffFactor`、village 导出 `guestBuffFactor`。R2-4 剩余工作 = `core/buffs.js` 落地后三处改薄封装（纯去重），导出名保留（api.test 冻结） |
 | 快照原则 | buff 在动作发生瞬间读取并固化进时长/数量/概率（种植时长、工单 doneAt、投喂 qty、翻车率）。嘉宾中途离店不回溯已开始的计时。**禁止**在 tick 里每帧读 buff 重算 doneAt |
 | 应用点 | 恰好 7 处，公式逐条见 `API_CONTRACT.md §8`；除该表外任何代码不得读 `guest.buff`。`cook` 的 favorite 加成走 `guest.favorite`，不属 buff 体系 |
 
@@ -243,12 +243,12 @@ const MIGRATIONS = {
 
 | 手段 | 规则 |
 | --- | --- |
-| 时间注入 | farm：末位 `now = Date.now()` ✅；village：`refreshWishes/tickVillage` 末位 `nowMs` ✅、`petPlay` 走 payload `now` ✅（落地惯例，保持不改）；production：【R2-6】补末位 `nowMs` |
-| 随机注入 | village 全域用 `rng.js`：`rollWith(rng, ...parts)`——注入了 `rng`（payload 字段）用注入的，否则由状态派生 FNV 哈希，**同一存档同一时刻结果恒定**。测试传 `() => 0.99` 等定值。production 的 `makeJobId` 是唯一残留 `Math.random`（R2-6 去除） |
-| 余数累积器 | 分数收益不用随机：`production.livestockCarry`（✅，ε=1e-9）与 `production.winterFeedCarry`（R2-5）累积小数、溢出取整，长期期望精确等于系数 |
+| 时间注入 | farm：末位 `now = Date.now()` ✅；village：`refreshWishes/tickVillage` 末位 `nowMs` ✅、`petPlay` 走 payload `now` ✅（落地惯例，保持不改）；production：`enqueueJob/feedAnimal` 末位 `nowMs` ✅ |
+| 随机注入 | village 全域用 `rng.js`：`rollWith(rng, ...parts)`——注入了 `rng`（payload 字段）用注入的，否则由状态派生 FNV 哈希，**同一存档同一时刻结果恒定**。测试传 `() => 0.99` 等定值。production 的 `makeJobId` 已确定性（nowMs 进制串 + 线性探测防撞）✅——`systems/**` 现已零内嵌时钟/随机 |
+| 余数累积器 | 分数收益不用随机：`production.livestockCarry`（✅ 按 productId 分桶，ε=1e-9）与 `production.winterFeedCarry`（✅ 冬饲 0.2/次记账）累积小数、溢出取整，长期期望精确等于系数 |
 | 必测不变量 | ① 失败信封 `state === 入参`；② resources/inv 恒非负；③ tick 后 `meta.level === levelFor(meta.xp)`；④ `deserialize(serialize(s))` 深等于 `{savedAt, state}`；⑤ 离线 24h → `offlineMs === OFFLINE_CAP_MS`（R2-2 后）；⑥ 三链可跑通（米→鸡、豆→豆腐、麦→面包，chain-smoke ✅）；⑦ xp 单调不减；⑧ 同一存档同一参数的 `cook`/`deliverWish` 结果确定 |
 | reason 断言 | 双读期规则见 `API_CONTRACT.md §0.2`——测试经 `expectReason` 助手同时接受机器码与中文，迁移完成后收紧为只认机器码 |
-| 边界静态测试（R2-20） | `systems/**` 源码禁含 `document.`、`localStorage`、内嵌 `Math.random(` / `Date.now()`（默认参数位除外）——在 R2-6 落地**之后**上线，否则必红 |
+| 边界静态测试（R2-20） | `systems/**` 源码禁含 `document.`、`localStorage`、内嵌 `Math.random(` / `Date.now()`（默认参数位除外）——前置违规已清零，随时可落 |
 
 ## 10. 性能预算
 
