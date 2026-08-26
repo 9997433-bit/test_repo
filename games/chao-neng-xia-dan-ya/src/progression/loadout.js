@@ -9,7 +9,7 @@
  */
 import { createSquad } from "../heroes/squad.js";
 import { MAX_LEVEL, MAX_STAR, clampInt, levelGoldCost } from "./constants.js";
-import { heroDef } from "./catalog.js";
+import { dexTotals, heroDef } from "./catalog.js";
 import { addShards, ensureProgression, heroLevelOf, heroStarOf } from "./save.js";
 import { buildAdventureContext, neutralContext } from "./context.js";
 import { dexAttackBonus, raceTech } from "./dex.js";
@@ -43,8 +43,8 @@ export function heroAtk(save, id) {
   return computeHeroStats(def, buildAdventureContext(ensureProgression(save))).atk;
 }
 
-/** 与 `core/progress.dexBonus` 同签名的简化版（只看英雄栏）。 */
-export function dexBonus(save, catalogSize = 20) {
+/** 与 `core/progress.dexBonus` 同签名的简化版（只看英雄栏）。分母默认取数据表规模。 */
+export function dexBonus(save, catalogSize = dexTotals().heroes) {
   const owned = Object.values(ensureProgression(save).dex ?? {}).filter(Boolean).length;
   return Math.min(0.15, (owned / Math.max(1, catalogSize)) * 0.15);
 }

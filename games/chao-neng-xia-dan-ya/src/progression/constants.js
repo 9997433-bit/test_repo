@@ -40,9 +40,6 @@ export const DEX_MAX_ATK_BONUS = 0.15;
 /** 图鉴各分类权重，合计 1。 */
 export const DEX_WEIGHTS = { heroes: 0.45, enemies: 0.25, artifacts: 0.18, fish: 0.12 };
 
-/** 数据表缺失时的兜底收集总量，避免除零并保持加成单调。 */
-export const DEX_FALLBACK_TOTALS = { heroes: 20, enemies: 12, artifacts: 24, fish: 18 };
-
 /** 钓鱼 BUFF 叠加上限，防止刷鱼碾压。 */
 export const FISHING_CAPS = { atk: 0.3, crit: 0.25, extraEggs: 2, eggPower: 0.25 };
 
