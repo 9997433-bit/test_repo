@@ -203,13 +203,18 @@ export function bagView(ctx) {
             h('.bond__name', { text: '数据来源' }),
             h('.bond__desc', {
               text: game.hasCore
-                ? '逻辑层已注入，UI 使用真实数据。'
-                : '逻辑层尚未接入，当前由 mockGame 驱动界面。'
+                ? '逻辑层已全量接入，界面读写真实存档。'
+                : `界面由 mockGame 驱动，待接入：${(game.pendingLabels || []).join(' / ') || '—'}`
             })),
           h('span.tag', {
             style: { color: game.hasCore ? 'var(--ok)' : 'var(--warn)' },
-            text: game.hasCore ? 'core' : 'mock'
+            text: game.source || 'mock'
           })),
+        h('.row.row--wrap', (game.capabilities || []).map((c) =>
+          h('span.tag', {
+            style: { color: c.ready ? 'var(--ok)' : 'var(--paper-4)' },
+            text: `${c.label} ${c.ready ? '✓' : '待接'}`
+          }))),
         h('button.btn.btn--ghost.btn--block', {
           type: 'button',
           text: '重置演示存档',
