@@ -12,8 +12,8 @@
      ① 零接线自动 juice —— 直接绑定 battle.js 已在切换的现网状态类
         （.combo-badge.on/.hot、.hero-slot.active/.ready、.ult-btn.ready…），
         游戏加载链今天即产出手感，无需 JS 改动；
-     ② 事件接线 juice —— .fx-hitstop/.fx-shake-*/.fx-combo-flash/.fx-float/
-        .is-bump/.is-fever，等 O4 按 §5.1 接 combat 反馈事件后启用。
+     ② 事件接线 juice —— .fx-hitstop、.fx-shake-sm/md/lg、.fx-combo-flash、
+        .fx-float、.is-bump、.is-fever，等 O4 按 §5.1 接 combat 反馈事件后启用。
    ============================================================ */
 
 /* ============ 关键帧 ============ */
