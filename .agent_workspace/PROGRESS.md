@@ -89,7 +89,7 @@
 | Fable-1 架构复审 | 排队 | — |
 | Fable-2 画布缺口 | 排队 | — |
 | Fable-3 5v5 关卡 | 运行中 | `bc-60924e68-32b9-5437-b520-e99818644f62` |
-| Fable-4 SOTA 复验 | 运行中 | `bc-8ff2474a-e0aa-5f41-8de4-e757cdf04cb8` |
+| Fable-4 SOTA 复验 | 已完成 · 已合并 `cursor/fable4-round2-acceptance-4cb8` | `bc-8ff2474a-e0aa-5f41-8de4-e757cdf04cb8` |
 | Opus-1 表驱动模拟 | 运行中 | `bc-74135006-1b0e-5e73-8dff-5bacf027862f` |
 | Opus-2 探索接线 | 排队 | — |
 | Opus-3 战斗闭环 | 已完成 · 已合入 `dda1072`，Boss 快照已重录 | `bc-6b096125-40ce-53b2-97e3-ee1d083a40a4` |
