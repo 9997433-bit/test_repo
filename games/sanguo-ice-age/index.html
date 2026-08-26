@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<meta name="description" content="三国：冰河时代 — 极寒城建与武将征伐的网页 SLG 致敬作" />
+<title>三国：冰河时代</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a1a20'/%3E%3Cpath d='M16 5c3 5 7 6 7 11a7 7 0 1 1-14 0c0-5 4-6 7-11z' fill='%23ff9a3c'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="css/tokens.css" />
+<link rel="stylesheet" href="css/layout.css" />
+<link rel="stylesheet" href="css/panels.css" />
+</head>
+<body>
+<div id="app" class="app" data-boot="loading">
+
+  <!-- ── 顶栏 HUD ───────────────────────────────────────────── -->
+  <header class="hud-top" id="hud-top">
+    <div class="hud-top__brand">
+      <div class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 40 40" width="34" height="34">
+          <path d="M20 4c4 7 9 8 9 15a9 9 0 1 1-18 0c0-7 5-8 9-15z" fill="url(#fg)"/>
+          <defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffe6a8"/><stop offset=".5" stop-color="#ff9a3c"/><stop offset="1" stop-color="#e2452b"/>
+          </linearGradient></defs>
+        </svg>
+      </div>
+      <div class="brand__text">
+        <h1 class="brand__title">三国 · 冰河时代</h1>
+        <p class="brand__sub" id="brand-sub">流民县令 · 拾薪城</p>
+      </div>
+    </div>
+
+    <div class="hud-top__res" id="res-bar" role="group" aria-label="资源"></div>
+
+    <div class="hud-top__vitals">
+      <div class="vital vital--temp" id="vital-temp" title="城中温度">
+        <div class="thermo" aria-hidden="true">
+          <div class="thermo__tube"><div class="thermo__fill" id="thermo-fill"></div></div>
+          <div class="thermo__bulb" id="thermo-bulb"></div>
+        </div>
+        <div class="vital__body">
+          <span class="vital__label">温度</span>
+          <strong class="vital__value" id="temp-value">--°</strong>
+          <span class="vital__note" id="temp-note">测温中</span>
+        </div>
+      </div>
+
+      <div class="vital vital--day" id="vital-day">
+        <span class="vital__label">纪年</span>
+        <strong class="vital__value"><span id="day-value">1</span><span class="unit">日</span></strong>
+        <span class="vital__note" id="phase-value">拂晓</span>
+      </div>
+
+      <div class="vital vital--morale" id="vital-morale" title="民心">
+        <span class="vital__label">民心</span>
+        <strong class="vital__value" id="morale-value">--</strong>
+        <div class="morale-bar"><i id="morale-fill"></i></div>
+      </div>
+
+      <div class="vital vital--pop" id="vital-pop" title="人口 / 闲置">
+        <span class="vital__label">丁口</span>
+        <strong class="vital__value" id="pop-value">--</strong>
+        <span class="vital__note" id="pop-note">闲置 0</span>
+      </div>
+    </div>
+
+    <div class="hud-top__speed" id="speed-bar" role="group" aria-label="时间流速">
+      <button class="spd" data-speed="0" title="暂停（空格）"><span>⏸</span></button>
+      <button class="spd is-on" data-speed="1" title="常速（1）">1x</button>
+      <button class="spd" data-speed="2" title="加速（2）">2x</button>
+      <button class="spd" data-speed="4" title="疾行（3）">4x</button>
+    </div>
+  </header>
+
+  <!-- ── 主舞台 ─────────────────────────────────────────────── -->
+  <main class="stage" id="stage">
+    <section class="scene" id="scene">
+      <canvas id="city-canvas" aria-label="城池全景"></canvas>
+      <div class="scene__vignette" aria-hidden="true"></div>
+      <div class="scene__frost" id="scene-frost" aria-hidden="true"></div>
+
+      <div class="scene__tooltip" id="scene-tooltip" hidden></div>
+
+      <div class="scene__banner" id="blizzard-banner" hidden>
+        <div class="banner__glyph">❄</div>
+        <div class="banner__title">冰河寒潮</div>
+        <div class="banner__sub" id="blizzard-sub">气温骤降，速添薪火</div>
+      </div>
+
+      <div class="scene__legend" id="scene-legend">
+        <span class="legend__hint">点击建筑查看与升级 · 滚轮缩放 · 拖拽平移</span>
+      </div>
+
+      <div class="scene__weather" id="weather-chip">
+        <span class="chip__dot"></span><span id="weather-text">霜夜</span>
+      </div>
+
+      <button class="scene__recenter" id="btn-recenter" title="回正视角">◎</button>
+    </section>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="side-card side-card--heroes">
+        <header class="side-card__head">
+          <h2>麾下武将</h2>
+          <button class="link-btn" data-open="recruit">招贤 →</button>
+        </header>
+        <div class="hero-strip" id="hero-strip"></div>
+      </div>
+
+      <div class="side-card side-card--log">
+        <header class="side-card__head">
+          <h2>邸报</h2>
+          <span class="side-card__badge" id="log-count">0</span>
+        </header>
+        <ol class="log-list" id="log-list"></ol>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ── 底栏 ───────────────────────────────────────────────── -->
+  <footer class="dock" id="dock">
+    <button class="dock__btn" data-open="furnace">
+      <span class="dock__icon">🔥</span>
+      <span class="dock__text"><b>火炉</b><i id="dock-furnace-note">燃料充足</i></span>
+    </button>
+    <button class="dock__btn" data-open="recruit">
+      <span class="dock__icon">🏮</span>
+      <span class="dock__text"><b>招贤</b><i id="dock-recruit-note">招募令 0</i></span>
+    </button>
+    <button class="dock__btn" data-open="expedition">
+      <span class="dock__icon">⚔️</span>
+      <span class="dock__text"><b>讨伐</b><i id="dock-war-note">流寇未平</i></span>
+    </button>
+    <button class="dock__btn" data-open="academy">
+      <span class="dock__icon">📜</span>
+      <span class="dock__text"><b>太学</b><i id="dock-tech-note">典籍待启</i></span>
+    </button>
+  </footer>
+
+  <!-- ── 浮层 ───────────────────────────────────────────────── -->
+  <div class="modal-root" id="modal-root" hidden></div>
+  <div class="toast-root" id="toast-root" aria-live="polite"></div>
+  <div class="tutorial-root" id="tutorial-root" hidden></div>
+
+  <div class="boot" id="boot">
+    <div class="boot__flame">🔥</div>
+    <p class="boot__text">正在点燃火炉…</p>
+  </div>
+</div>
+
+<noscript>
+  <div style="padding:32px;color:#cfe7ef;font-family:system-ui">本作需要启用 JavaScript 才能运行。</div>
+</noscript>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

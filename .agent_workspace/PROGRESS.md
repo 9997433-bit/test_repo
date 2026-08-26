@@ -35,7 +35,7 @@
 
 | Round | 状态 | 简报 |
 |-------|------|------|
-| 1 初始构建与基线探索 | 进行中 | 见下文 |
+| 1 初始构建与基线探索 | 完成 | 2026-08-26 |
 | 2 靶向重构与深度优化 | 未开始 | — |
 | 3 SOTA 打磨与最终验收 | 未开始 | — |
 
@@ -58,4 +58,45 @@
 
 ## Round 1 结论简报
 
-（待 10 子代理回收后由主调度器填写）
+**模型实际使用（无静默降级）**
+
+| 代理 | 声明 slug |
+|------|-----------|
+| fable-arch / fable-ux / fable-balance / fable-accept | claude-fable-5-thinking-xhigh |
+| opus-engine / opus-city / opus-war / opus-ui | claude-opus-5-thinking-high-fast |
+| gpt-tests / gpt-bench | gpt-5.6-sol-xhigh-fast |
+| 云端平行 fable | claude-fable-5-thinking-xhigh（后台进行中） |
+
+**已实现功能**
+
+- 可玩静态网页：Canvas 2.5D 霜夜城、雪粒子、小人通勤、火炉暖光、寒潮霜雾标题
+- HUD / 建筑升级 / 招贤 / 讨伐战报 / 太学占位 / 新手引导 / 1x2x4x / 存档
+- 纯逻辑引擎：loop（后台不爆 tick）、save（memoryStorage）、rng、嵌套 `createInitialState`
+- 城建生存四系统 + 武将/自动战/任务三系统，Node ESM 可测
+- 数据表：17 建筑、20 武将、步骑弓、12 环主线
+- 文档：ARCHITECTURE / DESIGN / UX / ACCEPTANCE / SOTA
+- 测试：15 pass / 1 fail / 2 pending；bench ~3250 tick/s 无 NaN；probes 7/7
+
+**遗留缺陷（按杀伤力）**
+
+1. **P0 双核分裂**：`main.js` 的 `probeBridge()` 要求扁平 `state.buildings[]`，`state.js` 是嵌套 `city.buildings{}`，桥永远不激活。浏览器跑的是 UI 内置内核，systems 只被测试消费。
+2. **P0 建筑 id 三套**：`config`=`lumberyard/coalmine/ironmine/warmhouse/barracks`；`data`=`lumber/coal_mine/iron_mine/house/barracks_inf`；UI 另有 `coal/iron/storage`。
+3. **P0 无失败结局 UI**：systems 可写 `flags.gameOver='morale'`，UI 人口下限 1、永不失败。
+4. **P1 任务/三兵种/伤兵未接 UI**；招贤/战斗用 `Math.random`。
+5. **P1 双存档键**：UI `-ui` 与 engine `SAVE_KEY` 并存。
+6. **P1 单测红灯**：`canUpgrade` 签名与 `quests/production` 探针不兼容。
+7. **P2 开局资源 / 抽卡权重 / 火炉级数** 文档与实现三套数。
+
+**性能瓶颈**
+
+- 模拟层充足（0.3ms/tick）。软件渲染约 54fps，主要压力在 Canvas 全城重绘 + 粒子。
+- DESIGN「10k tick < 250ms」未达标（约 3s/10k），属文档过严而非可玩性卡顿。
+
+**Round 2 攻坚重点**
+
+1. 嵌套 `state.js` 定为唯一事实源；`js/bridge/view.js` 投影给 HUD/Canvas；`main.js` 内置内核降为无 systems 时的 stub。
+2. 建筑 id 统一到 data 表：`furnace, lumber, hunter, coal_mine, iron_mine, house, warehouse, kitchen, barracks_inf, barracks_arch, barracks_cav, hospital, academy, tavern, wall, embassy, clinic`。`ID_ALIASES` 只服务旧档。
+3. 接通 tick 顺序：`climate → city → economy → population → quests`；动作走 systems。
+4. 任务托盘 + 失败/重开 + 步骑弓分兵 + 战报克制 + `engine/rng`。
+5. 修红灯单测，生产断言不再 pending。
+6. Canvas 补齐三分兵营/仓库/城墙等地块。
