@@ -1,0 +1,42 @@
+/* 兵器王者·炉火 — 样式入口
+   顺序敏感：tokens → base → layout → components → forge → views → fx → motion */
+
+@import url("./tokens.css");
+@import url("./base.css");
+@import url("./layout.css");
+@import url("./components.css");
+@import url("./forge.css");
+@import url("./views.css");
+@import url("./fx.css");
+@import url("./motion.css");
+
+/* 首屏引导（模块加载前可见） */
+.boot {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  min-height: 100dvh;
+  text-align: center;
+}
+
+.boot__seal {
+  width: 46px;
+  height: 46px;
+  margin: 0 auto;
+  border-radius: 8px;
+  opacity: 0.9;
+}
+
+.boot__text {
+  font-family: var(--font-serif);
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: var(--gold);
+  font-size: 13px;
+}
+
+.boot__hint {
+  font-size: 11px;
+  color: var(--paper-3);
+  letter-spacing: 0.1em;
+}
