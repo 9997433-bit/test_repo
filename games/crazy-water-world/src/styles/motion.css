@@ -1,0 +1,139 @@
+/* ============================================================
+   motion.css · 动效层
+   ------------------------------------------------------------
+   预算（详见 docs/ART_DIRECTION.md 第 6 节）：
+   - 环境循环 ≤3 个，且只出现在标题页；游戏内环境动效全部交给画布。
+   - 只动 transform / opacity / filter / background-position /
+     已注册的颜色变量；禁止动 layout 属性与 box-shadow 模糊半径。
+   - 全部动画都包在 prefers-reduced-motion: no-preference 里；
+     游戏内“减弱动态”开关走 data-reduce-motion="on" 钩子。
+   注意：当前 UI 每帧重建 meters/panel/dock 的 innerHTML，
+   入场动画只能放在常驻节点（.panel 容器、标题页、伪元素）上。
+   ============================================================ */
+
+/* 注册天空色变量，天气切换时渐变 1.2s（不支持 @property 的浏览器直接跳变，可接受） */
+@property --sky-hi {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #7ec8e3;
+}
+
+@property --sky-lo {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0e7c8a;
+}
+
+@keyframes sun-float {
+  from {
+    transform: translateY(-4px);
+  }
+  to {
+    transform: translateY(5px);
+  }
+}
+
+@keyframes wave-drift {
+  to {
+    background-position:
+      -528px 100%,
+      -528px calc(100% - 20px),
+      -528px calc(100% - 44px);
+  }
+}
+
+@keyframes boat-bob {
+  from {
+    transform: translateY(-2px) rotate(-3deg);
+  }
+  to {
+    transform: translateY(3px) rotate(2deg);
+  }
+}
+
+@keyframes buoy-sway {
+  from {
+    transform: rotate(9deg);
+  }
+  to {
+    transform: rotate(19deg);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 标题页环境循环（共 3 个 + 救生圈微摆，全部 transform/背景位移） */
+  .title-screen::before {
+    animation: sun-float 7s ease-in-out infinite alternate;
+  }
+
+  .title-screen::after {
+    animation: wave-drift 18s linear infinite;
+  }
+
+  .title-screen > div::after {
+    animation: boat-bob 5s ease-in-out infinite alternate;
+  }
+
+  .title-screen > div::before {
+    animation: buoy-sway 6s ease-in-out infinite alternate;
+  }
+
+  /* 面板首次入场（aside 常驻，动画只跑一次） */
+  .panel {
+    animation: pop-in var(--dur-pop) var(--ease-spring) backwards;
+  }
+
+  /* 按钮按压 / 悬停反馈 */
+  .dock button,
+  .panel button,
+  .title-screen button {
+    transition:
+      transform var(--dur-tap) var(--ease-out),
+      box-shadow var(--dur-tap) var(--ease-out),
+      filter var(--dur-quick) var(--ease-out);
+  }
+
+  /* 天气天空 1.2s 渐变、夜幕淡入淡出 */
+  .sea-wrap {
+    transition:
+      --sky-hi var(--dur-scene) ease,
+      --sky-lo var(--dur-scene) ease;
+  }
+
+  .sea-wrap::after {
+    transition: opacity var(--dur-scene) ease;
+  }
+}
+
+/* 系统级减弱动态：一刀切 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 游戏内“减弱动态”设置钩子：后轮 UI 把 settings.reduceMotion
+   映射为 html 或 .shell 上的 data-reduce-motion="on" 即可全局冻结 */
+[data-reduce-motion="on"] *,
+[data-reduce-motion="on"] *::before,
+[data-reduce-motion="on"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
