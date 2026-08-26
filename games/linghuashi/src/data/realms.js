@@ -1,3 +1,13 @@
+/**
+ * 境界表。字段：
+ *   xp        本境界突破所需修为（breakthrough 消耗后进入下一境界；飞升为终点，取 Infinity）
+ *   idlePerMin 挂机每分钟灵气丹产出（上限 8 小时，见 progression/idle.js）
+ *   hp/atk/qi 该境界玩家的战斗三围（进入战斗时由 createActor 读取）
+ *
+ * 曲线锚点（详见 docs/GDD.md「境界曲线」）：
+ *   xp 每境 ×1.8~2.0；hp/atk 每境约 +28%；qi 线性 +20~60（回气固定 8/秒，池子只决定爆发上限）。
+ * 注意：练气的 xp=80 与 idlePerMin=4 被 tests/progression.test.js 锁定，改动需同步测试。
+ */
 export const REALMS = [
   { id: "qi_refining", name: "练气", xp: 80, idlePerMin: 4, hp: 120, atk: 16, qi: 80 },
   { id: "foundation", name: "筑基", xp: 180, idlePerMin: 8, hp: 170, atk: 22, qi: 100 },

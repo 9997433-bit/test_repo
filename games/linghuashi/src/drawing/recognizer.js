@@ -1,139 +1,214 @@
-import {
-  angles,
-  boundsOf,
-  circleFit,
-  meanSpeed,
-  polylineLength,
-  r2Line,
-  resample,
-  turningNumber,
-} from "./geometry.js";
+import { clamp, clamp01 } from "./geometry.js";
+import { extractFeatures } from "./features.js";
 
-const TYPES = ["line", "curve", "circle", "zigzag", "spiral", "cloud", "scribble"];
+export const TYPES = ["line", "curve", "circle", "zigzag", "spiral", "cloud", "scribble"];
 
+const MIN_POINTS = 6;
+const MIN_LENGTH = 28;
+const SCRIBBLE_FLOOR = 0.46;
+
+export { synthesizeStroke, SYNTH_TYPES } from "./synth.js";
+
+/**
+ * Classifies a raw pointer trace into one of TYPES.
+ * @param {{x:number,y:number,t?:number}[]} rawPoints
+ * @returns {{type:string,precision:number,pressure:number,length:number,bounds:object,raw:array,scores:object}}
+ */
 export function classifyStroke(rawPoints) {
-  const points = resample(rawPoints, 64);
-  const length = polylineLength(rawPoints);
-  const bounds = boundsOf(rawPoints);
-  const pressure = Math.max(0.15, Math.min(1, 0.25 / (meanSpeed(rawPoints) * 8 + 0.08)));
-  if (rawPoints.length < 6 || length < 28) {
-    return pack("scribble", 0.15, pressure, length, bounds, rawPoints);
+  const f = extractFeatures(rawPoints);
+  const pressure = pressureOf(f.speed);
+  const base = { pressure, length: f.length, bounds: f.bounds, raw: f.raw };
+
+  if (!f.ok || f.raw.length < MIN_POINTS || f.length < MIN_LENGTH) {
+    return { type: "scribble", precision: 0.15, ...base, scores: {} };
   }
 
-  const lineScore = scoreLine(points, length, bounds);
-  const circleScore = scoreCircle(points);
-  const zigzagScore = scoreZigzag(points);
-  const spiralScore = scoreSpiral(points, bounds);
-  const cloudScore = scoreCloud(points, bounds);
-  const curveScore = scoreCurve(points, lineScore, circleScore);
+  // A stroke that never leaves its own regression line is a line, full stop.
+  // This keeps straight drags - axis aligned ones above all - out of the
+  // scoring lottery. The absolute arm covers short strokes, where a couple of
+  // pixels of tremor is a large fraction of the length but still not a bend.
+  const strayPx = f.perpRatio * f.chord;
+  const straight = f.perpRatio <= 0.038 && f.straightness >= 0.965;
+  const tiny = strayPx <= 4 && f.straightness >= 0.9;
+  if (f.cornerCount === 0 && (straight || tiny)) {
+    const purity = clamp01(1 - Math.max(f.perpRatio / 0.038, strayPx / 8));
+    return {
+      type: "line",
+      precision: clamp(0.72 + 0.28 * purity, 0.6, 1),
+      ...base,
+      scores: { line: 1 },
+    };
+  }
 
-  const ranked = [
-    ["line", lineScore],
-    ["circle", circleScore],
-    ["zigzag", zigzagScore],
-    ["spiral", spiralScore],
-    ["cloud", cloudScore],
-    ["curve", curveScore],
-  ].sort((a, b) => b[1] - a[1]);
+  const scores = {
+    line: scoreLine(f),
+    curve: scoreCurve(f),
+    circle: scoreCircle(f),
+    zigzag: scoreZigzag(f),
+    spiral: scoreSpiral(f),
+    cloud: scoreCloud(f),
+  };
 
-  const [type, best] = ranked[0];
-  const second = ranked[1][1];
-  const precision = Math.max(0.12, Math.min(1, best * (0.72 + 0.28 * (best - second + 0.2))));
-  if (best < 0.42) return pack("scribble", precision * 0.5, pressure, length, bounds, rawPoints);
-  return pack(type, precision, pressure, length, bounds, rawPoints);
+  // Every intended gesture is coherent: it barely crosses itself and its
+  // corners are all of a kind. Aimless scribbling fails both, so this scales
+  // the whole board down without disturbing the ranking.
+  const coherence = fall(f.crossings, 2, 8) * fall(f.cornerSpread, 0.55, 0.95);
+
+  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  const [type, top] = ranked[0];
+  const best = top * coherence;
+  const margin = (top - ranked[1][1]) * coherence;
+  const precision = clamp(best * (0.8 + 0.2 * clamp01(margin / 0.22)), 0.12, 1);
+
+  if (best < SCRIBBLE_FLOOR) {
+    return { type: "scribble", precision: clamp(precision * 0.55, 0.1, 0.4), ...base, scores };
+  }
+  return { type, precision, ...base, scores };
 }
 
+/**
+ * Stateful wrapper. `consume` may be fed points one at a time while drawing;
+ * `finalize` still accepts an explicit array for pure/unit-test usage.
+ */
 export function createStrokeRecognizer() {
+  let buffer = [];
   return {
-    consume() {},
+    consume(input) {
+      if (!input) return;
+      if (Array.isArray(input)) buffer = buffer.concat(input);
+      else buffer.push(input);
+    },
+    reset() {
+      buffer = [];
+    },
+    peek() {
+      return buffer.slice();
+    },
     finalize(points) {
-      return classifyStroke(points);
+      const src = points && points.length ? points : buffer;
+      const result = classifyStroke(src);
+      buffer = [];
+      return result;
     },
   };
 }
 
-export { TYPES };
-
-function pack(type, precision, pressure, length, bounds, raw) {
-  return { type, precision, pressure, length, bounds, raw };
+/**
+ * 提按: a slow pen presses, a fast one lifts. Median speed so a single stalled
+ * sample cannot spike it. The knee sits at 0.85 px/ms, roughly the pace of a
+ * deliberate stroke, so the whole 0.15..1 range is actually reachable.
+ */
+function pressureOf(speed) {
+  if (!(speed > 0)) return 0.95;
+  return clamp(1 / (1 + (speed / 0.85) ** 1.15), 0.15, 1);
 }
 
-function scoreLine(points, length, bounds) {
-  const r2 = r2Line(points);
-  const aspect = Math.max(bounds.w, bounds.h) / (Math.min(bounds.w, bounds.h) + 8);
-  const span = Math.hypot(bounds.w, bounds.h);
-  return clamp01(r2 * 0.75 + Math.min(1, aspect / 4) * 0.15 + Math.min(1, length / (span + 1)) * 0.1);
+/**
+ * Deviations of a couple of pixels are pointer noise whatever the stroke size,
+ * so shape ratios are faded out below an absolute floor. Without this a 40px
+ * flick with 3px of tremor scores as bent as a deliberate arc.
+ */
+const NOISE_PX = 4;
+
+function withPixelFloor(ratio, pixels) {
+  return ratio * ramp(pixels, NOISE_PX, NOISE_PX * 2.4);
 }
 
-function scoreCircle(points) {
-  const fit = circleFit(points);
-  const turn = Math.abs(Math.abs(turningNumber(points)) - 1);
-  return clamp01(fit.circularity * 0.5 + fit.closure * 0.35 + (1 - Math.min(1, turn)) * 0.15);
+/** Amplitude of any structure riding on the stroke, at any frequency, in px. */
+function reliefPx(f) {
+  const bowPx = Number.isFinite(f.bendPx) ? f.bendPx : 0;
+  return Math.max(bowPx, f.waviness * f.scale * 1.6);
 }
 
-function scoreZigzag(points) {
-  const angs = angles(points);
-  const sharp = angs.filter((a) => a > 0.7).length;
-  const reversals = countReversals(points);
-  const line = r2Line(points);
-  return clamp01((sharp / 18) * 0.45 + (reversals / 8) * 0.4 + (1 - line) * 0.15);
+function relief(f) {
+  const px = reliefPx(f);
+  return withPixelFloor(px / f.scale, px);
 }
 
-function scoreSpiral(points, bounds) {
-  const turn = Math.abs(turningNumber(points));
-  const fit = circleFit(points);
-  const growth = radialGrowth(points);
-  const size = Math.max(bounds.w, bounds.h);
-  return clamp01((Math.min(turn, 3) / 3) * 0.45 + growth * 0.35 + (1 - fit.circularity) * 0.1 + Math.min(1, size / 160) * 0.1);
+function bendOf(f) {
+  return withPixelFloor(f.bend, f.bendPx);
 }
 
-function scoreCloud(points, bounds) {
-  const angs = angles(points);
-  const wobble = angs.filter((a) => a > 0.35 && a < 1.4).length / (angs.length || 1);
-  const fit = circleFit(points);
-  const blob = Math.min(bounds.w, bounds.h) / (Math.max(bounds.w, bounds.h) + 1);
-  return clamp01(wobble * 0.4 + fit.closure * 0.2 + blob * 0.25 + (1 - r2Line(points)) * 0.15);
+function scoreLine(f) {
+  const flat = fall(bendOf(f), 0.04, 0.12);
+  const tight = fall(withPixelFloor(f.perpRatio, f.perpRatio * f.chord), 0.03, 0.12);
+  const direct = ramp(f.straightness, 0.86, 0.98);
+  const plain = fall(relief(f), 0.04, 0.13);
+  return clamp01(0.3 * flat + 0.22 * tight + 0.22 * direct + 0.26 * plain);
 }
 
-function scoreCurve(points, lineScore, circleScore) {
-  const angs = angles(points);
-  const mean = angs.reduce((a, b) => a + b, 0) / (angs.length || 1);
-  const smooth = 1 - Math.min(1, variance(angs) / 0.8);
-  return clamp01(smooth * 0.5 + Math.min(1, mean * 2) * 0.3 + (1 - lineScore) * 0.1 + (1 - circleScore) * 0.1);
+/**
+ * "Curve" covers every open stroke that bends smoothly: a single arc, an S, or
+ * a rolling wave. What it must not contain is a sharp reversal (that is zigzag)
+ * or a full winding (that is circle/spiral).
+ */
+function scoreCurve(f) {
+  const bend = bendOf(f);
+  const bowed = band(bend, 0.035, 0.09, 0.95, 1.7);
+  const open = ramp(f.gap, 0.28, 0.6);
+  const flowing = fall(f.cornerAngle, 1.7, 2.4);
+  const plain = fall(f.cornerCount, 1, 5);
+  const formed = ramp(f.bendFit, 0.88, 0.97);
+  const loose = fall(f.turnAbsTurns, 1.2, 2.6);
+  const raw = 0.2 * bowed + 0.14 * open + 0.2 * flowing + 0.16 * plain + 0.16 * formed + 0.14 * loose;
+  const gate =
+    ramp(bend, 0.05, 0.095) *
+    ramp(f.gap, 0.2, 0.45) *
+    fall(f.sweepTurns, 1.05, 1.5) *
+    fall(f.rhythm, 1.2, 2.6);
+  return clamp01(raw * gate);
 }
 
-function countReversals(points) {
-  let n = 0;
-  let prev = 0;
-  for (let i = 1; i < points.length; i += 1) {
-    const dx = points[i].x - points[i - 1].x;
-    const dy = points[i].y - points[i - 1].y;
-    const dir = Math.atan2(dy, dx);
-    if (i > 1) {
-      let d = dir - prev;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      if (Math.abs(d) > 0.95) n += 1;
-    }
-    prev = dir;
-  }
-  return n;
+function scoreCircle(f) {
+  const round = fall(f.radialErr, 0.07, 0.26);
+  const closed = fall(f.gapCirc, 0.1, 0.34);
+  const oneTurn = band(f.circleSweep, 0.62, 0.82, 1.2, 1.6);
+  const smooth = fall(f.cornerCount, 0, 3);
+  const even = fall(f.lobes, 1, 3);
+  const steady = fall(f.radiusRatio, 1.35, 2.5);
+  const raw = 0.28 * round + 0.22 * closed + 0.24 * oneTurn + 0.08 * smooth + 0.09 * even + 0.09 * steady;
+  return clamp01(raw * (f.circleSweep >= 0.55 ? 1 : 0.4));
 }
 
-function radialGrowth(points) {
-  const c = { x: points[0].x, y: points[0].y };
-  const rs = points.map((p) => Math.hypot(p.x - c.x, p.y - c.y));
-  let up = 0;
-  for (let i = 1; i < rs.length; i += 1) if (rs[i] > rs[i - 1]) up += 1;
-  return up / (rs.length - 1);
+function scoreZigzag(f) {
+  const many = ramp(f.cornerCount, 0.9, 2.8);
+  const sharp = ramp(f.cornerAngle, 1.5, 2.25);
+  const winding = fall(f.straightness, 0.82, 0.97);
+  const raw = 0.3 * many + 0.2 * f.alternation + 0.24 * sharp + 0.14 * f.segRegularity + 0.12 * winding;
+  const gate = (f.cornerCount >= 2 ? 1 : 0.3) * ramp(relief(f), 0.05, 0.11) * ramp(f.gap, 0.28, 0.55);
+  return clamp01(raw * gate);
 }
 
-function variance(arr) {
-  if (!arr.length) return 0;
-  const m = arr.reduce((a, b) => a + b, 0) / arr.length;
-  return arr.reduce((a, b) => a + (b - m) ** 2, 0) / arr.length;
+function scoreSpiral(f) {
+  const wound = ramp(f.sweepTurns, 1.12, 1.8);
+  const grow = ramp(f.spinRatio, 1.4, 2.8);
+  const spinning = ramp(f.angularMonotone, 0.7, 0.95);
+  const drift = ramp(f.radialMonotone, 0.4, 0.78);
+  const smooth = fall(f.cornerCount, 1, 5);
+  const raw = 0.3 * wound + 0.24 * grow + 0.2 * spinning + 0.16 * drift + 0.1 * smooth;
+  return clamp01(raw * (f.sweepTurns >= 1.05 ? 1 : 0.45));
 }
 
-function clamp01(n) {
-  return Math.max(0, Math.min(1, n));
+function scoreCloud(f) {
+  const bumpy = ramp(f.lobes, 2.2, 4);
+  const looped = band(f.circleSweep, 0.45, 0.72, 1.35, 1.95);
+  const textured = band(f.radialErr, 0.06, 0.13, 0.34, 0.6);
+  const soft = fall(f.cornerAngle, 1.15, 2.1);
+  const closedish = fall(f.gapCirc, 0.14, 0.42);
+  const raw = 0.3 * bumpy + 0.18 * looped + 0.18 * textured + 0.14 * soft + 0.2 * closedish;
+  return clamp01(raw * (f.lobes >= 3 ? 1 : 0.5));
+}
+
+function ramp(v, lo, hi) {
+  if (hi === lo) return v >= hi ? 1 : 0;
+  return clamp01((v - lo) / (hi - lo));
+}
+
+function fall(v, lo, hi) {
+  return 1 - ramp(v, lo, hi);
+}
+
+/** Trapezoid: rises over [a,b], flat to c, falls to zero at d. */
+function band(v, a, b, c, d) {
+  return Math.min(ramp(v, a, b), fall(v, c, d));
 }

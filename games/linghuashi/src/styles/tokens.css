@@ -1,15 +1,98 @@
+/**
+ * 灵画师 · 设计令牌（唯一色源）
+ * ---------------------------------------------------------------
+ * 命名承诺：以下旧令牌名被 ui/ui.css 与 drawing/canvas.js 依赖，
+ * 永远保留且色相不漂移 —— --ink / --ink-soft / --paper / --paper-deep /
+ * --seal / --seal-bright / --gold / --cyan / --malachite / --mist /
+ * --shadow / --serif / --script。
+ * 画布自绘宣纸底（#efe3c8 → #eaddbe → #e4d3ae），纸色一族必须与其同源。
+ */
 :root {
-  --ink: #1a120b;
-  --ink-soft: #3b2a18;
-  --paper: #efe3c8;
-  --paper-deep: #e4d3ae;
-  --seal: #7a1818;
-  --seal-bright: #b42323;
-  --gold: #c9a227;
-  --cyan: #2f5d62;
-  --malachite: #3d6b4f;
+  color-scheme: light;
+
+  /* —— 墨分五色（焦 / 浓 / 重 / 淡 / 清）—— */
+  --ink: #1a120b;                       /* 焦墨：正文与笔迹 */
+  --ink-soft: #3b2a18;                  /* 浓墨：次级标题、题款 */
+  --ink-mute: #5a4933;                  /* 重墨：辅助说明（对宣纸 ≥ 5:1） */
+  --ink-faint: rgba(26, 18, 11, 0.45);  /* 淡墨：装饰笔触 */
+  --ink-line: rgba(26, 18, 11, 0.24);   /* 界线 */
+  --ink-hair: rgba(26, 18, 11, 0.12);   /* 发丝线（裱边、分隔） */
+  --ink-wash: rgba(26, 18, 11, 0.06);   /* 清墨晕 */
+
+  /* —— 宣纸 —— */
+  --paper: #efe3c8;                     /* 画心本色（与画布渐变首色一致） */
+  --paper-deep: #e4d3ae;                /* 纸脚陈色（与画布渐变尾色一致） */
+  --paper-bright: #f7eeda;              /* 生宣受光处 */
+  --paper-warm: #eaddbe;                /* 画布渐变中点 */
+
+  /* —— 装裱（绫绢 / 髹漆 / 泥金）—— */
+  --silk: #dcc7a0;                      /* 裱画绫边 */
+  --silk-deep: #c9af7f;                 /* 案上旧绢 */
+  --lacquer: #241a12;                   /* 天杆地杆髹漆 */
+  --lacquer-light: #5a4430;             /* 漆杆受光 */
+  --gilt: #d9b954;                      /* 杆端泥金 */
+
+  /* —— 矿彩 —— */
+  --seal: #7a1818;                      /* 朱砂（印泥沉色） */
+  --seal-bright: #b42323;               /* 朱磦（提亮/警示） */
+  --seal-wash: rgba(122, 24, 24, 0.08); /* 印泥薄晕 */
+  --gold: #c9a227;                      /* 藤黄金粉 */
+  --gold-wash: rgba(201, 162, 39, 0.16);
+  --cyan: #2f5b74;                      /* 石青 */
+  --cyan-deep: #24455a;
+  --malachite: #3d6b4f;                 /* 石绿 */
+
+  /* —— 氛围 —— */
   --mist: rgba(26, 18, 11, 0.08);
-  --shadow: 0 18px 50px rgba(26, 18, 11, 0.18);
-  --serif: "Noto Serif SC", "Songti SC", serif;
+  --shadow:
+    0 2px 5px rgba(26, 18, 11, 0.08),
+    0 18px 50px rgba(26, 18, 11, 0.18);
+  --shadow-soft:
+    0 1px 3px rgba(26, 18, 11, 0.07),
+    0 10px 26px rgba(26, 18, 11, 0.1);
+  --shadow-sheet:
+    0 0 0 1px rgba(26, 18, 11, 0.18),
+    0 2px 8px rgba(26, 18, 11, 0.12),
+    0 34px 90px rgba(26, 18, 11, 0.3);
+
+  /* —— 纸纹（内联 SVG，无外部依赖）—— */
+  /* 细颗粒噪点：作全局“纸膜”与局部肌理 */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  /* 横向帘纹：抄纸竹帘留下的丝丝水痕 */
+  --laid: repeating-linear-gradient(
+    180deg,
+    transparent 0 23px,
+    rgba(26, 18, 11, 0.026) 23px 24px
+  );
+  /* 朱丝栏：稿纸上的极淡直栏 */
+  --columns: repeating-linear-gradient(
+    90deg,
+    transparent 0 56px,
+    rgba(122, 24, 24, 0.045) 56px 57px
+  );
+
+  /* —— 字体 —— */
+  --serif: "Noto Serif SC", "Songti SC", "STSong", serif;
   --script: "Ma Shan Zheng", "Noto Serif SC", cursive;
+
+  /* —— 动效 —— */
+  --ease-brush: cubic-bezier(0.22, 0.8, 0.3, 1);   /* 收笔：快起缓收 */
+  --ease-drop: cubic-bezier(0.2, 0.85, 0.32, 1.18); /* 落印：微微回弹 */
+  --dur-fast: 140ms;
+  --dur-mid: 300ms;
+  --dur-slow: 520ms;
+
+  /* —— 焦点 —— */
+  --focus-ring: 3px solid var(--seal-bright);
+  --focus-offset: 2px;
+}
+
+/* 高对比偏好：界线加深、辅助文字回到浓墨 */
+@media (prefers-contrast: more) {
+  :root {
+    --ink-mute: #3b2a18;
+    --ink-faint: rgba(26, 18, 11, 0.7);
+    --ink-line: rgba(26, 18, 11, 0.55);
+    --ink-hair: rgba(26, 18, 11, 0.4);
+  }
 }
