@@ -8,7 +8,7 @@ import {
   rawDamage,
   WITHER_STEP,
 } from "./skills.js";
-import { actionOrder, anyAlive, living, pickTarget, weakestAlly } from "./ai.js";
+import { actionOrder, anyAlive, living, pickBackTarget, pickTarget, weakestAlly } from "./ai.js";
 
 export const MAX_ROUNDS = 24;
 export const MAX_SIDE = 5;
@@ -139,18 +139,20 @@ function land(target, amount) {
   return amount;
 }
 
-function noteDeath(log, unit) {
-  if (unit.hp > 0 || unit.down) return;
-  unit.down = true;
-  unit.tauntOn = false;
-  log.push(`${unit.name}倒下了。`);
+/** 结算阵亡：按入场序号补日志，保证「先写这一下打了多少，再写谁倒下」。 */
+function reapDeaths(units, log) {
+  for (const u of units) {
+    if (u.hp > 0 || u.down) continue;
+    u.down = true;
+    u.tauntOn = false;
+    log.push(`${u.name}倒下了。`);
+  }
 }
 
-function strike(actor, target, mult, pierce, log) {
+function strike(actor, target, mult, pierce) {
   const dealt = rawDamage(actor, target, pierce) * mult * (1 - effectiveDr(target));
   land(target, dealt);
   actor.dealt += dealt;
-  noteDeath(log, target);
   return dealt;
 }
 
@@ -164,19 +166,24 @@ function runTurn(ctx, actor) {
     log.push(`${actor.name}的${plan.name}上到第${actor.buffStacks}层，越喝越猛。`);
   }
 
-  const target = pickTarget(rng, actor, units);
+  // 铁钩首回合专挑后排下手，否则前排优先规则会让钩子永远钩不到人。
+  const hooking = Boolean(plan && plan.kind === "hook" && ctx.round === plan.round);
+  const target = hooking ? pickBackTarget(rng, actor, units) : pickTarget(rng, actor, units);
   if (!target) return false;
 
   let mult = 1;
   let pierce = 0;
   let flavor = "";
 
-  // 铁钩：开场把后排拽到前排，顺手减速。
-  if (plan && plan.kind === "hook" && ctx.round === plan.round && target.lane === "back") {
-    target.lane = "front";
-    target.spd = Math.max(1, target.spd - plan.slow);
+  if (hooking) {
     mult *= plan.mult;
-    flavor = `${plan.name}一把把${target.name}拽到前排，`;
+    if (target.lane === "back") {
+      target.lane = "front";
+      target.spd = Math.max(1, target.spd - plan.slow);
+      flavor = `${plan.name}把${target.name}从后排拽了出来，`;
+    } else {
+      flavor = `${plan.name}甩出去，`;
+    }
   }
   // 爆发：周期倍伤 + 破甲。
   if (plan && plan.kind === "burst" && ctx.round % plan.every === 0) {
@@ -185,7 +192,7 @@ function runTurn(ctx, actor) {
     flavor = `${plan.name}起手，`;
   }
 
-  const first = strike(actor, target, mult, pierce, log);
+  const first = strike(actor, target, mult, pierce);
 
   // 连珠：额外段各自重新选目标，伤害按 falloff 衰减。
   if (plan && plan.kind === "multishot") {
@@ -195,13 +202,14 @@ function runTurn(ctx, actor) {
       if (!anyAlive(units, actor.side === "ally" ? "enemy" : "ally")) break;
       const extra = pickTarget(rng, actor, units);
       if (!extra) break;
-      total += strike(actor, extra, mult * plan.falloff, pierce, log);
+      total += strike(actor, extra, mult * plan.falloff, pierce);
       hits += 1;
     }
     log.push(`${actor.name}${plan.name}${hits}连射，合计${fixed1(total)}点。`);
   } else {
     log.push(`${flavor}${actor.name}打${target.name}，${fixed1(first)}点。`);
   }
+  reapDeaths(units, log);
 
   // 群体：周期性溅射全体敌人并叠削攻减益。
   if (plan && plan.kind === "aoe" && ctx.round % plan.every === 0) {
@@ -213,10 +221,10 @@ function runTurn(ctx, actor) {
       actor.dealt += splash;
       foe.wither = Math.min(plan.maxWither, foe.wither + 1);
       total += splash;
-      noteDeath(log, foe);
     }
     if (foes.length) {
       log.push(`${actor.name}的${plan.name}罩住全场，${fixed1(total)}点并削弱敌方。`);
+      reapDeaths(units, log);
     }
   }
 

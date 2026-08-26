@@ -47,6 +47,19 @@ export function pickTarget(rng, actor, units) {
   return use[idx < use.length ? idx : use.length - 1];
 }
 
+/**
+ * 铁钩专用目标池：优先够后排（钩人集火的意义就在于把后排拽出来），
+ * 敌方没有后排时退回普通规则。同样恰好消费 1 个随机数。
+ */
+export function pickBackTarget(rng, actor, units) {
+  const foes = living(units, actor.side === "ally" ? "enemy" : "ally");
+  if (!foes.length) return null;
+  const back = foes.filter((f) => f.lane === "back");
+  const use = back.length ? back : foes;
+  const idx = Math.floor(rng() * use.length);
+  return use[idx < use.length ? idx : use.length - 1];
+}
+
 /** 奶量目标：血量百分比最低的队友，平局按入场序号——不消费随机数。 */
 export function weakestAlly(units, side) {
   const mates = living(units, side);
