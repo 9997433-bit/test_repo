@@ -3,7 +3,8 @@
  * - trigger "passive"                     → crit / ultHaste / basicMul / skillMul（可复合，同类相加/相乘）
  * - trigger "lowhpNN" + damageTakenMul    → 护佑：生命低于 NN% 时减伤（多件不叠加，取减伤更深的一件）
  * - trigger "lowhpNN" + healPct           → 自救：生命低于 NN% 立即回血，全队合计一场一次（取阈值更高的一件）
- * - effect.reviveHp                       → 复活：我方每名上阵者阵亡时各复活一次（每人每场一次）并回复该比例生命
+ * - effect.reviveHp                       → 复活：我方每名上阵者阵亡时各复活一次（每人每场一次）并回复该比例生命；
+ *                                            次数可用 effect.reviveCharges 覆写（缺省 1，挂在每名我方单位上）
  * - effect.gamble [概率, 高倍, 低倍]       → 普攻搏击（多件不叠加，取后装）
  * - effect.burnAtk + after                → 开场 after 秒后每秒真实灼烧全体敌人（多件不叠加，取后装）
  * - effect.execute (+bossOnly)            → 斩杀线（多件不叠加，取后装）
@@ -16,7 +17,6 @@
 export const ARTIFACTS = [
   // ─── 防御 ───
   { id: "qixing", name: "七星灯", slot: "defend", rarity: "gold", desc: "生命低于 30% 时减伤 35%", trigger: "lowhp30", effect: { damageTakenMul: 0.65 }, source: "开局所赠" },
-  { id: "wanhun", name: "万魂灯", slot: "defend", rarity: "red", desc: "我方上阵者阵亡时各复活一次并回复 33% 生命（每人每场一次）", trigger: "death", effect: { reviveHp: 0.33 }, source: "登天塔 10 层首通" },
   { id: "yinyang", name: "阴阳镜", slot: "defend", rarity: "gold", desc: "生命低于 10% 时立即回复 22% 生命（全队一场一次）", trigger: "lowhp10", effect: { healPct: 0.22 }, source: "登天塔 20 层首通" },
   { id: "yaoguang", name: "瑶光潜渊贝", slot: "defend", rarity: "red", desc: "开场全队护盾 18% 最大生命", trigger: "start", effect: { shieldPct: 0.18 }, source: "兽潮第 8 波首破" },
   { id: "xuangui", name: "玄龟宝甲", slot: "defend", rarity: "gold", desc: "生命低于 45% 时减伤 22%（与七星灯不叠加，取减伤更深者）", trigger: "lowhp45", effect: { damageTakenMul: 0.78 }, source: "兽潮第 12 波首破" },
@@ -30,6 +30,9 @@ export const ARTIFACTS = [
   { id: "liuhuo", name: "流火梭", slot: "attack", rarity: "gold", desc: "开场 4 秒后每秒灼烧全体敌人 3% 攻击（与残阳不叠加，取后装）", trigger: "tick", effect: { burnAtk: 0.03, after: 4 }, source: "兽潮第 16 波首破" },
   { id: "zhanxian", name: "斩仙飞刀", slot: "attack", rarity: "red", desc: "任意敌人生命低于 8% 时直接斩杀（与镇岳钟取后装）", trigger: "hit", effect: { execute: 0.08 }, source: "登天塔 35 层首通" },
   // ─── 通用 ───
+  // 万魂灯归通用槽（槽型口径 AD-8）：复活是「命数」类容错，不减伤不回血，不占防位；
+  // 归防槽则基准四件套（七星灯+万魂灯双防）在 1 攻/1 防/2 通制下非法，进度墙校准作废。
+  { id: "wanhun", name: "万魂灯", slot: "util", rarity: "red", desc: "我方上阵者阵亡时各复活一次并回复 33% 生命（每人每场一次）", trigger: "death", effect: { reviveHp: 0.33 }, source: "登天塔 10 层首通" },
   { id: "huagu", name: "化骨聚灵樽", slot: "util", rarity: "red", desc: "暴击率 +12%", trigger: "passive", effect: { crit: 0.12 }, source: "兽潮第 20 波首破" },
   { id: "taixu", name: "太虚金丹鼎", slot: "util", rarity: "red", desc: "秘技冷却 -18%", trigger: "passive", effect: { ultHaste: 0.18 }, source: "登天塔 28 层首通" },
   { id: "lundao", name: "论道堪舆图", slot: "util", rarity: "gold", desc: "普攻伤害 +16%", trigger: "passive", effect: { basicMul: 1.16 }, source: "开局所赠" },
@@ -50,15 +53,14 @@ export function artifactsBySlot(slot) {
 export const STARTER_ARTIFACTS = ["qixing", "lundao"];
 
 /**
- * 法器掉落节点表——发放的唯一事实来源（AD-9）。
- * store 的 RESOLVE_COMBAT 须按 via/at 读本表发放（tower 用 tower.best、wave 用 wave.best 判首通）；
- * store 现存 TOWER_ARTIFACTS/WAVE_ARTIFACTS 硬编码只覆盖塔 5/10/15 与潮 5/8 五个节点，
- * 本轮改读本表后删除硬编码（Owner: Opus-1）。接线前，新增节点仅在图鉴展示获取途径、不发放。
+ * 法器掉落节点表——发放的唯一事实来源（AD-9，已闭环）。
+ * store 的 RESOLVE_COMBAT 按 via/at 直读本表发放（tower 用 tower.best、wave 用 wave.best 判首通），
+ * 图鉴写什么就掉什么，store 不再另留硬编码；regressions 已锁「掉落读 data 表」。
  *
  * 节点位次沿用 GDD 法器总表的既定获取位，并与进度墙对齐：
- * 续航防具链 阴阳镜(塔20)→定海珠(塔24)→三光神水瓶(塔32) 与 玄龟宝甲(潮12)
+ * 续航链 阴阳镜(塔20)→定海珠(塔24)→三光神水瓶(塔32) 与 玄龟宝甲(潮12)
  * 全部落在 40+ 硬墙之前——专为补魔族「缺可持续回复」的终盘短板；
- * 掉落三系同享，人/神自带奶与盾、防槽边际收益小，不破坏三系平衡（GDD「魔族续航」一节）。
+ * 掉落三系同享，人/神自带奶与盾、续航件边际收益小，不破坏三系平衡（GDD「魔族续航」一节）。
  * 兼容性：只增节点；已发放节点的 id/via/at 不改。
  */
 export const ARTIFACT_DROPS = [
