@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { FLOWERS } from "../../src/data/flowers";
-import { loadState, saveState } from "../../src/engine/save";
-import { MAX_PLOTS, createInitialState, emptyPlot, xpToLevel } from "../../src/engine/state";
+import { loadState, migrate, saveState } from "../../src/engine/save";
+import {
+  MAX_PLOTS,
+  createInitialState,
+  emptyPlot,
+  xpToLevel,
+  type ActiveOrder,
+} from "../../src/engine/state";
 import { addExp, takeItem } from "../../src/systems/economy";
-import { spawnOrders, tickOrders } from "../../src/systems/orders";
+import { fulfillOrder, spawnOrders, tickOrders } from "../../src/systems/orders";
 
 const ORDER_TIMEOUT_WAVES = 250;
 const ORDER_STORM_BUDGET_MS = 250;
@@ -76,6 +82,68 @@ describe("save/load roundtrip probe", () => {
     } finally {
       localStorage.clear();
     }
+  });
+});
+
+describe("legacy save migration backfill probe", () => {
+  it("fills every current top-level field without overwriting legacy progress", () => {
+    const defaults = createInitialState(900_000);
+    const migrated = migrate({
+      schemaVersion: 0,
+      startedAt: 12_000,
+      now: 34_000,
+      coins: 321,
+      level: 7,
+      inventory: { daisy: 9 },
+      unlockedFlowers: ["daisy", "peach"],
+    });
+
+    expect(Object.keys(migrated).sort()).toEqual(Object.keys(defaults).sort());
+    expect(migrated).toMatchObject({
+      startedAt: 12_000,
+      now: 34_000,
+      coins: 321,
+      level: 7,
+      inventory: { daisy: 9 },
+      unlockedFlowers: ["daisy", "peach"],
+    });
+    expect(migrated.schemaVersion).toBe(defaults.schemaVersion);
+    expect(migrated.plots).toEqual(defaults.plots);
+    expect(migrated.orders).toEqual([]);
+    expect(migrated.arrangements).toEqual([]);
+    expect(migrated.placedDecor).toEqual([]);
+    expect(migrated.quests).toEqual(defaults.quests);
+    expect(migrated.stats).toEqual(defaults.stats);
+  });
+});
+
+describe("duplicate order submission probe", () => {
+  it("settles an order uid at most once when delivery is replayed", () => {
+    const state = createInitialState(0);
+    const order: ActiveOrder = {
+      uid: "probe-order",
+      templateId: "probe-template",
+      kind: "resident",
+      title: "探针订单",
+      hint: "",
+      dueAt: 60_000,
+      coin: 25,
+      exp: 10,
+      waterReward: 3,
+      flowerIds: ["daisy"],
+      flowerCount: 1,
+    };
+    state.inventory.daisy = 2;
+    state.orders = [order];
+
+    expect(fulfillOrder(state, order.uid)).toBe(true);
+    const settledState = structuredClone(state);
+
+    expect(fulfillOrder(state, order.uid)).toBe(false);
+    expect(state).toEqual(settledState);
+    expect(state.stats.ordersDone).toBe(1);
+    expect(state.inventory.daisy).toBe(1);
+    expect(state.orders.some((candidate) => candidate.uid === order.uid)).toBe(false);
   });
 });
 

@@ -18,6 +18,14 @@ Correctness probes also guard two state invariants:
 
 - Failed inventory withdrawals leave stock unchanged and no inventory count becomes negative.
 - Flower unlocks form a monotonic set across level-ups, without duplicates or missed level-gated flowers.
+- Sparse legacy saves receive every current top-level state field while retaining persisted progress.
+- Replaying delivery for an already-settled order UID cannot grant rewards or consume inventory twice.
+
+## Deferred probes
+
+- Offline catch-up has no reconciliation entry point yet. The current loop advances time only from active animation frames and caps each frame delta at 100 ms, so there is no offline settlement contract to probe.
+- Migration coverage currently guards schema-field backfill. Level-aware catalog backfill remains deferred because `migrate` preserves a legacy `unlockedFlowers` list as-is.
+- The duplicate-submission probe covers replay safety, not active-queue diversity. `spawnOrders` still samples templates with replacement and has no template-deduplication contract to assert.
 
 ## Known scaling pressure
 
