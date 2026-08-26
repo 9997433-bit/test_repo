@@ -101,7 +101,7 @@ export function createCharacters({ scene, quality, textures }) {
     // 把粗糙度推到接近全漫反射，否则背板会在跟随镜头里烧成一张白纸。
     return new MeshStandardMaterial({
       color: ident,
-      map: textures.cloth.albedo,
+      // 织物只做了粗糙度与法线，没有 albedo：颜色就是识别色本身
       roughnessMap: textures.cloth.rough,
       normalMap: quality.normalMaps ? textures.cloth.normal : null,
       normalScale: new Vector2(0.4, 0.4),
