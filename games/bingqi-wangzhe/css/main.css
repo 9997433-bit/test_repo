@@ -1,0 +1,31 @@
+:root {
+  --ink: #0b0a09;
+  --cinnabar: #c23a2b;
+  --gold: #e4b84a;
+  --ice: #7ec8e3;
+  --thunder: #9b6bff;
+  --paper: #f3e6c5;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(ellipse at 50% 20%, #2a120e 0%, var(--ink) 55%);
+  color: var(--paper);
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+#app {
+  max-width: 430px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: 24px 16px;
+}
+
+.boot {
+  text-align: center;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+}
