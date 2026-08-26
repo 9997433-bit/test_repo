@@ -6,12 +6,7 @@
     <meta name="theme-color" content="#1a120b" />
     <title>墨戏目录 · test_repo</title>
     <style>
-      :root {
-        --ink: #1a120b;
-        --paper: #efe3c8;
-        --seal: #7a1818;
-        --gold: #c9a227;
-      }
+      :root { --ink: #1a120b; --paper: #efe3c8; --seal: #7a1818; }
       * { box-sizing: border-box; }
       body {
         margin: 0;
@@ -23,7 +18,7 @@
           linear-gradient(180deg, #f6ecd4, #e8d7b4);
         padding: 8vh 20px 48px;
       }
-      main { max-width: 760px; margin: 0 auto; }
+      main { max-width: 840px; margin: 0 auto; }
       .sub { letter-spacing: 0.42em; opacity: 0.65; font-size: 0.85rem; }
       h1 { font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 400; letter-spacing: 0.18em; }
       .grid { display: grid; gap: 16px; }
@@ -60,8 +55,18 @@
           <p>汉字合成 · 水墨塔防。征兵合并，拼字觉醒，先破对岸者胜。</p>
           <div class="path">/test_repo/zhao-yun-adou/</div>
         </a>
+        <a class="card" href="./bingqi-wangzhe/">
+          <h2>兵器王者·炉火</h2>
+          <p>寻器、造器、用器。与其他游戏并列一级目录。</p>
+          <div class="path">/test_repo/bingqi-wangzhe/</div>
+        </a>
+        <a class="card" href="./zaohua-xianfu/">
+          <h2>造化仙府</h2>
+          <p>已发布的同级目录，构建脚本只会覆盖本仓库正在构建的游戏。</p>
+          <div class="path">/test_repo/zaohua-xianfu/</div>
+        </a>
       </div>
-      <footer>本地开发仍走各游戏自己的端口；本页只服务线上目录。</footer>
+      <footer>线上地址形如 https://9997433-bit.github.io/test_repo/&lt;游戏名&gt;/ ，不要把多款游戏打进 Pages 根目录。</footer>
     </main>
   </body>
 </html>
