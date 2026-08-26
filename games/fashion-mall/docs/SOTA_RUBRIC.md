@@ -7,7 +7,7 @@
 - 评分线：**SOTA ≥ 65（90%）；可发布 ≥ 54（75%）；基线实测 30（42%）；Round 1 后 48（67%）；Round 2 后实测 57（79%）**。
 - 每轮交付必须重打全表并更新分数列；打 2 分的条目必须给出证据（命令输出、录屏、代码位置）。
 - **打分对象是线上运行的代码**：机制只存在于 data 层 / 测试而未接进运行路径的，按"存在但有明确缺陷"计 1 分，不计 2 分。
-- 本轮复评证据环境：Node v22.14.0，`npm test` **91/91 通过**（save 40 + minigames 30 + economy 18 + contracts 3），`npm run bench` 实测 **747,247 ticks/s**（地板已上调至 **50,000** 并有断言），`node scripts/boundary.mjs` **7 guarded / 0 hazards**，`node scripts/simulate.mjs` 半活跃/纯挂机 3600s 双轨可复跑（2026-08 快照）。
+- 本轮复评证据环境：Node v22.14.0，`npm test` **91/91 通过**（save 40 + minigames 30 + economy 18 + contracts 3），`npm run bench` 实测 **747,247 ticks/s**（地板已上调至 **50,000** 并有断言），`npm run boundary` **7 guarded / 0 hazards**，`npm run simulate` 半活跃/纯挂机 3600s 双轨可复跑且自带断言；`npm run verify` 一键四链 **4/4 PASS**（2026-08 快照）。
 
 ## 0.1 Round 2 结论简报逐条校对（对照现行 src 实证）
 
@@ -51,7 +51,7 @@
 | # | 条目 | 2 分标准 | 验收方法 | R1 | R2 | R3 | 复评证据 / 缺口 |
 |---|---|---|---|---|---|---|---|
 | B1 | 公式集中 data 层 | 所有产出/成本/赏金公式在 `data/balance.js`，视图零数字字面量 | `rg '\d+ \*|\* \d+' src/minigames src/mall` | 1 | 1 | 1 | 五小游戏零私价（全查 `payouts()`），商场升级/招聘走 `actions`→balance 曲线且签名已修（`shop` 实参、`hireCost` 对齐；contracts.test "action costs read the balance curve"）。**唯一残留**：`mansion.js#costOf` 私价 `200/bonus` 倒挂 + 直写 state（ECONOMY §8.4） |
-| B2 | 曲线经模拟验证 | 升级回本时间、每级停留时长有模拟脚本与文档结论 | 读 `docs/ECONOMY.md` + 跑模拟 | 0 | 1 | 2 | `scripts/simulate.mjs` 入库可复跑（dt=1s×3600s 双轨，驻店帽/衰减/研发前置全入模）；ECONOMY §7 已按实测回填节奏基准；回本增速窗口 (1.05,1.20) 有断言。备注：脚本内 `ECONOMY_REFERENCE` 对照表存 Round 1 旧值（记录性、不断言，§8.5 待同步） |
+| B2 | 曲线经模拟验证 | 升级回本时间、每级停留时长有模拟脚本与文档结论 | 读 `docs/ECONOMY.md` + 跑模拟 | 0 | 1 | 2 | `scripts/simulate.mjs` 入库可复跑（dt=1s×3600s 双轨，驻店帽/衰减/研发前置全入模）；ECONOMY §7 已按实测回填节奏基准，脚本内 `ECONOMY_REFERENCE` 对照表也已同步实测值（§8.5 关闭）；回本增速窗口 (1.05,1.20) 有断言 |
 | B3 | XP 供给设计 | 等级双门槛（金+XP）下，纯挂机与主动玩两条路径都有明确的升级节奏 | 模拟两种玩法到 Lv5 | 1 | 1 | 2 | `passiveXpPerSec` 已进 tick/settle（离线 0.65 折、随 8h 封顶）；单测 "tick accrues passive xp / offline settle accrues discounted passive xp / passive xp unblocks idle leveling slower than active play"；simulate 实测纯挂机 38.6 分、半活跃 29.3 分过 Lv7 阅历门，双路径达标 |
 | B4 | 离线/在线一致性 | 离线 65%、8h 封顶正确；后台标签不劣于离线；时钟回拨安全 | 单测 + 挂后台 10 分钟对照 | 1 | 2 | 2 | `settle` 统一记账：节流不丢收益、回拨钳 0、30s 边界、8h 封顶、拒 NaN now 全有单测；`visibilitychange`/`pagehide` 双保险 |
 | B5 | 委派策略深度 | 特长匹配收益显著、驻店有槽位约束、培训有边际递减 | 读公式 + 实测全员堆一店 | 1 | 1 | 2 | 特长匹配（mismatch 拿不到加成有单测）；驻店帽 2/店三道防线（动作层拒、读档兜底、economy 取前 N）；培训 40×1.6^n；`combinePartnerBonuses` 衰减已进 `economy.js#shopBonusMap`（"stacked partner bonuses go through the decay curve"）——全员堆一店不再是最优解，simulate 亦证实中后期乘区被压回 |
@@ -87,9 +87,9 @@
 |---|---|---|---|---|---|---|---|
 | E1 | 经济单测深度 | 覆盖公式 + 期望值 + 曲线性质（回本单调性、封顶） | `npm test` 读断言 | 1 | 2 | 2 | economy.test 18 条：期望/RTP、回本增速窗口、门槛逐级精确/差一拒绝、封顶、目标升降档、被动XP 双路径、家具定价反倒挂、叠加衰减 |
 | E2 | 存档迁移测试 | 固化旧档原文 → 迁移 → 断言新形状；坏档回退有测试 | `npm test` | 1 | 2 | 2 | save.test 40 条：v1 原文迁移逐字段断言、脏档消毒、坏档备份不清档、加店不炸老档、v1 导出档导入、settle 全边界、动作层守卫、等级帽、被动XP、饱和目标 |
-| E3 | 进程推进测试 | 模拟推到五店全解锁 + 目标续期若干轮 | `npm test` | 1 | 1 | 1 | 仍仅 Lv1→2 解锁 fresh 一例 + 目标升/降档各一轮；`simulate.mjs` 能推到五店全开但只是脚本、不在 `npm test` 断言 |
+| E3 | 进程推进测试 | 模拟推到五店全解锁 + 目标续期若干轮 | `npm test` | 1 | 1 | 1 | 仍仅 Lv1→2 解锁 fresh 一例 + 目标升/降档各一轮；`simulate.mjs` 已带断言并入 verify 链，但只断单调/有限/等级帽与主动≥挂机，未显式断言五店全解锁与目标续期轮数，也不在 `npm test` 内 |
 | E4 | 小游戏逻辑可测 | 赏金/判定逻辑为纯函数并有 Node 断言 | `npm test` | 0 | 1 | 2 | minigames.test 30 条，且被测函数就是视图运行的代码（视图查同一 `payouts()`/纯函数）：死键禁令、别名投影、坏值兜底、B6 拒收换表、保底跨抽结转、加权边界、disposer 契约 |
-| E5 | bench 门槛有效 | 地板设为 50,000 ticks/s，回归即红 | 读 `scripts/bench.mjs` | 1 | 1 | 2 | `THROUGHPUT_FLOOR = 50_000` + `assert.ok(ticksPerSec >= THROUGHPUT_FLOOR)`，另有单长 tick 相对误差与 ultraGold 探针。残留（不扣本条）：`boundary.mjs`/`simulate.mjs` 未挂 npm scripts，探针不拦 CI |
+| E5 | bench 门槛有效 | 地板设为 50,000 ticks/s，回归即红 | 读 `scripts/bench.mjs` | 1 | 1 | 2 | `THROUGHPUT_FLOOR = 50_000` + `assert.ok(ticksPerSec >= THROUGHPUT_FLOOR)`，另有单长 tick 相对误差与 ultraGold 探针；`npm run verify` 一键串 test/bench/simulate/boundary 四链，任一失败即红（本轮实跑 4/4 PASS） |
 | E6 | 零依赖可 CI | `npm test`/`npm run bench` 零安装直跑 | 干净环境执行 | 2 | 2 | 2 | 本轮复验：Node 原生 runner 零安装，test 91/91、bench、boundary、simulate 全部直跑通过 |
 
 ## 汇总与 Round 3 P0
@@ -108,8 +108,8 @@ Round 2 的主题"接线与钳制"基本兑现：B 维从 10 → 14（印钞洞�
    `mallView` 升级/招聘、`roster` 培训/派驻改为行内局部更新或重绘后按 `data-*` 恢复焦点；两条目同根，一次修复双收。
 4. **P0-4 取证三件**（C5/C6/D4，+4）
    长挂机 30 分钟 Memory 快照对比、主界面/生鲜 Performance 帧率录制、axe/Lighthouse 对比度审计，报告全部留档进 docs。纯手工测量，零代码风险，本轮最大单项分池。
-5. **P0-5 推进模拟入测 + 探针挂 CI**（E3，+1）
-   headless 推进断言进 `npm test`：模拟推到五店全解锁 + 目标续期若干轮（可复用 simulate 管线）；`boundary.mjs` 挂进 npm scripts，7 探针回归即红。
+5. **P0-5 推进模拟入测**（E3，+1）
+   headless 推进断言进 `npm test`：模拟推到五店全解锁 + 目标续期若干轮（可复用 simulate 管线，往 `assertSimulation` 补显式断言或抽成测试用例）。探针挂 CI 一半已由 `npm run verify` 四链完成，剩下的就是这两条显式断言。
 6. **P0-6 升级庆祝与组件态补完**（A8，+1）
    主角升级庆祝动效（settle notes 已有管线可挂）、商场升级/招聘飘字、locked 店卡点击 shake——DESIGN_SYSTEM §11 项 3 的 JS 挂类名清单照做即可，动效 token 均已备。
 7. **P0-7 spec 债两件（简报点名，无直接分值）**
@@ -117,4 +117,4 @@ Round 2 的主题"接线与钳制"基本兑现：B 维从 10 → 14（印钞洞�
 
 ### P1（本轮明确不做，防止范围蔓延）
 
-俯视商场地图（A3）、事件风险抉择/微交互 + `reward.charm` 发放或删除（A6，ECONOMY §8.7）、盲盒/占卜操作深度（A2 玩法侧）、五小游戏与伙伴/研发/衣橱视图 copy 全量收编（A10）、`simulate.mjs` 内 `ECONOMY_REFERENCE` 对照表同步（§8.5）、抽水随等级缩放（§8.6）、首目标硬编码改走 `rollNextGoal`（§8.8）、tier 0/1 标签口径归一（§8.9）。
+俯视商场地图（A3）、事件风险抉择/微交互 + `reward.charm` 发放或删除（A6，ECONOMY §8.7）、盲盒/占卜操作深度（A2 玩法侧）、五小游戏与伙伴/研发/衣橱视图 copy 全量收编（A10）、抽水随等级缩放（§8.6）、首目标硬编码改走 `rollNextGoal`（§8.8）、tier 0/1 标签口径归一（§8.9）。
