@@ -19,6 +19,7 @@ import {
   defaultState,
   fromSaveData,
   grantGold,
+  offlineReceipt,
   passiveXpPerSec,
   rollNextGoal,
   settle,
@@ -45,7 +46,8 @@ import {
   partnerShopBonus,
   shopUpgradeCost as curveShopUpgradeCost,
 } from "../src/data/balance.js";
-import { shopBonusMap, totalOnlinePerSec } from "../src/core/economy.js";
+import { shopBonusMap, totalOnlinePerSec, formatGold } from "../src/core/economy.js";
+import { GOALS, OFFLINE } from "../src/data/copy.js";
 
 /** 最小内存版 localStorage，用来测边界适配器而不引入依赖。 */
 function installStorage() {
@@ -378,7 +380,9 @@ test("goal renews after completion instead of sticking at done", () => {
   assert.equal(s.goal.tier, first.tier + 1);
   assert.ok(s.goal.target > s.goldEarned, "新目标必须高于当前累计营收");
   assert.ok(s.goal.until > 1000);
+  // 播报取 copy 字典，数值已 formatGold；一次达标只播一条，离线追帧不会成串刷屏。
   assert.equal(notes.length, 1);
+  assert.equal(notes[0], GOALS.done(formatGold(first.reward.gold), first.reward.xp));
 });
 
 test("goal downgrades and reopens after a timeout", () => {
@@ -390,7 +394,7 @@ test("goal downgrades and reopens after a timeout", () => {
   const notes = advanceGoal(s, s.goal.until + 1);
   assert.equal(s.goal.tier, before - 1);
   assert.ok(s.goal.until > s.goal.until - 1);
-  assert.ok(notes[0].includes("超时"));
+  assert.deepEqual(notes, [GOALS.miss], "超时只播 GOALS.miss 一条，不再用本地硬编码句");
 });
 
 test("legacy completed goal renews without paying the reward twice", () => {
@@ -602,6 +606,29 @@ test("offline settle accrues discounted passive xp under the same 8h cap", () =>
   const overCapped = make();
   settle(overCapped, 20 * 3600_000);
   assert.equal(overCapped.xp, capped.xp, "超出封顶的离线时长不得继续发阅历");
+});
+
+test("hydrate-side offline receipt reads the OFFLINE copy keys", () => {
+  const short = { hours: 0.2, gold: 120 };
+  assert.equal(offlineReceipt(short), OFFLINE.short, "半小时内的离开只播轻量变体");
+
+  const normal = { hours: 2, gold: 123456 };
+  assert.equal(offlineReceipt(normal), OFFLINE.summary("2.0", formatGold(normal.gold)));
+  assert.ok(offlineReceipt(normal).includes(formatGold(normal.gold)), "金额必须走 formatGold");
+  assert.equal(offlineReceipt(normal).includes(String(normal.gold)), false, "回执不得出现裸数字");
+
+  const capped = { hours: OFFLINE_CAP_HOURS + 3, gold: 999 };
+  assert.ok(
+    offlineReceipt(capped).endsWith(OFFLINE.cappedNote(String(OFFLINE_CAP_HOURS))),
+    "超过封顶必须追加封顶提示",
+  );
+  assert.equal(
+    offlineReceipt({ hours: OFFLINE_CAP_HOURS, gold: 999 }).includes(
+      OFFLINE.cappedNote(String(OFFLINE_CAP_HOURS)),
+    ),
+    false,
+    "正好封顶不算超时长，不追加",
+  );
 });
 
 test("core offline cap mirrors the balance offline curve", () => {

@@ -26,6 +26,7 @@ import {
 import { totalOnlinePerSec } from "../src/core/economy.js";
 import { PARTNER_LEVEL_MAX, PARTNERS_PER_SHOP_MAX, SHOP_LEVEL_MAX } from "../src/core/limits.js";
 import { defaultState, tick } from "../src/core/state.js";
+import { GOALS } from "../src/data/copy.js";
 
 const START_NOW = 1_800_000_000_000;
 const CHECKPOINTS = [3 * 60, 15 * 60, 60 * 60];
@@ -293,7 +294,7 @@ function simulate(mode) {
   for (let second = 1; second <= MAX_SECONDS; second += 1) {
     const beforeLevel = state.level;
     const result = tick(state, 1, START_NOW + second * 1000);
-    stats.goalsCompleted += result.notes.filter((note) => note.startsWith("限时目标达成")).length;
+    stats.goalsCompleted += result.notes.filter((note) => note !== GOALS.miss).length;
     if (mode === "active") applyExpectedActivePlay(state, second, stats);
     if (state.level !== beforeLevel) optimizePartnerAssignments(state);
     signAvailablePartners(state);

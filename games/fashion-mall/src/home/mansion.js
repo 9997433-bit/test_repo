@@ -1,15 +1,15 @@
 import { FURNITURE, offlineGold } from "../data/balance.js";
+import { FAIL } from "../data/copy.js";
 import { furnitureBonus, charmOf, totalOnlinePerSec, formatGold } from "../core/economy.js";
 import { persist } from "../core/state.js";
+import { buyFurniture, furnitureCost } from "../core/actions.js";
+import { OFFLINE_CAP_HOURS } from "../core/limits.js";
 import { sfx } from "../core/audio.js";
 import { injectMansionStyles } from "./styles.js";
 import { furnitureArt, roomBackdrop, PLACEMENT, ROOMS } from "./roomArt.js";
 
-const OFFLINE_PREVIEW_HOURS = 8;
-
-function costOf(f) {
-  return Math.round(200 / f.bonus);
-}
+/** 预估收益按离线封顶时长算，和结算口径同源。 */
+const OFFLINE_PREVIEW_HOURS = OFFLINE_CAP_HOURS;
 
 function roomItems(roomId) {
   return FURNITURE.filter((f) => PLACEMENT[f.id]?.room === roomId).sort(
@@ -19,7 +19,7 @@ function roomItems(roomId) {
 
 function ghostArt(f, owned) {
   const pl = PLACEMENT[f.id];
-  const label = `${f.name} · ${formatGold(costOf(f))}`;
+  const label = `${f.name} · ${formatGold(furnitureCost(f))}`;
   return `
     <g class="fm-slotbox" data-buy="${f.id}" transform="translate(${pl.x},${pl.y}) scale(${pl.scale})">
       <rect class="fm-ghost-plate" x="${-pl.w / 2}" y="${-pl.h}" width="${pl.w}" height="${pl.h}" rx="11"
@@ -57,8 +57,9 @@ function itemIcon(id) {
   return `<svg viewBox="-18 -18 36 36" aria-hidden="true"><g transform="translate(0,${(pl.h * s) / 2}) scale(${s.toFixed(3)})">${furnitureArt(id)}</g></svg>`;
 }
 
-export function renderMansion(root, state) {
+export function renderMansion(root, state, ctx = {}) {
   injectMansionStyles();
+  const toast = (typeof ctx === "object" && ctx.toast) || ((msg) => (state.toast = msg));
 
   root.innerHTML = `
     <section class="panel fm-home-head">
@@ -88,12 +89,6 @@ export function renderMansion(root, state) {
     el.classList.add("fm-pop");
   }
 
-  function syncHud() {
-    document.querySelectorAll(".topbar .pill").forEach((pill) => {
-      if (pill.textContent.startsWith("💰")) pill.textContent = `💰 ${formatGold(state.gold)}`;
-    });
-  }
-
   function syncStats(animate) {
     const bonus = furnitureBonus(state.furniture);
     const idle = offlineGold(totalOnlinePerSec(state), OFFLINE_PREVIEW_HOURS, bonus);
@@ -102,9 +97,8 @@ export function renderMansion(root, state) {
     els.idle.textContent = formatGold(idle);
     els.charm.textContent = charmOf(state.outfit);
     els.bar.style.width = `${(owned / FURNITURE.length) * 100}%`;
-    els.tip.textContent = `已摆放 ${owned}/${FURNITURE.length} 件 · 离线最多结算 8 小时，家装把这笔钱再抬高 ${Math.round(bonus * 100)}%。`;
+    els.tip.textContent = `已摆放 ${owned}/${FURNITURE.length} 件 · 离线最多结算 ${OFFLINE_CAP_HOURS} 小时，家装把这笔钱再抬高 ${Math.round(bonus * 100)}%。`;
     if (animate) [els.bonus, els.idle].forEach(pop);
-    syncHud();
   }
 
   ROOMS.forEach((room) => {
@@ -147,20 +141,21 @@ export function renderMansion(root, state) {
       setTimeout(() => tag.remove(), 1200);
     }
 
+    /** 扣款与入库只走动作层；视图只负责音效、重绘与落盘。 */
     function buy(f) {
-      if (state.furniture.includes(f.id)) return;
-      const cost = costOf(f);
-      if (state.gold < cost) {
-        say(`还差 ${formatGold(cost - state.gold)}，先回商场跑一轮营业额`);
+      const short = Math.max(0, furnitureCost(f) - state.gold);
+      const res = buyFurniture(state, f.id);
+      if (!res.ok) {
+        const text = FAIL[res.reason] ?? res.toast;
+        say(res.reason === "insufficient-gold" ? `${text}（还差 ${formatGold(short)} 金）` : text);
         return;
       }
-      state.gold -= cost;
-      state.furniture.push(f.id);
       persist(state);
       sfx.coin();
       paintRoom(f.id);
       syncStats(true);
       gain(`${f.name} 已就位 · 离线 +${Math.round(f.bonus * 100)}%`);
+      toast(res.toast);
       hint.textContent = "";
     }
 
@@ -168,7 +163,7 @@ export function renderMansion(root, state) {
       shop.innerHTML = "";
       items.forEach((f) => {
         const owned = state.furniture.includes(f.id);
-        const cost = costOf(f);
+        const cost = furnitureCost(f);
         const btn = document.createElement("button");
         btn.className = `fm-item${owned ? " owned" : state.gold < cost ? " poor" : ""}`;
         btn.innerHTML = `
