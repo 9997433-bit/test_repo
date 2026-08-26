@@ -12,18 +12,15 @@
  * （冰面阻力与追踪转向都在 `prepareEgg` 里，两条路径共用），因此虚线与真实落点一致。
  */
 import {
+  EGG_RADIUS,
   FIXED_DT,
   GRAVITY,
   WORLD_H,
   WORLD_W,
   addField,
   addStatic,
-  circleVsAABB,
-  circleVsCircle,
-  circleVsSegment,
   computeAABB,
   createEgg,
-  createManifold,
   createStepContext,
   createWorld as createPhysicsWorld,
   drainEvents,
@@ -316,7 +313,7 @@ export function makeEgg(opts = {}) {
 /** 半径变化后同步质量，否则蛋与蛋的冲量解算会用旧值 */
 function resizeEgg(egg, r) {
   egg.r = r;
-  egg.mass = (r * r) / 144;
+  egg.mass = (r * r) / (EGG_RADIUS * EGG_RADIUS);
   egg.invMass = egg.mass > 0 ? 1 / egg.mass : 0;
 }
 
@@ -392,10 +389,11 @@ function wallSide(ev) {
   return ev.ny > 0.5 ? "top" : "bottom";
 }
 
-function onContact(egg, growthApplied) {
+/** 「越撞越大」每个固定步最多长一次，否则一步多次接触会瞬间撑爆半径 */
+function onContact(world, egg) {
   egg.collisions = egg.bounces;
-  if (!egg.growth || growthApplied.has(egg)) return;
-  growthApplied.add(egg);
+  if (!egg.growth || egg._grewStep === world.stepIndex) return;
+  egg._grewStep = world.stepIndex;
   resizeEgg(egg, Math.min(34, egg.r + egg.growth));
   egg.damageMul += 0.06 * egg.growth;
 }
@@ -412,7 +410,6 @@ function enemyHit(hooks, egg, enemy, ev) {
 function dispatch(world, hooks) {
   const events = drainEvents(world);
   if (events.length === 0) return;
-  const grew = new Set();
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
     const egg = ev.egg;
@@ -425,7 +422,7 @@ function dispatch(world, hooks) {
       continue;
     }
     if (ev.type !== "bounce" && ev.type !== "pierce" && ev.type !== "eggHit") continue;
-    onContact(egg, grew);
+    onContact(world, egg);
     if (ev.type === "eggHit") continue;
 
     const body = ev.body;
@@ -626,6 +623,3 @@ export function predictTrajectory(origin, velocity, world, opts = {}) {
 
   return { points, bounces, hitsEnemy, impact, target };
 }
-
-/** 几何工具再导出，关卡与调试脚本可直接用上游实现 */
-export const geometry = { circleVsAABB, circleVsCircle, circleVsSegment, createManifold };
