@@ -100,7 +100,7 @@
 | C | R3-G2 推进模拟入测 | gpt-sol | 已完成，五店解锁与目标续期断言已合入 | `bc-a52b9afe-113b-576c-aead-1a3d22d58b9f` |
 | C | R3-F4 UX 文档冻结 | fable | 已完成，UX_NARRATIVE 接线表已合入 | `bc-211ebb49-e9ec-54df-b845-c0b8705d31c9` |
 | D | R3-F2 取证文档 | fable | 运行中 | `bc-a0edb5b1-078c-5e1b-b6d4-ccb5f94c3a5d` |
-| D | R3-F3 经济文档冻结 | fable | 运行中 | `bc-30a59553-e12d-533f-9c2b-b13a8dc96114` |
+| D | R3-F3 经济文档冻结 | fable | 已完成，ECONOMY.md 接线表已合入 | `bc-30a59553-e12d-533f-9c2b-b13a8dc96114` |
 
 ## 已实现基线（Parent 预置）
 
