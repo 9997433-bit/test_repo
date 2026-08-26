@@ -1,0 +1,590 @@
+/* ui/ 自有皮肤：只描述本层新增的部件，配色沿用 styles/tokens.css 的令牌。 */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 焦点环与 ink.css 的全局兜底同源同色（tokens --focus-ring，朱磦），不再各调各的朱 */
+:where(button, [href], [tabindex], canvas):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+.screen-title:focus-visible,
+.brand:focus-visible,
+.tutorial-title:focus-visible {
+  outline: 2px dashed var(--seal-bright);
+  outline-offset: 6px;
+}
+
+button.primary {
+  background: var(--seal);
+  color: var(--paper-bright);
+  border-color: var(--seal);
+}
+button.primary:hover {
+  background: var(--seal-bright);
+  color: var(--paper-bright);
+}
+button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+ul.stage-list,
+ul.talent-list,
+ul.mastery-list,
+ul.gallery-grid,
+ul.tutorial-grid,
+ul.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.screen-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.screen-title {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+}
+.screen-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.splash-tools {
+  justify-content: flex-end;
+}
+.splash-save {
+  margin-top: 14px;
+  font-size: 0.9rem;
+}
+
+.toggle[aria-pressed="true"] {
+  border-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-wash);
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--paper-bright);
+  background: var(--seal);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.notice:empty {
+  display: none;
+}
+.notice {
+  color: var(--seal);
+}
+.idle-banner {
+  border-left: 4px solid var(--gold);
+  margin: 0 0 16px;
+}
+
+.resource-card {
+  margin-bottom: 16px;
+}
+.resource-row {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+/* 小字辅助信息一律 --ink-mute 实色：opacity 淡化在宣纸上只剩 4.4:1，不达 4.5 */
+.stat-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.2em;
+  color: var(--ink-mute);
+}
+
+.stage-list {
+  display: grid;
+  gap: 10px;
+}
+.stage-btn {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+}
+.stage-btn .muted {
+  font-size: 0.82rem;
+}
+.stage-btn.cleared {
+  border-left: 3px solid var(--malachite);
+}
+
+.hub-notice {
+  margin: 0 0 14px;
+}
+
+/* 灵兽栏：收伏 / 合成 / 洗练 / 放生 */
+.beast-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.beast-cell {
+  display: flex;
+}
+.beast-pick {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+}
+.beast-pick.is-picked {
+  border-color: var(--seal);
+  background: var(--seal-wash);
+}
+.beast-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.beast-star {
+  color: var(--gold-ink);
+  letter-spacing: 0.12em;
+}
+.beast-passive {
+  font-size: 0.84rem;
+}
+.beast-lore:empty {
+  display: none;
+}
+.beast-lore {
+  font-size: 0.78rem;
+}
+.beast-actions {
+  margin-top: 12px;
+}
+.beast-release[aria-disabled="false"] {
+  color: var(--seal);
+  border-color: var(--seal);
+}
+.beast-release.is-confirming {
+  background: var(--seal);
+  border-color: var(--seal);
+  color: var(--paper-bright);
+}
+.beast-hint {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  min-height: 2.4em;
+}
+
+.talent-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.talent-btn {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+.talent-lv {
+  color: var(--ink-mute);
+}
+
+/* 战斗屏 */
+.battle-screen .portrait {
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.paper-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.paper-tip {
+  font-size: 0.82rem;
+  margin: 0;
+}
+.battle-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.side-block {
+  display: grid;
+  gap: 4px;
+}
+.side-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+.stat-num {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.intent {
+  font-family: var(--script);
+  letter-spacing: 0.2em;
+}
+.intent[data-intent="strike"] {
+  color: var(--seal-bright);
+}
+.intent[data-intent="bound"] {
+  color: var(--cyan);
+}
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  min-height: 2.4em;
+}
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.log-line {
+  padding: 1px 0;
+}
+.log-line.enemy {
+  color: var(--seal);
+}
+/* 日志小字（0.87rem）用矿彩写字色：石绿/藤黄原色对裱卡只有 3.7:1 / 2.2:1 */
+.log-line.heal,
+.log-line.buff {
+  color: var(--malachite-ink);
+}
+.log-line.react {
+  color: var(--cyan);
+}
+/* 束缚行与「意图 · 束缚」同用石青一族；普通伤害（hit/aoe）保持焦墨本色 */
+.log-line.ctrl {
+  color: var(--cyan);
+}
+.log-line.warn {
+  color: var(--gold-ink);
+}
+.log-line.crit,
+.log-line.combo {
+  color: var(--seal-bright);
+}
+.log-line.end {
+  font-family: var(--script);
+  letter-spacing: 0.12em;
+}
+.combo {
+  font-family: var(--script);
+  color: var(--seal-bright);
+  letter-spacing: 0.1em;
+}
+
+/* 符键条：键盘 / 触屏的第二条施法通路 */
+.castbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px;
+}
+.cast-key {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  text-align: left;
+  padding: 8px 10px;
+}
+.cast-key-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+.cast-key-name {
+  font-size: 0.86rem;
+}
+.cast-key-cost {
+  font-size: 0.76rem;
+  color: var(--ink-mute);
+}
+/* 灵气不足：不整键压淡（连费用一起糊掉），改作素纸虚线签 ——
+   名目与键帽褪成重墨，费用保持朱砂满对比，「缺多少灵气」正是此刻最要紧的字。 */
+.cast-key.is-short {
+  opacity: 1; /* 盖过 button[aria-disabled] 的整体减淡 */
+  color: var(--ink-mute);
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+}
+.cast-key.is-short .cast-key-head {
+  color: var(--ink-mute);
+}
+.cast-key.is-short .stroke-glyph {
+  color: var(--ink-faint);
+}
+.cast-key.is-short kbd {
+  color: var(--ink-mute);
+  background: transparent;
+  border-color: var(--ink-line);
+}
+.cast-key.is-short .cast-key-cost {
+  color: var(--seal);
+}
+.cast-key.is-short:hover,
+.cast-key.is-short:active {
+  transform: none;
+  color: var(--ink-mute);
+  border-color: var(--ink-line);
+  box-shadow: none;
+}
+.cast-key.flash {
+  animation: cast-flash 420ms ease-out;
+}
+/* 收笔帧与纸签静息底同源（--paper-tag），动画结束不跳色 */
+@keyframes cast-flash {
+  0% {
+    background: var(--seal-flash);
+    border-color: var(--seal);
+  }
+  100% {
+    background: var(--paper-tag);
+  }
+}
+kbd {
+  font-family: var(--serif);
+  font-size: 0.74rem;
+  min-width: 1.5em;
+  text-align: center;
+  padding: 1px 5px;
+  border: 1px solid var(--ink-faint);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--paper-bright);
+}
+
+.stroke-glyph {
+  color: var(--seal);
+  flex: none;
+}
+
+/* 入世教程 */
+.tutorial-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--ink-veil);
+  backdrop-filter: blur(3px);
+  overflow: auto;
+}
+.tutorial-panel {
+  max-width: 720px;
+  width: 100%;
+  background: var(--paper-bright);
+}
+.tutorial-title {
+  font-size: 2rem;
+  margin: 2px 0 8px;
+}
+.tutorial-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(252px, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+.tutorial-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--ink-hair);
+  background: var(--paper-glare);
+}
+.tutorial-copy {
+  display: grid;
+  gap: 2px;
+  font-size: 0.88rem;
+}
+.tutorial-copy .muted {
+  font-size: 0.8rem;
+}
+.tutorial-foot {
+  font-size: 0.85rem;
+}
+
+/* 画阁 */
+.mastery-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+/* 未通六式：褪墨而不糊字 —— 字色退到重墨、字形退成淡墨，不再整块压淡到 3.8:1 */
+.mastery-item {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 1px dashed var(--ink-line);
+  font-size: 0.84rem;
+  color: var(--ink-mute);
+}
+.mastery-item .stroke-glyph {
+  color: var(--ink-faint);
+}
+.mastery-item.done {
+  color: var(--ink);
+  border-style: solid;
+  border-color: var(--seal);
+}
+.mastery-item.done .stroke-glyph {
+  color: var(--seal);
+}
+.gallery-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.gallery-sub {
+  margin: 20px 0 10px;
+}
+.gallery-tip {
+  margin: 0 0 12px;
+}
+.gallery-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.gallery-cell {
+  display: flex;
+}
+.gallery-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+button.gallery-item {
+  cursor: pointer;
+}
+button.gallery-item:hover {
+  border-color: var(--seal);
+}
+.gallery-paper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 7 / 5;
+  border: 1px solid var(--ink-hair);
+  border-radius: 3px;
+  /* 与 drawing/replay.js 回放时铺的纸色同源，边缘不会露出色差。 */
+  background: var(--paper);
+  overflow: hidden;
+}
+.gallery-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* 无笔路的旧记录用淡墨字形占位，一眼能和真回放的焦墨分开。 */
+.gallery-item.is-static .stroke-glyph {
+  width: 70%;
+  height: auto;
+  color: var(--ink-faint);
+}
+.gallery-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gallery-name {
+  font-weight: 600;
+}
+.gallery-flag {
+  font-size: 0.82rem;
+}
+.reward-card {
+  display: inline-block;
+  margin-top: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cast-key.flash {
+    animation: none;
+    border-color: var(--seal);
+  }
+  .tutorial-mask {
+    backdrop-filter: none;
+  }
+}
+
+/*
+ * 游戏内的减动效开关：ui/motion-bridge.js 把 settings.reducedMotion
+ * 写成 <html data-reduced-motion="true">，这里复述 styles/ink.css 里
+ * 那条系统偏好的礼仪，两条路径关掉的是同一批动效。
+ */
+[data-reduced-motion="true"] .screen,
+[data-reduced-motion="true"] .stamp,
+[data-reduced-motion="true"] .cast-key.flash {
+  animation: none;
+}
+[data-reduced-motion="true"] .cast-key.flash {
+  border-color: var(--seal);
+}
+[data-reduced-motion="true"] button,
+[data-reduced-motion="true"] .seal,
+[data-reduced-motion="true"] .bar > i {
+  transition: none;
+}
+[data-reduced-motion="true"] button:hover,
+[data-reduced-motion="true"] .seal:hover,
+[data-reduced-motion="true"] button:active,
+[data-reduced-motion="true"] .seal:active {
+  transform: none;
+}
+[data-reduced-motion="true"] .tutorial-mask {
+  backdrop-filter: none;
+}
+html[data-reduced-motion="true"] {
+  scroll-behavior: auto;
+}

@@ -1,0 +1,21 @@
+{
+  "name": "my-garden-world",
+  "private": true,
+  "version": "0.1.0",
+  "description": "国风花艺师模拟经营 · 我的花园世界 致敬仿写",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "probe": "vitest run tests/probe"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4"
+  }
+}

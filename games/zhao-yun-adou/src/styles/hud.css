@@ -1,0 +1,69 @@
+/* ============================================================
+   HUD：三块小牌匾（波次·时辰 / 馒头·征兵 / 斩获）+ 朱批提示条
+   ============================================================ */
+
+.hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: stretch;
+  justify-content: space-between;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums; /* 30Hz 刷新下数字不跳宽 */
+  color: var(--ink-soft);
+}
+
+.hud > div {
+  padding: 7px 12px;
+  white-space: nowrap;
+  background: linear-gradient(180deg, rgba(255, 252, 244, 0.75), rgba(243, 234, 214, 0.35));
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-cut);
+  box-shadow: var(--shadow-flat);
+}
+
+.hud strong {
+  font-size: 1.2em;
+  font-weight: 700;
+  color: var(--cinnabar);
+}
+
+.hearts {
+  color: var(--cinnabar);
+  letter-spacing: 0.16em;
+  font-size: 15px;
+  text-shadow: 0 0 6px rgba(var(--cinnabar-rgb), 0.35);
+}
+
+/* 朱批：战报提示 */
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  letter-spacing: 0.04em;
+  color: var(--cinnabar-deep);
+}
+
+.toast::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--cinnabar), rgba(var(--cinnabar-rgb), 0.25));
+  transform: skewX(-24deg);
+}
+
+@media (max-width: 560px) {
+  .hud {
+    font-size: 12.5px;
+    gap: 6px;
+  }
+
+  .hud > div {
+    padding: 6px 9px;
+  }
+}

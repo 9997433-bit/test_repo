@@ -1,0 +1,418 @@
+/* ============================================================
+   超能下蛋鸭 · 战斗 HUD 层 hud.css
+   顶栏(波次/血量/暂停) · 连击计 .combo · 英雄坞 .hero-dock ·
+   大招钮 .ult-btn · 道具槽 · BOSS 预警 · 瞄准读数 · 飘字容器
+   约定：HUD 元素均放在 .stage-frame 内绝对定位；
+        能量/数值走 CSS 自定义属性（--energy / --value ∈ [0,1]）
+   ============================================================ */
+
+/* ============ 顶栏 ============ */
+.hud-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-hud);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--hud-pad);
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(8, 4, 16, 0.66), transparent);
+}
+
+.hud-top > * {
+  pointer-events: auto;
+}
+
+/* 波次药丸：第 N 波 / BOSS 波变红 */
+.wave-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: var(--fs-sm);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: rgba(5, 2, 12, 0.6);
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius-pill);
+}
+
+.wave-pill.is-boss {
+  color: #ffd9e0;
+  border-color: var(--danger);
+  box-shadow: var(--glow-danger);
+}
+
+/* 分数 / 金币读数 */
+.hud-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  font-weight: 800;
+  color: var(--yolk-300);
+  text-shadow: 0 1px 3px rgba(5, 2, 12, 0.8);
+}
+
+/* 玩家血条容器（顶栏内伸缩） */
+.player-hp {
+  flex: 1;
+  min-width: 80px;
+}
+
+/* ============ 连击计 .combo ============
+   数值层级 data-tier="0|1|2|3"（0-4 / 5-9 / 10-19 / 20+），
+   满 20 层挂 .is-fever 进入「爆蛋时刻」。
+   JS 每次连击对 .combo__count 重挂 .is-bump 触发弹跳（fx.css）。 */
+.combo {
+  --combo-c: var(--ink-dim);
+  position: absolute;
+  top: 64px;
+  right: var(--sp-3);
+  z-index: var(--z-hud);
+  text-align: right;
+  pointer-events: none;
+}
+
+.combo[data-tier="1"] { --combo-c: var(--yolk-500); }
+.combo[data-tier="2"] { --combo-c: var(--yolk-hot); }
+.combo[data-tier="3"] { --combo-c: var(--neon-pink); }
+
+.combo__count {
+  display: block;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 2.2rem;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--combo-c);
+  text-shadow:
+    0 2px 4px rgba(5, 2, 12, 0.8),
+    0 0 14px color-mix(in srgb, var(--combo-c) 55%, transparent);
+}
+
+.combo__label {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: var(--combo-c);
+  text-shadow: 0 1px 3px rgba(5, 2, 12, 0.8);
+}
+
+/* 爆蛋时刻：流光渐变字 + 呼吸辉光（动画见 fx.css；
+   reduce-motion 下退化为静态金边） */
+.combo.is-fever .combo__count,
+.combo.is-fever .combo__label {
+  background: var(--grad-fever);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--yolk-500) 65%, transparent));
+}
+
+/* 连击全屏闪光层 .fx-combo-flash：基础样式与绑定都在 fx.css
+   （游戏 index.html 不加载本文件，juice 类必须在 fx.css 自洽） */
+
+/* ============ 英雄坞 .hero-dock（舞台下方常驻）============ */
+.hero-dock {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) max(var(--sp-2), env(safe-area-inset-bottom));
+}
+
+/* 英雄槽：56×64 命中区 ≥44px；能量为底部微条 --energy ∈ [0,1] */
+.hero-slot {
+  --energy: 0;
+  --school-c: var(--ink-faint);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 56px;
+  min-height: 64px;
+  padding: 6px 4px 10px;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--night-3) 92%, transparent);
+  border: 2px solid color-mix(in srgb, var(--school-c) 55%, var(--night-line));
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition:
+    transform var(--dur-2) var(--ease-pop),
+    box-shadow var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out);
+}
+
+.hero-slot[data-school="combo"] { --school-c: var(--school-combo); }
+.hero-slot[data-school="brute"] { --school-c: var(--school-brute); }
+.hero-slot[data-school="elemental"] { --school-c: var(--school-elemental); }
+.hero-slot[data-school="collide"] { --school-c: var(--school-collide); }
+.hero-slot[data-school="support"] { --school-c: var(--school-support); }
+
+/* 上场中的英雄：抬升 + 蛋黄辉光 */
+.hero-slot.is-active {
+  transform: translateY(-6px);
+  border-color: var(--yolk-500);
+  box-shadow: var(--shadow-2), var(--glow-yolk);
+}
+
+.hero-slot.is-dead {
+  filter: grayscale(1) brightness(0.5);
+  cursor: not-allowed;
+}
+
+/* 底部能量微条 */
+.hero-slot::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 3px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(90deg, var(--yolk-500), var(--yolk-hot)) 0 0 / calc(var(--energy) * 100%) 100% no-repeat,
+    rgba(5, 2, 12, 0.6);
+}
+
+.hero-slot.is-charged::after {
+  box-shadow: 0 0 6px var(--yolk-500);
+}
+
+/* 键位序号角标（1-5） */
+.hero-slot__key {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  font-size: 0.62rem;
+  font-weight: 900;
+  color: var(--ink-dim);
+  background: var(--night-2);
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius-pill);
+}
+
+.hero-slot__name {
+  font-size: 0.6rem;
+  font-weight: 800;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--ink-dim);
+}
+
+/* ============ 大招钮 .ult-btn ============
+   64px 圆钮 + conic 能量环（--energy ∈ [0,1]）；满能挂 .is-ready */
+.ult-btn {
+  --energy: 0;
+  position: relative;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  color: var(--ink);
+  background:
+    radial-gradient(
+      circle at 50% 36%,
+      color-mix(in srgb, var(--night-4) 88%, var(--yolk-700)),
+      var(--night-2) 76%
+    );
+  border: 2px solid var(--night-line);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-2);
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+
+.ult-btn::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  background: conic-gradient(
+    var(--yolk-500) calc(var(--energy) * 1turn),
+    rgba(255, 255, 255, 0.12) 0
+  );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 5px),
+    #000 calc(100% - 4px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 5px),
+    #000 calc(100% - 4px)
+  );
+}
+
+.ult-btn:active {
+  transform: scale(0.94);
+}
+
+.ult-btn:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.6) brightness(0.7);
+}
+
+/* 满能：辉光呼吸（动画见 fx.css；reduce-motion 退化为常亮金环） */
+.ult-btn.is-ready {
+  border-color: var(--yolk-500);
+  box-shadow: var(--shadow-2), var(--glow-yolk);
+}
+
+.ult-btn__key {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-size: 0.62rem;
+  font-weight: 900;
+  color: var(--ink-on-yolk);
+  background: var(--grad-yolk);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-1);
+}
+
+/* ============ 道具槽 .item-slot ============ */
+.item-slot {
+  position: relative;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  display: grid;
+  place-items: center;
+  font-size: 1.2rem;
+  background: color-mix(in srgb, var(--night-3) 92%, transparent);
+  border: 1px dashed var(--night-line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--dur-2) var(--ease-out);
+}
+
+.item-slot.has-item {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--neon-teal) 55%, var(--night-line));
+}
+
+.item-slot__count {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  font-size: 0.6rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--night-4);
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius-pill);
+}
+
+/* ============ 瞄准读数 .aim-readout（角度/力度，可选显示）============ */
+.aim-readout {
+  position: absolute;
+  top: 46px;
+  left: var(--sp-3);
+  z-index: var(--z-hud);
+  display: flex;
+  gap: var(--sp-2);
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  color: var(--neon-teal);
+  text-shadow: 0 1px 3px rgba(5, 2, 12, 0.8);
+  pointer-events: none;
+}
+
+/* ============ BOSS 预警 .boss-warning ============
+   斜纹警戒带横贯战场；JS 播完移除（动画见 fx.css） */
+.boss-warning {
+  position: absolute;
+  top: 38%;
+  left: -6%;
+  right: -6%;
+  z-index: var(--z-flash);
+  padding: var(--sp-3) 0;
+  text-align: center;
+  transform: rotate(-3deg);
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--danger) 34%, transparent) 0 18px,
+      rgba(5, 2, 12, 0.72) 18px 36px
+    );
+  border-top: 2px solid var(--danger);
+  border-bottom: 2px solid var(--danger);
+  box-shadow: var(--glow-danger);
+}
+
+.boss-warning__text {
+  font-size: var(--fs-2xl);
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  color: #ffd9e0;
+  text-shadow:
+    0 0 12px var(--danger),
+    0 2px 4px rgba(5, 2, 12, 0.9);
+}
+
+/* ============ 教程/暂停提示条 .hud-hint ============ */
+.hud-hint {
+  position: absolute;
+  bottom: var(--sp-3);
+  left: 50%;
+  z-index: var(--z-hud);
+  transform: translateX(-50%);
+  max-width: 92%;
+  padding: 6px 14px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--ink-dim);
+  background: rgba(5, 2, 12, 0.62);
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+
+/* ============ 飘字 .fx-float ============
+   基础样式与绑定都在 fx.css（同 .fx-combo-flash，juice 类须在 fx.css 自洽）。
+   用法：JS 设 --fx-x/--fx-y 与 --fx-color，播放 kf-float-up 后
+   animationend 自删；暴击加 .fx-float--crit，治疗加 .fx-float--heal。 */
