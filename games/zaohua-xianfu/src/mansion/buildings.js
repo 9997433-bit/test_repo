@@ -57,14 +57,16 @@ export const DEFAULT_XP_PER_SEC = 0.35;
 
 /**
  * 等级归一：坏档里的 null / NaN / 字符串 / 0 / 负数一律收敛到 1 级，
- * 小数向下取整（等级是整数量纲），超过 `LEVEL_MAX` 的一律压回硬顶。
+ * 小数向下取整（等级是整数量纲），越界的大数与 Infinity 一律压回硬顶 `LEVEL_MAX`。
  * 产量、修业、邻接与离线效率都走这里取级，
  * 保证仙府层任何一笔账都只可能按 [1, LEVEL_MAX] 的整数等级结算。
  */
 export function normalizeLevel(level) {
-  const n = Math.floor(Number(level));
-  if (!Number.isFinite(n) || n <= 1) return 1;
-  return n > LEVEL_MAX ? LEVEL_MAX : n;
+  const n = Number(level);
+  if (Number.isNaN(n)) return 1;
+  if (n >= LEVEL_MAX) return LEVEL_MAX;
+  if (!(n > 1)) return 1;
+  return Math.floor(n);
 }
 
 /**
