@@ -12,5 +12,5 @@
 | O2 | 战斗契约 | `claude-opus-5-thinking-high-fast` | `bc-79956157-d14d-548e-ac53-e1df9c029fe5` | 云端 VM |
 | O3 | 名册接表 | `claude-opus-5-thinking-high-fast` | `bc-3de583fd-d954-53dc-b9dd-efc0f00c93a9` | 隔离 worktree |
 | O4 | 切物理+juice | `claude-opus-5-thinking-high-fast` | `bc-c336fe07-f1a9-5f52-a216-710e09bf5ea9` | 云端 VM |
-| G1 | 红测修复 | `gpt-5.6-sol-xhigh-fast` | `bc-7ae7b010-7c33-5fb9-a1b3-6f2936f3f3cb` | 隔离 worktree |
+| G1 | 红测修复 | `gpt-5.6-sol-xhigh-fast` | `bc-7ae7b010-7c33-5fb9-a1b3-6f2936f3f3cb` | 隔离 worktree · 已完成并合入 `e50b6c4` |
 | G2 | 真物理基准 | `gpt-5.6-sol-xhigh-fast` | `bc-82af77a2-0f49-5ed5-8d8c-0c3c5c95d560` | 隔离 worktree |
