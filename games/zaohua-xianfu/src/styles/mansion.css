@@ -53,13 +53,41 @@
   border-color: var(--line-gold);
   background-color: rgba(212, 160, 23, 0.07);
 }
-/* 建筑地块:纸面受光、金丝勒边,微微离沙而起 */
+/* 建筑地块:纸面受光、金丝勒边,微微离沙而起。
+   地色由 --plot-accent 调制:默认松绿,三新筑按五行换色(见下);
+   不识 color-mix 的老浏览器回落到前一条松绿字面量。 */
 .plot.filled {
+  --plot-accent: var(--pine);
+  --plot-glyph: var(--paper-bright);
   border: 1px solid rgba(212, 160, 23, 0.32);
   background:
     linear-gradient(180deg, rgba(243, 230, 201, 0.11), rgba(243, 230, 201, 0.02) 48%, rgba(0, 0, 0, 0.16)),
     linear-gradient(180deg, rgba(47, 107, 79, 0.15), rgba(47, 107, 79, 0.04));
+  background:
+    linear-gradient(180deg, rgba(243, 230, 201, 0.11), rgba(243, 230, 201, 0.02) 48%, rgba(0, 0, 0, 0.16)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--plot-accent) 15%, transparent),
+      color-mix(in srgb, var(--plot-accent) 4%, transparent)
+    );
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(243, 230, 201, 0.12);
+}
+/* 三新筑辨识:楷书字号(泉/赏/武)+ 五行地色 + 建筑名三信号并用,不靠单一颜色。
+   现有 DOM 按 aria-label 名称前缀命中;UI 层日后补 data-type 即自动接管。 */
+.plot.filled[data-type="spring"],
+.plot.filled[aria-label^="灵泉"] {
+  --plot-accent: var(--bld-spring);
+  --plot-glyph: var(--bld-spring-ink);
+}
+.plot.filled[data-type="bounty"],
+.plot.filled[aria-label^="悬赏阁"] {
+  --plot-accent: var(--bld-bounty);
+  --plot-glyph: var(--bld-bounty-ink);
+}
+.plot.filled[data-type="drill"],
+.plot.filled[aria-label^="演武场"] {
+  --plot-accent: var(--bld-drill);
+  --plot-glyph: var(--bld-drill-ink);
 }
 .plot.filled:hover {
   transform: translateY(-1px);
@@ -70,7 +98,7 @@
   font-family: var(--font-title);
   font-size: clamp(1rem, 3.4vw, 1.5rem);
   line-height: 1.1;
-  color: var(--paper-bright);
+  color: var(--plot-glyph, var(--paper-bright));
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
 }
 /* 建筑名(中段 span):窄屏时舍名留字 */
@@ -112,6 +140,46 @@
   font-size: 0.8rem;
   padding: 0.34rem 0.6rem;
 }
+/* 营造目录价笺:造价/拦截原因退为小字;不可点条目(未解锁、资源不足、已驻守)
+   改虚框示禁,并抬透明度令「为何不可」仍读得清。 */
+.build-list button .muted {
+  font-size: 0.72rem;
+}
+.build-list button:disabled {
+  opacity: 0.55;
+  border-style: dashed;
+  color: var(--paper-dim);
+}
+
+/* 沙盘摘要:每秒产量鎏金;风水评签 .fengshui 为徽章钩子,
+   档位由 UI 依 0-100 分落 data-tier(建议 ≥70 上吉 / ≥35 中平 / 其余 下乘),
+   现版摘要为纯文本,规则备而不用。 */
+.panel-summary .rate-line b {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+.fengshui {
+  display: inline-block;
+  padding: 0 0.45em;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--paper-dim);
+}
+.fengshui[data-tier="good"] {
+  color: var(--fengshui-good);
+  border-color: color-mix(in srgb, var(--fengshui-good) 45%, transparent);
+}
+.fengshui[data-tier="fair"] {
+  color: var(--fengshui-fair);
+  border-color: color-mix(in srgb, var(--fengshui-fair) 45%, transparent);
+}
+.fengshui[data-tier="poor"] {
+  color: var(--fengshui-poor);
+  border-color: color-mix(in srgb, var(--fengshui-poor) 45%, transparent);
+}
 
 /* ------------------------------------------------------------
    名录笺:弟子 / 法器条目,上阵者鎏金侧栏。
@@ -146,10 +214,40 @@
 .art-card .muted {
   font-size: 0.78rem;
 }
-.hero-card.in {
+.hero-card.in,
+.art-card.in {
   border-color: rgba(212, 160, 23, 0.5);
   background: linear-gradient(90deg, rgba(212, 160, 23, 0.1), transparent 55%);
   box-shadow: inset 3px 0 0 var(--gold);
+}
+
+/* 法器槽位三色(attack 朱 / defend 石青 / util 青莲):
+   现 DOM 未带 data-slot,规则备而不用;AD-8 槽位改造给卡片/chip/分组题
+   补上 data-slot 后,佩戴侧栏与槽签即自动转槽色。品阶 chip(金品/红品)
+   沿用金/朱文字,与槽色不混用。 */
+.art-card.in[data-slot="attack"] {
+  box-shadow: inset 3px 0 0 var(--slot-attack);
+}
+.art-card.in[data-slot="defend"] {
+  box-shadow: inset 3px 0 0 var(--slot-defend);
+}
+.art-card.in[data-slot="util"] {
+  box-shadow: inset 3px 0 0 var(--slot-util);
+}
+.d-chip[data-slot="attack"],
+h4.sub[data-slot="attack"] {
+  color: var(--slot-attack-ink);
+  border-color: color-mix(in srgb, var(--slot-attack) 55%, transparent);
+}
+.d-chip[data-slot="defend"],
+h4.sub[data-slot="defend"] {
+  color: var(--slot-defend-ink);
+  border-color: color-mix(in srgb, var(--slot-defend) 55%, transparent);
+}
+.d-chip[data-slot="util"],
+h4.sub[data-slot="util"] {
+  color: var(--slot-util-ink);
+  border-color: color-mix(in srgb, var(--slot-util) 55%, transparent);
 }
 
 /* ------------------------------------------------------------

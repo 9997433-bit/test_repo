@@ -25,7 +25,11 @@
   --pine: #2f6b4f; /* 松绿:人、灵田 */
   --pine-bright: #7dcaa4;
   --wash: #93a3b1; /* 石青淡彩:远山、禁用、注释 */
-  --spirit: #6ec8c0; /* 灵气 */
+  --azurite: #5e87a8; /* 石青实色:法器防御槽 */
+  --azurite-bright: #a3c6e0; /* 暗底上的石青文字 */
+  --lotus: #8f6fae; /* 青莲紫:法器通用槽 */
+  --lotus-bright: #c9b3e0; /* 暗底上的青莲文字 */
+  --spirit: #6ec8c0; /* 灵气、灵泉 */
 
   /* —— 描线 —— */
   --line: rgba(243, 230, 201, 0.13); /* 纸色发丝线 */
@@ -33,6 +37,26 @@
   --line-gold: rgba(212, 160, 23, 0.42); /* 金边 */
   --line-gold-dim: rgba(212, 160, 23, 0.2);
   --line-cinnabar: rgba(194, 59, 34, 0.5);
+
+  /* —— 经营信号(语义别名,全部引自上方基色;调色只动此层) ——
+     bld-*:沙盘三新筑按五行换地色;*-ink 供暗底文字/字号,对比皆 ≥ 4.5:1。
+     fengshui-*:风水评签三档(上吉/中平/下乘)。
+     slot-*:法器三槽(attack 朱 / defend 石青 / util 青莲)。 */
+  --bld-spring: var(--spirit); /* 灵泉·水行:泉青 */
+  --bld-spring-ink: var(--spirit);
+  --bld-bounty: var(--gold); /* 悬赏阁·金行:泥金 */
+  --bld-bounty-ink: var(--gold-bright);
+  --bld-drill: var(--cinnabar); /* 演武场·火行:朱砂 */
+  --bld-drill-ink: var(--cinnabar-bright);
+  --fengshui-good: var(--gold-bright);
+  --fengshui-fair: var(--wash);
+  --fengshui-poor: var(--cinnabar-bright);
+  --slot-attack: var(--cinnabar);
+  --slot-attack-ink: var(--cinnabar-bright);
+  --slot-defend: var(--azurite);
+  --slot-defend-ink: var(--azurite-bright);
+  --slot-util: var(--lotus);
+  --slot-util-ink: var(--lotus-bright);
 
   /* —— 纸纹(叠加于卡面,近不可察) —— */
   --grain:
