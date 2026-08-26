@@ -1,9 +1,14 @@
 import { createGame } from "../src/core/game.js";
 import { leakCompensation } from "../src/data/waves.js";
 import { createInvariantTracker } from "./invariants.mjs";
+import {
+  createMatchTelemetry,
+  summarizeMatchMetrics,
+} from "./metrics.mjs";
 
 const g = createGame({ seed: 99 });
 const tracker = createInvariantTracker();
+const telemetry = createMatchTelemetry(g);
 const failedChecks = [];
 
 function check(condition, message) {
@@ -107,6 +112,39 @@ const leakPassed = check(
 );
 observe("leak");
 
+g.state.sides.ai.hearts = 0;
+g.tick(0.05);
+const gameOverPassed = check(
+  g.state.phase === "over" && g.state.winner === "player",
+  "zero-heart opponent did not settle as a player win",
+);
+observe("game-over");
+
+const observedTelemetry = telemetry.report();
+telemetry.dispose();
+const metrics = summarizeMatchMetrics([
+  {
+    settled: g.state.phase === "over",
+    winner: g.state.winner,
+    durationSeconds: g.state.time,
+    maxWave: g.state.wave,
+    telemetry: observedTelemetry,
+  },
+]);
+const telemetryPassed = check(
+  metrics.leaksByWave[0]?.wave === 1 &&
+    metrics.leaksByWave[0]?.player === 1 &&
+    metrics.leaksByWave[0]?.ai === 0 &&
+    metrics.avgAwakenedHeroes === 1,
+  "telemetry did not attribute the leak and awakening to the player",
+);
+const summaryPassed = check(
+  metrics.matches === 1 &&
+    metrics.settledRate === 1 &&
+    metrics.winRate === 1 &&
+    metrics.durationDistributionSeconds.samples === 1,
+  "match summary did not report the deterministic settled win",
+);
 const invariants = tracker.report();
 const report = {
   seed: g.state.seed,
@@ -134,7 +172,15 @@ const report = {
       heartsAfter: player.hearts,
       compensation: player.mantou - mantouBeforeLeak,
     },
+    gameOver: {
+      passed: gameOverPassed,
+      winner: g.state.winner,
+    },
+    telemetry: {
+      passed: telemetryPassed && summaryPassed,
+    },
   },
+  metrics,
   invariants,
   failedChecks,
   passed: failedChecks.length === 0 && invariants.passed,
