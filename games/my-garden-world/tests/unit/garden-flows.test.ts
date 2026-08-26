@@ -37,6 +37,7 @@ describe("plant growth", () => {
   it("advances only watered plots through every timed stage and then wilts", () => {
     const state = createInitialState(1_000);
     const flower = FLOWER_MAP.daisy;
+    if (!flower) throw new Error("expected the daisy definition");
 
     expect(plant(state, 0, flower.id)).toBe(true);
     expect(state.plots[0]?.stage).toBe("seeded");
@@ -78,6 +79,7 @@ describe("plant growth", () => {
   it("clears a wilted flower while granting only salvage rewards", () => {
     const state = createInitialState(5_000);
     const flower = FLOWER_MAP.daisy;
+    if (!flower) throw new Error("expected the daisy definition");
     const plot = state.plots[0];
     expect(plot).toBeDefined();
     if (!plot) throw new Error("expected the first garden plot");
