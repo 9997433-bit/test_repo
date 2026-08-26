@@ -279,15 +279,28 @@ HUD pill：`--hud-pill-bg` + `--hud-pill-shadow`，12px/600 + tabular-nums，数
 
 ---
 
-## 11. Round 2 对 `main.css` 的改造清单
+## 11. Round 2 对 `main.css` 的改造清单（完成状态复核）
 
-1. `index.html` 引入 `motion.css`（tokens 之后、main 之前）。
-2. 全量替换硬编码值 → token：body 背景 → `--grad-page`；hero → `--grad-hero`；`.btn` 渐变/阴影 → `--btn-primary-*`；`.nav button.active` → `--nav-active-bg`；`.chip` → `--chip-*`；`.progress` → `--progress-*`；`.modal` → `--modal-*`；`.toast` → `--toast-*`；`.pill` → `--hud-pill-*`；所有 `rgba(58,36,51,…)` / `#f0d4de` / `#e4b8c6` 等裸值清零。
-3. 按 §9 补组件态：按钮 press/disabled/focus-visible/loading、locked 卡 shake、chip 勾选弹跳、进度条 shine、导航红点 pulse。
-4. 触控修复：导航项与流水线键高度 ≥ 44px。
-5. 布局升级：按 §10 增加 1280 断点双栏 + `mall-grid` 4 列 + 导航并入顶栏；`mall-grid` gap 10 → 12。
-6. 入场动效接线：面板 / 店卡 `--anim-pop-in` + stagger，弹窗 `--anim-slide-up`，出餐飘字 `--anim-coin`（如需 JS 挂类名，交 Round 2 与逻辑组协调）。
-7. 迁移完成后删除 tokens.css 第 10 段 legacy 别名，并将 `@keyframes pop / fall` 收编为 `fm-*`。
+> Round 2 / Fable-2 复核：以下状态逐项对照已 token 化的 `main.css` 核实。✅ 已完成 · ◐ 部分完成。
+
+| # | 事项 | 状态 | 核实说明 |
+| --- | --- | --- | --- |
+| 1 | `index.html` 引入 `motion.css` | ✅ | 已按 tokens → motion → main 顺序引入 |
+| 2 | 硬编码值全量替换为 token | ✅ | body → `--grad-page`、hero → `--grad-hero`、`.btn` → `--btn-primary-*`、导航选中 → `--nav-active-bg`（渐变底经 `::before` 透明度过渡）、`.chip` / `.progress` / `.modal` / `.toast` / `.pill` 全部接入；`rgba(58,36,51,…)` / `#f0d4de` / `#e4b8c6` 等裸值已从 main.css 清零。唯一新增字面值 `--doll-skin: #ffd8c4` 位于 main.css §0「组件 token 缺口补丁」，属 token 层定义，合规（后续应并入 tokens.css） |
+| 3 | 按 §9 补组件态 | ◐ | 已做：按钮 press（`--btn-primary-bg-press` + 阴影收紧 + translateY(1px) scale(0.97)）、disabled、focus-visible（全局焦点环 + 各组件叠加）、chip 勾选弹跳（`fm-chip-check`）。仍缺：按钮 loading 态、locked 店卡点击 `--anim-shake`（`mallView.js` 现仅 toast 提示）、新解锁 `--anim-sparkle`、进度条满格 `--anim-shine`、导航红点 `--danger` + `--anim-pulse`（导航尚无红点元素） |
+| 4 | 触控修复 ≥ 44px | ✅ | 导航项 `min-height: var(--tap-target)`；流水线键 56px（`--line-key-height`）；`.choices` 与面板注入按钮也已拉齐 |
+| 5 | 1280 布局升级（§10） | ◐ | 已做：容器 1200px、`mall-grid` 4 列、gap 10 → 12（`--space-3`）、导航标签升 `--text-xs`、弹窗 sheet 放宽 440px、H1 升 `--text-2xl`。仍缺：**双栏工作台未做**——无 `minmax(0, 1fr)` + 336px 侧栏栅格，侧栏常驻内容（HUD 资源卡 / 当前订单目标 / 伙伴速览）均无；导航仅 static + 右对齐，未真正并入顶栏（DOM 中 nav 仍在页面底部）；hero 未压缩为左右分布横幅；Display 未升 `--text-3xl` |
+| 6 | 入场动效接线 | ✅ | hero / panel / 店卡 / toast 均挂 `--anim-pop-in`，店卡以 `:nth-child` 接 `--stagger-step`；弹窗 `--anim-slide-up` + 遮罩 `fm-scrim-in` 淡入；出餐/收益飘字已由 `minigames/ui.js` 的 `.mg-float`（`animation: var(--anim-coin)`）与 `floatText()` 完成 JS 挂类名；`prefers-reduced-motion` 在 motion.css 与 main.css 双层兜底 |
+| 7 | 删 legacy 别名 + 关键帧收编 | ◐ | 已做：main.css 旧 `@keyframes pop / fall` 已收编为 `fm-*`（`fall` → `fm-item-fall`，`pop` 由 motion.css `fm-pop-in` 取代），main.css 自身已零 legacy 引用。仍缺：tokens.css 第 10 段 legacy 别名暂不能删——JS 注入样式（`fashion` / `research` / `events` / `home` / `partners` 各自 `styles.js`，及 `mallView.js`、`app.js` 内联样式）仍引用 `--rose-deep` / `--gold` / `--ink-soft` / `--radius` / `--shadow` / `--ease` 等约 88 处 |
+
+### 11.1 仍缺事项（移交下一轮）
+
+按影响排序：
+
+1. **1280 双栏工作台**（§10.2）：主内容 `minmax(0, 1fr)` + 右侧固定 336px 常驻侧栏（HUD 资源卡 / 当前订单目标 / 伙伴速览），栏距 24；hero 压缩为横幅（文案与按钮左右分布）；导航真正并入顶栏。涉及 main.css 栅格与 `app.js` 骨架结构调整。
+2. **组件态补完**（§9）：按钮 loading、locked 店卡点击 shake、新解锁 sparkle、进度条满格 shine、导航红点 pulse——后四项均需 JS 挂类名配合。
+3. **legacy 别名退役**（§1）：先把 JS 注入样式的 legacy 引用迁到语义 / 组件层，再删 tokens.css 第 10 段；顺带清理 `app.js` / `mallView.js` 内联样式里的裸值（`#f0d4de`、`#fff` 等），并把 main.css §0 缺口补丁并入 tokens.css。
+4. **1280 Display 字号**：结算 / 大数值处升 `--text-3xl`（相关样式散落在小游戏注入样式中，随第 3 条迁移时一并处理）。
 
 ---
 
