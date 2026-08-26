@@ -35,6 +35,7 @@ export function waterPlot(state: GameState, plotId: number): boolean {
   }
   state.water -= 1;
   plot.watered += 1;
+  if (plot.watered >= def.waterNeed) emit({ type: "toast", text: `${def.name}已浇透`, tone: "ok" });
   return true;
 }
 
@@ -57,10 +58,13 @@ export function harvest(state: GameState, plotId: number): boolean {
   addItem(state, def.id, wilted ? 0 : 1);
   addCoins(state, wilted ? Math.round(def.harvestCoin * 0.2) : def.harvestCoin);
   addExp(state, wilted ? 2 : def.harvestExp);
-  if (!wilted) {
+  if (wilted) {
+    emit({ type: "toast", text: `${def.name}已凋残，只清出些许残料`, tone: "warn" });
+  } else {
     state.stats.harvested += 1;
     bumpQuest(state, "harvest3");
     emit({ type: "harvest", flowerId: def.id, plotId });
+    emit({ type: "toast", text: `收得${def.name}一枝`, tone: "ok" });
   }
   state.plots[plotId] = emptyPlot(plotId);
   return !wilted;
