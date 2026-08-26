@@ -29,7 +29,7 @@ export function renderMall(root, state, ctx = {}) {
   root.innerHTML = `
     <section class="hero">
       <h1>${esc(state.name)} 的时尚百货城</h1>
-      <p>主角 Lv.${state.level} · 把冷清店铺一座座爆改。</p>
+      <p id="hero-sub">主角 Lv.${state.level} · 把冷清店铺一座座爆改。</p>
       <p id="goal-line">${esc(goalLine(state))}</p>
     </section>
     <div class="mall-grid"></div>`;
@@ -97,11 +97,13 @@ export function renderMall(root, state, ctx = {}) {
     box.append(row);
   }
 
-  // 限时目标是活的：倒计时每秒刷新，dispose 必须把它收掉。
+  // 限时目标是活的：倒计时与等级每秒局部刷新，dispose 必须把这个计时器收掉。
   const line = root.querySelector("#goal-line");
+  const sub = root.querySelector("#hero-sub");
   const timer = setInterval(() => {
     if (!line.isConnected) return clearInterval(timer);
     setText(line, goalLine(state));
+    setText(sub, `主角 Lv.${state.level} · 把冷清店铺一座座爆改。`);
   }, COUNTDOWN_MS);
   root._cleanup = () => clearInterval(timer);
   return root._cleanup;
