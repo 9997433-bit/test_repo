@@ -1,7 +1,8 @@
-# 向往的生活 · 游戏设计文档（Round 2 校准版）
+# 向往的生活 · 游戏设计文档（Round 3 对账版）
 
 > 网页致敬复刻。原创角色、文案与美术；还原综艺/手游的田园慢生活闭环，不做官方素材搬运。
-> 数值只改 `src/data/**` 与本文档（Fable-3 所有）；系统按「Round-2 契约表」接线。
+> 数值只改 `src/data/**` 与本文档（Fable-3 所有）；系统按「Round-2/3 契约表」接线。
+> Round 3 对账结论：`WISH_TOOL_DROP 0.25`、两级保底、`XP_TABLE`、白菜跨春全部复核通过，八条铁律无一破损，本轮不动数值。
 
 ## 一句话
 
@@ -64,7 +65,7 @@
 - 1 日 = 24 游戏时；昼夜影响氛围与部分产出
 - 1 季 = 7 游戏日，四季轮转：春 → 夏 → 秋 → 冬
 - 作物有适宜季节；错季生长 ×0.55，熟后 45s（真实时间）不收就枯萎
-- 冬季畜牧饲料 +20%：确定性余数记账，冬天每喂 5 次有 1 次扣 2 份（**已落地**，`production.winterFeedCarry`，常量 `WINTER_FEED_SURCHARGE = 0.2`，镜像于 `data/animals.js`）
+- 冬季畜牧饲料 +20%：确定性余数记账，冬天每喂 5 次有 1 次扣 2 份（**已落地**，`production.winterFeedCarry`；常量事实源为 `data/animals.js` 的 `WINTER_FEED_SURCHARGE = 0.2`，production 自 R3 起 import 再导出）
 - 温室田免疫错季惩罚与枯萎——**只罩改造过的地块，不是全场**，见「村落建设 · 温室」
 
 ## 资源
@@ -201,12 +202,12 @@ XP 累计值事实源：`src/data/levels.js` 的 `XP_TABLE`（`core/engine.js` �
 ## 心愿屋（数据：`src/data/wishes.js`）
 
 - 同时 3 单；温馨 ≥100 时常驻第 4 格（**已落地**）
-- 每 2 游戏时补 1 空位（`WISH_REFRESH_MIN = 120` 游戏分钟；灯哥驻留 ×0.85 ≈ 102 分钟）；计时从真实 ms 迁到绝对游戏分钟为 R2 契约（Opus-3）
+- 每 2 游戏时补 1 空位（`WISH_REFRESH_MIN = 120` 游戏分钟；灯哥驻留 ×0.85 ≈ 102 分钟）；R3 起交单不再当场补满，空位统一交给该节拍（`tickVillage`）；间隔常量已改由 `WISH_REFRESH_MIN` 换算，`nextWishAt` 迁绝对游戏分钟仍是开口契约（表 #13）
 - 挂满 3 游戏日没人交的心愿自动撤下（已实现）
 - 候选过滤 `minLevel ≤ 等级 ≤ maxLevel`（**已落地**，双向）；Lv.1 池 = 晒谷 / 一棵白菜 / 泡豆子 / 两把麦子，首屏为白菜、泡豆子、两把麦子，四样全是 L1 春季作物
 - 档位（修正口径，与实现一致）：`tier = min(3, 1 + max(0, ⌊(等级−4)/3⌋))` → **L1–6 基线、L7–9 二档、L10 三档**；需求 ×tier、XP ×tier、金币 ×tier×1.1
 - 金币 = 表值 × 幸福倍率（1 + ⌊幸福/10⌋ × 4%，封顶 ×2）；每次交单幸福 +1
-- 掉落（Round 2 校准，常量在 `data/wishes.js`，Opus-3 接线）：基础 25% 建材（锹 40 / 锯 35 / 斧 25 权重）、4% 珍珠；保底见「工具经济」。旧值 35% 与「锹 40 / 斧 35 / 锯 25」作废：全程会多掉三成、斧溢出而锯短缺。API_CONTRACT §5.3 的草案值（3%/10% 均匀）同样以本表为准，由 Fable-1 对齐
+- 掉落（Round 2 校准，常量在 `data/wishes.js`，Opus-3 已于 R3 接线）：基础 25% 建材（锹 40 / 锯 35 / 斧 25 权重）、4% 珍珠；保底见「工具经济」。旧值 35% 与「锹 40 / 斧 35 / 锯 25」作废：全程会多掉三成、斧溢出而锯短缺。API_CONTRACT §5.3 的草案值（3%/10% 均匀）同样以本表为准，由 Fable-1 对齐
 - 早期引导保留 `w_paddy`（晒谷）与 `w_veg`（一棵白菜）；`w_veg` 校准为 10 金 / 5 xp（1.67×，全表最高倍率，收进 1.8 上限内）
 
 池子共 30 条：9 条既有（顺序锁定）+ 21 条扩充，覆盖每种原粮、每种一级/二级加工品、每道菜品；饲料永不进心愿（防抽干畜牧）。多物品大单：`w_combo`（一桌家常 90）、`w_feast`（招待远客 162）。
@@ -245,7 +246,7 @@ XP 累计值事实源：`src/data/levels.js` 的 `XP_TABLE`（`core/engine.js` �
 | aunt_grove | 林婶 | 侍弄田亩 | 生长时间 ×0.85 | 草莓 | ✅ farm |
 | kid_bamboo | 竹仔 | 逗牲口 | 畜牧产出 ×1.1（余数累积） | 鸡蛋 | ✅ production |
 | granny_teapot | 茶婆婆 | 煮茶唠嗑 | 摊位售价 ×1.1 | 暖手奶茶 | ✅ village |
-| sister_reed | 苇姐 | 纺线织衣 | 织布工单时间 ×0.85 | 白菜炖豆腐 | ⬜ TODO（Opus-2，`enqueueJob` 对 `weavery` 工单生效） |
+| sister_reed | 苇姐 | 纺线织衣 | 织布工单时间 ×0.85 | 白菜炖豆腐 | ✅ production（R3，`enqueueJob` 按 buildingId 命中 `weavery`） |
 
 ### 菜谱（数据：`src/data/dishes.js` + `recipes.js` 厨房配方）
 
@@ -265,7 +266,7 @@ XP 累计值事实源：`src/data/levels.js` 的 `XP_TABLE`（`core/engine.js` �
 
 ## 家具与温馨（数据：`src/data/furniture.js`）
 
-家具购买后直接摆放（不进背包），永久 +温馨；coin/pearl 走资源，布/羊毛走背包。系统入口 `village.place`（**已落地**）；UI 面板为 Opus-4 契约。
+家具购买后直接摆放（不进背包），永久 +温馨；coin/pearl 走资源，布/羊毛走背包。规范实现收敛在 `core/furniture.js`（`placeFurniture`，契约 §5.9；R3 起 village 侧写入端已删、只留读取再导出）；UI 面板「屋里摆什么」已上线。
 
 | 家具 | 位置 | 花费 | 温馨 | 解锁 |
 | --- | --- | --- | --- | --- |
@@ -340,17 +341,17 @@ XP 累计值事实源：`src/data/levels.js` 的 `XP_TABLE`（`core/engine.js` �
 
 | 常量 | 值 | 所在 | 消费方 |
 | --- | --- | --- | --- |
-| `XP_TABLE` / `levelForXp` / `xpForNext` | [0,40,…,1450] | `data/levels.js` | engine/main（Opus-4 迁移） |
-| `WISH_REFRESH_MIN` | 120 游戏分钟 | `data/wishes.js` | village 心愿计时（Opus-3） |
-| `WISH_TOOL_DROP` | 0.25 | `data/wishes.js` | village 掉落（Opus-3） |
-| `WISH_PEARL_DROP` | 0.04 | `data/wishes.js` | village 掉落（Opus-3） |
-| `TOOL_DROP_WEIGHTS` | 锹 0.40 / 锯 0.35 / 斧 0.25 | `data/wishes.js` | village 掉落（Opus-3） |
-| `TOOL_PITY_ORDER` | 斧 → 锯 → 锹 | `data/wishes.js` | village 掉落（Opus-3） |
-| `TOOL_PITY_DROUGHT` | 6 | `data/wishes.js` | village 掉落（Opus-3） |
-| `WINTER_FEED_SURCHARGE` | 0.2 | `data/animals.js`（production 同值本地常量待收敛） | production（已落地） |
+| `XP_TABLE` / `levelForXp` / `xpForNext` | [0,40,…,1450] | `data/levels.js` | engine/main（Opus-4 迁移待做，表 #12；两表数值已核对一致） |
+| `WISH_REFRESH_MIN` | 120 游戏分钟 | `data/wishes.js` | village 心愿计时（R3 起换算 `WISH_REFRESH_HOURS`；绝对分钟迁移见表 #13） |
+| `WISH_TOOL_DROP` | 0.25 | `data/wishes.js` | village 掉落（R3 已接线） |
+| `WISH_PEARL_DROP` | 0.04 | `data/wishes.js` | village 掉落（R3 已接线） |
+| `TOOL_DROP_WEIGHTS` | 锹 0.40 / 锯 0.35 / 斧 0.25 | `data/wishes.js` | village 掉落（R3 已接线） |
+| `TOOL_PITY_ORDER` | 斧 → 锯 → 锹 | `data/wishes.js` | village 掉落（R3 已接线，`pityStep` 入档） |
+| `TOOL_PITY_DROUGHT` | 6 | `data/wishes.js` | village 掉落（R3 已接线，`drought` 入档） |
+| `WINTER_FEED_SURCHARGE` | 0.2 | `data/animals.js` | production（R3 已 import 再导出） |
 | `STALL_MARKUP` | 1.15 | `data/items.js` | village（已落地） |
 
-## Round-2 契约表（数据 ↔ 系统接线，DONE / TODO）
+## Round-2/3 契约表（数据 ↔ 系统接线，DONE / TODO）
 
 | # | 契约 | 接线方 | 状态 |
 | --- | --- | --- | --- |
@@ -358,21 +359,22 @@ XP 累计值事实源：`src/data/levels.js` 的 `XP_TABLE`（`core/engine.js` �
 | 2 | `wishes.js` `minLevel ≤ 等级 ≤ maxLevel` 双向过滤 | Opus-3 (village) | ✅ DONE |
 | 3 | 冬季饲料 +20% 确定性余数（`winterFeedCarry`） | Opus-2 (production) | ✅ DONE |
 | 4 | 嘉宾 buff：farm / livestock / kitchen / wish / stall（5 处） | Opus-1/2/3 | ✅ DONE |
-| 5 | 苇姐 weavery ×0.85（织布工单时长） | Opus-2 (production) | ⬜ TODO |
+| 5 | 苇姐 weavery ×0.85（织布工单时长） | Opus-2 (production) | ✅ DONE（R3：`enqueueJob` 按 buildingId 吃同名 buff） |
 | 6 | `dishes.js` 上桌加成 + 温馨 ≥60 暴击 + ≥100 第 4 心愿格 | Opus-3 (village) | ✅ DONE |
-| 7 | 家具购买/摆放 `village.place` + 每日温馨保底盘 | Opus-3 (village) | ✅ DONE |
+| 7 | 家具购买/摆放（规范实现 `core/furniture.js`，village 写入端已删）+ 每日温馨保底盘 | Opus-3/4 | ✅ DONE |
 | 8 | 温室 per-plot：`expandGreenhousePlot`（80 金+锯，上限 3） | Opus-1 (farm) | ✅ DONE |
-| 9 | 家具面板与温室改造的 reducer/UI 入口 | Opus-4 (ui/main) | ⬜ TODO |
-| 10 | 工具掉落改读 data 常量：0.25 + 权重 40/35/25（锹/锯/斧）+ 两级保底 | Opus-3 (village) | ⬜ TODO（现状 0.35 + 旧权重硬编码） |
-| 11 | 开局工具 锹2/斧1/锯1 → 锹1/斧0/锯0（与保底同批落地） | Opus-4 (engine) | ⬜ TODO |
-| 12 | `engine.LEVELS` 迁为 `data/levels.js` 再导出 | Opus-4 (core) | ⬜ TODO（data 侧已就绪） |
-| 13 | 心愿计时迁绝对游戏分钟（`WISH_REFRESH_MIN`） | Opus-3 (village) | ⬜ TODO（data 已导出 120） |
-| 14 | `WINTER_FEED_SURCHARGE` 常量源迁 `data/animals.js` import | Opus-2 (production) | ⬜ TODO（同值镜像已就绪，无行为差） |
+| 9 | 家具面板与温室改造的 reducer/UI 入口 | Opus-4 (ui/main) | ⬜ TODO（家具面板已上线；`expandGreenhousePlot` 的 reducer/UI 入口仍缺） |
+| 10 | 工具掉落改读 data 常量：0.25 + 权重 40/35/25（锹/锯/斧）+ 两级保底 | Opus-3 (village) | ✅ DONE（R3：`deliverWish` 走 `drawTool`，pityStep/drought 入档） |
+| 11 | 开局工具 锹2/斧1/锯1 → 锹1/斧0/锯0（与保底同批落地） | Opus-4 (engine) | ⬜ TODO（保底已上线，开局仍 2/1/1，存档偏富） |
+| 12 | `engine.LEVELS` 迁为 `data/levels.js` 再导出 | Opus-4 (core) | ⬜ TODO（data 侧已就绪，两表数值一致，无行为差） |
+| 13 | 心愿计时迁绝对游戏分钟（`WISH_REFRESH_MIN`） | Opus-3 (village) | ⬜ TODO（R3 起 `WISH_REFRESH_HOURS` 已由 `WISH_REFRESH_MIN` 换算；`nextWishAt` 仍记真实 ms） |
+| 14 | `WINTER_FEED_SURCHARGE` 常量源迁 `data/animals.js` import | Opus-2 (production) | ✅ DONE（R3：production 已 import 并再导出） |
 | 15 | `economy.test.js` 温室「全场免疫」断言按 per-plot 裁决更新 | GPT-sol-1 (tests) | ✅ DONE |
 
-## 平衡风险与监控（Round 2 记录）
+## 平衡风险与监控（Round 3 更新）
 
 1. **锯是全程最紧的工具**（12 件需求）：权重已提到 0.35，若实测 L8–L9 仍卡温室/码头，优先把温室田改造成本从锯改成金币，而不是再抬掉率。
-2. **珍珠 4% 偏紧**：终局需 4 颗，全程期望 3–4。节日广场本意就是长线目标；若实测太磨，R3 抬到 5%，不要给珍珠加新来源。
-3. **w_tofu 1.45×** 是单品带最高值（豆-豆腐链前期主力），配合 25% 掉率观察是否仍过强；候选削法是 coin 32 → 30（1.36×）。
-4. **掉落参数目前仍是 village 硬编码 0.35/旧权重**（契约 #10/#11 未接前，实际掉落偏肥且开局多送工具）；接线前的存档会比表定曲线富一些，属已知过渡态。
+2. **珍珠 4% 偏紧**：终局需 4 颗，全程期望 3–4。节日广场本意就是长线目标；若实测太磨，先抬到 5%，不要给珍珠加新来源。
+3. **w_tofu 1.45×** 是单品带最高值（豆-豆腐链前期主力），掉率降到 25% 后本轮复核仍在带内，不动；若实测仍过强，候选削法是 coin 32 → 30（1.36×）。
+4. **开局仍白送 锹2/斧1/锯1**（契约 #11 未落地）：掉落端 0.25 + 两级保底已于 R3 接线，唯独 engine 开局资源没改，新档头三单会「保底 + 白送」双份富余；engine 落地前的存档偏富属已知过渡态。
+5. **交单改节拍补位后前期单量变稀**（R3 行为变化）：交完一单要等最多 2 游戏时（12s 现实）才补位，Lv.1 三格轮转是否卡引导，等 GPT-sol-1 的节奏探针；若卡，优先缩 `WISH_REFRESH_MIN`（120 → 90），不要回退到交单即补满。

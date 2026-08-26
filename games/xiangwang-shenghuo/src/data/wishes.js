@@ -46,7 +46,7 @@ export const WISH_POOL = [
 export const WISH_REFRESH_MIN = 120;
 
 /**
- * 工具基础掉率（Round 2：0.35 → 0.25，Opus-3 接线）。
+ * 工具基础掉率（Round 2 校准 0.35 → 0.25；Round 3 起 village.deliverWish 已改读本表）。
  * 量算见 GDD「工具经济」：通关约交 70–90 单，0.25 + 保底后有效掉率 ≈ 0.29，
  * 期望 23–29 件，对上全程工具汇 ≈ 28 件（锹 10 / 锯 12 / 斧 6）；
  * 0.35 会多掉三成、后期刷爆，且旧权重给斧 0.35 远超其 6 件总需求。
@@ -67,7 +67,8 @@ export const TOOL_DROP_WEIGHTS = [
  * 保底 = 正规工具来源，取代「开局白送斧锯」的 UI 权宜：
  * 1) 新档前 3 次交单按序必掉 斧 → 锯 → 锹（解锁 L2 磨坊 / L3 饲料厂 / L3 鸡舍）；
  * 2) 此后连续 TOOL_PITY_DROUGHT 次未掉工具，下一单必掉（按权重取）。
- * 配套开局资源 锹×1 / 斧×0 / 锯×0（engine 契约，Opus-4）。
+ * Round 3 起 village.deliverWish 已接线（pityStep / drought 计数入档）；
+ * 配套开局资源 锹×1 / 斧×0 / 锯×0 仍待 engine 落地（GDD 契约表 #11，Opus-4）。
  */
 export const TOOL_PITY_ORDER = ["axe", "saw", "shovel"];
 export const TOOL_PITY_DROUGHT = 6;

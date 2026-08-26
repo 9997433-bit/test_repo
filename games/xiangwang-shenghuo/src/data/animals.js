@@ -3,7 +3,7 @@
 /**
  * 冬季每次投喂多记两成饲料账，攒满 1 才真的多扣一份（确定性余数，
  * 即冬天每喂 5 次有 1 次吃 2 份；实现见 production.winterFeedCarry，已落地）。
- * production/index.js 目前持有同值本地常量，Round 3 收敛为从这里 import（Opus-2，见 GDD 契约表）。
+ * 本表是唯一事实源：production/index.js 已于 Round 3 改为从这里 import 并再导出。
  */
 export const WINTER_FEED_SURCHARGE = 0.2;
 
