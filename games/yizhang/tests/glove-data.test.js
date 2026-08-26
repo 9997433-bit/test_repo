@@ -28,7 +28,7 @@ describe("glove data contract", () => {
           windup: expect.any(Number),
           recovery: expect.any(Number),
           moveSpeedMul: expect.any(Number),
-          skillId: glove.id === "cotton" ? null : expect.any(String),
+          skillId: expect.any(String),
           skillCooldown: expect.any(Number),
           unlock: expect.any(String),
           awakenModifiers: expect.objectContaining({

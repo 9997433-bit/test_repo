@@ -1,4 +1,4 @@
-# 异掌 · 美术方向（Round 2）
+# 异掌 · 美术方向（Round 3）
 
 > 依据 `docs/VISUAL_HANDBOOK.md`（强制）与 `DESIGN_SEED.md` 视觉章。
 > 底座 **B 风格化精品**（手册 §3.2），全程不混底座 A / C，不使用本仓库
@@ -87,22 +87,47 @@
 
 叙事痕迹自查：任一资产要能回答「谁用过它」（手册 §14-12）。
 
-## 4. 字体系统
+## 4. 字体系统（Round 3 · 零外链）
 
-铁律：**HUD 不落默认系统字体**（手册 §2-6、§9）。
+铁律一：**HUD 不落默认系统字体**（手册 §2-6、§9）——「默认」指未设置
+`font-family` 或落回无设计的 Arial / 默认 sans；本节的**精品系统栈**是
+逐字面挑选、逐平台落位的设计结果，不属此列。
+铁律二：**零 CDN 字体（红线 R-13）**。Round 2 的两条字体外链 `@import`
+已从 `src/styles/index.css` 拔除；`rg -n "googleapis|gstatic" src/styles`
+零命中。不发一个字体网络请求：断网、首帧、弱网渲染完全一致，
+无 FOIT / FOUT，也不再需要 `display=swap` 与 preconnect。
 
 | 层 | 栈 | 用途 |
 | --- | --- | --- |
-| 展示 `--yz-font-display` | Rajdhani → Noto Serif SC → Source Han Serif SC → Songti SC → serif | 标题、按钮、掌名、中央短讯 |
+| 展示 `--yz-font-display` | Rajdhani → Bahnschrift → DIN Alternate → Avenir Next Condensed → Roboto Condensed → Noto Serif SC → Source Han Serif SC → Songti SC → STSong → SimSun → serif | 标题、按钮、掌名、中央短讯 |
 | 正文 `--yz-font-text` | PingFang SC → Hiragino Sans GB → Source Han Sans SC → Noto Sans SC → Microsoft YaHei → sans-serif | 说明、挑战文案、弹窗正文 |
-| 数字 `--yz-font-num` | Rajdhani →（中文回退） | 计时、杀数、冷却；一律 `tabular-nums` 不跳宽 |
+| 数字 `--yz-font-num` | Rajdhani → Bahnschrift → DIN Alternate → Avenir Next Condensed → Roboto Condensed → PingFang SC → Microsoft YaHei → sans-serif | 计时、杀数、冷却；一律 `tabular-nums` 不跳宽 |
 
-加载：Rajdhani 与 Noto Serif SC 均为 OFL 开源授权，经 `index.css` 顶部
-`@import ... display=swap` **非阻塞**载入（CJK 按 unicode-range 分片，只下用到的片）；
-断网 / 未达时按回退栈渲染，无 FOIT。全局 `font-synthesis: none` 禁伪粗体。
-选型记录：站酷小薇经实测「回」等常用字形退化为墨块，已否决。
-建议 Opus-4 在 `index.html` 加 `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>`。
-Round 2 升级路径：自托管子集化 woff2（仅收录 UI 实际用字），移除外链。
+展示层的设计意图不变：拉丁 / 数字落 **Rajdhani 系几何工业体**，
+中文落**宋**（Noto Serif SC / 思源宋 / Songti SC 系），
+「机械刻度 × 碑帖笔意」的对撞是本作 HUD 的识别点。逐平台落位：
+
+| 平台 | 拉丁 / 数字命中 | 中文命中 |
+| --- | --- | --- |
+| Windows 10+ | Bahnschrift（DIN 1451 血统、变量字重，与 Rajdhani 同为窄几何工业体） | SimSun（宋体兜底；装了思源宋则优先） |
+| macOS / iOS | DIN Alternate（仅粗面，600 请求就近匹配真字面）→ Avenir Next Condensed（全字重几何窄体） | Songti SC / STSong |
+| Android | Roboto Condensed | Noto Serif CJK（有装则中）→ serif |
+| Linux | 常见装有 Rajdhani / Roboto Condensed 之一 | Noto Serif CJK SC |
+
+规则三条：
+
+1. 栈首 `"Rajdhani"` 只在本机已安装时命中，**不触发任何加载**；
+   任何回退命中都仍是有设计的几何窄体或宋体，永远不落 Arial。
+2. 全局 `font-synthesis: none` 禁伪粗体：宋体系单字重字面合成加粗
+   会把小字号汉字糊成墨块，宁可就近匹配真字面。
+3. 数字层几何段与展示层完全一致（数字字形跨层统一），
+   中文回退走黑体 —— 数字旁的单位字不宜落宋。
+
+选型记录：站酷小薇经实测「回」等常用字形退化为墨块，已否决；
+Round 2 曾走字体 CDN 外链（命中 R-13），Round 3 拔除，
+若未来需要 100% 像素一致再走**自托管**子集 woff2（禁回 CDN）。
+遗留清理（归属 Opus-4，本方不碰 `index.html`）：`index.html` 头部
+两条字体域 preconnect 已成死链提示，请在 Opus-4 回合摘除。
 
 ## 5. HUD 布局法
 
@@ -204,9 +229,9 @@ Round 2 升级路径：自托管子集化 woff2（仅收录 UI 实际用字）�
 
 ```
 games/yizhang/src/styles/
-├── index.css    入口（含非阻塞字体外链，import 其余全部）
+├── index.css    入口（纯本地 @import，零外链零网络请求）
 ├── tokens.css   :root 设计令牌 + 8 掌识别色 data-glove 映射
-├── fonts.css    字体栈 token + .yz-display / .yz-num 工具类
+├── fonts.css    精品系统字体栈 token + .yz-display / .yz-num 工具类
 ├── base.css     重置、#gl 画布、.yz-plate 玻璃材质、焦点、弱动效
 ├── layout.css   #hud 壳、安全区、公共关键帧
 ├── hud.css      顶带 / 战况列 / 播报 / 掌位坞 / 掌意条 / 冷却排 /
@@ -471,9 +496,11 @@ tone：默认警示（去饱和氧化红沿）；`.is-ok` 接入正常（暮蓝�
 
 ### 11.7 共享文件声明
 
-本轮未改动共享只读文件（`index.html` / `package.json` /
-`vite.config.js` / `README.md`），未改 `src/ui/**`（含 `shell.css`）。
-`#hud`、`.yz-*` 节点由 Opus-4 按本表挂载。
+本轮（Round 3）仅改动 `docs/ART_DIRECTION.md` 与 `src/styles/**`；
+未改共享只读文件（`index.html` / `package.json` / `vite.config.js` /
+`README.md`），未改 `src/ui/**`（含 `shell.css`）。
+`#hud`、`.yz-*` 节点由 Opus-4 按本表挂载；`index.html` 里两条
+字体域 preconnect 的摘除也归 Opus-4（见 §4 末）。
 
 ## 12. shell.css → src/styles 迁移映射（给 Opus-4）
 
