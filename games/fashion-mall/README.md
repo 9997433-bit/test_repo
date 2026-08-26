@@ -45,6 +45,7 @@ Node 原生 test runner 直跑 `tests/*.test.js`，当前 **94 项断言全部�
 | `tests/minigames.test.js` | 30 | 五店赏金纯函数、盲盒权重与保底、占卜转盘期望、RTP 上限 |
 | `tests/economy.test.js` | 18 | 产出与成本曲线、回本增速窗口、金币 + 阅历双门槛、等级帽、目标升降档、被动阅历速率带 |
 | `tests/contracts.test.js` | 3 | 家具 / 店铺视图 / 文案键的模块契约 |
+| `tests/simulation.test.js` | 2 | 60 分钟推进：五店全解锁、限时目标续期 ≥10 轮 |
 
 ## 全量核验
 
