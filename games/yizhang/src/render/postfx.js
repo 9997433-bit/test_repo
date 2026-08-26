@@ -4,6 +4,10 @@
 // 而是把整场重画一遍「自发光代理」—— 不发光的东西一律换成纯黑但仍然写深度，
 // 于是角色能挡住裂缝的光，辉光也绝不会糊满屏幕。
 //
+// 低画质档 (quality.bloom === false) 把这条支链整个摘掉：不分配 render target、
+// 不跑自发光通道与模糊、合成着色器里也不编译 bloom 采样，一帧只剩「主渲染 + 合成」。
+// 色调映射链本身不受影响，低档与高档看到的是同一条 ACES 曲线。
+//
 // 色调映射与 sRGB 编码都在合成着色器里手写完成：主场景渲进的是线性 HDR 贴图，
 // three 对 render target 不做 tone mapping，这里统一处理，全流程只有一处曲线。
 
@@ -65,8 +69,10 @@ const BLUR_FRAG = /* glsl */ `
 
 const COMPOSITE_FRAG = /* glsl */ `
   uniform sampler2D uScene;
-  uniform sampler2D uBloom;
-  uniform float uBloomStrength;
+  #ifdef USE_BLOOM
+    uniform sampler2D uBloom;
+    uniform float uBloomStrength;
+  #endif
   uniform float uExposure;
   uniform float uVignette;
   varying vec2 vUv;
@@ -108,8 +114,9 @@ const COMPOSITE_FRAG = /* glsl */ `
 
   void main() {
     vec3 col = texture2D(uScene, vUv).rgb;
-    vec3 bloom = texture2D(uBloom, vUv).rgb;
-    col += bloom * uBloomStrength;
+    #ifdef USE_BLOOM
+      col += texture2D(uBloom, vUv).rgb * uBloomStrength;
+    #endif
 
     // 极轻的暗角：把视线收回画面中央，不做成滤镜
     vec2 d = vUv - 0.5;
@@ -150,44 +157,56 @@ export function createPost({ renderer, scene, quality }) {
       ...opts.extra,
     });
 
+  // 低档整条辉光链不成立：不建 render target、不重画自发光通道、合成着色器里连采样都不编译。
+  const bloomOn = quality.bloom !== false && quality.bloomIterations > 0 && quality.bloomStrength > 0;
+
   let sceneRT = makeRT(size.x, size.y, { samples: quality.msaa });
   const bScale = quality.bloomScale;
-  let emissiveRT = makeRT(size.x * bScale, size.y * bScale, { depth: true });
-  let blurA = makeRT(size.x * bScale, size.y * bScale, { depth: false });
-  let blurB = makeRT(size.x * bScale, size.y * bScale, { depth: false });
+  let emissiveRT = bloomOn ? makeRT(size.x * bScale, size.y * bScale, { depth: true }) : null;
+  let blurA = bloomOn ? makeRT(size.x * bScale, size.y * bScale, { depth: false }) : null;
+  let blurB = bloomOn ? makeRT(size.x * bScale, size.y * bScale, { depth: false }) : null;
 
   const quadGeo = fullscreenTriangle();
   const quadScene = new Scene();
   const quadCam = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-  const blurMat = new ShaderMaterial({
-    vertexShader: FS_VERT,
-    fragmentShader: BLUR_FRAG,
-    depthTest: false,
-    depthWrite: false,
-    uniforms: {
-      uTex: { value: null },
-      uDir: { value: new Vector2() },
-      uThreshold: { value: 0.85 },
-      uSoftKnee: { value: 0.6 },
-    },
-  });
+  const blurMat = bloomOn
+    ? new ShaderMaterial({
+        vertexShader: FS_VERT,
+        fragmentShader: BLUR_FRAG,
+        depthTest: false,
+        depthWrite: false,
+        uniforms: {
+          uTex: { value: null },
+          uDir: { value: new Vector2() },
+          uThreshold: { value: 0.85 },
+          uSoftKnee: { value: 0.6 },
+        },
+      })
+    : null;
 
   const compositeMat = new ShaderMaterial({
     vertexShader: FS_VERT,
     fragmentShader: COMPOSITE_FRAG,
+    defines: bloomOn ? { USE_BLOOM: '' } : {},
     depthTest: false,
     depthWrite: false,
-    uniforms: {
-      uScene: { value: sceneRT.texture },
-      uBloom: { value: blurA.texture },
-      uBloomStrength: { value: quality.bloomStrength },
-      uExposure: { value: 1.25 },
-      uVignette: { value: 0.42 },
-    },
+    uniforms: bloomOn
+      ? {
+          uScene: { value: sceneRT.texture },
+          uBloom: { value: blurA.texture },
+          uBloomStrength: { value: quality.bloomStrength },
+          uExposure: { value: 1.25 },
+          uVignette: { value: 0.42 },
+        }
+      : {
+          uScene: { value: sceneRT.texture },
+          uExposure: { value: 1.25 },
+          uVignette: { value: 0.42 },
+        },
   });
 
-  const quad = new Mesh(quadGeo, blurMat);
+  const quad = new Mesh(quadGeo, compositeMat);
   quad.frustumCulled = false;
   quadScene.add(quad);
 
@@ -320,17 +339,32 @@ export function createPost({ renderer, scene, quality }) {
       return sceneRT;
     },
 
+    get bloomEnabled() {
+      return bloomOn;
+    },
+
+    /** 只读窥孔，给 postfx.test.js 核对档位是否真的裁掉了辉光支链。 */
+    get debug() {
+      return {
+        composite: compositeMat,
+        targets: 1 + (bloomOn ? 3 : 0),
+        bloomSize: bloomOn ? [blurA.width, blurA.height] : null,
+      };
+    },
+
     render(camera) {
       renderer.setRenderTarget(sceneRT);
       renderer.setClearColor(0x000000, 1);
       renderer.clear(true, true, false);
       renderer.render(scene, camera);
 
-      renderEmissivePass(camera);
-      const bloomTex = blur(quality.bloomIterations);
+      if (bloomOn) {
+        renderEmissivePass(camera);
+        const bloomTex = blur(quality.bloomIterations);
+        compositeMat.uniforms.uBloom.value = bloomTex.texture;
+      }
 
       compositeMat.uniforms.uScene.value = sceneRT.texture;
-      compositeMat.uniforms.uBloom.value = bloomTex.texture;
       quad.material = compositeMat;
       renderer.setRenderTarget(null);
       renderer.clear(true, true, false);
@@ -341,6 +375,7 @@ export function createPost({ renderer, scene, quality }) {
       const width = Math.max(1, Math.floor(w));
       const height = Math.max(1, Math.floor(h));
       sceneRT.setSize(width, height);
+      if (!bloomOn) return;
       const bw = Math.max(1, Math.floor(width * bScale));
       const bh = Math.max(1, Math.floor(height * bScale));
       emissiveRT.setSize(bw, bh);
@@ -349,6 +384,7 @@ export function createPost({ renderer, scene, quality }) {
     },
 
     setBloomStrength(v) {
+      if (!bloomOn) return;
       compositeMat.uniforms.uBloomStrength.value = v;
     },
 
@@ -358,11 +394,11 @@ export function createPost({ renderer, scene, quality }) {
 
     dispose() {
       sceneRT.dispose();
-      emissiveRT.dispose();
-      blurA.dispose();
-      blurB.dispose();
+      emissiveRT?.dispose();
+      blurA?.dispose();
+      blurB?.dispose();
       quadGeo.dispose();
-      blurMat.dispose();
+      blurMat?.dispose();
       compositeMat.dispose();
       sceneRT = null;
       emissiveRT = null;

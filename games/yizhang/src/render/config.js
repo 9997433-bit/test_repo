@@ -70,7 +70,13 @@ export const FALLBACK_TINT = 0x9aa2ad;
  * 画质档。三档不是「同一套东西调数字」，而是明确的取舍：
  *  high — 阴影 + 完整粒子 + 布料 sheen + 高分辨率程序化贴图
  *  mid  — 阴影降级、粒子减半、材质退回 MeshStandard、贴图减半
- *  low  — 无阴影、碎屑合批、粒子极简、无法线细节
+ *  low  — 无阴影、碎屑合批、粒子极简、无法线细节、**辉光整条链关掉**
+ *
+ * 关于 bloom（手册 §2-14 / SOTA R-03）：高中档保留的是「只吃自发光体」的选择性辉光，
+ * 强度 0.8~0.9、阈值 0.85，裂缝芯与觉醒缝线之外的东西一律进不了辉光通道。
+ * 低档直接把 bloom 置 false：低配机上辉光要多付一遍全场景重绘（自发光代理通道）
+ * 加两趟模糊，而它换来的只是几粒余烬周围的一圈晕 —— 这笔交易在低档不划算。
+ * 关掉之后画面不是「少了效果」，而是回到手册的默认立场：亮部靠曝光与材质，不靠泛光。
  */
 export const QUALITY = {
   high: {
@@ -105,7 +111,8 @@ export const QUALITY = {
     decalBudget: 24,
     shockRings: 2,
     footDust: true,
-    // 后期
+    // 后期：选择性辉光（只有自发光代理通道里的像素能进），克制强度
+    bloom: true,
     bloomScale: 0.5,
     bloomIterations: 3,
     bloomStrength: 0.9,
@@ -139,6 +146,7 @@ export const QUALITY = {
     decalBudget: 12,
     shockRings: 1,
     footDust: true,
+    bloom: true,
     bloomScale: 0.25,
     bloomIterations: 2,
     bloomStrength: 0.8,
@@ -174,9 +182,11 @@ export const QUALITY = {
     decalBudget: 4,
     shockRings: 1,
     footDust: false,
+    // 低档无辉光：自发光代理通道与两趟模糊整个不建、不跑，只留 ACES 合成
+    bloom: false,
     bloomScale: 0.125,
-    bloomIterations: 1,
-    bloomStrength: 0.7,
+    bloomIterations: 0,
+    bloomStrength: 0,
   },
 };
 
