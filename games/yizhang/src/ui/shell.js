@@ -273,7 +273,7 @@ export function createShell(opts) {
       return row;
     });
 
-    sheetBody.append(
+    const blocks = [
       h("div", {}, [
         h("p", { class: "yz-kicker", text: payload.won ? "VICTORY" : "MATCH OVER" }),
         h("h2", { class: "yz-title", text: payload.won ? "掌 下 留 名" : "被 扇 下 岛" }),
@@ -304,8 +304,9 @@ export function createShell(opts) {
             callbacks.onQuit && callbacks.onQuit();
           },
         }),
-      ])
-    );
+      ]),
+    ];
+    sheetBody.append(...blocks.filter(Boolean));
   }
 
   // ---------- 降级提示 ----------

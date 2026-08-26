@@ -364,7 +364,12 @@ async function boot() {
         ? `${nameOf(over.winnerId || players[0].id)} 先到 ${matchConfig.killsToWin} 杀`
         : "四分钟到，按击杀数结算";
 
-    recordMatch({ kills: self ? self.kills : 0, deaths: self ? self.deaths : 0, won });
+    // 战绩以最终计分板为准；事件计数只用于 view 里没有的维度（冲刺次数、背身击杀）。
+    if (self) {
+      matchStats.kills = self.kills || 0;
+      matchStats.deaths = self.deaths || 0;
+    }
+    recordMatch({ kills: matchStats.kills, deaths: matchStats.deaths, won });
     const unlocked = evaluateUnlocks();
 
     shell.showResult({

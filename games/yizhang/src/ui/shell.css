@@ -163,6 +163,13 @@
   padding: calc(var(--yz-u) * 3);
   gap: calc(var(--yz-u) * 2);
   overflow: auto;
+  justify-content: center;
+}
+
+.yz-menu > * {
+  width: min(1080px, 100%);
+  margin-inline: auto;
+  flex: 0 0 auto;
 }
 
 .yz-menu-head {
@@ -232,10 +239,16 @@
 
 .yz-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: var(--yz-u);
   overflow: auto;
   padding-right: 4px;
+}
+
+@media (max-width: 720px) {
+  .yz-grid {
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  }
 }
 
 .yz-card {
@@ -855,14 +868,18 @@
 
 @media (orientation: portrait) {
   .yz-stickzone {
-    height: 48%;
-  }
-  .yz-glovebox {
-    bottom: calc(var(--yz-safe-b) + 48 * var(--yz-dp));
-    width: min(220px, 60vw);
+    height: 34%;
   }
   .yz-rings {
     bottom: calc(var(--yz-safe-b) + 100 * var(--yz-dp));
+  }
+  /* 竖屏时右下角整块归触控盘，掌意卡抬到盘子上方 */
+  .yz[data-touch="1"] .yz-glovebox {
+    bottom: calc(var(--yz-safe-b) + 176 * var(--yz-dp));
+    width: min(200px, 58vw);
+  }
+  .yz[data-touch="1"] .yz-stickzone {
+    height: 26%;
   }
 }
 

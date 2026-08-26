@@ -99,10 +99,29 @@ export function createRenderer(canvas, opts = {}) {
     ctx.save();
     ctx.translate(cx, cy);
 
-    // 台体投影阴影，给一点厚度感
-    ctx.fillStyle = PALETTE.shadow;
+    // 台体厚度：只在还活着的子块下面垫一层，塌掉的块必须露出真正的空洞。
+    const inner0 = arena.coreRadius ?? 6;
+    ctx.fillStyle = PALETTE.deckEdge;
+    for (const chunk of chunks) {
+      if (!chunk.alive) continue;
+      ctx.beginPath();
+      for (let i = 0; i <= 16; i += 1) {
+        const a = chunk.a0 + ((chunk.a1 - chunk.a0) * i) / 16;
+        const p = oblique(Math.cos(a) * arena.radius, -0.7, Math.sin(a) * arena.radius, scale, cam);
+        if (i === 0) ctx.moveTo(p.sx, p.sy);
+        else ctx.lineTo(p.sx, p.sy);
+      }
+      for (let i = 16; i >= 0; i -= 1) {
+        const a = chunk.a0 + ((chunk.a1 - chunk.a0) * i) / 16;
+        const p = oblique(Math.cos(a) * inner0, -0.7, Math.sin(a) * inner0, scale, cam);
+        ctx.lineTo(p.sx, p.sy);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.beginPath();
-    ctx.ellipse(0 - cam.x * scale, (0 - cam.z) * scale * 0.58 + 12, arena.radius * scale, arena.radius * scale * 0.58, 0, 0, TAU);
+    const cShadow = oblique(0, -0.7, 0, scale, cam);
+    ctx.ellipse(cShadow.sx, cShadow.sy, inner0 * scale, inner0 * scale * 0.58, 0, 0, TAU);
     ctx.fill();
 
     chunks.forEach((chunk, index) => {
@@ -132,8 +151,8 @@ export function createRenderer(canvas, opts = {}) {
       if (chunk.cracks > 0) {
         // 裂纹画成从中心向外的几道折线，而不是给整块描边——描边等于廉价发光轮廓。
         ctx.strokeStyle = wear > 0.6 ? PALETTE.crackDeep : PALETTE.crack;
-        ctx.globalAlpha = 0.28 + wear * 0.45;
-        ctx.lineWidth = 1 + wear * 1.6;
+        ctx.globalAlpha = 0.18 + wear * 0.34;
+        ctx.lineWidth = 1 + wear * 1.4;
         ctx.beginPath();
         for (let c = 0; c < chunk.cracks; c += 1) {
           const a = chunk.a0 + ((chunk.a1 - chunk.a0) * (c + 0.5 + (c % 2) * 0.22)) / chunk.cracks;
@@ -307,7 +326,9 @@ export function createRenderer(canvas, opts = {}) {
     drawSky();
 
     const radius = (view.arena && view.arena.radius) || 20;
-    const scale = Math.min(width / (radius * 2.8), height / (radius * 1.85));
+    // 先按「整座岛入画」算，再兜一个下限：竖屏下宽度受限，全塞进去人就只剩几个像素。
+    const fit = Math.min(width / (radius * 2.8), height / (radius * 1.85));
+    const scale = Math.max(fit, Math.min(width, height) / 30);
     const cx = width / 2;
     const cy = height * 0.54;
 
