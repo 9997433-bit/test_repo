@@ -10,4 +10,6 @@ npm run bench
 npm run probe
 ```
 
+线上：https://9997433-bit.github.io/test_repo/zhao-yun-adou/
+
 玩法：消耗馒头征兵 → 拖拽合并刀枪弓骑 → 拼出赵云/张飞等武将姓名 → 守住「斗」字阿斗，击破对面阿斗。
