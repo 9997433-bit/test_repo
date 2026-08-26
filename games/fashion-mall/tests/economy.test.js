@@ -13,6 +13,17 @@ import {
   blindboxRoll,
   fortuneSpin,
   paidGameExpectation,
+  LEVEL_XP_GATES,
+  FURNITURE,
+  GOAL_CURVE,
+  goalSpan,
+  rollNextGoal,
+  passiveXpPerSec,
+  shopUpgradeCost,
+  hireCost,
+  partnerTrainCost,
+  furnitureCost,
+  combinePartnerBonuses,
 } from "../src/data/balance.js";
 import { charmOf, furnitureBonus, researchIncome, totalOnlinePerSec } from "../src/core/economy.js";
 import { defaultState } from "../src/core/state.js";
@@ -92,4 +103,71 @@ test("skill minigame payouts are positive and monotone in score", () => {
   assert.ok(freshPayout(9).gold > freshPayout(3).gold);
   assert.ok(boutiquePayout(6).gold > boutiquePayout(0).gold);
   assert.ok(boutiquePayout(6).xp > boutiquePayout(0).xp);
+});
+
+test("rollNextGoal promotes tier on success and demotes on timeout", () => {
+  const now = 1_000_000;
+  const success = rollNextGoal(
+    { level: 2, goldEarned: 5000, goal: { target: 4000, until: now - 1, done: true, tier: 1 } },
+    now,
+  );
+  assert.equal(success.tier, 2);
+  assert.ok(success.target > 5000);
+  assert.equal(success.until, now + GOAL_CURVE.durationMs);
+  assert.equal(success.done, false);
+  assert.ok(success.reward.gold > 0 && success.reward.xp > 0);
+
+  const timedOut = rollNextGoal(
+    { level: 2, goldEarned: 5000, goal: { target: 9000, until: now - 1, done: false, tier: 1 } },
+    now,
+  );
+  assert.equal(timedOut.tier, 0);
+  assert.ok(timedOut.target < success.target);
+});
+
+test("goal span scales with level and legacy goals without tier are safe", () => {
+  assert.ok(goalSpan(3, 0) > goalSpan(2, 0));
+  assert.ok(goalSpan(2, 3) > goalSpan(2, 0));
+  // 基线初始档等价：Lv1 tier0 从 40 起步 → 目标 600
+  assert.equal(rollNextGoal({ level: 1, goldEarned: 40, goal: null }, 0).target, 600);
+  // 旧档 goal 无 tier 字段：完成后按 0→1 档续期，不抛错
+  const legacy = rollNextGoal({ level: 1, goldEarned: 640, goal: { target: 600, until: 0, done: true } }, 0);
+  assert.equal(legacy.tier, 1);
+});
+
+test("passive xp unblocks idle leveling slower than active play", () => {
+  for (let l = 1; l < 7; l += 1) assert.ok(passiveXpPerSec(l + 1) > passiveXpPerSec(l));
+  // 纯挂机过 Lv1 阅历门控制在 10–30 分钟
+  const idleSecondsToL2 = LEVEL_XP_GATES[1] / passiveXpPerSec(1);
+  assert.ok(idleSecondsToL2 > 600 && idleSecondsToL2 < 1800);
+  // 主动玩法（快餐单 2xp/约9秒）至少比被动快 5 倍
+  assert.ok(fastfoodTip(3).xp / 9 > passiveXpPerSec(1) * 5);
+});
+
+test("upgrade payback grows gently instead of diverging", () => {
+  for (const shop of SHOPS) {
+    // 回本时长每级增速 = 成本增速/产出增速，须 < 1.12（基线为 1.229，发散）
+    const paybackRatio = shopUpgradeCost(shop, 21) / shopUpgradeCost(shop, 20) / shop.growth;
+    assert.ok(paybackRatio < 1.12, `${shop.id} 回本每级 ×${paybackRatio.toFixed(3)}`);
+    assert.ok(shopUpgradeCost(shop, 2) > shopUpgradeCost(shop, 1));
+    // 成本与店铺体量挂钩：后期店不再共用前期店成本线
+    assert.equal(shopUpgradeCost(shop, 1), Math.floor(12 * shop.base));
+  }
+  assert.ok(hireCost(1) > hireCost(0));
+  assert.ok(partnerTrainCost(5) > partnerTrainCost(4) * 1.5);
+});
+
+test("furniture cost scales with bonus, fixing inverted baseline pricing", () => {
+  const sorted = [...FURNITURE].sort((a, b) => a.bonus - b.bonus);
+  for (let i = 1; i < sorted.length; i += 1) {
+    assert.ok(furnitureCost(sorted[i]) > furnitureCost(sorted[i - 1]));
+  }
+});
+
+test("stacked partner bonuses have diminishing returns", () => {
+  const stacked = combinePartnerBonuses([0.6, 0.6, 0.6]);
+  assert.ok(stacked > 0.6 && stacked < 1.8);
+  assert.equal(combinePartnerBonuses([]), 0);
+  // 顺序无关
+  assert.equal(combinePartnerBonuses([0.15, 0.6]), combinePartnerBonuses([0.6, 0.15]));
 });

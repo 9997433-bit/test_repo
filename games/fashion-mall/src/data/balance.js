@@ -222,3 +222,106 @@ export function paidGameExpectation(id) {
   const shard = entries.reduce((s, e) => s + (e.w ?? 1) * (e.shard || 0), 0) / total;
   return { cost: cfg.cost, gold, shard, netGold: gold - cfg.cost };
 }
+
+/* ── 限时目标续期曲线（ARCHITECTURE §4.3 锁定接口：rollNextGoal(state) -> goal）──
+ * core Round 2 接线：settle 管线里目标完成发奖后、或超时后调用本函数生成下一档。
+ * tier 是自适应难度档：连续完成升档 ×1.35，超时降档，玩家强度自动收敛。 */
+export const GOAL_CURVE = {
+  durationMs: 8 * 60 * 1000,
+  baseSpan: 560, // Lv1 首档区间，对齐基线初始目标 600 − 起始金 40
+  levelMult: 3, // 每主角等级区间 ×3，贴合该等级收入量级
+  tierMult: 1.35,
+  tierMax: 6,
+  rewardShare: 0.35, // 金币奖励 = 区间 × 0.35
+  xpBase: 14,
+  xpPerLevel: 6,
+  xpTierBoost: 0.15,
+};
+
+export function goalSpan(level, tier) {
+  return Math.round(
+    GOAL_CURVE.baseSpan *
+      GOAL_CURVE.levelMult ** (Math.max(1, level) - 1) *
+      GOAL_CURVE.tierMult ** tier,
+  );
+}
+
+export function goalReward(level, tier) {
+  return {
+    gold: Math.round(goalSpan(level, tier) * GOAL_CURVE.rewardShare),
+    xp: Math.round(
+      (GOAL_CURVE.xpBase + GOAL_CURVE.xpPerLevel * Math.max(1, level)) *
+        (1 + GOAL_CURVE.xpTierBoost * tier),
+    ),
+  };
+}
+
+export function rollNextGoal(state, nowMs = Date.now()) {
+  const prev = state.goal;
+  const prevTier = Number.isFinite(prev?.tier) ? prev.tier : 0; // 旧档无 tier 字段按 0 档
+  const tier = prev
+    ? Math.min(GOAL_CURVE.tierMax, Math.max(0, prevTier + (prev.done ? 1 : -1)))
+    : 0;
+  const level = Math.max(1, state.level || 1);
+  return {
+    target: Math.round((state.goldEarned || 0) + goalSpan(level, tier)),
+    until: nowMs + GOAL_CURVE.durationMs,
+    done: false,
+    tier,
+    reward: goalReward(level, tier),
+  };
+}
+
+/* ── 被动阅历供给（堵纯挂机卡级；core Round 2 在 settle 管线按 dt 累计）──
+ * 等级双门槛里金币门有挂机供给而阅历门没有，纯挂机会永久卡级。
+ * 被动速率随等级抬升但慢于门槛差增速，纯挂机每级约 17→52 分钟；
+ * 主动玩法阅历速率约为其 10–20 倍，主动仍是最优路径。离线按 0.65 折减。 */
+export const PASSIVE_XP = { base: 0.02, growth: 1.6, offlineRate: 0.65 };
+
+export function passiveXpPerSec(level) {
+  return PASSIVE_XP.base * PASSIVE_XP.growth ** (Math.max(1, level) - 1);
+}
+
+/* ── 成本曲线（权威口径；基线内联在视图里的公式 Round 2 一律改查此处）──
+ * 基线升级成本 80×1.45^n 对产出 1.18^n：回本时长每级 ×1.229，Lv40 回本 32 小时，
+ * 且五店共用一条成本线导致后期店（base 64）升级近乎白送。
+ * 新口径成本 ∝ shop.base，成本增速 = 产出增速 + 0.1，
+ * 回本时长 = 12/(g−1) × ((g+0.1)/g)^(n−1)，每级仅 ×≈1.08，缓增不发散。 */
+export const COSTS = {
+  upgrade: { baseMult: 12, growthDelta: 0.1 },
+  hire: { base: 50, growth: 1.5 },
+  train: { base: 40, growth: 1.6 },
+  furniturePerBonus: 40000,
+};
+
+export function shopUpgradeCost(shop, level) {
+  return Math.floor(
+    COSTS.upgrade.baseMult *
+      shop.base *
+      (shop.growth + COSTS.upgrade.growthDelta) ** (Math.max(1, level) - 1),
+  );
+}
+
+export function hireCost(staffCount) {
+  return Math.floor(COSTS.hire.base * COSTS.hire.growth ** Math.max(0, staffCount));
+}
+
+// 基线 40×level 线性成本对恒定边际收益（每级 +4.8% 店收入）可无限白嫖，改指数
+export function partnerTrainCost(level) {
+  return Math.floor(COSTS.train.base * COSTS.train.growth ** (Math.max(1, level) - 1));
+}
+
+// 修正基线 200/bonus 的倒挂定价（加成越高反而越便宜）
+export function furnitureCost(item) {
+  return Math.round(item.bonus * COSTS.furniturePerBonus);
+}
+
+/* 同店叠伙伴按 1, 0.5, 0.25… 衰减合并，堵“全员堆最贵店”的退化最优解。
+ * economy.js#shopBonusMap Round 2 接线时用本函数替换直接求和。 */
+export const PARTNER_STACK_DECAY = 0.5;
+
+export function combinePartnerBonuses(bonuses) {
+  return [...bonuses]
+    .sort((a, b) => b - a)
+    .reduce((sum, b, i) => sum + b * PARTNER_STACK_DECAY ** i, 0);
+}
