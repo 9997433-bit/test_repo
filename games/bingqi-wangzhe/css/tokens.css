@@ -1,0 +1,122 @@
+/* 兵器王者·炉火 — 设计令牌
+   国风暗金：墨底 / 朱砂 / 鎏金 / 青冰 / 雷紫 */
+
+:root {
+  /* —— 墨阶 —— */
+  --ink: #0b0a09;
+  --ink-1: #12100d;
+  --ink-2: #191512;
+  --ink-3: #221b16;
+  --ink-4: #2e241d;
+  --ink-line: rgba(228, 184, 74, 0.16);
+  --ink-line-strong: rgba(228, 184, 74, 0.34);
+
+  /* —— 主色 —— */
+  --cinnabar: #c23a2b;
+  --cinnabar-lit: #e0503c;
+  --cinnabar-deep: #7c1f16;
+  --gold: #e4b84a;
+  --gold-lit: #f7d98a;
+  --gold-deep: #a87c22;
+  --ice: #7ec8e3;
+  --ice-deep: #2f7f9c;
+  --thunder: #9b6bff;
+  --thunder-deep: #5b34ad;
+
+  /* —— 纸墨文字 —— */
+  --paper: #f3e6c5;
+  --paper-2: rgba(243, 230, 197, 0.72);
+  --paper-3: rgba(243, 230, 197, 0.48);
+  --paper-4: rgba(243, 230, 197, 0.26);
+
+  /* —— 品质 —— */
+  --q-common: #8f8b83;
+  --q-uncommon: #5fb87a;
+  --q-rare: #4d9de0;
+  --q-epic: #a266e8;
+  --q-legendary: #ef8f2d;
+  --q-mythic: #ff5d5d;
+
+  /* —— 元素 —— */
+  --el-fire: #ff7a3d;
+  --el-ice: #7ec8e3;
+  --el-thunder: #9b6bff;
+
+  /* —— 语义 —— */
+  --ok: #6cc48a;
+  --warn: #e8b552;
+  --bad: #e2705f;
+
+  /* —— 字体 —— */
+  --font-serif: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC",
+    "SimSun", "Times New Roman", ui-serif, serif;
+  --font-kai: "Kaiti SC", "STKaiti", "KaiTi", var(--font-serif);
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", "Segoe UI", Roboto,
+    sans-serif;
+  --font-num: "DIN Alternate", "Bahnschrift", "Avenir Next Condensed",
+    var(--font-sans);
+
+  /* —— 尺度 —— */
+  --shell-max: 430px;
+  --header-h: 92px;
+  --tabbar-h: 62px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+
+  /* —— 阴影 / 光 —— */
+  --sh-card: 0 2px 0 rgba(0, 0, 0, 0.55), 0 10px 26px -12px rgba(0, 0, 0, 0.9);
+  --sh-raise: 0 4px 18px -6px rgba(0, 0, 0, 0.85);
+  --glow-gold: 0 0 18px rgba(228, 184, 74, 0.42);
+  --glow-fire: 0 0 26px rgba(194, 58, 43, 0.5);
+
+  /* —— 动效 —— */
+  --t-fast: 140ms;
+  --t-mid: 260ms;
+  --t-slow: 480ms;
+  --ease-out: cubic-bezier(0.22, 0.9, 0.3, 1);
+  --ease-snap: cubic-bezier(0.16, 1.06, 0.3, 1.02);
+
+  /* —— 纹理 —— */
+  --tex-noise: url("../assets/textures/ink-noise.svg");
+  --tex-weave: url("../assets/textures/hemp-weave.svg");
+  --tex-yun: url("../assets/textures/yunwen.svg");
+}
+
+/* 品质 → 语义变量映射，供卡片统一取色 */
+[data-quality="common"] {
+  --q: var(--q-common);
+  --q-soft: rgba(143, 139, 131, 0.16);
+}
+[data-quality="uncommon"] {
+  --q: var(--q-uncommon);
+  --q-soft: rgba(95, 184, 122, 0.16);
+}
+[data-quality="rare"] {
+  --q: var(--q-rare);
+  --q-soft: rgba(77, 157, 224, 0.16);
+}
+[data-quality="epic"] {
+  --q: var(--q-epic);
+  --q-soft: rgba(162, 102, 232, 0.18);
+}
+[data-quality="legendary"] {
+  --q: var(--q-legendary);
+  --q-soft: rgba(239, 143, 45, 0.18);
+}
+[data-quality="mythic"] {
+  --q: var(--q-mythic);
+  --q-soft: rgba(255, 93, 93, 0.2);
+}
+
+[data-element="fire"] {
+  --el: var(--el-fire);
+}
+[data-element="ice"] {
+  --el: var(--el-ice);
+}
+[data-element="thunder"] {
+  --el: var(--el-thunder);
+}

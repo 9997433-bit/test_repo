@@ -1,31 +1,41 @@
-:root {
-  --ink: #0b0a09;
-  --cinnabar: #c23a2b;
-  --gold: #e4b84a;
-  --ice: #7ec8e3;
-  --thunder: #9b6bff;
-  --paper: #f3e6c5;
-}
+/* 兵器王者·炉火 — 样式入口
+   顺序敏感：tokens → base → layout → components → forge → views → motion */
 
-* { box-sizing: border-box; }
+@import url("./tokens.css");
+@import url("./base.css");
+@import url("./layout.css");
+@import url("./components.css");
+@import url("./forge.css");
+@import url("./views.css");
+@import url("./motion.css");
 
-html, body {
-  margin: 0;
-  min-height: 100%;
-  background: radial-gradient(ellipse at 50% 20%, #2a120e 0%, var(--ink) 55%);
-  color: var(--paper);
-  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
-}
-
-#app {
-  max-width: 430px;
-  margin: 0 auto;
-  min-height: 100dvh;
-  padding: 24px 16px;
-}
-
+/* 首屏引导（模块加载前可见） */
 .boot {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  min-height: 100dvh;
   text-align: center;
-  letter-spacing: 0.2em;
+}
+
+.boot__seal {
+  width: 46px;
+  height: 46px;
+  margin: 0 auto;
+  border-radius: 8px;
+  opacity: 0.9;
+}
+
+.boot__text {
+  font-family: var(--font-serif);
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
   color: var(--gold);
+  font-size: 13px;
+}
+
+.boot__hint {
+  font-size: 11px;
+  color: var(--paper-3);
+  letter-spacing: 0.1em;
 }
