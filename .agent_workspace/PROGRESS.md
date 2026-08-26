@@ -30,7 +30,7 @@
 
 - Round 1：已完成（10/10 已合入工作分支）
 - Round 2：已完成（10/10 已合入工作分支）
-- Round 3：进行中（SOTA 打磨，云端仍限 3 VM）
+- Round 3：已完成（10/10 已合入工作分支）
 
 ## Round 1 派发记录
 
@@ -128,8 +128,29 @@
 
 - Fable-2 夜幕单源已合入 `56fc7e3`：CSS `--night-ink` + `html[data-phase]` 全量 0.14/0.3；画布 `drawWeatherOverlay` 尾部 `day < -0.05` 整幅夜色仍在，属 Opus-1 地界催办。
 - Fable-3 事件/居民/B30 已在工作分支（`9468e32`/`9562878`/`5611a96`）。父机已 `vitest -u` 重录「满编挑战终局 Boss」：潮汐领主 maxHp 4241→6696，满编★5 仍胜但 8 回合 5 残变为 11 回合 4 残（山姆阵亡）。`npm test` 40/40，`probe` 8/8。
-- 已派出 Opus-3 终局接口 `bc-855f3193-1aba-5438-9042-37af9dafb631`（只写 heroes/combat，落地 `resolveRaid`）。
+- Opus-3 终局接口已合入 `ac74744`：`resolveRaid` / `previewRaid` / `runRaid` 纯函数，失败返回原引用。
 - Opus-2 海区收口已合入 `2737f01`：`diveDrain` 单源、`canDive` 终检 `E_BUSY`、`finishDive` 按 `diveRecord.settled` 幂等。契约 `E_BUSY`/`runId`/`settled` 待 Fable-1 收编。
+
+### Round 3 结论简报
+
+**演进对比**
+- 巡检闭环：`stepSim` 挂伤病/天气/潜水结账；normalize 收编图鉴/cast/diveRecord。
+- 探索：氧耗单源、海区拒绝带 need/have、`finishDive` 幂等；鱼屏走 `beginCast`/`hookCast`，图鉴与海区选择入 UI。
+- 战斗：B30 终局墙成立（★2/★3 0/128，★4 118/128）；`raidWave` + `resolveRaid` 可被 tick/UI 直接调用。
+- 社会表：EVENTS/RESIDENT_RULES/商栈 trades/perk 机读结构齐，但 tick/电台仍未接线。
+- 夜幕：CSS `--night-ink` + `html[data-phase]` 单源全量；画布仍自叠 `day < -0.05` 整幅夜色。
+- 门禁：40 单测、8 probe、bench/stress 绿；Boss 快照已按新 B30 重录。
+
+**仍开的债**
+- N10/N11：事件/居民/coins 表齐、消费未进 `stepSim`；`world.event` normalize 仍钳 string|null。
+- 画布夜幕双层、木纹/粒子预算、`skin.js` 半量夜幕死代码。
+- 契约未收编 `E_BUSY`/`runId`/`settled`/`resolveRaid`；heroes 门面 → combat 叶子需补 ARCHITECTURE 边。
+- e2e 未进 `npm test`；图鉴筛选、软目标进度、全员养伤加速、键盘拾荒/建造仍缺。
+
+**三轮总览**
+- Round 1：独立目录可玩基线（六屏、表、战斗、17 测）。
+- Round 2：P0 闭环（表驱动、5v5、伤病/首通、HUD）。
+- Round 3：SOTA 打磨（巡检/存档/海区/夜幕/B30 墙/袭击接口）。可玩一条龙在，社会系统与画布单源仍差最后一截接线。
 
 ## Round 3 派发记录
 
@@ -141,7 +162,7 @@
 | Fable-4 终验 | 已完成 · 文档已合入 `faf3af6` | `bc-228a10a2-038e-5d71-9efb-9b0467d7042f` |
 | Opus-1 量子巡检 | 已完成 · 已合并 `cursor/r3-opus1-quantum-patrol-and-save-normalize-18ac` | `bc-d42ff8c8-646c-5173-bf98-e1ccb3d318ac` |
 | Opus-2 海区收口 | 已完成 · 已合并 `cursor/r3-opus2-dive-closeout-44e7` | `bc-12ca2af4-5d0b-5170-bb85-3304022144e7` |
-| Opus-3 终局接口 | 运行中 | `bc-855f3193-1aba-5438-9042-37af9dafb631` |
+| Opus-3 终局接口 | 已完成 · 已合并 `cursor/r3-opus3-raid-resolver-c895` | `bc-855f3193-1aba-5438-9042-37af9dafb631` |
 | Opus-4 契约鱼屏 | 已完成 · 已合并 `cursor/cww-r3-fish-dive-ui-dc04` | `bc-bd06dcac-7146-5d39-9e5e-2b1848a8dc04` |
 | GPT-sol-1 天气伤病测 | 已完成 · 已合入 `665977a`（40 测） | `bc-642fb9d2-a722-5646-a6c6-6e188b0fa3bc` |
 | GPT-sol-2 终局门禁 | 已完成 · 已合并 `cursor/bench-stress-r3-44f1` | `bc-3c95f856-75bd-52a6-a6df-5a3c7e3044f1` |
