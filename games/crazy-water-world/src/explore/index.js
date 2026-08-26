@@ -35,6 +35,7 @@ export {
   canDive,
   diveZones,
   diveStep,
+  diveDrain,
   finishDive,
   beginDive,
   advanceDive,

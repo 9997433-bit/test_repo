@@ -5,13 +5,15 @@
 import { WEATHERS } from "../data/weather.js";
 
 // 探索侧的失败码。前四个沿用 core/reasons.js 的码面（那张表归 world/core，
-// 这里只引用字符串，不反向 import）；E_WEATHER 是探索独有的天气封锁。
+// 这里只引用字符串，不反向 import）；E_WEATHER（天气封锁）与 E_BUSY（这条线已经有一场
+// 没收尾的活儿：人还在水下）是探索独有的两条。
 export const EXPLORE_REASON = {
   REQUIRES_BUILDING: "E_REQUIRES_BUILDING",
   LOCKED: "E_LOCKED",
   UNKNOWN_TYPE: "E_UNKNOWN_TYPE",
   NOT_FOUND: "E_NOT_FOUND",
   WEATHER: "E_WEATHER",
+  BUSY: "E_BUSY",
 };
 
 function num(v, fallback) {
