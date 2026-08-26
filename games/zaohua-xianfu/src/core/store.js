@@ -4,7 +4,7 @@ import { ARTIFACTS, ARTIFACT_DROPS, artifactById } from "../data/artifacts.js";
 import { canPlace, countType } from "../mansion/layout.js";
 import { produce } from "../mansion/production.js";
 import { makeDisciple, trainCost, canTrain, applyTrain } from "../disciples/roster.js";
-import { scriptureXp } from "../disciples/train.js";
+import { grantScriptureXp } from "./study.js";
 import { breakthroughChance, applyCultivate, applyBreakthrough, canCultivate } from "../progression/realm.js";
 import { challengeTower, towerReward } from "../combat/tower.js";
 import { challengeWave, waveReward } from "../combat/wave.js";
@@ -184,7 +184,8 @@ export function reduce(state, action) {
       return {
         ...state,
         resources: addRes(state.resources, produce(state, dt)),
-        disciples: scriptureXp(state, dt),
+        // 修业只涨 xp：满条即「可晋阶」，升 profession 仍须 TRAIN 付丹药灵草（AD-17）。
+        disciples: grantScriptureXp(state, dt),
         meta: { ...state.meta, lastTick: now },
       };
     }
