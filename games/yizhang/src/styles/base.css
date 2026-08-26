@@ -27,8 +27,8 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  /* 禁伪粗体：小薇仅 400，合成加粗会把小字号汉字糊成墨块；
-     Rajdhani 有真 500/600 不受影响 */
+  /* 禁伪粗体：系统栈里 SimSun/STSong 等宋体只有单字重，
+     合成加粗会把小字号汉字糊成墨块；就近匹配真字面即可 */
   font-synthesis: none;
 }
 

@@ -40,7 +40,7 @@ describe("falls and respawning", () => {
     );
   });
 
-  it("lets an unsupported rim crossing fall before starting its respawn", () => {
+  it("starts respawning as soon as an unsupported rim crossing is detected", () => {
     const state = createMatch({
       seed: 201,
       gloveId: "cotton",
@@ -57,12 +57,6 @@ describe("falls and respawning", () => {
     player.grounded = false;
 
     step(state, {}, DT);
-    expect(player.alive).toBe(true);
-
-    for (let frame = 0; frame < 120 && player.alive; frame += 1) {
-      step(state, {}, DT);
-    }
-
     expect(player.alive).toBe(false);
     expect(player.deaths).toBe(deathsBefore + 1);
 
