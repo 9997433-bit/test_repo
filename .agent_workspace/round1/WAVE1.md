@@ -16,4 +16,4 @@
 | O3 | 英雄养成 | `claude-opus-5-thinking-high-fast` | `bc-de6699f1-d9c3-5a52-b765-ff406d24345f` | 隔离 worktree |
 | O4 | UI 主循环 | `claude-opus-5-thinking-high-fast` | `bc-2d9ca79e-dcde-5144-9199-927a4f8c6bf2` | 隔离 worktree |
 | G1 | 单测探针 | `gpt-5.6-sol-xhigh-fast` | `bc-7f6d3f6b-212c-5418-b8ce-e626e43a0d3b` | 云端 VM · 已完成并合入 `ac5d643` |
-| G2 | 基准脚本 | `gpt-5.6-sol-xhigh-fast` | `bc-129187bb-2bed-5b72-9993-0d3c0ef70170` | 云端 VM |
+| G2 | 基准脚本 | `gpt-5.6-sol-xhigh-fast` | `bc-129187bb-2bed-5b72-9993-0d3c0ef70170` | 云端 VM · 已完成并合入 `1fa2da2` |
