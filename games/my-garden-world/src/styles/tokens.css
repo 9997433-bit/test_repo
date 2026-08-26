@@ -97,6 +97,20 @@
   --grain-opacity: 0.05;
   --grain-blend: multiply;
 
+  /* ---- 场景 · 庭院摆件（廊下挂牌，见 VISUAL.md §摆件层） ---- */
+  --decor-cord: var(--c-vermilion);   /* 挂绳与绳结 */
+  --decor-glyph: var(--c-vermilion);  /* 牌面首字（印字） */
+  --decor-rim: rgba(179, 130, 46, 0.5);  /* 泥金牌沿 */
+  --decor-glow: rgba(255, 214, 118, 0);  /* 夜里点灯用，白日透明 */
+  --theme-wash: transparent;          /* 装扮主题晕染，由 [data-theme] 提供 */
+
+  /* ---- 场景 · 花灵（默认玉色；具体灵由 [data-spirit] 覆写） ---- */
+  --spirit-a: var(--c-jade-soft);
+  --spirit-b: var(--c-jade);
+  --spirit-ink: var(--c-jade);
+  /* --spirit-glyph / --spirit-display 仅由 [data-spirit="…"] 提供，
+     缺省时驻园伪元素 display 回退为 none，不渲染任何东西。 */
+
   /* ---- 刻度 · 圆角 ---- */
   --radius-s: 9px;
   --radius-m: 13px;
@@ -109,6 +123,7 @@
   --z-chrome: 2;
   --z-petals: 3;
   --z-sheet: 5;
+  --z-coach: 6;
   --z-modal: 7;
   --z-toast: 9;
   --z-grain: 11;
@@ -247,6 +262,10 @@
   --grain-opacity: 0.08;
   --grain-blend: soft-light;
 
+  /* 夜里挂牌点灯 */
+  --decor-glow: rgba(232, 183, 90, 0.3);
+  --decor-rim: rgba(193, 149, 62, 0.42);
+
   /* 夜里的泥金与玉 */
   --c-gold: #c1953e;
   --c-gold-hi: #d0a94e;
@@ -260,4 +279,107 @@
   --paper: #2c3547;
   --paper-deep: #222b3b;
   --shadow: var(--shadow-deep);
+}
+
+/* ============================================================
+   装扮主题 [data-theme]（春晓/盛夏/秋宴/冬雪/墨雅）
+   只覆写主题专属变量（--theme-wash / --decor-*），不碰语义层与场景层，
+   因此声明在夜色块之后也不会打架；组件消费时一律
+   color-mix(…, var(--text)) 掺墨，昼夜自动适配。
+   同一选择器双重职责：
+   1) 挂在 #app 上 → 全局主题（花笺晕染 + 全部挂牌换色）；
+   2) 挂在单个 .decor-chip 上 → 该摆件按自己的 theme 字段着色。
+   ============================================================ */
+
+[data-theme="spring"] {
+  /* 春晓 · 桃夭 */
+  --theme-wash: rgba(206, 110, 140, 0.09);
+  --decor-cord: #c26480;
+  --decor-glyph: var(--c-plum);
+  --decor-rim: rgba(194, 100, 128, 0.45);
+}
+
+[data-theme="summer"] {
+  /* 盛夏 · 石青荷风 */
+  --theme-wash: rgba(51, 88, 126, 0.08);
+  --decor-cord: var(--c-azure);
+  --decor-glyph: var(--c-lapis);
+  --decor-rim: rgba(60, 95, 150, 0.4);
+}
+
+[data-theme="autumn"] {
+  /* 秋宴 · 赭金 */
+  --theme-wash: rgba(138, 90, 43, 0.1);
+  --decor-cord: var(--c-ochre);
+  --decor-glyph: var(--c-ochre);
+  --decor-rim: rgba(179, 130, 46, 0.55);
+}
+
+[data-theme="winter"] {
+  /* 冬雪 · 青瓷 */
+  --theme-wash: rgba(125, 160, 180, 0.12);
+  --decor-cord: #7d99a8;
+  --decor-glyph: #4e6b7a;
+  --decor-rim: rgba(125, 153, 168, 0.5);
+}
+
+[data-theme="ink"] {
+  /* 墨雅 · 焦墨泥金 */
+  --theme-wash: rgba(45, 37, 26, 0.06);
+  --decor-cord: var(--c-ink-nong);
+  --decor-glyph: var(--c-ink-jiao);
+  --decor-rim: rgba(45, 37, 26, 0.4);
+}
+
+/* ============================================================
+   花灵 [data-spirit]（菊月/池光/虹蝶/雪衣/岁灯）
+   同一选择器双重职责：
+   1) 挂在 #app 上 → 点亮 .stage 驻园灵玉（--spirit-display: grid）；
+   2) 挂在花灵面板的 .card 上 → 灵牌首字与灵光按该灵着色。
+   未知/空 id 不命中任何块 → 驻园层保持 display:none，优雅降级。
+   ============================================================ */
+
+[data-spirit="juyue"] {
+  /* 菊月 · 霜菊泥金 */
+  --spirit-a: #e3b455;
+  --spirit-b: #a8742d;
+  --spirit-ink: var(--c-ochre);
+  --spirit-glyph: "菊";
+  --spirit-display: grid;
+}
+
+[data-spirit="chiguang"] {
+  /* 池光 · 石青水色 */
+  --spirit-a: #7db5d8;
+  --spirit-b: var(--c-lapis);
+  --spirit-ink: var(--c-azure);
+  --spirit-glyph: "池";
+  --spirit-display: grid;
+}
+
+[data-spirit="rainbow"] {
+  /* 虹蝶 · 胭脂过玉 */
+  --spirit-a: #c084ad;
+  --spirit-b: var(--c-jade);
+  --spirit-ink: var(--c-plum);
+  --spirit-glyph: "蝶";
+  --spirit-display: grid;
+}
+
+[data-spirit="xueyi"] {
+  /* 雪衣 · 青瓷落雪 */
+  --spirit-a: #dce9ec;
+  --spirit-b: #8fb0bc;
+  --spirit-ink: #5d7d8a;
+  --spirit-glyph: "雪";
+  --spirit-display: grid;
+}
+
+[data-spirit="suideng"] {
+  /* 岁灯 · 朱金长明 */
+  --spirit-a: var(--c-gold-hi);
+  --spirit-b: var(--c-vermilion);
+  --spirit-ink: var(--c-vermilion);
+  --spirit-glyph: "灯";
+  --spirit-display: grid;
 }

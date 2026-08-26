@@ -32,7 +32,7 @@ button { font-family: var(--font-body); }
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: var(--z-scene);
   pointer-events: none;
   background:
     linear-gradient(180deg, transparent 44%, var(--mist) 57%, transparent 72%),
@@ -48,7 +48,7 @@ button { font-family: var(--font-body); }
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 11;
+  z-index: var(--z-grain);
   pointer-events: none;
   opacity: var(--grain-opacity);
   mix-blend-mode: var(--grain-blend);
@@ -56,10 +56,11 @@ button { font-family: var(--font-body); }
   background-size: 200px 200px;
 }
 
-.hud, .stage, .dock { position: relative; z-index: 3; }
+.hud, .dock { position: relative; z-index: var(--z-chrome); }
+.stage { position: relative; z-index: var(--z-stage); }
 
 /* ---------- 天空：晨昏过渡层（夜色底色已由 tokens 的 data-night 变量承担） ---------- */
-.sky { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.sky { position: absolute; inset: 0; z-index: var(--z-scene); pointer-events: none; overflow: hidden; }
 .sky::before {
   /* 晨昏暖色 */
   content: "";
@@ -143,6 +144,7 @@ button { font-family: var(--font-body); }
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
   box-shadow: 0 2px 0 var(--shadow);
   white-space: nowrap;
 }
@@ -155,17 +157,71 @@ button { font-family: var(--font-body); }
   touch-action: none;
 }
 .app[data-tool="water"] .stage { cursor: crosshair; }
-.decor-row { display: flex; gap: 8px; justify-content: center; min-height: 34px; margin-bottom: 4px; flex-wrap: wrap; }
-.decor-chip {
-  background: color-mix(in srgb, var(--paper) 72%, #fff);
-  border: 1px dashed var(--gold);
-  border-radius: 8px;
-  padding: 3px 8px;
-  font-family: var(--font-display);
-  font-size: 14px;
+
+/* ---------- 庭院摆件层：廊下挂牌 ----------
+   摆件安置后以「檐下挂牌」入景：朱绳系结、纸木牌面、印字放大、随风轻曳。
+   牌面首字（glyph）用 ::first-letter 放大设色——无需渲染层配合；
+   per-摆件主题色靠 chip 上的 [data-theme]（见 VISUAL.md 接线契约）。 */
+.decor-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 48px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
 }
+.decor-chip {
+  position: relative;
+  display: inline-block;
+  margin-top: 13px; /* 给挂绳留行程 */
+  padding: 4px 9px 5px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+  background:
+    radial-gradient(120% 100% at 100% 100%, var(--theme-wash), transparent 62%),
+    linear-gradient(174deg, var(--surface-hi), var(--surface-2));
+  border: 1px solid var(--line-strong);
+  border-radius: 4px 4px 8px 8px;
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    inset 0 0 0 2px color-mix(in srgb, var(--decor-rim) 45%, transparent),
+    0 3px 6px var(--shadow-soft),
+    0 0 16px var(--decor-glow);
+  transform-origin: 50% -14px; /* 以绳结为轴摆动 */
+  animation: plaque-sway 6.4s ease-in-out infinite;
+}
+/* 挂绳 + 绳结 */
+.decor-chip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -13px;
+  width: 8px;
+  height: 14px;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(circle 3px at 50% 76%, var(--decor-cord) 0 96%, transparent 100%),
+    linear-gradient(var(--decor-cord), var(--decor-cord)) 50% 0 / 2px 100% no-repeat;
+}
+/* 牌面印字：文本首字即 glyph（「灯 纱灯」→「灯」） */
+.decor-chip::first-letter {
+  font-size: 1.55em;
+  color: color-mix(in srgb, var(--decor-glyph) 72%, var(--text));
+  margin-right: 3px;
+}
+.decor-chip:nth-child(2n) { animation-duration: 7.6s; animation-delay: -2.4s; }
+.decor-chip:nth-child(3n) { animation-duration: 8.8s; animation-delay: -4.1s; }
+@keyframes plaque-sway {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(1.7deg); }
+  70% { transform: rotate(-1.3deg); }
+}
+
 .garden {
-  height: calc(100% - 38px);
+  height: calc(100% - 52px);
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   gap: 14px;
@@ -191,6 +247,25 @@ button { font-family: var(--font-body); }
 }
 .plot:hover { transform: perspective(420px) rotateX(7deg) translateY(-4px); }
 .plot.is-selected { box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--gold), inset 0 -8px 14px rgba(0, 0, 0, 0.22); }
+/* 选中盖「选」印（左上，避开右上水滴徽标） */
+.plot.is-selected::before {
+  content: "选";
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  color: var(--on-accent);
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 4px;
+  transform: rotate(-6deg);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 214, 0.4), 0 2px 4px var(--shadow-soft);
+  pointer-events: none;
+}
 .plot.is-wet {
   --soil-dry-hi: var(--soil-wet-hi);
   --soil-dry-lo: var(--soil-wet-lo);
@@ -261,6 +336,66 @@ button { font-family: var(--font-body); }
 .plot-bar { display: block; height: 4px; background: rgba(20, 12, 5, 0.7); border-radius: 4px; margin-top: 4px; overflow: hidden; }
 .plot-bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7ec8a3, #e7c56b); transition: width 0.3s linear; }
 
+/* ---------- 花灵驻园层 ----------
+   出战花灵以「灵玉」驻在花园右上：玉牌里一枚灵字，外罩灵光徐徐起伏。
+   零 DOM：全部画在 .stage 伪元素上；#app 挂 [data-spirit="…"] 即点亮
+   （--spirit-display/--spirit-glyph/--spirit-a·b 由 tokens 的灵块提供，
+   未接线或未知 id 时 display 回退 none）。 */
+.stage::before,
+.stage::after {
+  display: var(--spirit-display, none);
+  position: absolute;
+}
+.stage::after {
+  /* 灵玉本体 */
+  content: var(--spirit-glyph, "灵");
+  top: 54px;
+  right: clamp(12px, 4vw, 34px);
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 25px;
+  color: var(--on-accent);
+  text-shadow: 0 1px 3px rgba(32, 24, 13, 0.35);
+  background:
+    radial-gradient(circle at 30% 26%, rgba(255, 253, 244, 0.55), transparent 44%),
+    radial-gradient(circle at 50% 58%, var(--spirit-a), var(--spirit-b) 82%);
+  border: 2px solid color-mix(in srgb, var(--c-gold-pale) 75%, transparent);
+  border-radius: 50%;
+  box-shadow:
+    0 5px 12px var(--shadow-soft),
+    0 0 20px color-mix(in srgb, var(--spirit-a) 45%, transparent);
+  animation: spirit-bob 4.6s ease-in-out infinite;
+  z-index: 1;
+}
+.stage::before {
+  /* 灵光雾晕 */
+  content: "";
+  top: 34px;
+  right: calc(clamp(12px, 4vw, 34px) - 16px);
+  width: 88px;
+  height: 100px;
+  background:
+    radial-gradient(46% 38% at 50% 34%, color-mix(in srgb, var(--spirit-a) 30%, transparent), transparent 72%),
+    radial-gradient(26% 20% at 44% 78%, color-mix(in srgb, var(--spirit-b) 22%, transparent), transparent 74%);
+  filter: blur(3px);
+  animation: spirit-halo 5.8s ease-in-out infinite;
+}
+[data-night="1"] .stage::after {
+  box-shadow:
+    0 5px 12px var(--shadow-deep),
+    0 0 30px color-mix(in srgb, var(--spirit-a) 60%, transparent);
+}
+@keyframes spirit-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes spirit-halo {
+  0%, 100% { opacity: 0.65; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-6px); }
+}
+
 /* ---------- Dock ---------- */
 .dock {
   display: flex; gap: 14px; justify-content: center; align-items: stretch;
@@ -298,22 +433,47 @@ button { font-family: var(--font-body); }
   55% { box-shadow: 0 3px 0 var(--shadow), 0 0 0 9px rgba(244, 211, 94, 0); }
 }
 
+/* 窄屏 dock 单行横滑：两端渐隐遮罩；不满一屏时 margin:auto 仍居中 */
+@media (max-width: 1020px) {
+  .dock {
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  }
+  .dock::-webkit-scrollbar { display: none; }
+  .dock-group:first-child { margin-left: auto; }
+  .dock-group:last-child { margin-right: auto; }
+  .dock-btn { scroll-snap-align: start; }
+}
+
 /* ---------- 面板 ---------- */
+/* 花笺：纸底 + 描金双框（border + 内缩 outline）+ 左上玉晕/右下朱晕 + 主题晕染 */
 .sheet, .modal-card {
-  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  background:
+    radial-gradient(130% 110% at 0% 0%, var(--wash-cool), transparent 55%),
+    radial-gradient(130% 110% at 100% 100%, var(--wash-warm), transparent 55%),
+    radial-gradient(120% 100% at 50% 0%, var(--theme-wash), transparent 58%),
+    color-mix(in srgb, var(--paper) 94%, transparent);
   border: 1px solid var(--gold);
+  outline: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  outline-offset: -5px;
   border-radius: var(--radius);
-  box-shadow: 0 16px 40px var(--shadow);
+  box-shadow: 0 16px 40px var(--shadow), inset 0 1px 0 var(--edge-hi);
   backdrop-filter: blur(8px);
 }
 .sheet {
   position: absolute;
   left: 12px; right: 12px;
   bottom: calc(var(--dock-clear) + var(--safe-b));
+  max-width: 720px;
+  margin-inline: auto;
   max-height: 52%;
   overflow: auto;
   padding: 0 14px 14px;
-  z-index: 5;
+  z-index: var(--z-sheet);
   animation: sheetup 0.24s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 @keyframes sheetup {
@@ -330,7 +490,19 @@ button { font-family: var(--font-body); }
   z-index: 1;
   backdrop-filter: blur(8px);
 }
-.sheet-head h3 { margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 400; }
+.sheet-head h3 { position: relative; margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 400; }
+/* 标题朱砂扫尾 */
+.sheet-head h3::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  bottom: -4px;
+  width: 2.3em;
+  height: 4px;
+  border-radius: 999px 3px 3px 999px;
+  background: linear-gradient(90deg, var(--accent) 30%, transparent);
+  opacity: 0.75;
+}
 .sheet button, .modal-card button, .themes button {
   border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--ink));
   background: var(--paper);
@@ -359,6 +531,22 @@ button { font-family: var(--font-body); }
 .card.is-on { outline: 2.5px solid var(--vermilion); }
 .card.owned { opacity: 0.55; }
 .muted { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+
+/* 花灵面板灵牌：请灵卡（带 aria-pressed 的 .card）首字放大作灵字，
+   出战卡罩一圈灵光。卡片挂 [data-spirit] 后（接线契约见 VISUAL.md），
+   灵字与灵光即按该灵的 --spirit-* 着色，未挂时回退玉色。 */
+.card[aria-pressed] h4 { display: block; }
+.card[aria-pressed] h4::first-letter {
+  font-family: var(--font-display);
+  font-size: 1.9em;
+  color: color-mix(in srgb, var(--spirit-ink, var(--c-jade)) 74%, var(--text));
+  margin-right: 4px;
+}
+.card[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--spirit-a) 60%, transparent),
+    0 0 18px color-mix(in srgb, var(--spirit-a) 28%, transparent);
+}
 
 .seed-dot {
   display: inline-block; width: 14px; height: 14px; border-radius: 50%;
@@ -421,20 +609,39 @@ button { font-family: var(--font-body); }
 
 /* ---------- 教程 ---------- */
 .modal {
-  position: absolute; inset: 0; z-index: 10;
+  position: absolute; inset: 0; z-index: var(--z-modal);
   display: grid; place-items: center;
   padding: 24px;
-  background: rgba(26, 18, 10, 0.44);
+  background: var(--backdrop-dim);
   backdrop-filter: blur(3px);
   animation: fadein 0.3s ease;
 }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 .modal-card {
+  position: relative;
   max-width: 460px;
   padding: 22px 24px;
   display: grid; gap: 12px;
   animation: sheetup 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
+/* 卷轴告示：上下檀木轴头 */
+.modal-card::before, .modal-card::after {
+  content: "";
+  position: absolute;
+  left: -12px;
+  right: -12px;
+  height: 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--c-wood) 78%, white) 0%,
+    var(--c-wood) 45%,
+    color-mix(in srgb, var(--c-wood) 55%, black) 100%
+  );
+  border-radius: 999px;
+  box-shadow: 0 2px 5px var(--shadow-deep);
+}
+.modal-card::before { top: -7px; }
+.modal-card::after { bottom: -7px; }
 .modal-card h2 { font-family: var(--font-display); margin: 0; font-weight: 400; font-size: 30px; }
 .modal-card p { margin: 0; line-height: 1.8; }
 .modal-card .step-label { font-size: 12px; letter-spacing: 0.14em; }
@@ -445,7 +652,7 @@ button { font-family: var(--font-body); }
   position: absolute;
   left: 50%; transform: translateX(-50%);
   bottom: calc(var(--dock-clear) + 10px + var(--safe-b));
-  z-index: 6;
+  z-index: var(--z-coach);
   display: flex; align-items: center; gap: 8px;
   background: color-mix(in srgb, var(--paper) 94%, transparent);
   border: 1px solid var(--gold);
@@ -469,12 +676,14 @@ button { font-family: var(--font-body); }
 /* ---------- Toast ---------- */
 .toast-wrap {
   position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
-  display: grid; gap: 6px; z-index: 8; pointer-events: none;
+  display: grid; gap: 6px; z-index: var(--z-toast); pointer-events: none;
   justify-items: center;
 }
+/* 墨签：墨底金边胶囊 */
 .toast {
-  background: #2b2118; color: #f4e6c8; padding: 6px 14px; border-radius: 999px;
+  background: var(--c-ink-nong); color: var(--c-paper); padding: 6px 14px; border-radius: 999px;
   font-size: 13px; opacity: 0.96;
+  border: 1px solid color-mix(in srgb, var(--c-gold) 55%, transparent);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
   animation: toastin 0.25s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
@@ -483,7 +692,7 @@ button { font-family: var(--font-body); }
 .toast.warn { background: #6b3a1f; }
 
 /* ---------- 环境粒子 ---------- */
-.petals { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
+.petals { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: var(--z-petals); }
 .particle { position: absolute; top: -4%; display: block; }
 .p-petal { width: 10px; height: 14px; border-radius: 12px 2px; opacity: 0.78; animation: fall linear infinite; }
 .p-leaf { width: 13px; height: 9px; border-radius: 2px 10px; opacity: 0.85; animation: fall-tumble linear infinite; }
@@ -524,17 +733,14 @@ button { font-family: var(--font-body); }
   :root { --dock-clear: 96px; }
   .brand { font-size: 20px; }
   .pill { font-size: 11px; padding: 3px 8px; }
-  .garden { gap: 9px; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); }
+  .decor-row { gap: 8px; min-height: 42px; }
+  .decor-chip { font-size: 12px; margin-top: 11px; }
+  .garden { height: calc(100% - 46px); gap: 9px; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); }
   .plot-name { font-size: 10px; }
-  .dock {
-    justify-content: flex-start;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x proximity;
-    gap: 10px;
-  }
-  .dock::-webkit-scrollbar { display: none; }
-  .dock-btn { min-width: 56px; scroll-snap-align: start; }
+  .stage::after { top: 46px; width: 46px; height: 46px; font-size: 21px; }
+  .stage::before { top: 30px; width: 70px; height: 80px; }
+  .dock { gap: 10px; }
+  .dock-btn { min-width: 56px; }
   .dock-btn .seal { width: 42px; height: 42px; font-size: 22px; }
   .sheet { left: 8px; right: 8px; max-height: 56%; }
   .modal { padding: 14px; }
@@ -542,11 +748,32 @@ button { font-family: var(--font-body); }
   .grid.orders { grid-template-columns: 1fr; }
 }
 
-/* ---------- 减少动态 ---------- */
+/* ---------- 减少动态 ----------
+   三段策略：全局钳制到 0.01ms；装饰性循环层直接关停或隐藏
+   （负延迟循环被钳短会闪帧）；靠动画传达的状态提示换成静态替身。 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 花瓣层双保险：particles.ts 不再挂粒子，这里同时隐藏整层 */
+  .petals { display: none; }
+  /* 循环装饰关停：挂牌摆动、灵玉起伏、教程气泡浮动、花枝摇曳 */
+  .decor-chip,
+  .stage::before,
+  .stage::after,
+  .coach,
+  .plot-art svg .sway,
+  .plot-art svg .glow { animation: none !important; }
+  /* 静态替身：盛放提示（breathe）→ 常亮金环 + 光晕 */
+  .plot.is-ready {
+    box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), 0 0 18px 4px var(--bloom-halo), inset 0 0 0 3px var(--focus);
+  }
+  /* 静态替身：教程目标脉冲（coachring）→ 常亮藤黄描边 */
+  .dock-btn.coach-target .seal {
+    box-shadow: 0 3px 0 var(--shadow), 0 0 0 4px color-mix(in srgb, var(--focus) 55%, transparent);
   }
 }
