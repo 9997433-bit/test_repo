@@ -9,6 +9,7 @@ import {
   wiringStatus,
 } from "./core/modules.js";
 import { createLoop } from "./core/loop.js";
+import { hitStopForEvents } from "./core/juice.js";
 import { lerpView } from "./core/interp.js";
 import { createQualityProbe } from "./core/quality.js";
 import { loadSave, updateSave, recordMatch, unlockGlove, SAVE_KEY } from "./core/storage.js";
@@ -326,6 +327,11 @@ async function boot() {
           break;
       }
     }
+
+    // 手感：本人参与的扇击命中给一记极短定格。同帧多段只停一次，
+    // 连段之间还有冷却兜着；画面反馈仍是 HUD 那层去饱和，不加红晕。
+    const stop = hitStopForEvents(view.events, SELF_ID);
+    if (stop > 0) loop.hold(stop);
   }
 
   function evaluateUnlocks(won) {
