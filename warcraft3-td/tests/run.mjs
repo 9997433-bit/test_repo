@@ -39,6 +39,26 @@ function almost(a, b, msg) {
   assert(Math.abs(a - b) < 1e-6, msg + " (" + a + " vs " + b + ")");
 }
 
+function testCreep(id, x, y) {
+  return {
+    id: id,
+    x: x,
+    y: y,
+    hp: 1000,
+    armor: 0,
+    armorType: "unarmored",
+    flying: false,
+    spellImmune: false,
+  };
+}
+
+function resolveProjectile(game, projectile, creeps) {
+  game.creeps = creeps;
+  game.projectiles = [projectile];
+  game._rebuildHash();
+  game._tickProjectiles(0);
+}
+
 console.log("Azeroth Keep TD — tests");
 
 console.log("\n[damage table]");
@@ -64,6 +84,13 @@ assert(S.sellRefund(200, 0.75) === 150, "75% of 200 = 150");
 assert(S.nextInterestRate(0.02, 3) === 0.08, "interest cap 8%");
 const eco = S.createEconomy("easy");
 assert(eco.gold === 160 && eco.lives === 30, "easy start gold/lives");
+const interestGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 11 });
+interestGame.gold = 100;
+interestGame.update(15);
+assert(
+  interestGame.gold === 102 && interestGame.goldEarned === 2 && interestGame.interestAcc === 0,
+  "update(15) awards 2% interest"
+);
 
 console.log("\n[path / leak]");
 const path = [
@@ -93,12 +120,60 @@ assert(g.lives === 30, "easy lives");
 const t = g.tryBuild("h_guard", 3 * 48 + 24, 5 * 48 + 24);
 assert(!!t, "placed guard tower off-path");
 assert(g.gold === 160 - 70, "gold deducted");
+const beforeOverlap = g.gold;
+assert(
+  g.tryBuild("h_guard", 3 * 48 + 24, 5 * 48 + 24) === false &&
+    g.gold === beforeOverlap &&
+    g.towers.length === 1,
+  "cannot build overlapping towers"
+);
 assert(g.tryBuild("h_guard", 0 * 48 + 24, 3 * 48 + 24) === false, "cannot build on path");
-g.gold += 200;
-const up = g.upgradeSelected();
-assert(up === true, "upgrade T1->T2");
+g.gold += 300;
+const firstUpgrade = g.upgradeSelected();
+const secondUpgrade = g.upgradeSelected();
+assert(
+  firstUpgrade === true &&
+    secondUpgrade === true &&
+    t.tier === 3 &&
+    t.invested === 70 + 110 + 180,
+  "upgrade tower twice to tier 3"
+);
+const beforeSell = g.gold;
 const refund = g.sellSelected();
-assert(refund === Math.floor((70 + 110) * 0.75), "sell refund 75% of invested");
+const tierThreeRefund = Math.floor((70 + 110 + 180) * 0.75);
+assert(
+  refund === tierThreeRefund && g.gold === beforeSell + tierThreeRefund && g.towers.length === 0,
+  "sell after two upgrades refunds 75% of all invested gold"
+);
+
+const heroGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 12 });
+const manaBeforeCast = heroGame.hero.mana;
+const castManaCost = heroGame.hero.def.q.mana;
+assert(
+  heroGame.cast("q") === true && heroGame.hero.mana === manaBeforeCast - castManaCost,
+  "hero cast spends its mana cost"
+);
+heroGame.hero.cd.q = 0;
+heroGame.hero.mana = castManaCost - 1;
+assert(
+  heroGame.cast("q") === false && heroGame.hero.mana === castManaCost - 1,
+  "hero cannot cast without enough mana"
+);
+
+const lumberGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 13 });
+const lumberAfterClear = [];
+for (let cleared = 1; cleared <= 10; cleared++) {
+  lumberGame.startNextWave();
+  const wave = lumberGame.waves[lumberGame.waveIndex];
+  lumberGame.waveSpawned = wave.count;
+  lumberGame.creeps = [];
+  lumberGame.update(0);
+  lumberAfterClear.push(lumberGame.lumber);
+}
+assert(
+  JSON.stringify(lumberAfterClear) === JSON.stringify([0, 0, 0, 0, 1, 1, 1, 1, 1, 2]),
+  "simulated wave clears award one lumber every 5 waves"
+);
 
 const g2 = new globalThis.Game({ difficulty: "normal", heroId: "blademaster", lang: "zh", headless: true, seed: 7 });
 g2.startNextWave();
@@ -132,6 +207,65 @@ assert(S.canTowerHit({ canHitFlying: true, attackType: "pierce" }, { hp: 10, fly
 console.log("\n[splash helper]");
 const splash = S.splashDamage({ damage: 50, multiplier: 1.5 }, 0.4, 2);
 assert(splash.length === 3 && splash[1].damage === 20, "splash 40% on 2 extras");
+
+console.log("\n[projectile area effects]");
+const chainGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 14 });
+const chainPrimary = testCreep("chain-primary", 100, 100);
+const chainBounce = testCreep("chain-bounce", 130, 100);
+const chainFar = testCreep("chain-far", 240, 100);
+const chainSource = {
+  kind: "tower",
+  attackType: "magic",
+  canHitFlying: true,
+  slow: 0,
+  poison: 0,
+  root: 0,
+};
+resolveProjectile(chainGame, {
+  x: chainPrimary.x,
+  y: chainPrimary.y,
+  vx: 0,
+  vy: 0,
+  targetId: chainPrimary.id,
+  dmg: 100,
+  attackType: "magic",
+  splash: 0,
+  chain: 1,
+  source: chainSource,
+  life: 1,
+}, [chainPrimary, chainBounce, chainFar]);
+almost(chainPrimary.hp, 900, "chain lightning damages primary target");
+almost(chainBounce.hp, 930, "chain lightning bounces for 70% damage");
+almost(chainFar.hp, 1000, "chain lightning does not reach distant creep");
+
+const splashGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 15 });
+const splashPrimary = testCreep("splash-primary", 100, 100);
+const splashNearby = testCreep("splash-nearby", 130, 100);
+const splashFar = testCreep("splash-far", 180, 100);
+const splashSource = {
+  kind: "tower",
+  attackType: "siege",
+  canHitFlying: true,
+  slow: 0,
+  poison: 0,
+  root: 0,
+};
+resolveProjectile(splashGame, {
+  x: splashPrimary.x,
+  y: splashPrimary.y,
+  vx: 0,
+  vy: 0,
+  targetId: splashPrimary.id,
+  dmg: 100,
+  attackType: "siege",
+  splash: 48,
+  chain: 0,
+  source: splashSource,
+  life: 1,
+}, [splashPrimary, splashNearby, splashFar]);
+almost(splashPrimary.hp, 900, "splash projectile damages primary target");
+almost(splashNearby.hp, 960, "splash damages nearby creep for 40%");
+almost(splashFar.hp, 1000, "splash does not damage creep outside radius");
 
 console.log("\n" + passed + " passed, " + failed + " failed");
 if (failed) process.exit(1);
