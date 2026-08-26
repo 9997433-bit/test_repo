@@ -15,30 +15,30 @@ const LONE_B = glyph("飞");
 
 /** 两侧共用的落子矩阵：source / target 组合覆盖判定树的每条分支。 */
 const CASES = [
-  ["空手", null, dao(), "invalid", "empty-source"],
-  ["铲子", shovel(), dao(), "invalid", "shovel-needs-locked-cell"],
-  ["神兵符落空格", token(), null, "invalid", "token-needs-target"],
-  ["神兵符喂兵", token(), dao(2), "token", "shenbing"],
-  ["神兵符喂满级兵", token(), dao(5), "invalid", "token-target-not-upgradable"],
-  ["神兵符喂单字", token(), glyph("赵"), "invalid", "token-target-not-upgradable"],
-  ["同兵同级", dao(1), dao(1), "merge", "same-id-same-level"],
-  ["落空格", dao(1), null, "place", "empty-cell"],
-  ["同兵不同级", dao(1), dao(2), "swap", "level-mismatch"],
-  ["同兵满级", dao(5), dao(5), "swap", "max-level"],
-  ["异兵", dao(1), gong(1), "swap", "different-piece"],
-  ["单字挪位", LONE_A, LONE_B, "swap", "different-piece"],
-  ["兵压武将", dao(1), hero(), "swap", "different-piece"],
-  ["认不出的来源", { kind: "什么" }, dao(1), "invalid", "unknown-kind"],
-  ["目标是道具", dao(1), shovel(), "invalid", "target-is-card"],
+  { name: "空手", source: null, target: dao(), action: "invalid", reason: "empty-source" },
+  { name: "铲子", source: shovel(), target: dao(), action: "invalid", reason: "shovel-needs-locked-cell" },
+  { name: "神兵符落空格", source: token(), target: null, action: "invalid", reason: "token-needs-target" },
+  { name: "神兵符喂兵", source: token(), target: dao(2), action: "token", reason: "shenbing" },
+  { name: "神兵符喂满级兵", source: token(), target: dao(5), action: "invalid", reason: "token-target-not-upgradable" },
+  { name: "神兵符喂单字", source: token(), target: glyph("赵"), action: "invalid", reason: "token-target-not-upgradable" },
+  { name: "同兵同级", source: dao(1), target: dao(1), action: "merge", reason: "same-id-same-level" },
+  { name: "落空格", source: dao(1), target: null, action: "place", reason: "empty-cell" },
+  { name: "同兵不同级", source: dao(1), target: dao(2), action: "swap", reason: "level-mismatch" },
+  { name: "同兵满级", source: dao(5), target: dao(5), action: "swap", reason: "max-level" },
+  { name: "异兵", source: dao(1), target: gong(1), action: "swap", reason: "different-piece" },
+  { name: "单字挪位", source: LONE_A, target: LONE_B, action: "swap", reason: "different-piece" },
+  { name: "兵压武将", source: dao(1), target: hero(), action: "swap", reason: "different-piece" },
+  { name: "认不出的来源", source: { kind: "什么" }, target: dao(1), action: "invalid", reason: "unknown-kind" },
+  { name: "目标是道具", source: dao(1), target: shovel(), action: "invalid", reason: "target-is-card" },
 ];
 
 describe("classifyDrop", () => {
-  it.each(CASES)("%s → %s", (_name, source, target, action, reason) => {
+  it.each(CASES)("$name → $action", ({ source, target, action, reason }) => {
     expect(classifyDrop(source, target)).toEqual({ action, reason });
   });
 
   it("缺省与显式 board 来源逐字一致（旧调用方不受影响）", () => {
-    for (const [, source, target] of CASES) {
+    for (const { source, target } of CASES) {
       const base = classifyDrop(source, target);
       expect(classifyDrop(source, target, {})).toEqual(base);
       expect(classifyDrop(source, target, undefined)).toEqual(base);
@@ -48,7 +48,7 @@ describe("classifyDrop", () => {
   });
 
   it("手牌来源只在「本该换位」处改判，其余分支照旧", () => {
-    for (const [, source, target] of CASES) {
+    for (const { source, target } of CASES) {
       const board = classifyDrop(source, target);
       const hand = classifyDrop(source, target, { from: "hand" });
       if (board.action === "swap") {
@@ -71,8 +71,15 @@ function freshGame(seed) {
 const clone = (v) => (v == null ? null : { ...v });
 
 const KNOWN_KINDS = ["unit", "glyph", "hero", "shovel", "token"];
-/** 真实牌局里出得来的棋子；`rollRecruit` 只造这五类。 */
+/** 真实牌局里出得来的棋子；`rollRecruit` 只造这五类。认不出的怪牌另有一条用例记账。 */
 const isRealPiece = (p) => p == null || KNOWN_KINDS.includes(p.kind);
+/** 能停在棋格上的：道具从不驻留棋盘，那两条分支引擎另有处置，不在对拍范围。 */
+const staysOnBoard = (p) => isRealPiece(p) && p?.kind !== "token" && p?.kind !== "shovel";
+/** 能从手牌拖出来的：武将不是手牌，铲子走 useShovel，都不经 place。 */
+const comesFromHand = (p) => isRealPiece(p) && p != null && p.kind !== "hero" && p.kind !== "shovel";
+
+const BOARD_CASES = CASES.filter((c) => staysOnBoard(c.source) && staysOnBoard(c.target));
+const HAND_CASES = CASES.filter((c) => comesFromHand(c.source) && isRealPiece(c.target));
 
 /**
  * 与 core/game.js 对拍。
@@ -81,13 +88,15 @@ const isRealPiece = (p) => p == null || KNOWN_KINDS.includes(p.kind);
  * 这里让 classifyDrop 先预言，再看引擎实际怎么做，证明改读 action 是等价替换。
  */
 describe("classifyDrop 与 core/game.js 对拍", () => {
-  it.each(CASES)("merge()：%s", (_name, source, target) => {
-    // 棋盘上永远不会摆着神兵符：那条分支引擎另有处置，不在对拍范围。
-    if (source?.kind === "token" || target?.kind === "token") return;
-    if (source?.kind === "shovel" || target?.kind === "shovel") return;
-    // 认不出来的棋子两边不同调，单独一条用例记账。
-    if (!isRealPiece(source) || !isRealPiece(target)) return;
+  it("两张对拍矩阵都覆盖到该来源的每一种判定", () => {
+    expect(new Set(BOARD_CASES.map((c) => c.action))).toEqual(
+      new Set(["invalid", "merge", "place", "swap"]),
+    );
+    const handActions = HAND_CASES.map((c) => classifyDrop(c.source, c.target, { from: "hand" }).action);
+    expect(new Set(handActions)).toEqual(new Set(["invalid", "merge", "place", "token"]));
+  });
 
+  it.each(BOARD_CASES)("merge()：$name", ({ source, target }) => {
     const { api, side } = freshGame(101);
     const from = side.cells[6];
     const to = side.cells[7];
@@ -114,11 +123,7 @@ describe("classifyDrop 与 core/game.js 对拍", () => {
     }
   });
 
-  it.each(CASES)("place()：%s", (_name, source, target) => {
-    // 武将不是手牌，铲子走 useShovel，都不经 place。
-    if (source == null || source.kind === "hero" || source.kind === "shovel") return;
-    if (!isRealPiece(source) || !isRealPiece(target)) return;
-
+  it.each(HAND_CASES)("place()：$name", ({ source, target }) => {
     const { api, side } = freshGame(202);
     const cell = side.cells[7];
     cell.unit = clone(target);
