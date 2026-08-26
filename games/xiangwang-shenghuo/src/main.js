@@ -240,7 +240,7 @@ function reducer(state, action) {
 
 const loaded = readSave();
 const store = createStore(loaded?.state || createInitialState(), reducer);
-store.dispatch({ type: "meta/tick", payload: { dt: 0 } });
+// 离线结算必须抢在第一次 tick 前面：不然人不在家的那段枯萎倒计时会先被判死。
 if (loaded) {
   const before = store.getState();
   store.dispatch({ type: "meta/offline", payload: { savedAt: loaded.savedAt, now: Date.now() } });
@@ -249,6 +249,7 @@ if (loaded) {
     store.dispatch({ type: "meta/toast", payload: { text: "接着上次的日子过。" } });
   }
 }
+store.dispatch({ type: "meta/tick", payload: { dt: 0 } });
 
 const root = document.querySelector("#app");
 const seedOf = () => store.getState().ui?.seed || "rice";
