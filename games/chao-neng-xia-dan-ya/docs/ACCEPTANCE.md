@@ -1,4 +1,4 @@
-# 超能下蛋鸭 · 验收标准与步骤（Round 2 重评）
+# 超能下蛋鸭 · 验收标准与步骤（Round 3 复评）
 
 - 所有者：F4 SOTA 验收 · `claude-fable-5-thinking-xhigh`（本文件与 `SOTA_CHECKLIST.md` 独占写入）
 - 适用范围：`games/chao-neng-xia-dan-ya/` 全部交付；逐项 ID、L0/L1/L2 打分与缺陷登记见 `SOTA_CHECKLIST.md`
@@ -7,16 +7,16 @@
 ## 判定总则
 
 1. 每项按 `SOTA_CHECKLIST.md` 的 ID 给出 **L0 / L1 / L2**（等价于不通过 / 带条件通过 / 通过）。L1 必须登记缺陷与责任人。
-2. 自动化链（§1）是硬门槛：任何一步红即整轮判 L1 失败，无论手动体验多好。
-3. 数值口径以 `.agent_workspace/GDD.md` 为准；GDD 与实现冲突时，先改其一并同步单测，再验收（禁止「实现即标准」）。Round 2 已登记三处冲突：连击倍率、回收阈值、震屏幅度（见 `SOTA_CHECKLIST.md` §四）。
-4. 验收人不得修改实现代码；发现问题只登记缺陷并指派所有者。本轮登记的实装缺陷：暂停中 Esc 叠开弹窗（IN-07）、多点触控抢瞄准（IN-08）、`resolveHit` effects/comboDelta 未消费（R3-4）。
-5. **测试必须对准在用实现**：断言写在未接线模块上（如当前 TC-01 断言 `src/physics` 而战斗跑 `core/sim.js`）不计入对应 TC 项的通过证据。
+2. 自动化链（§1）是硬门槛：任何一步**命令级红**（退出码非 0，或自报 `ok`/`pass` 为 false）即整轮判 L1 失败；契约级缺口（如 probe 缺整回合字段）按对应 TC 项的 L1 缺陷登记。Round 3 教训：O2 收紧 `resolveHit` 契约后 probe 曾红过一轮（断言 `effects` 为空数组 vs 新契约恒非空），由 `c37272e` 修复——**改契约必须同轮改 probe/测试**。
+3. 数值口径以 `.agent_workspace/GDD.md` 与 `docs/API_CONTRACT.md` v1.1 为准；GDD 与实现冲突时，先改其一并同步单测，再验收（禁止「实现即标准」）。Round 2 登记的三处冲突现状：连击倍率**已裁决**（GDD「每层 +6%」实指暴伤，`CRIT_DMG_PER_STACK=0.06` 对齐；直殴双乘区由 F3 定稿并下调羁绊档）、回收阈值**已定稿**（物理 y>820 权威，游戏层停滞 45px/s 为策略层）、震屏幅度**仍开放**（22px vs 6px）。
+4. 验收人不得修改实现代码；发现问题只登记缺陷并指派所有者。本轮登记的实装缺陷：暂停中 Esc 叠开弹窗（IN-07，连续两轮未修）、多点触控抢瞄准（IN-08）、`resolveHit` effects/comboDelta 未消费与爆蛋双实现（R4-1）、bestiary `Math.random` 随机泄漏（PF-07）、`art.js` `"chick"` 键不命中（视觉）。
+5. **测试必须对准在用实现**：Round 3 起该条已满足——O4 切物理后 `src/physics` 即在用积分器，测试/probe/bench/stress 的被测对象与战斗链路一致（bench 自报 `implementation: "src/core/sim.js -> src/physics/index.js"`）。
 
 ## 0. 环境准备
 
 ```bash
 cd games/chao-neng-xia-dan-ya
-node --version        # 需 ≥ 20（Round 2 实测 v22.14.0）
+node --version        # 需 ≥ 20（Round 3 实测 v22.14.0）
 npm install
 ```
 
@@ -26,16 +26,16 @@ npm install
 
 | # | 命令 | 通过标准 | 关联 ID |
 | --- | --- | --- | --- |
-| A1 | `npm test` | 全绿；且必须包含对**在用实现**的 TC-01…TC-04 与 TC-06 断言 | TC-01…04 |
+| A1 | `npm test` | 全绿 0 skip；且必须包含对**在用实现**的 TC-01…TC-04 断言 | TC-01…04 |
 | A2 | `npm run probe` | 输出 JSON：`ok: true` 且含整回合字段 `shots ≥ 1`、`hits ≥ 1`、`waveCleared: true`；失败退出码非 0 | TC-06 |
-| A3 | `npm run bench` | 输出 JSON 含 `pass: true`；场景口径：30 蛋 + 200 静态体 + 8 力场，单帧（2 个 1/120 子步）p95 < 4ms；1000 次 `predictTrajectory`（90 步 / 3 反弹）< 500ms | TC-05 |
-| A4 | `npm run build` | 0 错误 0 警告（当前 `BONDS`/`BOND_TABLE` 2 条导出警告即属不达标）；产物可用 `npm run preview` 打开 | — |
+| A3 | `npm run bench` | 输出 JSON 含 `pass: true`；场景口径：30 蛋 + 200 静态体 + 8 力场，单帧（2 个 1/120 子步）p95 < 4ms；1000 次 `predictTrajectory`（90 步 / 3 反弹）< 500ms；被测对象为在用链路 | TC-05 |
+| A4 | `npm run build` | 0 错误 0 警告；产物可用 `npm run preview` 打开 | — |
 | A5 | 干净 clone 复跑 A1–A4 | 结果一致（防本地缓存假绿） | — |
 
 ## 2. 手动验收脚本（M 系列）
 
 前置：`npm run dev`，打开 `http://localhost:4174`，桌面 Chrome 最新版。每个脚本按步骤顺序执行，任一步不满足期望即该步关联 ID 判不通过。
-（M1–M6 步骤与 Round 1 版本一致，为 Round 3 复验与录屏取证的执行底稿，此处保留全文。）
+（M1–M6 为复验与录屏取证的执行底稿，与 Round 2 版本一致，此处保留全文。）
 
 ### M1 · Peggle 手感（PF-01…07、PF-10/11）
 
@@ -105,37 +105,40 @@ npm install
 ## 4. 回归守则
 
 1. 物理常量（重力 / 步长 / 弹性 / 初速范围 / 回收阈值）变更必须同轮更新 GDD、单测与本文件口径，三者不一致判红。
-2. 任何 P0 项等级下降（L2→L1、L1→L0）即视为回归，阻断合并，责任所有者本轮内修复。
+2. 任何 P0 项等级下降（L2→L1、L1→L0）即视为回归，阻断合并，责任所有者本轮内修复。**Round 3 起 P0 已全数 ≥L1，此条正式生效于全部 22 项。**
 3. 共享文件（`package.json` / `vite.config.js` / `README.md` / `index.html`）只追加；新增 npm script 必须在本文件 §1 登记验收标准。
-4. 性能口径只认 TC-05 与 M6；Round 1 空转 bench 数值（13554 steps/ms 等）永久禁用；Round 2 起基准必须标注被测积分器（在用 / 上游）。
-5. 单测/probe/bench 的被测对象必须与战斗在用实现一致（总则 5），「测 A 用 B」不计入通过证据。
+4. 性能口径只认 TC-05 与 M6；基准必须自报被测积分器且与在用实现一致（bench/stress schemaVersion 3 的 `implementation` 字段）。
+5. 契约（`resolveHit` 返回形状、物理导出面等）变更必须同轮更新 probe 与单测断言，否则自动化链红灯记责任方（见总则 2 的 Round 3 教训）。
 
-## 5. Round 2 实测快照（2026-08-26，commit `9f5d444`，全新 worktree + `npm install`）
+## 5. Round 3 实测快照（2026-08-26，commit `f20e27b`，`git archive HEAD` 干净导出 + 全新 `npm install`）
 
 | 命令 | 实测结果 | 验收结论 |
 | --- | --- | --- |
-| `npm test` | 5 文件全过：18 通过 / 1 skip（零威力零伤契约待 O2），含物理 6、战斗 5、存档 2、英雄 3、冒烟 3 | **命令级绿**；但 TC-01/02/03/06 契约断言仍缺 / 对象错位（断言 `src/physics`，战斗在用 `core/sim.js`），详见清单轴 E |
-| `npm run probe` | 退出码 0，`ok: true`，9/9 检查过；`heroCount: 18`；`round2.zeroPowerNoDamage: "pending"`，其余 4 项 `implemented` | 命令级绿；仍非整回合语义（无 `shots/hits/waveCleared`），TC-06 未过 |
-| `npm run bench` | 真上游物理：12 蛋+48 静态 10000 步 meanStep 0.00054ms；`predictTrajectory` 240 步 ×1000 次 meanCall 0.0355ms、0 空数组 | 数值真实可引用；场景与契约（30+200+8）不符、无 `pass` 字段，TC-05 带条件 |
-| `node scripts/stress.mjs` | 24 蛋+80 静态 3000 步：p50 0.0001ms / p95 0.0231ms / p99 0.0308ms；估算 p99 物理帧 0.062ms = 4ms 预算的 **1.5%**，`estimatedP99WithinBudget: true` | 上游物理性能余量巨大；被测对象仍非在用积分器 |
-| `npm run build` | ✓ 96 modules，JS 242.75kB / gzip 89.16kB，CSS 29.33kB；**2 条警告**：`BONDS`、`BOND_TABLE` 不存在于 `src/data/index.js`（`combat/bonds.js` 走 fallback） | 带条件：产物可用，警告即 R3-6 数据契约缺口 |
+| `npm test` | 5 文件全过：**21 通过 / 0 skip**（Round 2 的零威力 skip 已解锁），含物理 7（新增在用适配层预测=实弹对拍）、战斗 6（新增零威力契约与适配层直通断言）、存档 2、英雄 3、冒烟 3 | **绿**；动能/隧穿/确定性断言仍缺（TC-01 L1 条件） |
+| `npm run probe` | 退出码 0，`ok: true`，9/9 检查过；`heroCount: 18`；`round2` 五项全部 `implemented` | 命令级绿；仍无整回合语义（TC-06 L1 条件） |
+| `npm run bench` | schemaVersion 3，`implementation: src/core/sim.js -> src/physics/index.js`（在用链路）；满载 30 蛋+200 静态+8 力场：帧 p95 **0.061ms**（4ms 预算的 1.5%）；`predictTrajectory` 1000 次（90 步/3 反弹）共 39.4ms < 500ms；`pass: true` | **绿**，契约口径完全对齐（TC-05 L2） |
+| `node scripts/stress.mjs` | 满载 3000 帧：p50 0.032 / p95 0.050 / p99 0.149ms，预算利用 1.24%；**50 波堆内存检查**：留存增量 38KB（预算 2MB）、趋势 946B/波（预算 64KB/波），`noRetainedGrowthTrend: true`；`pass: true` | **绿**（TC-10 L2） |
+| `npm run build` | ✓ 97 modules，JS 275.06kB / gzip 99.64kB，CSS 33.61kB；**0 警告**（Round 2 的 BONDS/BOND_TABLE 2 条导出警告已消除） | **绿** |
 | `npm run preview` | 构建产物 HTTP 200，资源引用完整（冒烟） | 通过 |
-| A5 干净环境复跑 | 本轮全程在全新 worktree + 全新 `npm install` 中执行，结果同上 | 通过 |
+| A5 干净环境复跑 | 全程在 `git archive HEAD` 导出目录 + 全新 `npm install` 中执行（不含工作区未提交改动），结果同上 | 通过 |
 
-补充说明：
+### F4 独立无头验证（场外脚本，未入仓）
 
-- 评审时共享环境的 4174 端口已有其他代理的 dev server 占用（返回含 `/@vite/client` 的开发版页面），preview 冒烟改用 4175 端口验证构建产物，不影响结论。
-- Round 2 在途分支（O4 切物理、F3 BONDS 别名、O2 effects 契约、G2 bench 重跑、F2 juice CSS）未合入基线，本快照不含其效果；合入后按回归守则 2 复评相关 ID。
+| 检查 | 方法 | 结果 |
+| --- | --- | --- |
+| 预测=实弹对拍（PF-05/TC-02） | 5 个瞄准角 × 全场景（6 钉 + 普通砖 + 钢砖 + 斜面 + 敌人），逐固定步比对预测点与实弹位置 | **293 个飞行段点 ε=0（逐位相等）**；每条弹道各有 1 个越过回收线（y>820，画布外）的尾点，最大越出 13.7px，玩家不可见（登记 §四.8） |
+| 确定性（PF-07） | 同布局双蛋（含蛋-蛋碰撞）跑 1200 固定步 ×2，比对全部位置/速度采样与 `world.stats` | **2108 个采样逐位一致，stats 一致** |
+| 随机泄漏（PF-07 缺陷） | `makeEnemy("pigeon")` 连续两次 | `driftPhase` 两次不同（`Math.random`），敌人 id 含随机数——含漂移敌关卡同种子不可逐位复现（登记 §四.7） |
 
 ### 结论
 
-当前状态 = **未达 L1，但可玩闭环完整成立**（对比 Round 1 的 L0 脚手架：P0 由 0/22 升至 17/22 ≥L1）。
+当前状态 = **L1 可玩基线达成**（P0 22/22 ≥L1、0 项 L0，自动化链 A1–A5 全绿含干净复跑）。演进：Round 1 P0 0/22 → Round 2 17/22（5 项 L0）→ Round 3 **22/22**。
 
-- 自动化链五条命令全部命令级绿，A3/A4 带条件（场景口径 / 导出警告）。
-- 阻断 L1 的 5 项 P0 全部集中在**确定性与测试链**：PF-07（帧长驱动物理不可复现）、TC-01/02/03/06（断言缺失或对象错位）。
-- 手动脚本 M1–M6 本轮未整轮执行（本轮为文档重评轮），已通过代码走查确认 M1–M3、M5 的绝大多数步骤具备执行条件；M4 步骤 5（多点触控）与 M5 步骤 1 的 `R` 键、步骤 2 的按住加速**预期不通过**（IN-08 L0、IN-03/05 L1），Round 3 修复后随录屏取证一并执行。
-- Round 3 攻坚项与责任人见 `SOTA_CHECKLIST.md` §三（R3-1…R3-14）；其中 R3-1…R3-6 为 L1 阻断项，R3-7…R3-14 为 L2 冲刺项。
+- Round 2 阻断 L1 的五项（PF-07 确定性、TC-01/02/03/06 测试链）全部转正：物理切在用上游积分器 + 固定步累加器、测试/probe/bench 全部对准在用实现、零威力契约解锁、bench/stress 契约口径达标。
+- **未达 L2**：P1 存在 5 项 L0（PF-11 慢镜、HUD-05 图标行、IN-08 多点触控、TC-07/08 元素与羁绊单测），另有横切缺陷 R4-1（effects 指令流未消费 → 爆蛋双实现 / 双暴击叠乘）。清单见 `SOTA_CHECKLIST.md` §三「剩余清单」R4-1…R4-8。
+- 手动脚本 M1–M6 本轮仍未整轮执行（本轮为合入后复评轮，以自动化链 + 无头验证 + 代码走查为准）；按现状预判不通过的步骤：M1-8（慢镜）、M2-3（清扫率）、M2-4/5（流派 tag / 图标行）、M4-5（多点触控）、M5-1（`R` 键）、M5-2（按住加速）。L2 判定前必须整轮补跑并录屏取证（R4-8）。
+- 基线之后 Round 3 分支仍在滚动合入（评审期间即有 G1/G2/F3/O2/F2 六批次入库），后续合入按回归守则 2 增量复评。
 
 ## 6. 开放问题
 
-与 `SOTA_CHECKLIST.md` §四同步维护：羁绊数据三源、战斗管线双实现（双暴击 / 双爆蛋）、英雄 18/20 口径、空格蓄力语义、`user-scalable=no`、回收与震屏数值口径。裁决结果落地后由 F4 在 Round 3 验收中更新两文件。
+与 `SOTA_CHECKLIST.md` §四同步维护。本轮关闭：羁绊数据三源（收敛至 `src/data` 单源）、英雄 18/20 口径（终裁 18+2 预留）、回收阈值（y>820 定稿）。仍开放：战斗管线双实现（R4-1）、空格蓄力语义、`user-scalable=no`（维持不阻断）、震屏幅度口径。新增：bestiary `Math.random` 泄漏、预测线回收线下尾点、`art.js` `"chick"` 键不一致。裁决结果落地后由 F4 在下一轮验收中更新两文件。
