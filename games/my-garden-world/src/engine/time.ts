@@ -2,7 +2,7 @@ import type { Season } from "../data/flowers";
 import type { GameState } from "./state";
 
 const SEASONS: Season[] = ["spring", "summer", "autumn", "winter"];
-const DAY_MS = 90_000;
+export const DAY_MS = 90_000;
 const MINUTES_PER_DAY = 24 * 60;
 /** 开局锚定在春日 09:00，而不是随墙钟随机落在某个季节 / 深夜。 */
 const START_MINUTE = 9 * 60;
@@ -19,6 +19,11 @@ export function advanceClock(state: GameState, dtMs: number): void {
 
 export function isNight(state: GameState): boolean {
   return state.dayMinute < 5 * 60 || state.dayMinute >= 19 * 60;
+}
+
+/** 开园以来的游戏日序号（90 秒一日），邻家园子的生成种子与日限重置都用它。 */
+export function gameDay(state: GameState): number {
+  return Math.floor(Math.max(0, state.now - state.startedAt) / DAY_MS);
 }
 
 export function seasonLabel(season: Season): string {
