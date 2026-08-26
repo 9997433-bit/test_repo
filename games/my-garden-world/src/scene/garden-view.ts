@@ -3,6 +3,9 @@ import { DECORATIONS } from "../data/decorations";
 import type { GameState, Plot } from "../engine/state";
 import { plotProgress } from "../systems/garden";
 import { plotArt } from "./flower-art";
+import { DECOR_SLOTS, decorArt, type DecorLayer } from "./decor-art";
+
+const LAYER_Z: Record<DecorLayer, number> = { back: 1, mid: 2, front: 3 };
 
 const STAGE_ZH: Record<GrowthStage, string> = {
   empty: "空圃",
@@ -42,13 +45,15 @@ function needsWater(plot: Plot): boolean {
 /** 增量花园视图：节点常驻，每帧只写有变化的属性；SVG 仅在阶段切换时重建。 */
 export function createGardenView(root: HTMLElement, onPick: (id: number) => void): GardenView {
   root.replaceChildren();
-  const decorRow = document.createElement("div");
-  decorRow.className = "decor-row";
+  const courtyard = document.createElement("div");
+  courtyard.className = "courtyard";
+  courtyard.setAttribute("role", "img");
+  courtyard.setAttribute("aria-label", "庭院尚无陈设");
   const grid = document.createElement("div");
   grid.className = "garden";
   grid.setAttribute("role", "group");
   grid.setAttribute("aria-label", "花园地块");
-  root.append(decorRow, grid);
+  root.append(courtyard, grid);
 
   const cells = new Map<number, Cell>();
   let decorKey = "";
@@ -84,15 +89,26 @@ export function createGardenView(root: HTMLElement, onPick: (id: number) => void
   const update = (state: GameState, selected: number | null, pendingSeed: string | null): void => {
     const dk = state.placedDecor.join(",");
     if (dk !== decorKey) {
+      // 庭院是一幅按席位排好的画：新安置的物件带落座动画，老物件原位不动。
+      const prev = new Set(decorKey.split(",").filter(Boolean));
       decorKey = dk;
-      decorRow.replaceChildren();
-      for (const id of state.placedDecor) {
-        const d = DECORATIONS.find((x) => x.id === id);
-        const chip = document.createElement("span");
-        chip.className = "decor-chip";
-        chip.textContent = d ? `${d.glyph} ${d.name}` : id;
-        decorRow.append(chip);
+      courtyard.replaceChildren();
+      const placed = state.placedDecor
+        .map((id) => ({ id, slot: DECOR_SLOTS[id] }))
+        .filter((x): x is { id: string; slot: NonNullable<typeof x.slot> } => Boolean(x.slot))
+        .sort((a, b) => LAYER_Z[a.slot.layer] - LAYER_Z[b.slot.layer] || a.slot.x - b.slot.x);
+      for (const { id, slot } of placed) {
+        const fig = document.createElement("figure");
+        fig.className = `decor decor-${id} layer-${slot.layer}${prev.has(id) ? "" : " pop-in"}`;
+        fig.style.left = `${slot.x}%`;
+        fig.style.width = `calc(${slot.w}px * var(--decor-scale, 1))`;
+        fig.setAttribute("aria-hidden", "true");
+        fig.innerHTML = decorArt(id);
+        courtyard.append(fig);
       }
+      const names = placed.map((p) => DECORATIONS.find((d) => d.id === p.id)?.name ?? p.id);
+      courtyard.setAttribute("aria-label", names.length ? `庭院陈设：${names.join("、")}` : "庭院尚无陈设");
+      courtyard.classList.toggle("has-decor", placed.length > 0);
     }
 
     for (const plot of state.plots) {

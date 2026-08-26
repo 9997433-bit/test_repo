@@ -153,25 +153,74 @@ button { font-family: var(--font-body); }
   overflow: hidden;
   padding: 4px 16px 0;
   touch-action: none;
+  display: flex;
+  flex-direction: column;
 }
 .app[data-tool="water"] .stage { cursor: crosshair; }
-.decor-row { display: flex; gap: 8px; justify-content: center; min-height: 34px; margin-bottom: 4px; flex-wrap: wrap; }
-.decor-chip {
-  background: color-mix(in srgb, var(--paper) 72%, #fff);
-  border: 1px dashed var(--gold);
-  border-radius: 8px;
-  padding: 3px 8px;
-  font-family: var(--font-display);
-  font-size: 14px;
+
+/* ---------- 庭院陈设：装饰按席位落进场景，不再是一排 chip ---------- */
+:root { --decor-scale: 1; }
+.courtyard {
+  position: relative;
+  flex: none;
+  width: min(100%, 980px);
+  height: clamp(52px, 10vh, 96px);
+  margin: 0 auto;
+  pointer-events: none;
+  z-index: 1;
 }
+.decor {
+  position: absolute;
+  bottom: 0;
+  margin: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.18));
+}
+.decor svg { display: block; width: 100%; height: auto; }
+.decor.layer-back { z-index: 1; opacity: 0.97; }
+.decor.layer-mid { z-index: 2; }
+.decor.layer-front { z-index: 3; }
+.is-night .decor { filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.3)) brightness(0.82); }
+.decor.pop-in { animation: decorpop 0.55s var(--ease-pop); }
+@keyframes decorpop {
+  from { transform: translateX(-50%) translateY(14px) scale(0.4); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+}
+/* 灯火入夜自明 */
+.decor .lamp-glow { opacity: 0; transition: opacity 2.4s ease; }
+.is-night .decor .lamp-glow { opacity: 0.55; animation: lampflicker 3.2s ease-in-out infinite alternate; }
+@keyframes lampflicker { from { opacity: 0.42; } to { opacity: 0.62; } }
+/* 悬物轻晃（风铃 / 纱灯 / 秋千板 / 亭中灯） */
+.decor svg .dangle, .spirit-fig svg .dangle {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  animation: dangle 3.6s ease-in-out infinite alternate;
+}
+.decor svg .dangle.d2 { animation-duration: 4.4s; animation-delay: -1.2s; }
+.decor svg .dangle.d3 { animation-duration: 3s; animation-delay: -0.6s; }
+@keyframes dangle {
+  from { transform: rotate(-3.5deg); }
+  to { transform: rotate(3.5deg); }
+}
+/* 锦鲤慢游 */
+.decor svg .koi { transform-box: fill-box; animation: koidrift 7s ease-in-out infinite alternate; }
+.decor svg .koi.k2 { animation-duration: 9s; animation-delay: -3s; }
+@keyframes koidrift {
+  from { transform: translate(0, 0); }
+  to { transform: translate(6px, 1.5px); }
+}
+
 .garden {
-  height: calc(100% - 38px);
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   gap: 14px;
   align-content: center;
   max-width: 980px;
   margin: 0 auto;
+  width: 100%;
 }
 .plot {
   aspect-ratio: 1.02;
@@ -260,6 +309,59 @@ button { font-family: var(--font-body); }
 .plot-name { display: block; font-size: 11px; color: var(--soil-text); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
 .plot-bar { display: block; height: 4px; background: rgba(20, 12, 5, 0.7); border-radius: 4px; margin-top: 4px; overflow: hidden; }
 .plot-bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7ec8a3, #e7c56b); transition: width 0.3s linear; }
+
+/* ---------- 花灵：请灵后在花园上空缓缓巡游 ---------- */
+.spirit-layer {
+  position: absolute;
+  top: clamp(6px, 3vh, 26px);
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+.spirit-layer.is-here { opacity: 1; }
+.spirit-fig {
+  position: absolute;
+  left: 0;
+  width: clamp(56px, 7vw, 78px);
+  animation: spiritdrift 44s ease-in-out infinite alternate;
+}
+.spirit-fig .spirit-body { animation: spiritbob 3.8s ease-in-out infinite alternate; }
+.spirit-fig svg { display: block; width: 100%; height: auto; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.18)); }
+.spirit-fig svg .aura { animation: aurapulse 3.2s ease-in-out infinite alternate; }
+.spirit-fig.arrive .spirit-body { animation: spiritarrive 0.7s var(--ease-pop), spiritbob 3.8s ease-in-out 0.7s infinite alternate; }
+.spirit-name {
+  position: absolute;
+  top: calc(100% - 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--paper) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: 999px;
+  padding: 1px 9px;
+  white-space: nowrap;
+}
+@keyframes spiritdrift {
+  0% { transform: translate(10vw, 0); }
+  45% { transform: translate(64vw, 2.4vh); }
+  70% { transform: translate(38vw, 0.6vh); }
+  100% { transform: translate(74vw, 1.6vh); }
+}
+@keyframes spiritbob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-9px); }
+}
+@keyframes aurapulse { from { opacity: 0.22; } to { opacity: 0.46; } }
+@keyframes spiritarrive {
+  from { transform: scale(0.3) translateY(18px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
 
 /* ---------- Dock ---------- */
 .dock {
@@ -521,9 +623,11 @@ button { font-family: var(--font-body); }
 
 /* ---------- 移动端 ---------- */
 @media (max-width: 640px) {
-  :root { --dock-clear: 96px; }
+  :root { --dock-clear: 96px; --decor-scale: 0.68; }
   .brand { font-size: 20px; }
   .pill { font-size: 11px; padding: 3px 8px; }
+  .courtyard { height: clamp(40px, 8vh, 64px); }
+  .spirit-fig { width: 52px; }
   .garden { gap: 9px; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); }
   .plot-name { font-size: 10px; }
   .dock {

@@ -3,12 +3,14 @@ import { emit } from "../engine/events";
 import type { GameState, Plot } from "../engine/state";
 import { SPIRITS } from "../data/spirits";
 
-const NEXT: Record<Exclude<GrowthStage, "empty" | "wilt">, GrowthStage> = {
+export const NEXT_STAGE: Record<Exclude<GrowthStage, "empty" | "wilt">, GrowthStage> = {
   seeded: "sprout",
   sprout: "bud",
   bud: "bloom",
   bloom: "wilt",
 };
+
+export const FERT_MUL = 1.45;
 
 export function growthMul(state: GameState, flowerId: string): number {
   const def = FLOWER_MAP[flowerId];
@@ -25,7 +27,7 @@ export function plotProgress(state: GameState, plot: Plot): number {
   if (!def) return 0;
   const need = def.growMs / 3;
   const elapsed = state.now - plot.lastTick;
-  const fert = plot.fertilized ? 1.45 : 1;
+  const fert = plot.fertilized ? FERT_MUL : 1;
   return Math.min(1, (elapsed * growthMul(state, plot.flowerId) * fert) / need);
 }
 
@@ -48,7 +50,7 @@ export function tickGarden(state: GameState, _dt: number): void {
     if (plot.stage === "wilt") continue;
     if (plot.watered < def.waterNeed) continue;
     if (plotProgress(state, plot) < 1) continue;
-    const next = NEXT[plot.stage as keyof typeof NEXT];
+    const next = NEXT_STAGE[plot.stage as keyof typeof NEXT_STAGE];
     if (!next) continue;
     plot.stage = next;
     plot.lastTick = state.now;

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createInitialState, WATER_CAP, type ActiveOrder } from "../../src/engine/state";
 import { addItem } from "../../src/systems/economy";
-import { ensureTutorialOrder, fulfillOrder, orderReady, qualifyingArrangements } from "../../src/systems/orders";
+import { ensureTutorialOrder, fulfillOrder, orderReady, qualifyingArrangements, spawnOrders } from "../../src/systems/orders";
+import { ORDER_TEMPLATES } from "../../src/data/orders";
 import { TUTORIAL } from "../../src/data/story";
 
 function makeOrder(over: Partial<ActiveOrder>): ActiveOrder {
@@ -116,6 +117,27 @@ describe("fulfillOrder", () => {
     s.orders = [makeOrder({ flowerIds: ["daisy"], waterReward: 10 })];
     expect(fulfillOrder(s, "test-1")).toBe(true);
     expect(s.water).toBe(WATER_CAP);
+  });
+});
+
+describe("spawnOrders", () => {
+  it("fills to cap without duplicate templates", () => {
+    for (let round = 0; round < 20; round++) {
+      const s = createInitialState(0);
+      s.level = 12;
+      spawnOrders(s);
+      expect(s.orders).toHaveLength(5);
+      expect(new Set(s.orders.map((o) => o.templateId)).size).toBe(5);
+    }
+  });
+
+  it("never offers templates above the player level", () => {
+    const s = createInitialState(0);
+    spawnOrders(s);
+    for (const o of s.orders) {
+      const t = ORDER_TEMPLATES.find((x) => x.id === o.templateId);
+      expect(t?.minLevel ?? 99).toBeLessThanOrEqual(s.level);
+    }
   });
 });
 

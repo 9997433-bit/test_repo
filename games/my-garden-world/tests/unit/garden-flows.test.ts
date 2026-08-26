@@ -234,7 +234,10 @@ describe("arrangement scoring", () => {
       }
     }
 
-    expect(scoreArrangement(FLOWERS.map((flower) => flower.id), "bronze", "spring")).toBe(100);
+    // 超出 2-4 枝的作品不合法（旧版会把整仓花塞进一瓶刷到 100）
+    expect(scoreArrangement(FLOWERS.map((flower) => flower.id), "bronze", "spring")).toBe(0);
+    // 满分只留给顶配：同季四枝、四色各异、均稀有度 4、青铜器
+    expect(scoreArrangement(["dream-rose", "snow-lotus", "plum", "camellia"], "bronze", "winter")).toBe(100);
   });
 });
 

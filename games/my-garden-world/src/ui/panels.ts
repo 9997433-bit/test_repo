@@ -4,7 +4,7 @@ import { SPIRITS } from "../data/spirits";
 import type { GameState, ActiveOrder } from "../engine/state";
 import { seasonLabel } from "../engine/time";
 import { orderParts, orderReady, qualifyingArrangements } from "../systems/orders";
-import { scoreArrangement, VASES } from "../systems/workshop";
+import { scoreArrangement, scoreTier, VASES } from "../systems/workshop";
 import { totalInventory } from "../systems/economy";
 
 export type PanelId = "seed" | "order" | "workshop" | "decor" | "spirit" | "bag" | null;
@@ -209,8 +209,8 @@ function renderWorkshop(sheet: HTMLElement, state: GameState, sel: PanelSelectio
     b.type = "button";
     b.className = "vase-btn";
     b.disabled = sel.workshopPick.length < 2;
-    b.setAttribute("aria-label", `以${v.name}成器${score ? `，预估 ${score} 分` : ""}`);
-    b.innerHTML = `<strong>${v.name}</strong><small>${score ? `预估 ${score} 分` : `加成 +${v.bonus}`}</small>`;
+    b.setAttribute("aria-label", `以${v.name}成器${score ? `，预估 ${score} 分，${scoreTier(score).name}` : ""}`);
+    b.innerHTML = `<strong>${v.name}</strong><small>${score ? `预估 ${score} 分 · ${scoreTier(score).name}` : `加成 +${v.bonus}`}</small>`;
     b.addEventListener("click", () => h.craft(v.id));
     vases.append(b);
   }

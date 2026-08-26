@@ -54,6 +54,7 @@ describe("save/load roundtrip probe", () => {
       state.plots = Array.from({ length: MAX_PLOTS }, (_, id) => emptyPlot(id));
       state.inventory = Object.fromEntries(FLOWERS.map((flower, index) => [flower.id, index + 1]));
       state.unlockedFlowers = FLOWERS.map((flower) => flower.id);
+      state.unlockedSpirits = ["juyue", "chiguang", "rainbow"];
       state.arrangements = Array.from({ length: 100 }, (_, index) => ({
         id: `arrangement-${index}`,
         vase: "celadon",

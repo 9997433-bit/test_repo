@@ -1,4 +1,5 @@
 import { FLOWERS } from "../data/flowers";
+import { SPIRITS } from "../data/spirits";
 import { emit } from "../engine/events";
 import { xpToLevel, type GameState } from "../engine/state";
 
@@ -60,6 +61,9 @@ export function bumpQuest(state: GameState, id: string, by = 1): void {
   }
 }
 
+/** 订单赏金倍率：装饰雅致 + 口碑；驻园花灵的口碑加成在此生效（上限仍是 100）。 */
 export function moodBonus(state: GameState): number {
-  return 1 + Math.min(0.35, state.placedDecor.length * 0.04) + (state.reputation - 70) / 400;
+  const spirit = SPIRITS.find((s) => s.id === state.activeSpirit);
+  const rep = Math.min(100, state.reputation + (spirit?.reputationBonus ?? 0));
+  return 1 + Math.min(0.35, state.placedDecor.length * 0.04) + (rep - 70) / 400;
 }

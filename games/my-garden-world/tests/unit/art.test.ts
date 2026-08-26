@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { DECORATIONS } from "../../src/data/decorations";
 import { FLOWER_MAP, STAGES } from "../../src/data/flowers";
+import { SPIRITS } from "../../src/data/spirits";
+import { DECOR_SLOTS, decorArt } from "../../src/scene/decor-art";
 import { plotArt } from "../../src/scene/flower-art";
+import { spiritArt } from "../../src/scene/spirit-art";
 
 describe("plotArt", () => {
   it("returns valid svg for every stage of every flower", () => {
@@ -34,5 +38,46 @@ describe("plotArt", () => {
   it("bloom art carries the sway group for CSS animation", () => {
     expect(plotArt(FLOWER_MAP.daisy, "bloom")).toContain('class="sway"');
     expect(plotArt(FLOWER_MAP.daisy, "wilt")).not.toContain('class="sway"');
+  });
+});
+
+describe("decorArt", () => {
+  it("every decoration has scene art and a valid courtyard slot", () => {
+    for (const d of DECORATIONS) {
+      const svg = decorArt(d.id);
+      expect(svg.startsWith("<svg"), d.id).toBe(true);
+      expect(svg.endsWith("</svg>"), d.id).toBe(true);
+      const slot = DECOR_SLOTS[d.id];
+      expect(slot, d.id).toBeDefined();
+      expect(slot!.x).toBeGreaterThanOrEqual(0);
+      expect(slot!.x).toBeLessThanOrEqual(100);
+      expect(slot!.w).toBeGreaterThan(20);
+      expect(["back", "mid", "front"]).toContain(slot!.layer);
+    }
+  });
+
+  it("unknown decor ids render nothing (dirty save data is skipped)", () => {
+    expect(decorArt("no-such-decor")).toBe("");
+  });
+
+  it("lamps carry a glow layer that CSS lights at night", () => {
+    expect(decorArt("lantern")).toContain("lamp-glow");
+    expect(decorArt("brazier")).toContain("lamp-glow");
+    expect(decorArt("pavilion")).toContain("lamp-glow");
+    expect(decorArt("pond")).not.toContain("lamp-glow");
+  });
+});
+
+describe("spiritArt", () => {
+  it("every spirit has a scene figure with an aura", () => {
+    for (const s of SPIRITS) {
+      const svg = spiritArt(s.id);
+      expect(svg.startsWith("<svg"), s.id).toBe(true);
+      expect(svg, s.id).toContain('class="aura"');
+    }
+  });
+
+  it("unknown spirit ids render nothing", () => {
+    expect(spiritArt("no-such-spirit")).toBe("");
   });
 });

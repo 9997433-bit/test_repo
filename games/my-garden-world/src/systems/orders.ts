@@ -30,7 +30,11 @@ function instantiate(state: GameState, t: OrderTemplate, timeMul = 1): ActiveOrd
 export function spawnOrders(state: GameState): void {
   const cap = 3 + Math.min(2, Math.floor(state.level / 4));
   while (state.orders.length < cap) {
-    const pool = ORDER_TEMPLATES.filter((t) => t.minLevel <= state.level);
+    const active = new Set(state.orders.map((o) => o.templateId));
+    const unlocked = ORDER_TEMPLATES.filter((t) => t.minLevel <= state.level);
+    // 列表里不出现重复模板；仅当模板池不足以填满时才允许重复兜底。
+    const fresh = unlocked.filter((t) => !active.has(t.id));
+    const pool = fresh.length ? fresh : unlocked;
     const t = pool[Math.floor(Math.random() * pool.length)];
     if (!t) break;
     state.orders.push(instantiate(state, t));

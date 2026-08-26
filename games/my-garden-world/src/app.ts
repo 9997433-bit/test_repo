@@ -12,10 +12,13 @@ import { fulfillOrder, cancelOrder } from "./systems/orders";
 import { craft } from "./systems/workshop";
 import { placeDecor, applyTheme } from "./systems/decorate";
 import { setSpirit } from "./systems/spirits";
+import { settleOffline, type OfflineReport } from "./systems/offline";
 import { createGardenView } from "./scene/garden-view";
+import { mountSpiritView } from "./scene/spirit-art";
 import { mountAmbient, burst, splash } from "./scene/particles";
 import { mountSky } from "./scene/ambience";
 import { createHud } from "./ui/hud";
+import { showWelcomeBack } from "./ui/welcome";
 import { renderPanel, updatePanelTimers, type PanelHandlers, type PanelId, type PanelSelection } from "./ui/panels";
 import { mountToasts } from "./ui/toast";
 import { renderTutorial, advanceTutorial, tutorialEventAdvances, coachTargetId } from "./ui/tutorial";
@@ -25,6 +28,8 @@ type Tool = "none" | "water" | "fert" | "harvest";
 
 export function boot(root: HTMLElement): void {
   const state = loadState();
+  // 回归结算：读档后先把离园时间折算成生长/回水，再进主循环。
+  const offlineReport = settleOffline(state, Date.now());
   let selected: number | null = null;
   let panel: PanelId = null;
   let tool: Tool = "none";
@@ -78,6 +83,7 @@ export function boot(root: HTMLElement): void {
   };
 
   const garden = createGardenView(stage, onPick);
+  const spiritView = mountSpiritView(stage);
 
   // 拖拽浇水：按住洒水壶扫过花圃
   let dragging = false;
@@ -316,6 +322,7 @@ export function boot(root: HTMLElement): void {
     ambient.set(state.season, night);
     hud.update(state);
     garden.update(state, selected, sel.pendingSeed);
+    spiritView.update(state);
     updateDock();
     const sig = panelSig();
     if (panelDirty || sig !== panelSigLast) {
@@ -333,8 +340,26 @@ export function boot(root: HTMLElement): void {
 
   frame();
   startLoop(() => state, frame);
+
+  // 欢迎回园：教程完成后，离园有实质收获（或超过 3 分钟）时汇报一次。
+  const maybeWelcome = (r: OfflineReport | null): void => {
+    if (!r || !state.tutorialDone) return;
+    if (r.stageAdvances === 0 && r.bloomed.length === 0 && r.awayMs < 3 * 60_000) return;
+    showWelcomeBack(root, r);
+  };
+  maybeWelcome(offlineReport);
+
   addEventListener("beforeunload", () => saveState(state));
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") saveState(state);
+    if (document.visibilityState === "hidden") {
+      saveState(state);
+      return;
+    }
+    // 标签页切回：rAF 挂起期间时间冻结，超过阈值按离园结算
+    const r = settleOffline(state, Date.now());
+    if (r) {
+      maybeWelcome(r);
+      invalidate();
+    }
   });
 }
