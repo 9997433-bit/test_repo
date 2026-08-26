@@ -1,0 +1,310 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+export const DT = 1 / 60;
+export const PLAYER_COUNT = 4;
+export const PROBE_STEPS = 60 * 60;
+
+const ZERO_INPUT = Object.freeze({
+  moveX: 0,
+  moveZ: 0,
+  yaw: 0,
+  slap: false,
+  skill: false,
+  switchGlove: false,
+  dash: false,
+  jump: false,
+});
+
+const SIMULATION_URL = new URL('../src/sim/index.js', import.meta.url);
+const AI_URL = new URL('../src/ai/bots.js', import.meta.url);
+
+function moduleSpecifier(environmentName, defaultUrl) {
+  return process.env[environmentName] || defaultUrl.href;
+}
+
+export async function loadSimulation() {
+  const override = process.env.YIZHANG_SIM_MODULE;
+
+  if (!override && !existsSync(SIMULATION_URL)) {
+    throw new Error(
+      `simulation module missing: expected ${fileURLToPath(SIMULATION_URL)}`,
+    );
+  }
+
+  let simulation;
+  try {
+    simulation = await import(
+      moduleSpecifier('YIZHANG_SIM_MODULE', SIMULATION_URL)
+    );
+  } catch (error) {
+    throw new Error(
+      `could not load simulation module: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+
+  for (const exportName of ['createMatch', 'step', 'getView']) {
+    if (typeof simulation[exportName] !== 'function') {
+      throw new Error(
+        `simulation module must export function ${exportName}()`,
+      );
+    }
+  }
+
+  return simulation;
+}
+
+export async function loadOptionalAi() {
+  const override = process.env.YIZHANG_AI_MODULE;
+
+  if (!override && !existsSync(AI_URL)) {
+    return null;
+  }
+
+  let ai;
+  try {
+    ai = await import(moduleSpecifier('YIZHANG_AI_MODULE', AI_URL));
+  } catch (error) {
+    throw new Error(`could not load AI module: ${errorMessage(error)}`, {
+      cause: error,
+    });
+  }
+
+  if (typeof ai.think !== 'function') {
+    throw new Error('AI module must export function think()');
+  }
+
+  return ai;
+}
+
+export function createFourPlayerMatch(simulation) {
+  const state = simulation.createMatch({
+    seed: 0x1a2b3c4d,
+    gloveId: 'cotton',
+    offhandId: 'granite',
+    botCount: 3,
+  });
+
+  if (!state || typeof state !== 'object') {
+    throw new Error('createMatch() did not return a state object');
+  }
+
+  return state;
+}
+
+export function getPlayers(view) {
+  const collection =
+    view?.players ??
+    view?.entities?.players ??
+    (Array.isArray(view) ? view : null);
+
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+
+  if (collection && typeof collection === 'object') {
+    return Object.values(collection);
+  }
+
+  throw new Error('getView() snapshot does not contain a players collection');
+}
+
+export function validateRoster(view) {
+  const players = getPlayers(view);
+  const humans = players.filter((player) => player?.kind === 'human');
+  const bots = players.filter((player) => player?.kind === 'bot');
+
+  if (
+    players.length !== PLAYER_COUNT ||
+    humans.length !== 1 ||
+    bots.length !== 3
+  ) {
+    throw new Error(
+      `expected 1 human + 3 bots; got ${humans.length} human(s), ` +
+        `${bots.length} bot(s), ${players.length} total`,
+    );
+  }
+
+  const ids = new Set();
+  for (const player of players) {
+    if (
+      player?.id === undefined ||
+      player.id === null ||
+      String(player.id).length === 0
+    ) {
+      throw new Error('every player must have a non-empty id');
+    }
+    if (ids.has(player.id)) {
+      throw new Error(`duplicate player id: ${String(player.id)}`);
+    }
+    ids.add(player.id);
+
+    for (const coordinate of ['x', 'y', 'z']) {
+      if (!Number.isFinite(player[coordinate])) {
+        throw new Error(
+          `player ${String(player.id)} has invalid ${coordinate} coordinate`,
+        );
+      }
+    }
+  }
+
+  return players;
+}
+
+export function makeSeededRandom(seed) {
+  let value = seed >>> 0;
+  const random = () => {
+    value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+    return value / 0x100000000;
+  };
+
+  random.next = random;
+  random.float = random;
+  random.range = (minimum, maximum) =>
+    minimum + (maximum - minimum) * random();
+  random.int = (minimum, maximum) =>
+    Math.floor(random.range(minimum, maximum + 1));
+
+  return random;
+}
+
+export function makeProbeInputs(view, stepIndex, ai, random) {
+  const players = getPlayers(view);
+  const inputs = {};
+
+  for (let index = 0; index < players.length; index += 1) {
+    const player = players[index];
+    let input;
+
+    if (player.kind === 'human') {
+      input = scriptedInput(players, player, stepIndex, 0);
+    } else if (ai) {
+      input = ai.think(view, player.id, random);
+    } else {
+      input = scriptedInput(players, player, stepIndex, index);
+    }
+
+    inputs[player.id] = normalizeInput(input);
+  }
+
+  return inputs;
+}
+
+export function makeBenchInputFrames(view, frameCount = 240) {
+  const players = validateRoster(view);
+  const frames = [];
+
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const inputs = {};
+    for (let index = 0; index < players.length; index += 1) {
+      inputs[players[index].id] = normalizeInput({
+        moveX: Math.sin(frame * 0.08 + index * 1.7) * 0.7,
+        moveZ: Math.cos(frame * 0.06 + index * 1.3) * 0.85,
+        yaw: frame * 0.025 + index * (Math.PI / 2),
+        slap: (frame + index * 7) % 30 === 0,
+        skill: (frame + index * 17) % 180 === 0,
+        switchGlove: (frame + index * 29) % 240 === 0,
+        dash: (frame + index * 11) % 90 === 0,
+        jump: (frame + index * 13) % 150 === 0,
+      });
+    }
+    frames.push(inputs);
+  }
+
+  return frames;
+}
+
+export function findNonFinite(value, path = 'state', seen = new WeakSet()) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? null : `${path}=${String(value)}`;
+  }
+
+  if (!value || typeof value !== 'object' || seen.has(value)) {
+    return null;
+  }
+  seen.add(value);
+
+  for (const [key, child] of Object.entries(value)) {
+    const failure = findNonFinite(child, `${path}.${key}`, seen);
+    if (failure) {
+      return failure;
+    }
+  }
+
+  return null;
+}
+
+export function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function scriptedInput(players, player, stepIndex, offset) {
+  const opponent = nearestOpponent(players, player);
+  const deltaX = opponent ? opponent.x - player.x : 0;
+  const deltaZ = opponent ? opponent.z - player.z : 1;
+  const yaw = Math.atan2(deltaX, deltaZ);
+
+  return {
+    moveX: Math.sin(stepIndex * 0.055 + offset * 1.9) * 0.55,
+    moveZ: 0.9,
+    yaw,
+    slap: (stepIndex + offset * 7) % 24 === 0,
+    skill: (stepIndex + offset * 19) % 180 === 0,
+    switchGlove: (stepIndex + offset * 31) % 240 === 0,
+    dash: (stepIndex + offset * 13) % 90 === 0,
+    jump: (stepIndex + offset * 17) % 150 === 0,
+  };
+}
+
+function nearestOpponent(players, player) {
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of players) {
+    if (
+      candidate === player ||
+      candidate?.id === player.id ||
+      candidate?.alive === false
+    ) {
+      continue;
+    }
+
+    const deltaX = candidate.x - player.x;
+    const deltaZ = candidate.z - player.z;
+    const distance = deltaX * deltaX + deltaZ * deltaZ;
+    if (distance < nearestDistance) {
+      nearest = candidate;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearest;
+}
+
+function normalizeInput(input) {
+  if (!input || typeof input !== 'object') {
+    return { ...ZERO_INPUT };
+  }
+
+  return {
+    moveX: finiteInputNumber(input.moveX, 'moveX'),
+    moveZ: finiteInputNumber(input.moveZ, 'moveZ'),
+    yaw: finiteInputNumber(input.yaw, 'yaw'),
+    slap: Boolean(input.slap),
+    skill: Boolean(input.skill),
+    switchGlove: Boolean(input.switchGlove),
+    dash: Boolean(input.dash),
+    jump: Boolean(input.jump),
+  };
+}
+
+function finiteInputNumber(value, field) {
+  if (value === undefined) {
+    return 0;
+  }
+  if (!Number.isFinite(value)) {
+    throw new Error(`input.${field} is not finite: ${String(value)}`);
+  }
+  return value;
+}
