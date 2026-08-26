@@ -1,6 +1,6 @@
 # API 契约（Round 2 落地版）
 
-> 维护者：Fable-1。基线：Round 2 合并树 commit `25fd9c6`（Round 1 冻结稿基线 `14b21c9`）。
+> 维护者：Fable-1。基线：Round 2 合并树 commit `633f731`（Round 1 冻结稿基线 `14b21c9`）。
 > 本版在 Round 1 冻结稿上**只附加、不改名、不改参数顺序**；Round 1 标记为 [R2] 的目标语义凡已落地，一律改标 **[冻结]** 并按实现写实。
 > 测试、探针、bench 只依赖本文符号；**§9 清单内的导出禁止改名、禁止改参数顺序**。
 > 类型用 TS 记法描述（代码本体仍是 JS）。`int` = 整数，`u32` = 32 位无符号整数，数值区间用 `a..b` 闭区间。
@@ -163,7 +163,7 @@ interface HeroInstance {
   xp: int;
   assignedBuildingId: string | null;
   injuredUntil: number;   // 模拟秒；0=健康。消费方：isInjured/canAssign/readyHeroes/tickInjuries。
-                          //   生产方 applyBattleInjuries 已实现但运行时无人调用（§10-N3）
+                          //   生产方 applyBattleInjuries 已由 campaign 战后调用（M12 已关）
 }
 
 interface Flotsam {
@@ -491,7 +491,7 @@ injuryRemaining(state, hero, now?): number   // 健康/到期 = 0，UI 倒计时
 applyBattleInjuries(state, result: BattleResult, seconds?: number): GameState
   // 战报里 side="ally" 且 hp≤0 的英雄（按 id 匹配）→ injuredUntil = 对齐量子网格的 now+span（只延长不缩短），
   // 双侧同步离岗（委任加成当场消失）。无人阵亡返回原引用。
-  // 当前运行时无人调用（§10-N3）。
+  // campaign 战后已接线（胜败都结算，战败有代价）。
 
 tickInjuries(state): GameState   // 每量子推进：到期销假 + 归队日志；没人到期返回原引用（可零成本挂 stepSim）
 clearHealed(state): GameState    // 手动销假（读档清理用）；无变化原引用
@@ -504,7 +504,7 @@ isReady(state, hero, now?): boolean   // 已知 key 且不在养伤
 readyHeroes(state): HeroInstance[]    // 战力降序，平局按 heroKey 码点
 selectLineup(state, max?): BattleUnit[]
   // 确定性上阵：取战力前 cap 名；全无前排时用板凳最强前排换最弱；返回前排在前 —— 决定入场序号。
-  // 当前 UI 未消费（campaign 用 heroes.slice(0,5)，§10-N3）。
+  // campaign 已接线：自动配队与玩家勾选集合都经 selectLineup 收口，伤员由 readyHeroes 挡在门外。
 ```
 
 ### 8.3 simulateBattle —— 确定性是硬约束
@@ -550,7 +550,7 @@ interface BattleResult {   // 键序 [冻结]：Round 1 五键在前，附加键
    表缺 growth 回落 `STAR_GROWTH=0.18`。
 9. 战斗 seed 归调用方 [冻结]：`battleSeed(state, stage, attempts?) = hashSeed("cww-battle|" + seed + "|" + stage + "|" + attempts)`
    （attempts 缺省读 campaign.attempts），保证重试可变、回放可复现。
-   **注意**：线上 campaign 屏现用私有公式 `hashSeed(seed + ":" + stage + ":" + attempts)`，与本导出并存双轨（§10-N2，R3 必须二选一冻结）。
+   campaign 屏已统一调用本导出（旧私有公式已删）；残留：`STAGE_RULES.seedFormula` 文案过期（§10-N2）。
 
 ## 9. 禁止改名的导出清单 [冻结]
 
@@ -606,21 +606,22 @@ interface BattleResult {   // 键序 [冻结]：Round 1 五键在前，附加键
 
 ## 10. 实现与契约的不一致清单（Round 2 复盘版）
 
-Round 1 的 M1–M16 处置：M1/M2/M3（契约文本缺口）本版收编完毕；M4/M5（reason 码与 can* 配套）、M6（tiles.level 双写，已同步维护，occupant 保留死值）、M7（expandRaft 非法 dir）、M8（defaultState 坏档）、M9（ttl/dt 与拾荒游标）、M10（潜水布局与 finishDive 抛异常）、M11（会话挂 state）、M13（savedAt/离线补算/读档钳域）、M14（localeCompare/门槛/buff/multishot）、M16（钓鱼滑条/移动/旋转/拆除 UI）**已修并按实现写进上文**；M12、M15 部分残留并入下表。
+Round 1 的 M1–M16 处置：M1/M2/M3（契约文本缺口）本版收编完毕；M4/M5（reason 码与 can* 配套）、M6（tiles.level 双写，已同步维护，occupant 保留死值）、M7（expandRaft 非法 dir）、M8（defaultState 坏档）、M9（ttl/dt 与拾荒游标）、M10（潜水布局与 finishDive 抛异常）、M11（会话挂 state）、M12（assignHero 校验/悬挂引用/伤病接线）、M13（savedAt/离线补算/读档钳域）、M14（localeCompare/门槛/buff/multishot）、M15（5v5 上限/截断/取舍 UI）、M16（钓鱼滑条/移动/旋转/拆除 UI）**已修并按实现写进上文**。
 
 现存不一致（N 编号；修复归属见 ARCHITECTURE §9 / PROGRESS.md）：
 
 - **N1 store.normalize 白名单丢探索附加字段（已知债）**。`normalize` 的 explore 分支只保 `salvage.flotsam`、`fishing.lastCatch`、`dive` 三项——读档会丢 `fishing.codex`（图鉴清零）、`fishing.cast/castTick`（竿丢了倒还合理但与 beginCast 语义矛盾）、`salvage.picked/rarePicked/lastPick`、`diveRecord`（生涯统计清零）。修法：explore 分支逐字段收编 + 钳域，禁止再用整段白名单。
-- **N2 战斗 seed 双公式**。`combat.battleSeed`（`cww-battle|seed|stage|attempts`，零消费）与 `ui/screens/campaign.js` 私有 `hashSeed(seed:stage:attempts)`（线上真身）并存；`STAGE_RULES.seedFormula` 文案还停在更早的 `"meta.seed + stage*99"`。R3 必须三处收敛为一个公式（建议以 `combat.battleSeed` 为准，campaign 改调它，seedFormula 文案跟随）。
-- **N3 导出已冻结、运行时零接线的三组符号**。① `applyBattleInjuries`：campaign 战后不调用，战败仍零代价；② `tickInjuries` / `syncExploreWeather`：`stepSim` 不调用——海啸对**进行中**的钓鱼/潜水没有强制收杆/上浮（只有新开一竿/新下潜被 `canCast/canDive` 拦截；UI 潜水路径直调 `diveStep` 且不刷新 `o2Mult`）；③ `selectLineup/readyHeroes`：campaign 的 `teamOf` 仍是 `heroes.slice(0,5)`，不排伤员、不保前排、不可取舍。接线时注意：往 `stepSim` 追加步骤属**附加**（放在 tick+1 之前、用独立盐），但会改变挂机日志序列，需同步声明。
+- **N2 seedFormula 文案过期**。实现已统一为 `combat.battleSeed`（campaign 私有公式已删），但 `data/stages.js` 的 `STAGE_RULES.seedFormula` 仍写 `"meta.seed + stage*99"`。改文案即可（Fable-3，一行）。
+- **N3 量子巡检未挂 stepSim**。`tickInjuries` 与 `syncExploreWeather` 已导出冻结、语义齐备（无事原引用），但 `stepSim` 不调用——后果：① 海啸对**进行中**的钓鱼/潜水没有强制收杆/上浮（新开一竿/新下潜已被 `canCast/canDive` 拦截；UI 潜水路径直调 `diveStep` 且不刷新 `o2Mult`，`advanceDive/syncDiveWeather` 悬空）；② 养伤到期没有归队日志（可用性不受影响，`isInjured` 按 tick 自动过期）。接线时注意：往 `stepSim` 追加步骤属**附加**（放在 tick+1 之前、用独立盐），但会改变挂机日志序列，需同步声明。伤病结算（`applyBattleInjuries`）与阵容取舍（`selectLineup/readyHeroes`）已由 campaign 接线，从本条移除。
 - **N4 钓鱼 cast 双轨**。契约字段 `explore.fishing.cast`（`beginCast/hookCast` 读写）与 fish 屏的 `ctx.ui.fish.cast`（`castLine/resolveHook` 直连）并存，线上走后者：刷新丢竿、`syncFishingWeather` 管不到 UI 的竿、`fishingHud.casting` 恒 false。R3 决定 UI 是否迁移到 state 路径；迁移前两条路径都冻结。
 - **N5 can* 返回形状两套口径**。world/heroes：`{ ok:false, reason: E_码, message: 中文 }`；explore：`{ ok:false, reason: 中文, code: E_码 }`。两者都已被测试与 UI 消费，**都不许动**。R3 收敛方案（附加式）：explore 结果补 `message` 字段（= 现 reason 文案），文案迁过去后 reason 逐步对齐为码；期间测试铁律不变——world/heroes 断言 `reason`，explore 断言 `code`。
 - **N6 core/store.js import world/mods.js**。为了 `defaultState` 落 `world.mods` 快照违反了「core 不 import 领域层」的冻结依赖边（无环：mods→grid→reasons 全是下层）。本版临时豁免并记录于 ARCHITECTURE §1；R3 二选一：正式放宽该边，或把快照盖章挪到 stepSim/调用方、defaultState 不再算 mods（消费方 `exploreMods` 已有缺席回退，可平滑迁移）。
 - **N7 离线补算的天气派生流按块重放**。`settleOffline` 分块调 `tickWorld` 时 `meta.tick` 不变，`deriveRng(seed, tick, "weather", roll)` 每块重掷出同一序列（roll 只在单次调用内区分）。观感问题非安全问题（D5 残留）；修法：把块序号掺进 nonce。
-- **N8 展示层成长口径漂移**。campaign 的 `hpTable` 写死 `×(1+(star-1)*0.18)` 不读 `HEROES[key].growth`——growth=0.2 的英雄血条分母偏小（被 clamp 掩盖）。同族双份常量（数值一致、口径双写，改数值时必须同步）：`STAR_RULES` vs roster 的 `MAX_STAR/SHARD_PER_STAR`；`lineup.DEFAULT_GROWTH` vs `combat.STAR_GROWTH`；`ui/screens/dive.js` 复写的 `MAX_DEPTH/SURFACE_DEPTH`；`heroes.TICK_SECONDS` vs `engine.QUANTUM`（这对属依赖边约束下的有意双份，其余建议 R3 收敛为读表/读契约常量）。
+- **N8 双份常量（数值一致、口径双写，改数值时必须同步）**。`STAR_RULES` vs roster 的 `MAX_STAR/SHARD_PER_STAR`；`lineup.DEFAULT_GROWTH` vs `combat.STAR_GROWTH`；`ui/screens/dive.js` 复写的 `MAX_DEPTH/SURFACE_DEPTH`；`heroes.TICK_SECONDS` vs `engine.QUANTUM`（这对属依赖边约束下的有意双份，其余建议 R3 收敛为读表/读契约常量）。campaign `hpTable` 已改读 `HEROES[key].growth`，从本条移除。
 - **N9 新档 seed 仍写死 20260108**（D9 未落）。目标不变：壳层「启航」时生成随机 seed 注入，领域层只消费；测试仍用固定 seed。
 - **N10 coins/diamonds 只进不出**。首钓/订单/关卡多路进账已通，全游戏零消费方。
 - **N11 事件与居民增员未上线**。`EVENTS/EVENT_RULES`、`ORDER_POOL.tier3`、`RESIDENT_POOL.recruit`、`wall.guardAdj` 已有表无消费方；`world.event` 恒 null；居民恒 1 人。
-- **N12 5v5 取舍 UI 缺位**（M15 残留）。上限与截断已冻结生效（`MAX_SIDE`/`STAGE_RULES.teamCap`），但无阵容选择界面，`selectLineup` 悬空（并入 N3③）。
+
+（M15 的 5v5 已全关：上限截断 + campaign 勾选取舍 + `selectLineup` 自动配队 + 伤员垫底。）
 
 修复完成一条，就把对应条目从本节删除并在 `docs/ACCEPTANCE.md` 记账。

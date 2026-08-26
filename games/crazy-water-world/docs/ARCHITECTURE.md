@@ -1,6 +1,6 @@
 # 架构（Round 2 落地版）
 
-> 维护者：Fable-1（架构 / API 契约）。基线：Round 2 合并树 commit `25fd9c6`，分支 `cursor/crazy-water-world-c895`（Round 1 冻结稿基线 `14b21c9`）。
+> 维护者：Fable-1（架构 / API 契约）。基线：Round 2 合并树 commit `633f731`，分支 `cursor/crazy-water-world-c895`（Round 1 冻结稿基线 `14b21c9`）。
 > 配套文档：`docs/API_CONTRACT.md`（严格契约与禁止改名清单）。改代码前先读契约。
 >
 > 标记约定：**[冻结]** 不得变更；**[附加]** 允许新增、不得破坏既有行为；**[R3]** 下一轮要落实。
@@ -109,7 +109,7 @@
 | 拾荒（engine.stepSim） | 每量子 `deriveRng(seed, tick, "salvage")` 传给 `spawnFlotsam`，游标不落盘 | 冻结（Round 1 长命流已废，读档可复现） |
 | 钓鱼（fishing.js） | `mulberry32(seed + tick*17)` | 冻结（Round 1 口径保留） |
 | 潜水布局（dive.js） | `mulberry32(hashSeed("dive|zone|seed|tick"))`，(seed,tick,zone) 定一张图 | 冻结（写死布局已废） |
-| 战斗（battle.js） | 调用方传 seed；导出 `battleSeed(state, stage, attempts)` | 冻结；但 UI 私有公式并存（契约 §10-N2，R3 收敛） |
+| 战斗（battle.js） | 调用方传 seed；campaign 已统一调 `battleSeed(state, stage, attempts)` | 冻结；`STAGE_RULES.seedFormula` 文案待对齐（契约 §10-N2） |
 
 新游戏 seed：`defaultState` 仍写死 `20260108`（D9 未落，契约 §10-N9）。目标不变：壳层「启航」时生成随机 seed 注入；测试仍用固定 seed。**seed 的生成属于壳层副作用，领域层只消费。**
 
@@ -153,11 +153,11 @@
 
 测试硬性要求 [冻结]：战斗快照用 `JSON.stringify(simulateBattle(...))` 做**字节级**断言（契约 §8）；每修一个缺陷配一条回归测试；测试不得断言中文人话文案（会被 Fable-2/3 调整），只断言 reason/code 码与数值——world/heroes 断言 `reason`，explore 断言 `code`（契约 §2/§10-N5）。
 
-## 9. 缺陷账本（Round 2 合并树 `25fd9c6` 复盘）
+## 9. 缺陷账本（Round 2 合并树 `633f731` 复盘）
 
 Round 1 账本 D1–D18 处置如下；**残留项与新发现统一并入契约 §10 的 N 编号清单**（单一账本，不再两处记）。
 
-**已关**：D1（engine→ui 依赖，render 注入）、D2/D3（reason 码 + 全套 can*）、D4（maxLevel 上限 + tiles.level 双写同步维护）、D6（expandRaft 非法 dir）、D7（defaultState 深合并 + normalize）、D8（savedAt/idleSince/settleOffline 全链）、D10（读档钳域；版本迁移仍缺 → §5 [R3]）、D11（潜水布局派生 + finishDive 防御 + spawnFlotsam 用 dt + 拾荒派生流）、D13 上限侧（MAX_SIDE 截断 + 关卡 5 敌编队）、D14（UI 差异更新，钓鱼可玩）、D16（移动/旋转/拆除 UI）、D18（bench 真负载）。
+**已关**：D1（engine→ui 依赖，render 注入）、D2/D3（reason 码 + 全套 can*）、D4（maxLevel 上限 + tiles.level 双写同步维护）、D6（expandRaft 非法 dir）、D7（defaultState 深合并 + normalize）、D8（savedAt/idleSince/settleOffline 全链）、D10（读档钳域；版本迁移仍缺 → §5 [R3]）、D11（潜水布局派生 + finishDive 防御 + spawnFlotsam 用 dt + 拾荒派生流）、D12（assignHero 校验/悬挂引用；`applyBattleInjuries` 已由 campaign 战后调用，战败有代价；战斗 seed 统一 `combat.battleSeed` 重试盐）、D13（MAX_SIDE 截断 + 关卡 5 敌编队 + 阵容勾选取舍 UI + `selectLineup` 自动配队）、D14（UI 差异更新，钓鱼可玩）、D16（移动/旋转/拆除 UI）、D18（bench 真负载）。
 
 **部分关/残留**（详见契约 §10 对应条目）：
 
@@ -165,17 +165,16 @@ Round 1 账本 D1–D18 处置如下；**残留项与新发现统一并入契约
 | --- | --- | --- | --- |
 | D5 | 离线分块的天气派生流重放（tick 不变、nonce 未掺块序） | N7 | Opus-1 |
 | D9 | 新档 seed 写死 20260108 | N9 | Opus-4（壳层）|
-| D12 | `applyBattleInjuries` 无调用方；战败零代价 | N3① | Opus-3 + Opus-4 |
-| D13 | 5v5 阵容取舍 UI 缺位，`selectLineup` 悬空 | N3③ / N12 | Opus-4 |
+| D12 | `tickInjuries` 未挂量子（归队日志缺席；可用性不受影响） | N3② | Opus-1 |
 | D15 | 钓鱼 cast 仍在 `ctx.ui` 双轨（潜水侧已入 state） | N4 | Opus-4 |
 | D17 | 居民恒 1 人、事件恒 null、coins 无消费 | N10 / N11 | Opus-1 + Fable-3 |
 
-**Round 2 新发现**（同表在契约 §10）：N1 normalize 丢探索附加字段（Opus-1/2）；N2 战斗 seed 双公式（Opus-3 + Opus-4）；N3② `tickInjuries/syncExploreWeather` 未入量子（Opus-1）；N5 can* 两套形状（Fable-1 定收敛方案）；N6 store→world/mods 豁免边（Fable-1 裁决）；N8 展示层成长口径双写（Opus-4）。
+**Round 2 新发现**（同表在契约 §10）：N1 normalize 丢探索附加字段（Opus-1/2）；N2 `STAGE_RULES.seedFormula` 文案过期（Fable-3 一行）；N3 `tickInjuries/syncExploreWeather` 未入量子——海啸对进行中会话无强制措施（Opus-1/2）；N5 can* 两套形状（Fable-1 定收敛方案）；N6 store→world/mods 豁免边（Fable-1 裁决）；N8 双份常量口径（各归属方同步）。
 
 ## 10. Round 3 落地顺序建议
 
-1. **先收敛双轨**（N2 战斗 seed、N4 钓鱼 cast、N8 双份常量）：都是「实现有两份、谁是真身不明」的债，拖越久快照与存档越难迁移。战斗 seed 收敛会改战报快照，须与 GPT-sol 的快照重落盘排同一批。
-2. **stepSim 追加巡检**（N3②）：`tickInjuries` + `syncExploreWeather` 挂量子（tick+1 前、独立盐、无事原引用），随后 campaign 接 `applyBattleInjuries`（N3①）与 `selectLineup`（N3③/N12）才有意义。
+1. **stepSim 追加巡检**（N3）：`tickInjuries` + `syncExploreWeather` 挂量子（tick+1 前、独立盐、无事原引用短路，成本为零）。这是「海啸对进行中会话有真实后果」的最后一根线，也让 dive 屏可以退回消费 `advanceDive`（每步刷新 o2Mult）。会改变挂机日志序列，与快照重落盘排同一批。
+2. **收敛钓鱼 cast 双轨**（N4）：fish 屏迁移到 `beginCast/hookCast`（state 路径），刷新不丢竿、`syncFishingWeather` 才管得到 UI 的竿；迁移前两条路径都冻结。
 3. **normalize 收编探索字段**（N1）：在图鉴/生涯统计有 UI 之前修掉，否则玩家第一次刷新就丢数据。
-4. **N6 依赖边裁决**：建议把 `world.mods` 盖章挪到 stepSim（defaultState 不算 mods，消费方已有回退），恢复「core 不 import 领域层」的干净表述。
+4. **N6 依赖边裁决**：建议把 `world.mods` 盖章挪到 stepSim（defaultState 不算 mods，消费方已有回退），恢复「core 不 import 领域层」的干净表述。同批顺手清 N2 文案与 N8 双份常量。
 5. 事件/居民/coins 消费（N10/N11）依赖 Fable-3 数值与 Opus-1 接线，可与上面并行；D9/版本迁移是壳层小活，见缝插针。
