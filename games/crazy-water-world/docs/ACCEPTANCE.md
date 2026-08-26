@@ -223,110 +223,118 @@ wreck（无海域选择，深度标尺写死 90）。`STAGE_RULES.seedFormula` �
 
 ## Round 3（合并树终验 · claude-fable-5-thinking-xhigh）
 
-审计基线：分支 `cursor/crazy-water-world-c895`，提交 `53a1438`（Round 2 表驱动/5v5/UI 接线/
-HUD CSS 四路全合入后的整树）。
+审计基线：分支 `cursor/crazy-water-world-c895`，最终提交 `f7a325a`。
+本轮终验分两遍：第一遍在 `53a1438`（Round 2 四路全合入）上跑完全套；期间 Round 3 工蜂又合入
+三路（stepSim 巡检 113bafc/30d3eb4、normalize 收编 725efc8、行为测试 665977a），于是对最终树
+把五门、三套 e2e、全部探针**整体重跑**，下文数字一律以最终树为准。
 方法：全量读码 + `npm test` / `probe` / `bench` / `stress` / `build` + 真 Chrome 端到端三套
 （smoke/fresh/wiring，dev 4174）+ 自制 Node 复验探针 5 组（A–E，脚本在 /tmp，未入库未改
 src/tests）。除本文件与 `SOTA_CHECKLIST.md` 外未改动任何文件。
 
-### 1. 工程门槛实测（全部退出码 0）
+### 1. 工程门槛实测（最终树，全部退出码 0）
 
 | 命令 | 结果 | 备注 |
 | --- | --- | --- |
-| `npm test` | 绿：5 文件 **37 用例**全过 | 新增 `combat-contract.test.js` 20 用例：黄金快照×3 / 七技能星级门槛 / 铁钩钩后排×6 / 三向引用×4 |
-| `npm run probe` | 绿：7/7 PASS | 隔离 realpath 真断言 |
-| `npm run bench` | 绿：24×24 · 64 建筑 · **64 座全部委任** · 海啸 | tick p95 0.133ms（预算 2）/ stepSim 0.117 / battle 0.099；R2 遗留的「委任密集防退化」场景已加且预算未破 |
-| `npm run stress` | 绿：32×32 密铺 240 建筑 + 30 关×128 seed | 3840 场同输入 **0 错配**（digest `7b022e47…`，随 5v5 重校自然更换）；12 项 checks 全 true（含 fiveEnemiesPerStage） |
-| `npm run build` | 绿：JS 149.3kB（gzip **55.9kB**）| < 100kB gzip；**R2 的 vite 动态 import 告警已消失** |
-| e2e `smoke.mjs` | 绿：37/37（真 Chrome + dev 4174） | 六屏走查 + 「战报播完跳过自己收起」等新断言 |
-| e2e `fresh.mjs` | 绿：11/11 | 空档新手链 |
-| e2e `wiring.mjs` | 绿：41/41 | Round 2 接线证据链：阵容/伤病/种子/碎片/sticky/潜水切屏 |
-| Node 探针 A–E | 见 §2/§3 | 逐条复测 R2 必关 5 项与简报疑点 |
+| `npm test` | 绿：5 文件 **40 用例**全过 | `combat-contract` 20 用例（黄金快照×3 / 七技能星级门槛 / 铁钩×6 / 三向引用×4）+ 新行为测试（伤病到期归队、海啸 E_WEATHER 双线、潜水会话、5 敌抽查） |
+| `npm run probe` | 绿：**8/8** PASS | 隔离 realpath 真断言 |
+| `npm run bench` | 绿：24×24 · 64 建筑 · **64 座全部委任** · 海啸 | tick p95 0.126ms（预算 2）/ stepSim 0.121（已含两条巡检）/ battle 0.102；R2 的「委任密集防退化」场景已加且预算未破 |
+| `npm run stress` | 绿：32×32 密铺 240 建筑 + 30 关×128 seed | 3840 场同输入 **0 错配**（digest `7b022e47…`，随 5v5 重校自然更换）；12 项 checks 全 true |
+| `npm run build` | 绿：JS 152.0kB（gzip **56.8kB**）| < 100kB gzip；**R2 的 vite 动态 import 告警已消失** |
+| e2e `smoke.mjs` | 绿：37/37（真 Chrome + dev 4174，最终树重跑） | 六屏走查 + 「战报播完跳过自己收起」 |
+| e2e `fresh.mjs` | 绿：11/11（最终树重跑） | 空档新手链 |
+| e2e `wiring.mjs` | 绿：41/41（最终树重跑） | Round 2 接线证据链：阵容/伤病/种子/碎片/sticky/潜水切屏 |
+| Node 探针 A–E | 两遍对照见 §2/§3 | A/B/C 在追合三路后翻绿或半翻绿 |
 
-### 2. Round 2 必关 5 项复验：3 项半翻绿
+### 2. Round 2 必关 5 项复验：关掉 4 项
 
 **R2-1 表驱动接线 → 绿。** `sim.js` 经 `compileBuildings` 全面消费
 `BUILDINGS.output/input/converts/adjacency`，`upgradeCost` 消费 `upgradeGrowth/upgradeExtra`。
 逐字段对账：still 产盐、salvage 产废铁、farm 耗淡水、车间「浮木2+废铁1→工具1」——tool 有来源
-有去向（`upgradeExtra fromLevel:2`）；邻接加成（`likes`/`bonus`）与委任加成（`ASSIGN_RULES`）
-进 tick；天气新轴 hunger/thirst/durationSec/stillBonus/fishing/diveO2 全有消费方；
-`WEATHER_SCHEDULE` 按 HQ 分档（HQ1–2 档无海啸）、`UNLOCK_HQ` 进 `unlockCheck`（与
-player.level 双口径 OR，旧档兼容的故意设计）。Fable-3 的数值工作自此真实生效。
+有去向（`upgradeExtra fromLevel:2`）；邻接与委任加成进 tick；天气新轴
+hunger/thirst/durationSec/stillBonus/fishing/diveO2 全有消费方；`WEATHER_SCHEDULE` 按 HQ 分档
+（HQ1–2 档无海啸）、`UNLOCK_HQ` 进 `unlockCheck`（与 player.level 双口径 OR，旧档兼容的故意
+设计）。Fable-3 的数值工作自此真实生效。
 
 **R2-2 5v5 取舍 UI → 绿。** 关卡屏勾选出战/超编拦截/前后排分栏/自动配队，`lineupOf` 收敛到
 `heroes/lineup.js selectLineup`（UI 不再 slice(0,5)）。wiring e2e「阵容与 selectLineup 逐位
 一致」等断言 PASS。
 
-**R2-3 伤病接线 → 绿（留一条尾巴）。** campaign 战后调 `applyBattleInjuries`
-（`campaign.js:449`），英雄屏「养伤中」+ 禁委任 + 倒计时，`readyHeroes` 排伤员。wiring e2e
-PASS。尾巴：`tickInjuries` 未挂 `stepSim`（见 R3-2）。
+**R2-3 伤病接线 → 绿（全链）。** campaign 战后调 `applyBattleInjuries`（`campaign.js:449`），
+英雄屏「养伤中」+ 禁委任 + 倒计时；第一遍审计时 `tickInjuries` 未挂 stepSim（痊愈无归队日志、
+`injuredUntil` 残留），追合 113bafc 后探针 C 翻绿：日志「养好了」出现、标记清零；并有单测
+「keeps a fallen hero injured until ticks expire」。
 
-**R2-4 事件 + 居民增员 → 未动，仍红。** 见 R3-3。
+**R2-4 事件 + 居民增员 → 未动，仍红。** 见 R3-2。
 
-**R2-5 测试门禁 → 半绿。** ① 战斗契约测试已落（20 用例，改 rng 消费顺序快照必红）→ 绿；
-② e2e 一键化（`test:ui`）未做，89 项浏览器断言仍靠手动 dev server → 仍红；伤病函数零单测。
+**R2-5 测试门禁 → 大半绿。** ① 战斗契约 + 行为测试已落（40 用例，改 rng 消费顺序快照必红，
+伤病/海啸/潜水会话都有断言）→ 绿；② e2e 一键化（`test:ui`）未做，89 项浏览器断言仍靠手动
+dev server → 仍红（归入 R3-5）。
 
-### 3. Round 3 开局仍开的洞（附实测证据与复现）
+### 2b. 本轮追合三路的即时验收（第一遍红 → 第二遍绿）
 
-**R3-1（P1）存档往返丢图鉴，首钓奖励无限重刷。**
-`normalize` 白名单重建 `explore.fishing` 只留 `lastCatch`，`codex`/`cast` 全丢。
-探针 A 实测：钓一条（图鉴 known=1，首钓 +5 coins）→ JSON 往返 `hydrateSave` → known=0、
-再钓同鱼 `newEntry` 又是 true——刷新即重领首钓 coins/diamonds。图鉴屏上线前必须先堵这个口子。
-复现：`store.js normalize` 131–135 行对照 `fishing.js recordCodex` 写入的键。
+- **normalize 收编（725efc8）→ 绿。** 第一遍探针 A 实锤「存档往返丢图鉴、首钓奖励无限重刷」
+  （known 1→0、`newEntry` 重复 true）；追合后重跑：known 1→1、再钓同鱼 `newEntry=false`、
+  `cast/castTick`、拾荒累计量、`diveRecord` 全保住；`world.mods` 显式作废改每量子现算，
+  store 不再反向 import world/mods（依赖边恢复冻结）。
+- **stepSim 巡检（113bafc）→ 绿。** 第一遍探针 B/C 实锤「海啸不收竿、痊愈无日志」；追合后：
+  **入档的**竿子海啸天 20 量子内被强制收杆、归队日志上线；两条巡检不消费随机数，拾荒派生流
+  逐位不变（stress digest 不变佐证）。
+- **潜水会话结账（30d3eb4）→ 绿。** 强制上浮的会话由 stepSim 补 `finishDive` 结算，战利品
+  入仓、`explore.dive` 清空，不再冻住建造预览与背包面板。
 
-**R3-2（P1）钓鱼 UI 旁路 + stepSim 缺两条巡检。**
+### 3. Round 3 终验仍开的洞（附实测证据与复现）
+
+**R3-1（P1）钓鱼 UI 走旁路，巡检管不到真实玩法路径。**
 `ui/screens/fish.js` 直连 `castLine`+`resolveHook`，竿子存 `ctx.ui.fish` 不入档，还自抄了一份
-perfect 判定；Round 2 写好的 `beginCast`/`hookCast`/`syncExploreWeather` 整层零调用，
-`tickInjuries` 也没挂 `stepSim`。探针 B 实测：海啸天挂竿 20 量子不收、`resolveHook` 照样上鱼
-（海啸禁钓只拦新抛竿）。探针 C 实测：英雄痊愈无「养好了」归队日志、`injuredUntil` 残留
-（功能性恢复正常，`isInjured` 按 tick 判）。
-复现：`rg "beginCast|hookCast|syncExploreWeather|tickInjuries" src/ui src/core` 零结果。
+perfect 判定（与 `gradeCast` 公式重复）。stepSim 巡检只看得见 `state.explore.fishing.cast`——
+UI 的竿子它够不着：海啸天 UI 挂着的竿仍可收鱼（`resolveHook` 不查天气，禁钓只拦新抛竿）；
+换屏/刷新丢竿。Round 2 写好的 `beginCast`/`hookCast` 在 UI 侧仍零调用。
+复现：`rg "beginCast|hookCast" src/ui` 零结果；fish 屏 116/139 行。
 
-**R3-3（P1）事件/居民/coins 三缺口同根，未动。**
+**R3-2（P1）事件/居民/coins 三缺口同根，未动。**
 探针 D 实测：造 HQ+电台后 400 模拟秒，`world.event` 恒 null、居民恒 1 人、coins 恒 20。
 `EVENTS`（海盗/鲨群/商栈）与 `RESIDENT_POOL`（radioLevel 门槛 + coins/meal 招募价）数据全备
 零消费——而这两张表恰好就是 coins 唯一设计好的去向，接线即三闭环。
 复现：`rg "EVENTS|RESIDENT_POOL" src --glob '!src/data/*'` 零结果。
 
-**R3-4（P1）B30 难度倒挂，被快照冻结。**
+**R3-3（P1）B30 难度倒挂，被快照冻结。**
 `tide_lord` 无倍率覆写（默认 hp×3.8/atk×1.3、护卫 ×0.7），面板 hp 4241/atk 77——血量低于
 B20（4795）、攻击比 B25（124）低 38%。探针 E 实测：**2 星×5 阵容 B20/B25 全败 0/128，
 B30 却 117/128 胜**；5 星满编下 B30 平均 8.5 回合 < B20 的 9 回合。「终局考试」文案不成立。
 `stages.js` 注释自认「B30 受快照冻结维持」——重录 `combat-contract` 快照是再平衡的前置。
 复现：`node` 单跑 `simulateBattle`（2星×5 vs STAGES[19]/[24]/[29] 各 128 seed）。
 
-**R3-5（P1）两块引擎已完工的面板没上 UI。**
+**R3-4（P1）两块引擎已完工的面板没上 UI。**
 ① 潜水海区：双表已合一、解锁/氧耗/掉落/禁潜全通、`diveZones()` 面板数据现成，但
 `ui/screens/dive.js:210` 写死 `startDive(ctx.state, "wreck")`——city/trench 玩家够不着。
-② 图鉴：`fishCodex()` 现成、首钓奖励已接线，无图鉴屏（`rg fishCodex src/ui` 零结果；
-且依赖 R3-1 先修）。
+② 图鉴：`fishCodex()` 现成、首钓奖励已接线、存档已保得住（725efc8 之后），只差图鉴屏
+（`rg fishCodex src/ui` 零结果）。
 复现：潜水屏无海区列表；全 UI 无图鉴入口。
 
-**R3-6（P2）零散。** e2e 未入门禁（`test:ui`）；伤病函数零单测；键盘不能拾荒/建造落位；
-漂浮物色盲区分靠色相；无 fps 探针；软目标无追踪 UI；Google Fonts CDN；存档无版本迁移/导出；
-画布木纹与拾取/泡沫粒子未落地（ART_DIRECTION §「待落地」，雨丝已有）；解锁双口径未还原
-「不立 HQ 只能建 HQ」+ `hqLevel=0` 回退全局权重含海啸（开荒裸筏比 HQ1–2 更危险的倒挂）+
-`warnSec` 预警零消费。
+**R3-5（P2）零散。** e2e 未入门禁（`test:ui`）；键盘不能拾荒/建造落位；漂浮物色盲区分靠色相；
+无 fps 探针；软目标无追踪 UI；Google Fonts CDN；存档无版本迁移/导出；画布木纹与拾取/泡沫粒子
+未落地（ART_DIRECTION §「待落地」，雨丝已有）；解锁双口径未还原「不立 HQ 只能建 HQ」+
+`hqLevel=0` 回退全局权重含海啸（开荒裸筏比 HQ1–2 更危险的倒挂）+ `warnSec` 预警零消费。
 
 ### 4. Round 3 必须关掉的 5 项（验收官口径）
 
-1. **存档收口**（R3-1）：`normalize` 保留并钳域 `explore.fishing.codex/cast`，补「存档往返
-   幂等」单测，堵死首钓奖励重刷。
-2. **钓鱼/巡检接线**（R3-2）：fish 屏改走 `beginCast`/`hookCast`，`stepSim` 每量子过
-   `syncExploreWeather` + `tickInjuries`，删 UI 自抄的判定副本。
-3. **事件 + 居民 + coins 三闭环**（R3-3）：`EVENTS` 接 tick（海盗/风暴有后果、商栈收 coins）、
-   电台按 `RESIDENT_POOL` 招募（扣 coins/meal）、多居民多订单。
-4. **B30 再平衡**（R3-4）：重录契约快照，`tide_lord` 抬到 hp≥×6/atk≥×2.6，验收口径：
+1. **钓鱼 UI 迁移**（R3-1）：fish 屏改走 `beginCast`/`hookCast`，删自抄判定——让 stepSim
+   巡检管到真实玩法路径，海啸旁路与「换屏丢竿」一并关掉。
+2. **事件系统接 tick**（R3-2）：`EVENTS` 按 minStage/minHq/weight 抽取写入 `world.event`，
+   海盗/风暴有建筑后果、商栈收 coins。
+3. **居民增员**（R3-2）：电台按 `RESIDENT_POOL` 招募（扣 coins/meal），多居民多订单
+   （`maxOpenOrders`），perk 进对应建筑产率——与第 2 项合力打通 coins 闭环。
+4. **B30 再平衡**（R3-3）：重录契约快照，`tide_lord` 抬到 hp≥×6/atk≥×2.6，验收口径：
    2 星阵容胜率归零、4 星里程碑阵容可过。
-5. **两块现成面板上 UI**（R3-5）：潜水海区选择（消费 `diveZones()`）+ 鱼类图鉴屏（消费
-   `fishCodex()`，依赖第 1 项）。
+5. **两块现成面板上 UI**（R3-4）：潜水海区选择（消费 `diveZones()`）+ 鱼类图鉴屏（消费
+   `fishCodex()`）。
 
-### 5. Round 3 开局结论
+### 5. Round 3 终验结论
 
-**P0 保持全绿（无新增 P0），Round 2 点名 5 项关掉 3 项半：表驱动、5v5 取舍、伤病接线、战斗
-契约测试落地；事件+居民一动未动。** 五门 + 89 项浏览器断言 + 5 组探针在合并树上全绿，表驱动
-改造后性能无回归（64 建筑全委任 p95 0.133ms）。当前所有 P1 呈同一个模式：**引擎/数据层已
-完工、UI 或存档层没收口**——潜水海区和图鉴是「面板数据现成没人画」，钓鱼旁路和 stepSim 巡检
-是「新层写好没人挂」，事件/居民/coins 是「表全备没人读」，B30 是「注释自认偏弱等快照重录」。
-Round 3 把上述 5 项关掉后，P1 剩余只有工程口（test:ui、fps 探针）与无障碍两条（键盘拾荒、
-色盲形状），SOTA 宣称线在望。
+**P0 保持全绿（无新增 P0）。Round 2 点名 5 项关掉 4 项：表驱动、5v5 取舍、伤病全链、契约+
+行为测试；本轮追合的存档收编 / stepSim 巡检 / 潜水结账三路即时验收全绿。** 五门 + 89 项浏览器
+断言 + 5 组探针在最终树上全绿，表驱动与巡检加身后性能无回归（64 建筑全委任 stepSim p95
+0.121ms）。剩余 P1 呈同一个模式：**引擎/数据层已完工、UI 层没收口**——钓鱼旁路是「新层写好
+UI 没搬」，潜水海区和图鉴是「面板数据现成没人画」，事件/居民/coins 是「表全备没人读」，B30 是
+「注释自认偏弱等快照重录」。把 §4 五项关掉后，P1 剩余只有工程口（test:ui、fps 探针）与无障碍
+两条（键盘拾荒、色盲形状），SOTA 宣称线在望。
