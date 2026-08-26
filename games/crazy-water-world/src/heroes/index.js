@@ -7,6 +7,8 @@ export {
   canStarUp,
   applyBattleInjuries,
   clearHealed,
+  tickInjuries,
+  injuryRemaining,
   findHero,
   hasRecruitStation,
   isInjured,
@@ -14,6 +16,7 @@ export {
   MAX_STAR,
   SHARD_PER_STAR,
   INJURY_SECONDS,
+  TICK_SECONDS,
   RECRUIT_BUILDING,
 } from "./roster.js";
 export { selectLineup, readyHeroes, heroPower, toBattleUnit, isReady, MAX_LINEUP } from "./lineup.js";

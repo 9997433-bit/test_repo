@@ -4,7 +4,9 @@ import { REASON, allow, deny } from "../core/reasons.js";
 export const MAX_STAR = 5;
 export const SHARD_PER_STAR = 10;
 export const RECRUIT_BUILDING = "radio";
-// 战败英雄的休整时长（模拟秒）。tick 是 0.1s 量子，300 秒 ≈ 3000 量子。
+// 一个模拟量子的秒数，与 core/engine.js 的 QUANTUM 同值。
+export const TICK_SECONDS = 0.1;
+// 战败英雄的休整时长（模拟秒）。300 秒 = 3000 个量子。
 export const INJURY_SECONDS = 300;
 const LOG_LIMIT = 24;
 
@@ -15,7 +17,17 @@ function pushLog(state, line) {
 /** 当前模拟时刻（秒）。meta.tick 是唯一时间轴，一个量子 0.1 秒。 */
 export function nowSeconds(state) {
   const tick = state && state.meta && Number.isFinite(state.meta.tick) ? state.meta.tick : 0;
-  return tick * 0.1;
+  return tick * TICK_SECONDS;
+}
+
+/** 对齐到量子网格：养伤到期时刻必须正好落在某个 tick 上，销假才可复现。 */
+function onGrid(seconds) {
+  return Math.round(Math.ceil(seconds / TICK_SECONDS) * TICK_SECONDS * 10) / 10;
+}
+
+function heroName(hero) {
+  const def = HEROES[hero.heroKey];
+  return def ? def.name : hero.heroKey;
 }
 
 export function findHero(state, heroId) {
@@ -26,6 +38,13 @@ export function isInjured(state, hero, now) {
   if (!hero) return false;
   const at = Number.isFinite(now) ? now : nowSeconds(state);
   return Number.isFinite(hero.injuredUntil) && hero.injuredUntil > at;
+}
+
+/** 还要养多久（模拟秒）。健康或已到期返回 0 —— UI 拿它显示倒计时。 */
+export function injuryRemaining(state, hero, now) {
+  if (!hero || !Number.isFinite(hero.injuredUntil)) return 0;
+  const at = Number.isFinite(now) ? now : nowSeconds(state);
+  return hero.injuredUntil > at ? Math.round((hero.injuredUntil - at) * 10) / 10 : 0;
 }
 
 export function hasRecruitStation(state) {
@@ -145,38 +164,51 @@ export function starUp(state, heroId) {
 /* ------------------------------- 伤病 ------------------------------- */
 
 /**
- * 把战报里阵亡的己方英雄挂上养伤计时，并让他们自动离岗
- * （离岗后 tickWorld 的委任加成随之消失，injuredUntil 才算真正有消费者）。
+ * 把战报里阵亡的己方英雄挂上养伤计时，并让他们自动离岗。
+ *
+ * 与时间轴的联动全在这里收口：
+ *   - 到期时刻 = nowSeconds(state) + span，锚在 meta.tick 上并对齐量子网格，
+ *     所以「养多久」由 tick 推进说了算，不需要谁替它计时；
+ *   - 已经在养伤的人只会被延长、不会被新战报缩短（取 max）；
+ *   - 同步离岗（英雄侧 + 建筑侧），tickWorld 的委任加成当场消失；
+ *   - 之后 isInjured / readyHeroes / selectLineup / canAssign 都读同一个 tick 时刻，
+ *     tick 走过 injuredUntil 的那一刻英雄自动可用，tickInjuries 只是补一条归队日志。
+ *
  * 无人阵亡时返回入参原引用。
  */
 export function applyBattleInjuries(state, result, seconds) {
   if (!result || !Array.isArray(result.leftover)) return state;
   const span = Number.isFinite(seconds) && seconds > 0 ? seconds : INJURY_SECONDS;
-  const now = nowSeconds(state);
+  const until = onGrid(nowSeconds(state) + span);
   const fallen = new Set(
     result.leftover.filter((u) => u.side === "ally" && u.hp <= 0).map((u) => u.id),
   );
   const hurt = (state.heroes || []).filter((h) => fallen.has(h.id));
   if (!hurt.length) return state;
 
-  const heroes = state.heroes.map((h) =>
-    fallen.has(h.id) ? { ...h, injuredUntil: now + span, assignedBuildingId: null } : h,
-  );
+  const heroes = state.heroes.map((h) => {
+    if (!fallen.has(h.id)) return h;
+    const prev = Number.isFinite(h.injuredUntil) ? h.injuredUntil : 0;
+    return { ...h, injuredUntil: Math.max(prev, until), assignedBuildingId: null };
+  });
   const buildings = (state.buildings || []).map((b) =>
     b.occupantHeroId && fallen.has(b.occupantHeroId) ? { ...b, occupantHeroId: null } : b,
   );
-  const names = hurt
-    .map((h) => (HEROES[h.heroKey] ? HEROES[h.heroKey].name : h.heroKey))
-    .join("、");
+  const names = hurt.map(heroName).join("、");
   return { ...state, heroes, buildings, log: pushLog(state, `${names}挂了彩，抬回木筏养伤。`) };
+}
+
+/** 到点该销假的人。按 heroes 数组序，稳定。 */
+function healedHeroes(state, now) {
+  return (state.heroes || []).filter(
+    (h) => Number.isFinite(h.injuredUntil) && h.injuredUntil > 0 && h.injuredUntil <= now,
+  );
 }
 
 /** 手动销假：把已经过期的养伤标记归零，读档后清理用。无变化返回原引用。 */
 export function clearHealed(state) {
   const now = nowSeconds(state);
-  if (!(state.heroes || []).some((h) => Number.isFinite(h.injuredUntil) && h.injuredUntil > 0 && h.injuredUntil <= now)) {
-    return state;
-  }
+  if (!healedHeroes(state, now).length) return state;
   return {
     ...state,
     heroes: state.heroes.map((h) =>
@@ -185,4 +217,15 @@ export function clearHealed(state) {
         : h,
     ),
   };
+}
+
+/**
+ * 每量子推进伤病：销假 + 归队日志。纯函数，没人到期就返回原引用，
+ * 挂在 stepSim 的每个量子上零成本（99.9% 的量子直接命中原引用短路）。
+ */
+export function tickInjuries(state) {
+  const healed = healedHeroes(state, nowSeconds(state));
+  if (!healed.length) return state;
+  const names = healed.map(heroName).join("、");
+  return { ...clearHealed(state), log: pushLog(state, `${names}养好了，随时能上。`) };
 }
