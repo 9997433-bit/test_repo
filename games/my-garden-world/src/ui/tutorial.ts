@@ -1,4 +1,4 @@
-import { TUTORIAL, currentBeat, type TutorialGoal } from "../data/story";
+import { TUTORIAL, currentBeat, sideStory, type TutorialGoal } from "../data/story";
 import type { GameEvent } from "../engine/events";
 import type { GameState } from "../engine/state";
 
@@ -104,4 +104,48 @@ export function renderTutorial(host: HTMLElement, state: GameState, onNext: () =
   });
   host.append(box);
   btn?.focus();
+}
+
+// ---------- 可选剧情折（番外） ----------
+
+/** 番外折每次会话只看一次（内存态，同 introSeen；刷新后重看无妨）。 */
+const sideSeen = new Set<string>();
+
+/**
+ * 弹出一则可选剧情折（data/story.ts 的 SIDE_STORIES）。
+ * 与主教程完全解耦：不读写 tutorialStep/tutorialDone，Esc 与 cta 均可收起。
+ * 主教程未完成、id 未知、已看过或屏上已有一折番外时安静返回 false；弹出则返回 true。
+ */
+export function renderSideStory(host: HTMLElement, state: GameState, id: string, onClose?: () => void): boolean {
+  if (!state.tutorialDone || sideSeen.has(id)) return false;
+  if (host.querySelector(".modal.side-story")) return false;
+  const beat = sideStory(id);
+  if (!beat) return false;
+  sideSeen.add(id);
+  const box = document.createElement("div");
+  box.className = "modal side-story";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-labelledby", "side-story-title");
+  box.innerHTML = `<div class="modal-card">
+    <div class="muted step-label">番外 · 闲话一折</div>
+    <h2 id="side-story-title">${beat.title}</h2>
+    <p>${beat.body}</p>
+    <button type="button" class="cta">${beat.cta}</button>
+    <div class="muted esc-hint">按 Esc 键亦可收起</div>
+  </div>`;
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") close();
+  };
+  const close = (): void => {
+    document.removeEventListener("keydown", onKey);
+    box.remove();
+    onClose?.();
+  };
+  const btn = box.querySelector("button");
+  btn?.addEventListener("click", close);
+  document.addEventListener("keydown", onKey);
+  host.append(box);
+  btn?.focus();
+  return true;
 }

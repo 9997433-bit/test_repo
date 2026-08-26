@@ -68,7 +68,8 @@ export const TUTORIAL: StoryBeat[] = [
     title: "自此看花",
     body: "园子活了。往后四季轮转、花艺插瓶、花灵驻园、庭院装扮，都由你做主。去吧，把这里种成你的花园世界。",
     cta: "开园",
-    allow: ["workshop", "decor", "spirit", "plot"],
+    // "visit" 为访邻 dock 按钮预留门控位：按钮落地后自动随尾折解锁（见 docs/UX.md 六）。
+    allow: ["workshop", "decor", "spirit", "plot", "visit"],
   },
 ];
 
@@ -85,4 +86,47 @@ export function tutorialAllows(step: number, done: boolean, buttonId: string): b
     if (TUTORIAL[i]?.allow?.includes(buttonId)) return true;
   }
   return false;
+}
+
+// ---------- 可选剧情折（番外） ----------
+// 与主教程完全解耦：不占 tutorialStep、不参与 dock 门控、不推进 tutorialDone。
+// 由邻访/摆放等玩法系统在对应时机首次发生时调用 renderSideStory（ui/tutorial.ts）弹出一次。
+
+/** 番外折的触发时机，供玩法系统对号入座（详见 docs/UX.md 八）。 */
+export type SideStoryTrigger = "visit-first" | "visit-pick-first" | "place-first";
+
+export interface SideStory {
+  id: string;
+  trigger: SideStoryTrigger;
+  title: string;
+  body: string;
+  cta: string;
+}
+
+export const SIDE_STORIES: SideStory[] = [
+  {
+    id: "fence",
+    trigger: "visit-first",
+    title: "篱外人家",
+    body: "篱笆那头传来剪刀声——邻家阿姊也在侍弄园子。她隔篱招手：「进来坐坐？帮我浇两瓢水，看中哪枝花，尽管摘去。」串门自有礼数：水按她园里的缺处浇，花只摘盛开的，一日莫贪多。",
+    cta: "串门去",
+  },
+  {
+    id: "borrow",
+    trigger: "visit-pick-first",
+    title: "借花一枝",
+    body: "你在阿姊园里剪下一枝开得正盛的花。她笑着摆手：「花开堪折直须折，拿去拿去。」借花要记情——回头替她多浇两瓢水，或等自家花开了给她留一枝，往来才长久。",
+    cta: "记下这份情",
+  },
+  {
+    id: "settle",
+    trigger: "place-first",
+    title: "一物得其所",
+    body: "货郎把你购置的物件送进园来，问摆在哪。檐下、径旁、池畔各有讲究：物件放对了地方，园子的气韵才顺。泛着微光的位置就是空位，看好了再落座；不合心意，随时可挪。",
+    cta: "亲手安置",
+  },
+];
+
+export function sideStory(id: string): SideStory | undefined {
+  return SIDE_STORIES.find((s) => s.id === id);
 }
