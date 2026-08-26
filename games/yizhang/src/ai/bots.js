@@ -9,8 +9,15 @@
 //
 // 只读 view（getView 的纯 JSON 快照），不写 state，不 import three / DOM。
 // view 字段缺失时全部退化到保守默认，保证 Bot 永远在动、永远会扇。
+//
+// view 的字段名以 `src/sim/view.js` 为准：时钟是 `time`、冷却是 `slapCd`/`skillCd`、
+// 状态是 `statuses[{id,t,mag}]`、台面在 `arena.tiles[{x,z,alive}]`。
+// combat 的 testkit state 用另一套名字（`t` / `cd.skillAt` / `moveScale`），两套都读。
 
+import { GLOVE_BY_ID as DATA_GLOVE_BY_ID } from "../data/gloves.js";
+import { BOT_PERSONA_BY_ID } from "../data/bots.js";
 import { FALLBACK_GLOVE_BY_ID, ARENA } from "../combat/constants.js";
+import { normalizeSkillId } from "../combat/skills.js";
 import {
   clamp,
   clamp01,
@@ -23,6 +30,18 @@ import {
 } from "../combat/util.js";
 
 export const BOT_PERSONAS = ["brute", "fox", "bully"];
+
+/** 人格系数来自 `src/data/bots.js`；data 缺席时退回这里的保守默认。 */
+function tuningOf(persona) {
+  const t = BOT_PERSONA_BY_ID[persona] || {};
+  return {
+    edgeCaution: num(t.edgeCaution, 0.5),
+    reactionSeconds: num(t.reactionSeconds, 0.24),
+    skillEagerness: num(t.skillEagerness, 0.7),
+    dashEagerness: num(t.dashEagerness, 0.6),
+    mistakeRate: num(t.mistakeRate, 0.12),
+  };
+}
 
 const NEUTRAL = () => ({
   moveX: 0,
@@ -65,7 +84,8 @@ function memoryOf(botId) {
       lastYaw: 0,
       spaceScore: 0,
       strafeSign: 1,
-      timers: { dash: 0, jump: 0, switch: 2, commit: 0, skill: 0, strafe: 0, aim: 0 },
+      timers: { dash: 0, jump: 0, switch: 2, commit: 0, skill: 0, strafe: 0, aim: 0, detour: 0 },
+      detourSign: 1,
       aimNoise: 0,
       targetId: null,
       committing: false,
@@ -101,17 +121,86 @@ function arenaR(view) {
   return num(view && view.arena && view.arena.radius, num(view && view.arenaRadius, ARENA.radius));
 }
 
+/** getView 的方格台面只在 arena 上记边长；testkit 的圆块自带 r。 */
+function tileR(tile, view) {
+  const own = num(tile.r, num(tile.radius, num(tile.size, 0) / 2));
+  if (own > 0) return own;
+  const size = num(view && view.arena && view.arena.tileSize, 0);
+  return size > 0 ? size / 2 : 1.5;
+}
+
+/** 时钟：getView 给 `time`，combat testkit 给 `t`。 */
+function viewClock(view, fallback) {
+  const t = num(view && view.time, num(view && view.t, NaN));
+  return Number.isFinite(t) ? t : fallback;
+}
+
+function statusesOf(p) {
+  return Array.isArray(p && p.statuses) ? p.statuses : [];
+}
+
+function hasStatusId(p, id) {
+  return statusesOf(p).some((s) => s && (s.id === id || s.kind === id) && num(s.t) > 0);
+}
+
+/** 能不能出招：优先信 combat 写的派生字段，只有快照时按状态自己判。 */
+function canAct(p) {
+  if (typeof p.canAct === "boolean") return p.canAct;
+  return !hasStatusId(p, "freeze");
+}
+
+function moveScaleOf(p) {
+  if (Number.isFinite(p.moveScale)) return p.moveScale;
+  let scale = 1;
+  for (const s of statusesOf(p)) {
+    if (!s || num(s.t) <= 0) continue;
+    const id = s.id || s.kind;
+    if (id === "slow" || id === "sticky") scale *= 1 - Math.min(0.9, num(s.mag, 0.4));
+    else if (id === "freeze") scale = 0;
+  }
+  return scale;
+}
+
+/**
+ * 「快出局了」的程度。combat 记在 impact 上，getView 只透出 sim 的 knockScale
+ * （1 起步，越挨打越大），两者换算到同一个 0..1.6 量纲。
+ */
+function impactOf(p) {
+  if (Number.isFinite(p.impact)) return p.impact;
+  return Math.max(0, num(p.knockScale, 1) - 1);
+}
+
+const GLOVE_TABLE = { ...FALLBACK_GLOVE_BY_ID, ...DATA_GLOVE_BY_ID };
+
 function gloveOf(me) {
   const slot = num(me.activeSlot, 0);
-  const id = (slot === 1 ? me.offhandId : me.gloveId) || me.gloveId || "cotton";
-  const g = FALLBACK_GLOVE_BY_ID[id] || FALLBACK_GLOVE_BY_ID.cotton;
+  const id = me.activeGloveId || (slot === 1 ? me.offhandId : me.gloveId) || me.gloveId || "cotton";
+  const g = GLOVE_TABLE[id] || GLOVE_TABLE.cotton || FALLBACK_GLOVE_BY_ID.cotton;
   return {
     id,
     slapRange: num(me.slapRange, g.slapRange),
     slapAngleDeg: num(me.slapAngleDeg, g.slapAngleDeg),
-    skillId: me.skillId || g.skillId,
-    skillCooldown: num(me.skillCooldown, g.skillCooldown),
+    skillId: normalizeSkillId(me.skillId || g.skillId),
+    skillCooldown: num(me.skillCooldown, num(g.skillCooldown, 6)),
   };
+}
+
+/**
+ * 主动技转好了没有。三种来源按可信度排：
+ * getView 的剩余冷却 `skillCd` > combat 的绝对时间 `cd.skillAt` > 自己按下时的估算。
+ */
+function skillReadyFor(me, mem, now) {
+  if (Number.isFinite(me.skillCd)) return me.skillCd <= 0;
+  const at = me.cd && me.cd.skillAt;
+  if (typeof at === "number") return now >= at;
+  return mem.timers.skill <= 0;
+}
+
+function dashReadyFor(me) {
+  if (Number.isFinite(me.dashCd) && me.dashCd > 0) return false;
+  if (Number.isFinite(me.dashT) && me.dashT > 0) return false;
+  if (me.canDash === false) return false;
+  return me.sticky !== true && !hasStatusId(me, "sticky");
 }
 
 function personaFor(me, botId) {
@@ -163,6 +252,10 @@ function calibrateMoveSpace(mem, me, dt) {
 function moveSpaceFor(view, mem) {
   const hint = (view && (view.moveSpace || view.inputSpace)) || (view && view.config && view.config.moveSpace);
   if (hint === "world" || hint === "local") return hint;
+  // src/sim 的快照（有 config.arenaRadius + tick）：readMoveVector 默认按世界系解释。
+  if (view && view.config && Number.isFinite(view.config.arenaRadius) && Number.isFinite(view.tick)) {
+    return "world";
+  }
   if (mem.spaceScore > 1.5) return "world";
   if (mem.spaceScore < -1.5) return "local";
   return CONFIG.moveSpace;
@@ -173,11 +266,11 @@ function moveSpaceFor(view, mem) {
 /** 越接近出局越「残血」：吃过的击退、离台缘的距离、是否背对我。 */
 function vulnerability(me, foe, R) {
   const edge = clamp01(Math.hypot(num(foe.x), num(foe.z)) / Math.max(1, R));
-  const impact = clamp01(num(foe.impact) / 1.6);
+  const impact = clamp01(impactOf(foe) / 1.6);
   const ff = forwardFromYaw(num(foe.yaw));
   const toMe = dirTo(foe, me);
   const facingAway = clamp01(-(ff.x * toMe.x + ff.z * toMe.z));
-  const frozen = foe.frozen === true || num(foe.moveScale, 1) < 0.7 ? 0.5 : 0;
+  const frozen = foe.frozen === true || moveScaleOf(foe) < 0.7 ? 0.5 : 0;
   const awakePenalty = num(foe.awakenedT) > 0 ? 0.8 : 0;
   return edge * 2 + impact * 1.5 + facingAway * 1.2 + frozen - awakePenalty;
 }
@@ -190,7 +283,7 @@ function pickTarget(me, foes, persona, R) {
     const d = dist2d(me, foe);
     let score;
     if (persona === "bully") score = vulnerability(me, foe, R) * 2.2 - d * 0.22;
-    else if (persona === "fox") score = -d * 0.5 - (num(foe.awakenedT) > 0 ? 3 : 0) + clamp01(num(foe.impact)) * 1.2;
+    else if (persona === "fox") score = -d * 0.5 - (num(foe.awakenedT) > 0 ? 3 : 0) + clamp01(impactOf(foe)) * 1.2;
     else score = -d;
     if (score > bestScore) {
       bestScore = score;
@@ -202,38 +295,86 @@ function pickTarget(me, foes, persona, R) {
 
 // ---------------------------------------------------------------- 走位
 
+/** 视野里所有已经碎掉的台块，带一个统一的半径。 */
+function brokenTiles(view) {
+  const out = [];
+  for (const tile of viewTiles(view)) {
+    if (!tile) continue;
+    const broken = tile.broken === true || tile.destroyed === true || tile.alive === false || num(tile.hp, 1) <= 0;
+    if (!broken) continue;
+    out.push({ x: num(tile.x), z: num(tile.z), r: tileR(tile, view) });
+  }
+  return out;
+}
+
+const DETOUR_STEPS = 6;
+
+/** 沿 dir 走，返回踩空之前还能走多远（一路都是实地就是 reach）。 */
+function clearRun(holes, me, dirX, dirZ, reach) {
+  const step = reach / DETOUR_STEPS;
+  for (let i = 1; i <= DETOUR_STEPS; i++) {
+    const s = step * i;
+    const x = num(me.x) + dirX * s;
+    const z = num(me.z) + dirZ * s;
+    for (const h of holes) {
+      if (Math.hypot(x - h.x, z - h.z) <= h.r + 0.7) return s - step;
+    }
+  }
+  return reach;
+}
+
+/**
+ * 排斥力算的是「离洞多近」，碎块左右对称时两边的切向分量互相抵消，
+ * 于是 Bot 顶着洞正中央直直走下去。这里再加一道前视：
+ * 采样一圈候选方向，挑第一个走得通的；一个都走不通就挑能多走几步的那个。
+ * 候选按偏角从小到大、并且 spin 那一侧优先，绕行方向才不会每帧翻面。
+ */
+function detourAround(holes, me, dirX, dirZ, reach, spin) {
+  const straight = clearRun(holes, me, dirX, dirZ, reach);
+  if (straight >= reach) return { x: dirX, z: dirZ, detoured: false };
+
+  let best = { x: dirX, z: dirZ, run: straight };
+  for (const deg of [30, 60, 90, 120, 150, 180]) {
+    for (const side of deg === 180 ? [spin] : [spin, -spin]) {
+      const a = ((deg * Math.PI) / 180) * side;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const nx = dirX * c - dirZ * s;
+      const nz = dirX * s + dirZ * c;
+      const run = clearRun(holes, me, nx, nz, reach);
+      if (run >= reach) return { x: nx, z: nz, detoured: true };
+      if (run > best.run + 0.05) best = { x: nx, z: nz, run };
+    }
+  }
+  return { x: best.x, z: best.z, detoured: true };
+}
+
 /**
  * 台缘与碎块的排斥力，避免 Bot 自己走下去。
  * 碎块除了往外推还给一份切向分量，让 Bot 绕着洞走而不是顶着洞边发抖。
  */
-function safetySteer(me, view, R, desire) {
+function safetySteer(me, holes, R, spin, caution = 0.5) {
   let sx = 0;
   let sz = 0;
   const r = Math.hypot(num(me.x), num(me.z));
   const soft = R * 0.78;
   if (r > soft && r > 0.001) {
     const w = clamp01((r - soft) / Math.max(0.001, R - soft));
-    sx += (-num(me.x) / r) * w * 2.4;
-    sz += (-num(me.z) / r) * w * 2.4;
+    const push = 2.1 + caution * 0.9;
+    sx += (-num(me.x) / r) * w * push;
+    sz += (-num(me.z) / r) * w * push;
   }
-  for (const tile of viewTiles(view)) {
-    if (!tile) continue;
-    const broken = tile.broken === true || tile.destroyed === true || tile.alive === false || num(tile.hp, 1) <= 0;
-    if (!broken) continue;
-    const d = dist2d(me, tile);
-    const rad = num(tile.r, num(tile.radius, num(tile.size, 3) / 2)) + 2;
+  for (const h of holes) {
+    const d = Math.hypot(num(me.x) - h.x, num(me.z) - h.z);
+    const rad = h.r + 2;
     if (d >= rad || d < 0.001) continue;
     const w = (rad - d) / rad;
-    const ox = (num(me.x) - num(tile.x)) / d;
-    const oz = (num(me.z) - num(tile.z)) / d;
-    let tx = -oz;
-    let tz = ox;
-    if (desire && tx * desire.x + tz * desire.z < 0) {
-      tx = -tx;
-      tz = -tz;
-    }
-    sx += ox * 2.8 * w + tx * 2.2 * w;
-    sz += oz * 2.8 * w + tz * 2.2 * w;
+    const ox = (num(me.x) - h.x) / d;
+    const oz = (num(me.z) - h.z) / d;
+    // 切向统一取同一个旋向：按「想去的方向」逐块决定的话，破洞两侧的块会各推一边，
+    // Bot 就卡在洞口左右横跳。
+    sx += ox * 2.8 * w + -oz * spin * 2.2 * w;
+    sz += oz * 2.8 * w + ox * spin * 2.2 * w;
   }
   return { x: sx, z: sz };
 }
@@ -289,7 +430,7 @@ function foxBrain(ctx) {
     mem.committing = !mem.committing;
     mem.timers.commit = mem.committing ? 0.55 + rng() * 0.5 : 1.1 + rng() * 1.4;
   }
-  const scared = num(me.impact) > 0.9 || num(target.awakenedT) > 0;
+  const scared = impactOf(me) > 0.9 || num(target.awakenedT) > 0;
   const wantRadius = mem.committing && !scared ? reach * 0.8 : orbit + (scared ? 2.5 : 0);
   const radial = dist - wantRadius;
 
@@ -330,7 +471,7 @@ function bullyBrain(ctx) {
 
   const lined = toAnchor.dist < reach * 0.9 || targetEdge > 0.7;
   const wantSlap = dist <= reach + 0.3 && Math.abs(ctx.aimError) < 0.75 && (lined || rng() < 0.35);
-  const wantSkill = ctx.skillReady && dist <= skillRange(glove.skillId, 5.5) && (targetEdge > 0.45 || num(target.impact) > 0.8);
+  const wantSkill = ctx.skillReady && dist <= skillRange(glove.skillId, 5.5) && (targetEdge > 0.45 || impactOf(target) > 0.8);
   const wantDash = ctx.canDash && mem.timers.dash <= 0 && dist > 8.5;
   return {
     mx,
@@ -380,7 +521,7 @@ export function think(view, botId, rng) {
   const me = players.find((p) => p && p.id === botId);
   const mem = memoryOf(botId);
 
-  const now = num(view && view.t, mem.lastT == null ? 0 : mem.lastT + 1 / 60);
+  const now = viewClock(view, mem.lastT == null ? 0 : mem.lastT + 1 / 60);
   const dt = clamp(mem.lastT == null ? 1 / 60 : now - mem.lastT, 0, 0.25) || 1 / 60;
   mem.lastT = now;
   for (const k of Object.keys(mem.timers)) mem.timers[k] = Math.max(0, mem.timers[k] - dt);
@@ -399,6 +540,7 @@ export function think(view, botId, rng) {
 
   const R = arenaR(view);
   const persona = personaFor(me, botId);
+  const tuning = tuningOf(persona);
   const glove = gloveOf(me);
   const foes = players.filter((p) => p && p.id !== botId && isFightable(p));
 
@@ -421,17 +563,13 @@ export function think(view, botId, rng) {
   }
   if (mem.timers.aim <= 0) {
     mem.aimNoise = (random() * 2 - 1) * CONFIG.reactionJitter;
-    mem.timers.aim = 0.18 + random() * 0.22;
+    mem.timers.aim = tuning.reactionSeconds * 0.75 + random() * 0.22;
   }
 
   const aimYaw = wrapAngle(yawTo(num(target.x) - num(me.x), num(target.z) - num(me.z)) + mem.aimNoise);
   const aimError = wrapAngle(aimYaw - num(me.yaw));
 
-  // view 给了真实冷却就信 view，没给就用自己按下技能后的估算计时。
-  const cd = me.cd || {};
-  const viewSkillReady = typeof cd.skillAt === "number" ? now >= cd.skillAt : null;
-  const skillReady =
-    glove.skillId !== "none" && (viewSkillReady == null ? mem.timers.skill <= 0 : viewSkillReady);
+  const skillReady = glove.skillId !== "none" && skillReadyFor(me, mem, now) && canAct(me);
 
   const ctx = {
     me,
@@ -443,20 +581,33 @@ export function think(view, botId, rng) {
     aimError,
     R,
     now,
-    skillReady: skillReady && (me.canAct !== false),
-    canDash: me.canDash !== false && me.sticky !== true,
+    tuning,
+    skillReady: skillReady && random() < 0.5 + tuning.skillEagerness * 0.5,
+    canDash: dashReadyFor(me) && random() < 0.4 + tuning.dashEagerness * 0.6,
   };
 
   const brain = BRAINS[persona] || bruteBrain;
   const plan = brain(ctx);
 
-  const safety = safetySteer(me, view, R, normalize(plan.mx, plan.mz));
+  // 绕行旋向要黏住：每帧按当前朝向重新挑边的话，Bot 会卡在洞口左右横跳。
+  const holes = brokenTiles(view);
+  if (mem.timers.detour <= 0) mem.detourSign = mem.strafeSign;
+
+  const safety = safetySteer(me, holes, R, mem.detourSign, tuning.edgeCaution);
   let wx = plan.mx + safety.x;
   let wz = plan.mz + safety.z;
   const mv = normalize(wx, wz);
   const speed = clamp(mv.len, 0, 1) > 0.15 ? 1 : 0;
   wx = mv.x * speed;
   wz = mv.z * speed;
+
+  // 前视绕洞：排斥力对左右对称的破洞无能为力，这里兜住。
+  if (speed > 0 && holes.length) {
+    const detour = detourAround(holes, me, wx, wz, 3.2 + tuning.edgeCaution * 2, mem.detourSign);
+    if (detour.detoured) mem.timers.detour = 1.2;
+    wx = detour.x;
+    wz = detour.z;
+  }
 
   // 台缘极近时不许再往外冲。
   const rNow = Math.hypot(num(me.x), num(me.z));
@@ -470,9 +621,15 @@ export function think(view, botId, rng) {
   if (plan.skill) mem.timers.skill = Math.max(mem.timers.skill, glove.skillCooldown);
 
   // 主动技长时间点不出来（木棉无主动 / 一直在冷却）就换副掌。
+  const cd = me.cd || {};
+  const skillWait = Number.isFinite(me.skillCd)
+    ? me.skillCd
+    : typeof cd.skillAt === "number"
+      ? cd.skillAt - now
+      : null;
   let switchGlove = false;
   if (mem.timers.switch <= 0) {
-    const stale = glove.skillId === "none" || (typeof cd.skillAt === "number" && cd.skillAt - now > glove.skillCooldown * 0.6);
+    const stale = glove.skillId === "none" || (skillWait != null && skillWait > glove.skillCooldown * 0.6);
     if (stale && me.offhandId && me.offhandId !== glove.id) {
       switchGlove = true;
       mem.timers.switch = 4 + random() * 4;

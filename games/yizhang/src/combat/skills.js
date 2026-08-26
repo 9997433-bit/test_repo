@@ -4,7 +4,14 @@
 
 import { METER, SKILLS } from "./constants.js";
 import { applyStatus, refreshDerived } from "./statuses.js";
-import { damageTilesInRadius, gainMeter, landHit, applyKnockback, addImpact } from "./impact.js";
+import {
+  addImpact,
+  applyKnockback,
+  damageTilesInRadius,
+  gainMeter,
+  landHit,
+  markKnockback,
+} from "./impact.js";
 import {
   arenaRadius,
   clamp,
@@ -21,6 +28,63 @@ import {
 } from "./util.js";
 
 const VERTICAL_REACH = 3.5;
+
+/**
+ * 同一个技能在三张表里有三个名字：`src/data/gloves.js` 的中式蛇形（iron_pull）、
+ * sim 兜底表的连字符（magnet-pull）、combat 自己的驼峰（magnetPull）。
+ * 手套数据从哪来都得能派发到同一个 handler，所以在入口统一折叠。
+ */
+export const SKILL_ALIASES = {
+  none: "none",
+
+  groundPound: "groundPound",
+  quake_slam: "groundPound",
+  "granite-quake": "groundPound",
+  ground_slam: "groundPound",
+  slam: "groundPound",
+
+  dashSlap: "dashSlap",
+  wind_rush: "dashSlap",
+  "gale-dash": "dashSlap",
+  dash_attack: "dashSlap",
+  rush: "dashSlap",
+
+  frostArc: "frostArc",
+  frost_arc: "frostArc",
+  "frost-arc": "frostArc",
+  cone: "frostArc",
+
+  parry: "parry",
+  coil_counter: "parry",
+  "spring-guard": "parry",
+  counter_stance: "parry",
+  riposte: "parry",
+
+  blinkSwap: "blinkSwap",
+  phantom_swap: "blinkSwap",
+  "afterimage-swap": "blinkSwap",
+  decoy_blink: "blinkSwap",
+  decoy_swap: "blinkSwap",
+
+  magnetPull: "magnetPull",
+  iron_pull: "magnetPull",
+  "magnet-pull": "magnetPull",
+  pull: "magnetPull",
+
+  meteorSlam: "meteorSlam",
+  sky_fall: "meteorSlam",
+  "meteor-drop": "meteorSlam",
+  leap_slam: "meteorSlam",
+  sky_drop: "meteorSlam",
+};
+
+/** 任意来源的 skillId → combat 注册表的 key（认不出就当无主动技）。 */
+export function normalizeSkillId(skillId) {
+  if (skillId == null) return "none";
+  const key = String(skillId);
+  if (SKILL_HANDLERS[key]) return key;
+  return SKILL_ALIASES[key] || SKILL_ALIASES[key.toLowerCase()] || "none";
+}
 
 /** 取技能数值；觉醒时用 awakened 段浅覆盖。 */
 export function skillConfig(skillId, awakened) {
@@ -305,10 +369,13 @@ function magnetPull(ctx) {
 
   for (const { p, dir } of picked) {
     const pull = clamp(dir.dist * cfg.pullPerMeter, cfg.pullMin, cfg.pullMax);
+    // 拉近是「改写」速度而不是叠加，否则对手正在外冲时会被自己的惯性抵消。
     p.vx = -dir.x * pull;
     p.vz = -dir.z * pull;
     p.vy = Math.max(num(p.vy), 1.5);
-    p.lastHitBy = attacker.id;
+    if (p.grounded === true) p.grounded = false;
+    if (p.onGround === true) p.onGround = false;
+    markKnockback(state, p, pull, { srcId: attacker.id, now });
     addImpact(p, pull * 0.25);
     gainMeter(attacker, METER.onSkillHit);
     gainMeter(p, METER.onHitTaken * 0.5);
@@ -317,12 +384,16 @@ function magnetPull(ctx) {
     }
     hits.push({
       id: p.id,
+      targetId: p.id,
+      applied: true,
       impulse: { x: -dir.x * pull, y: 0, z: -dir.z * pull },
       power: pull,
       kind: "skill",
       skillId: "magnetPull",
       distance: dir.dist,
       pulled: true,
+      hitX: num(p.x),
+      hitZ: num(p.z),
       attackerId: attacker.id,
     });
     pushEvent(state, {
@@ -441,7 +512,17 @@ export function resolveGhostSlap(state, owner, q, now) {
     if (!inCone(ghostPose, p, 140)) continue;
     const impulse = q.impulse > 0 ? applyKnockback(state, p, dir.x, dir.z, q.impulse, 0, { srcId: owner.id, now }) : { x: 0, y: 0, z: 0 };
     gainMeter(owner, METER.onHitDealt * 0.5);
-    hits.push({ id: p.id, impulse, power: q.impulse, kind: "ghost", skillId: "blinkSwap", decoy: true, attackerId: owner.id });
+    hits.push({
+      id: p.id,
+      targetId: p.id,
+      applied: true,
+      impulse,
+      power: q.impulse,
+      kind: "ghost",
+      skillId: "blinkSwap",
+      decoy: true,
+      attackerId: owner.id,
+    });
     pushEvent(state, { type: "ghostSlap", attackerId: owner.id, targetId: p.id, t: now });
   }
   refreshDerived(owner);

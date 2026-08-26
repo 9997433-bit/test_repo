@@ -3,7 +3,19 @@
 // tickStatuses 每帧递减并把结果折算成 player.moveScale / player.canAct 等派生字段。
 
 import { STATUS_DEFAULT, STATUS_KINDS } from "./constants.js";
-import { num } from "./util.js";
+import { num, simDrivenPlayer } from "./util.js";
+
+/**
+ * combat 用 `kind` 命名状态，`src/sim`（physics.statusMods / view.playerView）读 `id`。
+ * 两个字段并存，sim 才能在自己的积分里吃到减速与冻结。sticky 在 sim 侧等价于减速。
+ */
+const SIM_STATUS_ID = {
+  slow: "slow",
+  sticky: "slow",
+  freeze: "freeze",
+  parryWindow: "parryWindow",
+  invuln: "invuln",
+};
 
 export function ensureStatuses(player) {
   if (!Array.isArray(player.statuses)) player.statuses = [];
@@ -23,7 +35,7 @@ export function applyStatus(player, kind, t, opts = {}) {
   const list = ensureStatuses(player);
   let cur = list.find((s) => s && s.kind === kind);
   if (!cur) {
-    cur = { kind, t: 0, mag: 0, srcId: opts.srcId ?? null };
+    cur = { kind, id: SIM_STATUS_ID[kind] || kind, t: 0, mag: 0, srcId: opts.srcId ?? null };
     list.push(cur);
   }
   cur.t = Math.max(num(cur.t), dur);
@@ -116,7 +128,11 @@ export function tickPlayerStatuses(player, dt) {
     }
     player.statuses = keep;
   }
-  if (num(player.invulnT) > 0) {
+  if (simDrivenPlayer(player)) {
+    // sim.step 的 tickTimers 已经在减 invulnT，这里只把 combat 自己发的无敌帧补上去。
+    const st = (player.statuses || []).find((s) => s && s.kind === "invuln" && num(s.t) > 0);
+    if (st) player.invulnT = Math.max(num(player.invulnT), num(st.t));
+  } else if (num(player.invulnT) > 0) {
     player.invulnT = Math.max(0, num(player.invulnT) - dt);
   }
   refreshDerived(player);
