@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, beforeEach } from "vitest";
 
 import {
+  GLOVES as REAL_GLOVES,
+  GLOVE_BY_ID as REAL_GLOVE_BY_ID,
+} from "../data/gloves.js";
+import {
   createMatch,
   step,
   getView,
@@ -67,9 +71,12 @@ describe("依赖与纯净性", () => {
     }
   });
 
-  it("data / combat 缺席时用兜底，注入后自动切换", () => {
+  it("默认接的是真实 data / combat，install* 只是测试替身", () => {
     expect(getMatchConfig().arenaRadius).toBe(20);
-    expect(getGloves().some((g) => g.id === "cotton")).toBe(true);
+    expect(getGloves()).toHaveLength(REAL_GLOVES.length);
+    expect(getGloves().find((g) => g.id === "cotton").slapRange).toBe(
+      REAL_GLOVE_BY_ID.cotton.slapRange,
+    );
 
     installData({
       MATCH: { arenaRadius: 12 },
@@ -90,6 +97,9 @@ describe("依赖与纯净性", () => {
     const s = createMatch({ seed: 7, botCount: 1 });
     run(s, { p0: input({ slap: true }) }, 0.5);
     expect(called).toBeGreaterThan(0);
+
+    resetDeps();
+    expect(getMatchConfig().arenaRadius).toBe(20);
   });
 });
 
@@ -228,6 +238,8 @@ describe("移动与积分", () => {
 });
 
 describe("扇击", () => {
+  const COTTON = REAL_GLOVE_BY_ID.cotton;
+
   function duel(seed = 5) {
     const s = createMatch({ seed, botCount: 1 });
     const a = getPlayer(s, "p0");
@@ -245,7 +257,7 @@ describe("扇击", () => {
     expect(a.attack.phase).toBe("windup");
     expect(b.vx).toBe(0); // 前摇中还没打到
 
-    run(s, { p0: input({ slap: true, yaw: FACE_PLUS_X }) }, 0.1);
+    run(s, { p0: input({ slap: true, yaw: FACE_PLUS_X }) }, COTTON.windup + 0.02);
     expect(b.vx).toBeGreaterThan(3);
     expect(a.attack.phase).toBe("recovery");
 
@@ -268,7 +280,7 @@ describe("扇击", () => {
 
   it("击退给水平速度冲量并涨掌意", () => {
     const { s, a, b } = duel();
-    run(s, { p0: input({ slap: true, yaw: FACE_PLUS_X }) }, 0.12);
+    run(s, { p0: input({ slap: true, yaw: FACE_PLUS_X }) }, COTTON.windup + 0.02);
     expect(b.vx).toBeGreaterThan(5);
     expect(b.knockScale).toBeGreaterThan(1);
     expect(a.meter).toBeGreaterThan(0);
@@ -286,7 +298,7 @@ describe("扇击", () => {
   it("掌意满自动觉醒 8s", () => {
     const { s, a } = duel();
     a.meter = 0.95;
-    run(s, { p0: input({ slap: true, yaw: FACE_PLUS_X }) }, 0.15);
+    run(s, { p0: input({ slap: true, yaw: FACE_PLUS_X }) }, COTTON.windup + 0.06);
     expect(a.awakenedT).toBeGreaterThan(7);
     expect(a.awakenedT).toBeLessThanOrEqual(s.config.awakenDuration);
     expect(a.meter).toBe(0);
@@ -453,7 +465,7 @@ describe("碎地", () => {
     expect(p.deaths).toBe(1); // 没有二次摔死
   });
 
-  it("重击手套能砸出裂纹", () => {
+  it("磐石砸地（quake_slam）能砸出裂纹", () => {
     const s = createMatch({ seed: 6, botCount: 1, gloveId: "granite" });
     const a = getPlayer(s, "p0");
     const b = getPlayer(s, "b0");
@@ -461,10 +473,27 @@ describe("碎地", () => {
     place(b, 2, 0, 0);
     a.invulnT = 0;
     b.invulnT = 0;
-    run(s, { p0: input({ slap: true, yaw: FACE_PLUS_X }) }, 0.5);
-    expect(s.events.length).toBeGreaterThanOrEqual(0);
+    step(s, { p0: input({ skill: true, yaw: FACE_PLUS_X }) }, DT);
+    expect(s.events.some((e) => e.type === "skill")).toBe(true);
     const damaged = s.arena.tiles.some((t) => t.hp < t.maxHp);
     expect(damaged).toBe(true);
+  });
+
+  it("砸碎的台块会记账到 brokenCount / stats，并发 tileBreak", () => {
+    const s = createMatch({ seed: 6, botCount: 0, gloveId: "granite" });
+    const a = getPlayer(s, "p0");
+    place(a, 0, 0, 0);
+    // 先把落点附近削到只剩一口气，一次砸地就能塌
+    for (const t of s.arena.tiles) {
+      if (Math.hypot(t.x, t.z) < 4) damageTileAt(s, t.x, t.z, t.maxHp - 1);
+    }
+    const brokenBefore = s.arena.brokenCount;
+    step(s, { p0: input({ skill: true }) }, DT);
+
+    expect(s.arena.brokenCount).toBeGreaterThan(brokenBefore);
+    expect(s.stats.tilesBroken).toBe(s.arena.brokenCount);
+    expect(s.events.some((e) => e.type === "tileBreak")).toBe(true);
+    expect(hasFloorUnder(s, 0, 0)).toBe(false);
   });
 });
 
@@ -496,15 +525,22 @@ describe("getView / isMatchOver", () => {
     expect(s.arena.tiles[0].alive).toBe(true);
   });
 
-  it("先到击杀数结束对局", () => {
+  it("先到击杀数结束对局，不等 step 也能读出来", () => {
     const s = createMatch({ seed: 13, botCount: 1 });
-    getPlayer(s, "p0").kills = s.config.killsToWin;
+    const p = getPlayer(s, "p0");
+
+    p.kills = s.config.killsToWin - 1;
     expect(isMatchOver(s).over).toBe(false);
+
+    p.kills = s.config.killsToWin;
+    expect(isMatchOver(s)).toMatchObject({ over: true, winnerId: "p0", reason: "kills" });
+    expect(s.match.over).toBe(false); // 还没 step，尚未锁定
+
     step(s, {}, DT);
-    const r = isMatchOver(s);
-    expect(r.over).toBe(true);
-    expect(r.winnerId).toBe("p0");
-    expect(r.reason).toBe("kills");
+    expect(s.match.over).toBe(true); // step 里锁定
+    expect(s.match.winnerId).toBe("p0");
+    expect(s.events.some((e) => e.type === "matchOver")).toBe(true);
+    expect(isMatchOver(s)).toMatchObject({ over: true, winnerId: "p0", reason: "kills" });
   });
 
   it("时间到按击杀数判胜", () => {

@@ -3,7 +3,7 @@
 import { createArena, isSupported } from "./arena.js";
 import { PHYSICS, SIM_VERSION } from "./constants.js";
 import { getDeps, resolveGlove } from "./deps.js";
-import { TAU } from "./math.js";
+import { TAU, yawFromDir } from "./math.js";
 import { createRngState, nextRange, nextU32 } from "./rng.js";
 
 const PERSONAS = ["brute", "fox", "bully"];
@@ -31,7 +31,27 @@ function makePlayer(id, kind, slotIndex, gloveId, offhandId, persona) {
 
     meter: 0,
     awakenedT: 0,
+    awakened: false,
     statuses: [],
+
+    // combat 读写的字段，开局就建好，保证 state 形状每帧稳定、可 structuredClone
+    cd: { slapAt: 0, skillAt: 0 },
+    busyUntil: 0,
+    rootUntil: 0,
+    impact: 0,
+    knockbackT: 0,
+    lastHitAt: -999,
+    cottonChain: 0,
+    dashing: false,
+    dashUntil: 0,
+    moveScale: 1,
+    canAct: true,
+    canDash: true,
+    frozen: false,
+    sticky: false,
+    parrying: false,
+    invulnerable: false,
+    knockbackTakenMul: 1,
 
     alive: true,
     invulnT: 0,
@@ -75,9 +95,7 @@ export function spawnPointFor(state, player) {
   const a = player.spawnAngle;
   const x = Math.cos(a) * r;
   const z = Math.sin(a) * r;
-  // yaw 约定：0 面向 -Z；朝台心即朝 (-x,-z)
-  const yaw = Math.atan2(x, z) + Math.PI;
-  return { x, z, yaw };
+  return { x, z, yaw: yawFromDir(-x, -z) };
 }
 
 /**
@@ -118,7 +136,7 @@ export function placeAtSpawn(state, player, airborne = false) {
   player.x = spot.x;
   player.z = spot.z;
   player.y = airborne ? 2.2 : 0;
-  player.yaw = Math.atan2(player.x, player.z) + Math.PI; // 朝台心
+  player.yaw = yawFromDir(-player.x, -player.z); // 朝台心
 
   player.vx = 0;
   player.vy = 0;
@@ -133,10 +151,19 @@ export function respawnPlayer(state, player) {
   player.invulnT = state.config.invulnTime;
   player.knockScale = 1;
   player.kbT = 0;
+  player.knockbackT = 0;
+  player.impact = 0;
+  player.cd.slapAt = 0;
+  player.cd.skillAt = 0;
+  player.busyUntil = 0;
+  player.rootUntil = 0;
+  player.cottonChain = 0;
+  player.dashing = false;
   player.combo = 0;
   player.comboT = 0;
   player.statuses.length = 0;
   player.awakenedT = 0;
+  player.awakened = false;
   player.meter = Math.min(player.meter, 0.35);
   player.attack.phase = "idle";
   player.attack.t = 0;
@@ -196,11 +223,17 @@ export function createMatch(opts = {}) {
     seed,
     rng,
     time: 0,
+    // combat 读 `state.t` 当时钟，与 `state.time` 同步（见 combat-bridge）
+    t: 0,
     tick: 0,
     config,
+    // combat 读这两个平铺字段做判定半径
+    playerRadius: config.playerRadius,
+    playerHeight: config.playerHeight,
     arena: createArena(config.arenaRadius, rng),
     players,
     events: [],
+    combat: { clock: 0, pending: [], dashes: [], ghosts: [], seq: 1 },
     match: { over: false, winnerId: null, reason: null, secondsLeft: config.matchSeconds },
     stats: { slaps: 0, hits: 0, kos: 0, tilesBroken: 0 },
   };

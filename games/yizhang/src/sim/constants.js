@@ -35,13 +35,8 @@ export const PHYSICS = {
   comboWindow: 1.6,
   killCreditWindow: 5,
 
-  meterPerHitDealt: 0.09,
-  meterPerHitTaken: 0.06,
+  // 掌意由 combat 记账，sim 只补击杀奖励（combat 看不到出局判定）
   meterPerKill: 0.15,
-
-  // 重击碎地阈值
-  heavyTileThreshold: 12,
-  tileDamagePerPower: 3,
 
   maxSubStep: 1 / 60, // 60Hz 友好：更大的 dt 会被切分
   maxDt: 0.25,
