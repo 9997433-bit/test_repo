@@ -1,8 +1,13 @@
 import { FLOWERS, type GrowthStage, type Season } from "../data/flowers";
+import type { DecorTheme } from "../data/decorations";
 import type { OrderKind } from "../data/orders";
 
-/** v2：新增 lastSeenAt 墙钟锚点（离线补算），并在迁移时按等级回填 unlockedFlowers。 */
-export const SCHEMA_VERSION = 2;
+/**
+ * v2：新增 lastSeenAt 墙钟锚点（离线补算），并在迁移时按等级回填 unlockedFlowers。
+ * v3：新增 social（邻家花园互访）、decorAnchors（锚位摆放）、decorTheme（全局主题）、
+ *     seenTips（一次性提示）；迁移时给存量陈设补默认锚位。
+ */
+export const SCHEMA_VERSION = 3;
 export const INITIAL_PLOTS = 6;
 export const MAX_PLOTS = 12;
 export const WATER_CAP = 40;
@@ -42,6 +47,25 @@ export interface Arrangement {
   createdAt: number;
 }
 
+/** 当日在邻家留下的一处痕迹：n 邻居 id、p 花圃下标、k 帮浇 / 摘花。 */
+export interface SocialMark {
+  n: string;
+  p: number;
+  k: "water" | "pick";
+}
+
+export interface SocialState {
+  /** 游戏日戳（90 秒一日），跨日清空当日痕迹。 */
+  day: number;
+  /** 邻居 id → 友谊值；每 6 点一心，五心（30）封顶。 */
+  friendship: Record<string, number>;
+  marks: SocialMark[];
+}
+
+export function emptySocial(): SocialState {
+  return { day: 0, friendship: {}, marks: [] };
+}
+
 export interface GameState {
   schemaVersion: number;
   startedAt: number;
@@ -64,7 +88,15 @@ export interface GameState {
   unlockedFlowers: string[];
   orders: ActiveOrder[];
   arrangements: Arrangement[];
+  /** 已购陈设（购入即计心境加成；是否入景看 decorAnchors）。 */
   placedDecor: string[];
+  /** 陈设落位：decorId → 锚位 id；不在表内的已购陈设「在匣」不入景。 */
+  decorAnchors: Record<string, string>;
+  /** 玩家最后套用的主题（[data-theme] 全局主题层），未套用为 null。 */
+  decorTheme: DecorTheme | null;
+  social: SocialState;
+  /** 一次性提示的已读标记（如 "sound"）。 */
+  seenTips: string[];
   activeSpirit: string | null;
   unlockedSpirits: string[];
   tutorialStep: number;
@@ -116,6 +148,10 @@ export function createInitialState(now = Date.now()): GameState {
     orders: [],
     arrangements: [],
     placedDecor: [],
+    decorAnchors: {},
+    decorTheme: null,
+    social: emptySocial(),
+    seenTips: [],
     activeSpirit: null,
     unlockedSpirits: [],
     tutorialStep: 0,

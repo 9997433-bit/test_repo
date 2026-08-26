@@ -30,7 +30,7 @@ const LEAF = "#5f8f57";
 const STRAW = "#d3b169";
 const SNOW = "#f2efe4";
 
-/** 十二件陈设的固定摆位：远景沿两侧与天际，近景压在园前。 */
+/** 十二件陈设的固定摆位：远景沿两侧与天际，近景压在园前。锚位缺席时的兜底。 */
 const SLOTS: Record<string, DecorSlot> = {
   lantern: { x: 8, y: 20, w: 8, depth: "near" },
   chimes: { x: 92, y: 13, w: 8, depth: "near" },
@@ -67,6 +67,29 @@ export function decorSlot(id: string): DecorSlot {
   if (slot) return slot;
   const fallback = FALLBACK_SLOTS[hash(id) % FALLBACK_SLOTS.length];
   return fallback ?? { x: 50, y: 50, w: 9, depth: "far" };
+}
+
+/**
+ * 八个锚位的舞台坐标（百分比，与 data/decorations.ts ANCHORS 对应）：
+ * 沿四缘装饰带布点，不遮花圃、不随扩建移动。
+ */
+export const ANCHOR_SLOTS: Record<string, { x: number; y: number; depth: DecorDepth }> = {
+  eaves: { x: 8, y: 20, depth: "near" },
+  gate: { x: 92, y: 15, depth: "near" },
+  "wall-north": { x: 30, y: 22, depth: "far" },
+  heart: { x: 50, y: 30, depth: "far" },
+  "path-west": { x: 22, y: 62, depth: "near" },
+  "path-east": { x: 78, y: 60, depth: "near" },
+  "pond-side": { x: 16, y: 86, depth: "near" },
+  "wall-south": { x: 74, y: 90, depth: "near" },
+};
+
+/** 陈设的实际落位：坐标与景深取锚位，宽度仍按陈设本体；无锚 / 未知锚回退固定摆位。 */
+export function placedSlot(decorId: string, anchorId: string | null | undefined): DecorSlot {
+  const base = decorSlot(decorId);
+  const anchor = anchorId ? ANCHOR_SLOTS[anchorId] : undefined;
+  if (!anchor) return base;
+  return { x: anchor.x, y: anchor.y, w: base.w, depth: anchor.depth };
 }
 
 export function hasDecorArt(id: string): boolean {

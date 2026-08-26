@@ -1,8 +1,9 @@
 import type { PlacedDecor } from "../systems/decorate";
-import { decorArt, decorSlot } from "./decor-art";
+import { decorArt, placedSlot } from "./decor-art";
 
 /**
- * 庭院陈设层：把 `placedDecor` 真正画进花园场景，并把陈列牌做成「点按聚焦」的索引。
+ * 庭院陈设层：把已落锚的陈设真正画进花园场景（位置取锚位坐标），
+ * 并把陈列牌做成「点按聚焦」的索引；在匣（无锚位）的陈设不入景。
  * 场景层 `pointer-events: none`，落在花圃上的点击/拖浇一律不受影响。
  */
 export interface DecorLayer {
@@ -17,6 +18,7 @@ interface Entry {
   chip: HTMLButtonElement;
   item: HTMLElement;
   label: string;
+  anchor: string | null;
 }
 
 const STYLE_ID = "decor-scene-style";
@@ -172,6 +174,16 @@ export function createDecorLayer(): DecorLayer {
     }, 2600);
   };
 
+  const position = (entry: Entry, decor: PlacedDecor): void => {
+    const slot = placedSlot(decor.id, decor.anchor);
+    entry.anchor = decor.anchor;
+    entry.item.dataset.depth = slot.depth;
+    entry.item.style.left = `${slot.x}%`;
+    entry.item.style.top = `${slot.y}%`;
+    entry.item.style.setProperty("--dw", `${slot.w}%`);
+    entry.chip.setAttribute("aria-label", `在园中聚焦${decor.name}（${decor.anchorLabel}）`);
+  };
+
   const create = (decor: PlacedDecor): Entry => {
     const chip = document.createElement("button");
     chip.type = "button";
@@ -179,29 +191,27 @@ export function createDecorLayer(): DecorLayer {
     chip.dataset.decor = decor.id;
     chip.textContent = decor.label;
     chip.setAttribute("aria-pressed", "false");
-    chip.setAttribute("aria-label", `在园中聚焦${decor.name}`);
     chip.addEventListener("click", () => focus(focusId === decor.id ? null : decor.id));
 
-    const slot = decorSlot(decor.id);
     const item = document.createElement("div");
     item.className = "decor-item";
     item.dataset.decor = decor.id;
-    item.dataset.depth = slot.depth;
-    item.style.left = `${slot.x}%`;
-    item.style.top = `${slot.y}%`;
-    item.style.setProperty("--dw", `${slot.w}%`);
     item.innerHTML = decorArt(decor.id, decor.glyph);
     const tag = document.createElement("span");
     tag.className = "decor-tag";
     tag.textContent = decor.name;
     item.append(tag);
 
-    return { chip, item, label: decor.label };
+    const entry: Entry = { chip, item, label: decor.label, anchor: null };
+    position(entry, decor);
+    return entry;
   };
 
-  /** 只在陈设集合变化时重排：既有节点原样留用，聚焦态随之保留。 */
-  const update = (items: PlacedDecor[]): void => {
-    const next = items.map((d) => `${d.id}:${d.label}`).join(",");
+  /** 只在陈设集合 / 锚位变化时重排：既有节点原样留用，聚焦态随之保留。 */
+  const update = (all: PlacedDecor[]): void => {
+    // 只有落了锚的陈设入景与上牌；在匣者归「装扮 · 布置」管
+    const items = all.filter((d) => d.anchor !== null);
+    const next = items.map((d) => `${d.id}:${d.anchor}:${d.label}`).join(",");
     if (next === key) return;
     const first = key === "" && entries.size === 0;
     key = next;
@@ -223,9 +233,12 @@ export function createDecorLayer(): DecorLayer {
         entries.set(decor.id, entry);
         scene.append(entry.item);
         added.push(decor.id);
-      } else if (entry.label !== decor.label) {
-        entry.label = decor.label;
-        entry.chip.textContent = decor.label;
+      } else {
+        if (entry.label !== decor.label) {
+          entry.label = decor.label;
+          entry.chip.textContent = decor.label;
+        }
+        if (entry.anchor !== decor.anchor) position(entry, decor);
       }
       if (row.children[index] !== entry.chip) row.insertBefore(entry.chip, row.children[index] ?? null);
     });

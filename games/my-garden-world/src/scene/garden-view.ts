@@ -83,7 +83,9 @@ export function createGardenView(root: HTMLElement, onPick: (id: number) => void
   };
 
   const update = (state: GameState, selected: number | null, pendingSeed: string | null): void => {
-    const dk = state.placedDecor.join(",");
+    const dk = `${state.placedDecor.join(",")}|${Object.entries(state.decorAnchors)
+      .map(([d, a]) => `${d}:${a}`)
+      .join(",")}`;
     if (dk !== decorKey) {
       decorKey = dk;
       decor.update(resolvePlacedDecor(state));

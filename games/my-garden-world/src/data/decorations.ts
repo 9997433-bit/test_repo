@@ -34,3 +34,34 @@ export const THEMES: { id: DecorTheme; name: string; ids: string[] }[] = [
   { id: "winter", name: "冬雪", ids: ["snowlion", "brazier", "lantern"] },
   { id: "ink", name: "墨雅", ids: ["pavilion", "moongate", "path", "screen"] },
 ];
+
+export const THEME_NAMES: Record<DecorTheme, string> = Object.fromEntries(
+  THEMES.map((t) => [t.id, t.name]),
+) as Record<DecorTheme, string>;
+
+// ---------------------------------------------------------------------------
+// 锚位制摆放（见 docs/UX.md 七）：庭院四缘 8 个锚位，每锚至多一件陈设。
+// 锚位只有 id 与名号属于数据层；舞台坐标归 scene/decor-art.ts。
+// ---------------------------------------------------------------------------
+
+export interface AnchorDef {
+  id: string;
+  name: string;
+}
+
+export const ANCHORS: AnchorDef[] = [
+  { id: "eaves", name: "檐下" },
+  { id: "gate", name: "门前" },
+  { id: "wall-north", name: "墙角北" },
+  { id: "heart", name: "园心" },
+  { id: "path-west", name: "径旁西" },
+  { id: "path-east", name: "径旁东" },
+  { id: "pond-side", name: "池畔" },
+  { id: "wall-south", name: "墙角南" },
+];
+
+export const ANCHOR_MAP = Object.fromEntries(ANCHORS.map((a) => [a.id, a])) as Record<string, AnchorDef>;
+
+export function anchorName(id: string | null | undefined): string {
+  return (id && ANCHOR_MAP[id]?.name) || "在匣";
+}

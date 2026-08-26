@@ -1,5 +1,6 @@
+import { DECORATIONS, THEMES, ANCHOR_MAP, ANCHORS } from "../data/decorations";
 import { FLOWERS } from "../data/flowers";
-import { SCHEMA_VERSION, createInitialState, type GameState } from "./state";
+import { SCHEMA_VERSION, createInitialState, emptySocial, type GameState, type SocialMark } from "./state";
 
 const KEY = "my-garden-world:save:v1";
 
@@ -119,6 +120,57 @@ function num(value: unknown, fallback: number, min = Number.NEGATIVE_INFINITY): 
   return typeof value === "number" && Number.isFinite(value) && value >= min ? value : fallback;
 }
 
+const DECOR_IDS = new Set(DECORATIONS.map((d) => d.id));
+const NEIGHBOR_ID_RE = /^[a-z][a-z0-9-]*$/;
+
+/**
+ * 锚位表清洗 + 默认落位：丢弃未知锚位 / 未购陈设 / 撞锚的条目，
+ * 再把没有锚位的已购陈设按锚位序补默认落座（v2 存档「购买即可见」不变）。
+ */
+function reconcileAnchors(raw: unknown, owned: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const usedAnchors = new Set<string>();
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [decorId, anchorId] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof anchorId !== "string" || !ANCHOR_MAP[anchorId]) continue;
+      if (!owned.includes(decorId) || usedAnchors.has(anchorId) || decorId in out) continue;
+      out[decorId] = anchorId;
+      usedAnchors.add(anchorId);
+    }
+  }
+  for (const decorId of owned) {
+    if (decorId in out) continue;
+    const free = ANCHORS.find((a) => !usedAnchors.has(a.id));
+    if (!free) break;
+    out[decorId] = free.id;
+    usedAnchors.add(free.id);
+  }
+  return out;
+}
+
+function reconcileSocial(raw: unknown): GameState["social"] {
+  const base = emptySocial();
+  if (!raw || typeof raw !== "object") return base;
+  const s = raw as Partial<GameState["social"]>;
+  base.day = Math.floor(num(s.day, 0, 0));
+  if (s.friendship && typeof s.friendship === "object" && !Array.isArray(s.friendship)) {
+    for (const [id, v] of Object.entries(s.friendship)) {
+      if (NEIGHBOR_ID_RE.test(id)) base.friendship[id] = Math.floor(num(v, 0, 0));
+    }
+  }
+  if (Array.isArray(s.marks)) {
+    base.marks = s.marks.filter(
+      (m): m is SocialMark =>
+        Boolean(m) &&
+        typeof m === "object" &&
+        typeof m.n === "string" &&
+        typeof m.p === "number" &&
+        (m.k === "water" || m.k === "pick"),
+    );
+  }
+  return base;
+}
+
 export function migrate(raw: unknown, now = Date.now()): GameState {
   const base = createInitialState(now);
   if (!raw || typeof raw !== "object") return base;
@@ -129,12 +181,18 @@ export function migrate(raw: unknown, now = Date.now()): GameState {
   if (!Array.isArray(merged.orders)) merged.orders = [];
   if (!Array.isArray(merged.arrangements)) merged.arrangements = [];
   if (!Array.isArray(merged.placedDecor)) merged.placedDecor = [];
+  merged.placedDecor = merged.placedDecor.filter((id, i, arr) => typeof id === "string" && arr.indexOf(id) === i);
   if (!merged.stats) merged.stats = base.stats;
   if (!Array.isArray(merged.quests)) merged.quests = base.quests;
   merged.level = Math.floor(num(s.level, base.level, 1));
   merged.unlockedFlowers = reconcileUnlocks(s.unlockedFlowers, merged.level);
   // v1 没有墙钟锚点：以本次加载为准，旧档首次回来不补发离线收益
   merged.lastSeenAt = num(s.lastSeenAt, now, 0);
+  // v3：锚位摆放 / 邻访 / 主题 / 一次性提示
+  merged.decorAnchors = reconcileAnchors(s.decorAnchors, merged.placedDecor.filter((id) => DECOR_IDS.has(id)));
+  merged.social = reconcileSocial(s.social);
+  merged.decorTheme = THEMES.some((t) => t.id === s.decorTheme) ? (s.decorTheme ?? null) : null;
+  merged.seenTips = Array.isArray(s.seenTips) ? s.seenTips.filter((t): t is string => typeof t === "string") : [];
   return merged;
 }
 

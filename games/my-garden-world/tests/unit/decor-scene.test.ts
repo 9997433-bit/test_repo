@@ -1,13 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DECORATIONS } from "../../src/data/decorations";
-import { createInitialState } from "../../src/engine/state";
-import { decorSlot } from "../../src/scene/decor-art";
+import { createInitialState, type GameState } from "../../src/engine/state";
+import { decorSlot, placedSlot } from "../../src/scene/decor-art";
 import { createGardenView } from "../../src/scene/garden-view";
-import { resolvePlacedDecor } from "../../src/systems/decorate";
+import { autoPlace, resolvePlacedDecor } from "../../src/systems/decorate";
 
 afterEach(() => {
   vi.useRealTimers();
 });
+
+/** 与游戏语义一致：入册即按锚位序默认落座（购买即可见）。 */
+function own(state: GameState, decor: string[]): void {
+  state.placedDecor = decor;
+  for (const id of decor) autoPlace(state, id);
+}
 
 function mount(decor: string[] = []) {
   const root = document.createElement("main");
@@ -15,7 +21,7 @@ function mount(decor: string[] = []) {
   const picked: number[] = [];
   const view = createGardenView(root, (id) => picked.push(id));
   const state = createInitialState();
-  state.placedDecor = decor;
+  own(state, decor);
   view.update(state, null, null);
   return { root, view, state, picked };
 }
@@ -40,9 +46,11 @@ describe("decor scene layer", () => {
     );
 
     const pavilion = item(root, "pavilion");
+    const slot = placedSlot("pavilion", "eaves");
     expect(pavilion?.querySelector("svg")).not.toBeNull();
-    expect(pavilion?.style.left).toBe(`${decorSlot("pavilion").x}%`);
-    expect(pavilion?.style.top).toBe(`${decorSlot("pavilion").y}%`);
+    // 首件入册落在首个锚位「檐下」，坐标随锚位、宽度仍按陈设本体
+    expect(pavilion?.style.left).toBe(`${slot.x}%`);
+    expect(pavilion?.style.top).toBe(`${slot.y}%`);
     expect(pavilion?.style.getPropertyValue("--dw")).toBe(`${decorSlot("pavilion").w}%`);
     expect(pavilion?.querySelector(".decor-tag")?.textContent).toBe("半亭");
   });
@@ -61,7 +69,7 @@ describe("decor scene layer", () => {
     const scene = root.querySelector<HTMLElement>(".decor-scene");
 
     expect(scene?.classList.contains("has-focus")).toBe(false);
-    expect(lanternChip?.getAttribute("aria-label")).toBe("在园中聚焦纱灯");
+    expect(lanternChip?.getAttribute("aria-label")).toBe("在园中聚焦纱灯（檐下）");
 
     lanternChip?.click();
     expect(scene?.classList.contains("has-focus")).toBe(true);
@@ -86,6 +94,7 @@ describe("decor scene layer", () => {
     expect(item(root, "lantern")?.classList.contains("is-focus")).toBe(false);
 
     state.placedDecor = [...state.placedDecor, "moongate"];
+    autoPlace(state, "moongate");
     view.update(state, null, null);
     expect(item(root, "moongate")?.classList.contains("is-focus")).toBe(true);
 
@@ -100,12 +109,14 @@ describe("decor scene layer", () => {
     const lanternChip = chips(root)[0];
 
     state.placedDecor = ["lantern", "swing"];
+    autoPlace(state, "swing");
     view.update(state, null, null);
     expect(item(root, "lantern")).toBe(lanternItem);
     expect(chips(root)[0]).toBe(lanternChip);
     expect(chips(root).map((c) => c.textContent)).toEqual(["灯 纱灯", "架 花架秋千"]);
 
     state.placedDecor = ["swing"];
+    delete state.decorAnchors.lantern;
     view.update(state, null, null);
     expect(item(root, "lantern")).toBeNull();
     expect(lanternChip?.isConnected).toBe(false);
@@ -118,6 +129,7 @@ describe("decor scene layer", () => {
     expect(root.querySelector(".decor-scene")?.classList.contains("has-focus")).toBe(true);
 
     state.placedDecor = ["pond"];
+    delete state.decorAnchors.lantern;
     view.update(state, null, null);
 
     expect(root.querySelector(".decor-scene")?.classList.contains("has-focus")).toBe(false);
@@ -127,11 +139,12 @@ describe("decor scene layer", () => {
     const { root, view, state } = mount([]);
     expect(root.querySelector(".decor-empty")?.textContent).toContain("装扮");
 
-    state.placedDecor = ["lantern"];
+    own(state, ["lantern"]);
     view.update(state, null, null);
     expect(root.querySelector(".decor-empty")).toBeNull();
 
     state.placedDecor = [];
+    state.decorAnchors = {};
     view.update(state, null, null);
     expect(root.querySelector(".decor-empty")).not.toBeNull();
   });
@@ -147,13 +160,22 @@ describe("decor scene layer", () => {
 });
 
 describe("resolvePlacedDecor", () => {
-  it("labels catalog decorations and passes legacy ids through", () => {
+  it("labels catalog decorations, carries anchors, and passes legacy ids through", () => {
     const state = createInitialState();
     state.placedDecor = ["pond", "legacy-statue"];
+    state.decorAnchors = { pond: "pond-side" };
 
     expect(resolvePlacedDecor(state)).toEqual([
-      { id: "pond", name: "锦鲤池", glyph: "池", label: "池 锦鲤池", known: true },
-      { id: "legacy-statue", name: "legacy-statue", glyph: "l", label: "legacy-statue", known: false },
+      { id: "pond", name: "锦鲤池", glyph: "池", label: "池 锦鲤池", known: true, anchor: "pond-side", anchorLabel: "池畔" },
+      {
+        id: "legacy-statue",
+        name: "legacy-statue",
+        glyph: "l",
+        label: "legacy-statue",
+        known: false,
+        anchor: null,
+        anchorLabel: "在匣",
+      },
     ]);
   });
 });

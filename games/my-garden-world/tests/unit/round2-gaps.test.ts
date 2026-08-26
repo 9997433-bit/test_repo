@@ -17,6 +17,7 @@ import {
 import { createInitialState } from "../../src/engine/state";
 import { decorArt, decorSlot } from "../../src/scene/decor-art";
 import { createGardenView } from "../../src/scene/garden-view";
+import { autoPlace } from "../../src/systems/decorate";
 import { backfillUnlocks } from "../../src/systems/economy";
 import { refreshSpirits } from "../../src/systems/spirits";
 import { ensureTutorialOrder, spawnOrders } from "../../src/systems/orders";
@@ -269,6 +270,8 @@ describe("decor rendering", () => {
     const view = createGardenView(root, () => undefined);
     const state = createInitialState();
     state.placedDecor = ["lantern", "legacy-statue"];
+    autoPlace(state, "lantern");
+    autoPlace(state, "legacy-statue");
 
     view.update(state, null, null);
     const firstNodes = [...root.querySelectorAll<HTMLElement>(".decor-chip")];
@@ -291,9 +294,12 @@ describe("decor rendering", () => {
     const view = createGardenView(root, () => undefined);
     const state = createInitialState();
     state.placedDecor = ["lantern"];
+    autoPlace(state, "lantern");
     view.update(state, null, null);
 
     state.placedDecor = ["chimes"];
+    state.decorAnchors = {};
+    autoPlace(state, "chimes");
     view.update(state, null, null);
 
     const chips = [...root.querySelectorAll<HTMLElement>(".decor-chip")];
