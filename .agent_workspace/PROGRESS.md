@@ -31,9 +31,17 @@
 
 ## Round 状态
 
-- Round 1：进行中（初始构建与基线探索）
+- Round 1：10 子代理已派发，等待回传（见 `round1/DISPATCH.md`）
 - Round 2：未开始
 - Round 3：未开始
+
+## 基线实测（主调度器 Round 0）
+
+```
+npm test     8/8 pass
+npm run probe  settled wave 12, winner ai, 190.5s, player kills 120
+npm run bench 20/20 settled, playerWins 6/20, 9.9ms/match
+```
 
 ## 结论简报
 
