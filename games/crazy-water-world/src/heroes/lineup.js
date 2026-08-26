@@ -2,17 +2,21 @@ import { HEROES, RARITY_MULT } from "../data/heroes.js";
 import { isInjured, nowSeconds } from "./roster.js";
 
 export const MAX_LINEUP = 5;
+// 英雄表没写 growth 时的兜底成长，与 combat/battle.js 的 STAR_GROWTH 同值。
+// （heroes 不许 import combat，见 ARCHITECTURE §1 冻结依赖边。）
+const DEFAULT_GROWTH = 0.18;
 
 function byCodePoint(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** 战力评分：只用于排序取舍，不参与战斗数值。 */
+/** 战力评分：只用于排序取舍，不参与战斗数值。成长口径与战斗一致，都读表里的 growth。 */
 export function heroPower(heroKey, star) {
   const def = HEROES[heroKey];
   if (!def) return 0;
   const lv = Math.max(1, Math.min(5, Number.isFinite(star) ? star : 1));
-  const m = (RARITY_MULT[def.rarity] || 1) * (1 + (lv - 1) * 0.18);
+  const growth = Number.isFinite(def.growth) ? def.growth : DEFAULT_GROWTH;
+  const m = (RARITY_MULT[def.rarity] || 1) * (1 + (lv - 1) * growth);
   return (def.base.hp * 0.3 + def.base.atk * 2 + def.base.def * 1.5 + def.base.spd * 0.4) * m;
 }
 

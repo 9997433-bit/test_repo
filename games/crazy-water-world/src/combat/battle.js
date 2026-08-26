@@ -4,6 +4,7 @@ import {
   DEF_FACTOR,
   DMG_FLOOR,
   effectiveDr,
+  onPeriod,
   planFor,
   rawDamage,
   WITHER_STEP,
@@ -12,6 +13,7 @@ import { actionOrder, anyAlive, living, pickBackTarget, pickTarget, weakestAlly 
 
 export const MAX_ROUNDS = 24;
 export const MAX_SIDE = 5;
+// 英雄表没写 growth 时的兜底成长；每星成长以 HEROES[key].growth 为准。
 export const STAR_GROWTH = 0.18;
 
 function round1(n) {
@@ -22,8 +24,9 @@ function fixed1(n) {
   return n.toFixed(1);
 }
 
-function starMult(rarity, star) {
-  return (RARITY_MULT[rarity] || 1) * (1 + (star - 1) * STAR_GROWTH);
+function starMult(def, star) {
+  const growth = Number.isFinite(def.growth) ? def.growth : STAR_GROWTH;
+  return (RARITY_MULT[def.rarity] || 1) * (1 + (star - 1) * growth);
 }
 
 function baseUnit(shape) {
@@ -63,7 +66,7 @@ function allyShape(unit) {
   const def = unit && unit.heroKey ? HEROES[unit.heroKey] : null;
   if (def) {
     const star = Math.max(1, Math.min(5, Number.isFinite(unit.star) ? unit.star : 1));
-    const m = starMult(def.rarity, star);
+    const m = starMult(def, star);
     return {
       id: unit.id || `h-${def.key}`,
       key: def.key,
@@ -158,14 +161,19 @@ function runTurn(ctx, actor) {
   const { units, log, rng } = ctx;
   const plan = actor.plan;
 
-  // 酒劲先灌一口，本回合就能享受到加成。
-  if (plan && plan.kind === "buff" && actor.buffStacks < plan.maxStacks) {
+  // 酒劲按表定周期灌一口，本回合就能享受到加成。
+  if (
+    plan &&
+    plan.kind === "buff" &&
+    onPeriod(ctx.round, plan.every) &&
+    actor.buffStacks < plan.maxStacks
+  ) {
     actor.buffStacks += 1;
     log.push(`${actor.name}的${plan.name}上到第${actor.buffStacks}层，越喝越猛。`);
   }
 
-  // 铁钩首回合专挑后排下手，否则前排优先规则会让钩子永远钩不到人。
-  const hooking = Boolean(plan && plan.kind === "hook" && ctx.round === plan.round);
+  // 铁钩发动的回合专挑后排下手，否则前排优先规则会让钩子永远钩不到人。
+  const hooking = Boolean(plan && plan.kind === "hook" && onPeriod(ctx.round, plan.every));
   const target = hooking ? pickBackTarget(rng, actor, units) : pickTarget(rng, actor, units);
   if (!target) return;
 
@@ -184,7 +192,7 @@ function runTurn(ctx, actor) {
     }
   }
   // 爆发：周期倍伤 + 破甲。
-  if (plan && plan.kind === "burst" && ctx.round % plan.every === 0) {
+  if (plan && plan.kind === "burst" && onPeriod(ctx.round, plan.every)) {
     mult *= plan.mult;
     pierce = plan.pierce;
     flavor = `${plan.name}起手，`;
@@ -192,8 +200,8 @@ function runTurn(ctx, actor) {
 
   const first = strike(actor, target, mult, pierce);
 
-  // 连珠：额外段各自重新选目标，伤害按 falloff 衰减。
-  if (plan && plan.kind === "multishot") {
+  // 连珠：额外段各自重新选目标，伤害按 falloff 衰减；不在周期上就是一记普攻。
+  if (plan && plan.kind === "multishot" && onPeriod(ctx.round, plan.every)) {
     let total = first;
     let hits = 1;
     for (let i = 1; i < plan.volleys; i += 1) {
@@ -210,7 +218,7 @@ function runTurn(ctx, actor) {
   reapDeaths(units, log);
 
   // 群体：周期性溅射全体敌人并叠削攻减益。
-  if (plan && plan.kind === "aoe" && ctx.round % plan.every === 0) {
+  if (plan && plan.kind === "aoe" && onPeriod(ctx.round, plan.every)) {
     const foes = living(units, actor.side === "ally" ? "enemy" : "ally");
     let total = 0;
     for (const foe of foes) {
@@ -227,7 +235,7 @@ function runTurn(ctx, actor) {
   }
 
   // 治疗：奶百分比最低的队友，附带护盾。
-  if (plan && plan.kind === "heal" && ctx.round % plan.every === 0) {
+  if (plan && plan.kind === "heal" && onPeriod(ctx.round, plan.every)) {
     const mate = weakestAlly(units, actor.side);
     if (mate) {
       const before = mate.hp;
@@ -243,7 +251,7 @@ function runTurn(ctx, actor) {
  *
  * 随机消费顺序（契约 §8.2，改动即破坏快照）：
  *   1. 按 enemies 数组序，每个敌人掷 1 次 id 后缀；
- *   2. 回合循环内按行动序，每次目标选择掷 1 次（连珠的每一段各算一次）。
+ *   2. 回合循环内按行动序，每次目标选择掷 1 次（连珠在其周期回合每一段各算一次）。
  * 除此之外全场无随机：伤害、治疗、减益、层数都是纯算术。
  */
 export function simulateBattle(seed, allies, enemies) {
