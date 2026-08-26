@@ -1,9 +1,11 @@
 /**
  * 上游模块适配层。
  *
- * `src/physics/**`（Opus-1）与 `src/combat/**`（Opus-2）与本模块并行开发。
- * 主循环在启动时探测上游能力：能用就用上游，仍是脚手架就走内置实现，
- * 这样任何一方先落地都不会把游戏卡成不可玩。
+ * 伤害结算（`src/combat/**`）仍走「探测到就用上游、否则内置兜底」的策略，
+ * 因为它只是一个纯函数，降级不影响可玩性。
+ *
+ * 物理不再降级：Round 2 起 `core/sim.js` 直接以 `src/physics` 为唯一积分器，
+ * 这里的 `CAPS.physics` / `CAPS.trajectory` 只用于在菜单上如实报告链路状态。
  */
 import * as upstreamPhysics from "../physics/index.js";
 import { resolveHit as upstreamResolveHit } from "../combat/index.js";
@@ -77,12 +79,18 @@ export function baseHit(egg, target, ctx) {
 }
 
 /**
- * 只报告「实际在用」的实现，避免探测到上游能力却仍走内置时产生误导。
- * 弹道积分目前统一走 core/sim.js，这样预测虚线与真实轨迹必然同源；
- * 迁移到上游积分器是 Round 2 的事。
+ * 只报告「实际在用」的实现。
+ *
+ * Round 2 起 `core/sim.js` 直接把 `src/physics` 的 `stepEgg` 当作唯一积分器，
+ * 预测幽灵蛋与实弹跑的是同一份代码，因此这里报告的就是真实链路；
+ * 上游探测失败时才退回内置兜底（届时战斗会失去弹球手感，但仍可运行）。
  */
 export function describeCaps() {
-  const physics = CAPS.physics ? "内置积分器（上游已就绪，待接入）" : "内置积分器";
+  const physics = CAPS.physics
+    ? CAPS.trajectory
+      ? "上游积分器（预测与实弹同源）"
+      : "上游积分器"
+    : "上游积分器不可用 · 检查 src/physics";
   const combat = CAPS.combat ? "上游 resolveHit" : "内置兜底公式";
   return `物理 ${physics} · 伤害 ${combat}`;
 }
