@@ -466,7 +466,7 @@ export function towerView(state) {
 
 export function waveView(state) {
   return `<div class="card"><h3>兽潮 · 第 ${state.wave.wave} 波</h3>
-    <p class="muted">失败将散失三成灵草/灵木/灵矿。最高 ${state.wave.best}</p>
+    <p class="muted">失败只散失未收取的产出（挂机匣与当波未入账），库存不动。最高 ${state.wave.best}</p>
     <button class="primary" data-act="wave">开府门御敌</button></div>${combatPanel(state)}`;
 }
 

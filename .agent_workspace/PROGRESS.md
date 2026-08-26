@@ -30,7 +30,7 @@
 
 - Round 1：已完成（见 `.agent_workspace/ROUND1_BRIEF.md`）
 - Round 2：已完成（见 `.agent_workspace/ROUND2_BRIEF.md`）
-- Round 3：进行中（SOTA 打磨，简报已注入）
+- Round 3：已完成（见 `.agent_workspace/ROUND3_BRIEF.md`）
 
 ## 结论简报
 
@@ -43,3 +43,7 @@ P0 页签不重绘、建筑撞 id 已修。遗留：离线效率未进 BOOT、�
 离线折算、1/1/2 槽型、未收取兽潮税、掉落表、applyTriggers、槽位 UI 已定案落地。
 仍开：藏经楼 TICK 未消费新口径、loseTax 死代码、魔族 F40、8s/60s 阈值、误删回归、塔 45 文案。
 详见 `ROUND2_BRIEF.md`。
+
+### Round 3
+修业接线、离线 60s、读档 clamp、loseTax 删除、终盘墙收口、37 测、文档终审。
+残留：覆盖守卫、迁移链、常数双副本。详见 `ROUND3_BRIEF.md`。
