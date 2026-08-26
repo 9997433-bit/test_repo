@@ -132,7 +132,7 @@
 | Fable-2 夜幕单源 | 排队 | — |
 | Fable-3 事件居民 | 排队 | — |
 | Fable-4 终验 | 运行中 | `bc-228a10a2-038e-5d71-9efb-9b0467d7042f` |
-| Opus-1 量子巡检 | 运行中 | `bc-d42ff8c8-646c-5173-bf98-e1ccb3d318ac` |
+| Opus-1 量子巡检 | 已完成 · 已合并 `cursor/r3-opus1-quantum-patrol-and-save-normalize-18ac` | `bc-d42ff8c8-646c-5173-bf98-e1ccb3d318ac` |
 | Opus-2 海区收口 | 排队 | — |
 | Opus-3 终局接口 | 排队 | — |
 | Opus-4 契约鱼屏 | 运行中 | `bc-bd06dcac-7146-5d39-9e5e-2b1848a8dc04` |
