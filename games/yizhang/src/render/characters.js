@@ -74,7 +74,7 @@ export function createCharacters({ scene, quality, textures }) {
     collar: keep(new CylinderGeometry(0.24, 0.31, 0.16, seg + 2, 1, true)),
     strapChest: keep(new BoxGeometry(0.1, 0.62, 0.035)),
     buckle: keep(new BoxGeometry(0.09, 0.07, 0.05)),
-    backPanel: keep(new BoxGeometry(0.36, 0.52, 0.05)),
+    backPanel: keep(new BoxGeometry(0.29, 0.4, 0.04)),
     mitt: keep(new SphereGeometry(0.34, seg + 3, seg + 1)),
     knuckle: keep(new TorusGeometry(0.3, 0.045, 5, seg + 4, Math.PI * 1.05)),
     stud: keep(new BoxGeometry(0.07, 0.06, 0.055)),
@@ -277,7 +277,15 @@ export function createCharacters({ scene, quality, textures }) {
     collar.position.y = 1.58;
     body.add(collar);
 
-    // 背上的掌印布片：跟随镜头看到的是后背，识别色必须在这里能读到
+    // 背上的掌印布片：跟随镜头看到的是后背，识别色必须在这里能读到。
+    // 先垫一块更大的暗色底布再压识别色，边上就留出一圈缝线般的暗边 ——
+    // 少了这一圈，纯色方块会像一张贴在背上的白纸。
+    const backing = new Mesh(geo.backPanel, mats.clothDim);
+    backing.position.set(0, 1.26, -0.305);
+    backing.rotation.x = 0.06;
+    backing.scale.set(1.22, 1.16, 0.6);
+    body.add(backing);
+
     const backPanel = new Mesh(geo.backPanel, mats.paint);
     backPanel.position.set(0, 1.26, -0.315);
     backPanel.rotation.x = 0.06;

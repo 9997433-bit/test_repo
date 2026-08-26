@@ -33,7 +33,7 @@ export const PALETTE = {
 
   // 大气
   fog: 0x33405a,
-  cloudLit: 0xbfa88c,
+  cloudLit: 0x9e8b76,
   cloudShadow: 0x46506a,
 
   // 角色材质基色（皮革 / 金属 / 布，粗糙度各不相同）
@@ -145,7 +145,9 @@ export const QUALITY = {
     shadowMapSize: 512,
     softShadows: false,
     rimLight: true,
-    crackFillLight: false,
+    // 点光很便宜，而关掉它裂缝井就是一个纯黑的洞 —— 低配可以少粒子少阴影，
+    // 但不能把场景的叙事光源整个拿掉。
+    crackFillLight: true,
     texRock: 128,
     texDetail: 64,
     normalMaps: false,

@@ -168,8 +168,8 @@ export function createSky({ scene, renderer, quality, textures, sunDir }) {
   // 云海：岛下方的水平层，慢速漂移，给悬浮感与后景
   const clouds = [];
   const layerDefs = [
-    { y: -34, size: 900, density: 0.46, scale: 2.6, opacity: 0.72, fadeNear: 320, fadeFar: 1500 },
-    { y: -70, size: 1500, density: 0.52, scale: 1.7, opacity: 0.55, fadeNear: 520, fadeFar: 2200 },
+    { y: -34, size: 900, density: 0.46, scale: 2.6, opacity: 0.5, fadeNear: 260, fadeFar: 1100 },
+    { y: -70, size: 1500, density: 0.52, scale: 1.7, opacity: 0.42, fadeNear: 460, fadeFar: 1900 },
     { y: -120, size: 2400, density: 0.6, scale: 1.15, opacity: 0.4, fadeNear: 780, fadeFar: 3000 },
   ].slice(0, quality.cloudLayers);
 

@@ -496,6 +496,9 @@ function buildArenaMacro(size, seed) {
 
           // 大块风化斑：这是把「一整块干净圆盘」打散的主力
           const blotch = fbm(n, u * 3.1, v * 3.1, 4, 0.55);
+          // 脊线噪声给出折断的棱，而不是圆滚滚的丘。
+          // 只用平滑 fbm 的话，台面会被照成沙丘 —— 岩石的大尺度起伏是有转折的。
+          const ridgeK = ridged(n2, u * 4.3 + 7, v * 4.3 + 7, 3);
           // 细一档的岩层脏迹
           const grain = fbm(n2, u * 9.5, v * 9.5, 3, 0.5);
           // 靠外缘常年风吹雨打，比中间脏
@@ -503,7 +506,7 @@ function buildArenaMacro(size, seed) {
           // 中央是走动最多的地方，被磨得亮一点、干净一点
           const polish = smoothstep(0.62, 0.08, r);
 
-          let m = 0.62 + blotch * 0.62 + grain * 0.16;
+          let m = 0.62 + blotch * 0.42 + ridgeK * 0.3 + grain * 0.14;
           m *= 1 - edge * 0.3;
           m *= 1 + polish * 0.2;
 

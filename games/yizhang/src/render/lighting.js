@@ -37,9 +37,13 @@ export function createLighting({ scene, quality, sunDir }) {
   ambient.position.set(0, 30, 0);
   scene.add(ambient);
 
-  // 背后的冷边缘光，不投影
-  const rim = new DirectionalLight(PALETTE.rimLight, quality.rimLight ? 1.25 : 0.5);
-  rim.position.set(sunDir.x * -40, 16, sunDir.z * -46);
+  // 冷边缘光，不投影。
+  //
+  // 方位很关键：放在主光的正对面就等于放在跟随镜头的身后，那不是边缘光，是一盏正面补光，
+  // 会把角色的后背连同识别色布片一起打平打白。所以把它转到主光的侧后方 90°，
+  // 让它只擦过轮廓的一侧 —— 这才是用来把主体从暮色背景里分离出来的那道冷边。
+  const rim = new DirectionalLight(PALETTE.rimLight, quality.rimLight ? 1.05 : 0.45);
+  rim.position.set(sunDir.z * 46, 24, -sunDir.x * 46);
   rim.target.position.set(0, 1.2, 0);
   scene.add(rim);
   scene.add(rim.target);
@@ -78,7 +82,7 @@ export function createLighting({ scene, quality, sunDir }) {
       key.position.set(tmp.x + sunDir.x * 60, sunDir.y * 60, tmp.z + sunDir.z * 60);
       key.target.updateMatrixWorld();
       rim.target.position.set(tmp.x, 1.2, tmp.z);
-      rim.position.set(tmp.x - sunDir.x * 40, 16, tmp.z - sunDir.z * 46);
+      rim.position.set(tmp.x + sunDir.z * 46, 24, tmp.z - sunDir.x * 46);
       rim.target.updateMatrixWorld();
       if (crack) {
         const flicker = 0.86 + Math.sin(time * 1.7) * 0.06 + Math.sin(time * 4.3 + 1.1) * 0.04;

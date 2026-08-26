@@ -215,7 +215,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
         `#include <map_fragment>
          vec2 macroUv = vMacroPos.xz * uMacroScale + 0.5;
          float macro = texture2D(uMacro, macroUv).r;
-         diffuseColor.rgb *= 0.55 + macro * 1.25;`
+         diffuseColor.rgb *= 0.72 + macro * 0.78;`
       )
       // 台面在几何上是一个完全的平面，平铺的法线贴图又细到亚像素，两者相加就是「一张砂纸」。
       // 用宏观图自身的梯度推一个大尺度的法线扰动出来：起伏有好几米宽，
@@ -230,7 +230,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
            float hD = texture2D(uMacro, macroUv - vec2(0.0, e)).r;
            float hU = texture2D(uMacro, macroUv + vec2(0.0, e)).r;
            vec3 swell = normalize(vec3((hL - hR) * 1.6, 1.0, (hD - hU) * 1.6));
-           normal = normalize(normal + vec3(swell.x, 0.0, swell.z) * 1.5);
+           normal = normalize(normal + vec3(swell.x, 0.0, swell.z) * 0.45);
          }`
       );
   };
