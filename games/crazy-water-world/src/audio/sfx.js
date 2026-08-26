@@ -11,6 +11,8 @@ const VOICES = {
   hook: { type: "triangle", from: 700, to: 980, dur: 0.2, gain: 0.06 },
   order: { type: "sine", from: 560, to: 840, dur: 0.16, gain: 0.05 },
   dive: { type: "sine", from: 380, to: 140, dur: 0.4, gain: 0.05 },
+  // 天气替老大做决定时用：强制收杆 / 紧急上浮，跟「你自己按的」那几个音区分开。
+  alarm: { type: "square", from: 620, to: 240, dur: 0.36, gain: 0.05 },
   win: { type: "triangle", from: 520, to: 1040, dur: 0.42, gain: 0.07 },
 };
 

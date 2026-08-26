@@ -1,14 +1,17 @@
-// 潜水屏：HUD（氧气 / 深度 / 战利品）+ 海底舞台。
-// 会话按契约挂在 state.explore.dive，刷新和换屏都不会把老大丢在海里。
-import { startDive, diveStep, finishDive } from "../../explore/index.js";
-import { DIVE_ZONES } from "../../data/dive.js";
+// 潜水屏：海区选择 + HUD（氧气 / 深度 / 战利品）+ 海底舞台。
+// 会话按契约挂在 state.explore.dive：beginDive 开、advanceDive 推、finishDive 结账，
+// UI 不自己拿着 session 变量。海区表（解锁与拒绝原因）一律问 diveZones，
+// HUD 数字一律问 diveHud —— 这一层只负责把它们画出来。
+import { advanceDive, beginDive, canDive, diveHud, diveZones, finishDive, DEFAULT_ZONE } from "../../explore/index.js";
+import { DIVE_RULES } from "../../data/dive.js";
 import { RESOURCE_META } from "../../data/resources.js";
-import { h, setText, setClass, setStyle, setDisabled, rebuildIf } from "../dom.js";
+import { h, setText, setClass, setStyle, setDisabled, setAttr, rebuildIf } from "../dom.js";
 import { num, quip, resName } from "../copy.js";
 
 const MAX_DEPTH = 90;
-const SURFACE_DEPTH = 8;
-const DANGER = 6;
+const SURFACE_DEPTH = Number.isFinite(DIVE_RULES?.surfaceDepth) ? DIVE_RULES.surfaceDepth : 8;
+const DANGER = Number.isFinite(DIVE_RULES?.sharkRadius) ? DIVE_RULES.sharkRadius : 6;
+const IDLE_INPUT = { x: 0, y: 0, surface: false };
 
 /** 舞台按会话自己的 maxDepth 缩放：浅滩 40 米也能占满整块海底，不再全按 90 米画。 */
 function depthOf(session) {
@@ -34,12 +37,18 @@ function nearestShark(session) {
   return best;
 }
 
+/** 老大选的海区。没选过、或选的那片这会儿下不去，就退回默认海区。 */
+function wantedZone(ctx) {
+  return ctx.ui.dive?.zone || DEFAULT_ZONE;
+}
+
 export const diveScreen = {
   id: "dive",
 
   /**
    * 推进潜水会话。由 app.js 每帧调用一次，**不分当前在哪一屏**：
-   * 切走了氧气照样扣（只是没人给方向输入），会话结束也照样结算入袋 / 掉血。
+   * 切走了氧气照样扣（只是没人给方向），会话结束也照样结算入袋 / 掉血。
+   * advanceDive 每步按当前天气刷新氧耗倍率，海啸（diveO2 = 0）会直接把人拽上来。
    * dt 用真实秒 —— 潜水是手感活儿，不跟游戏倍速走。返回推进后的会话（没在潜就是 null）。
    */
   step(ctx, controllable = true) {
@@ -47,20 +56,22 @@ export const diveScreen = {
     const session = s.explore.dive;
     if (!session?.ok || session.done || !s.meta.started) return session || null;
 
-    const input = controllable ? inputOf(ctx) : { x: 0, y: 0, surface: false };
-    const next = diveStep(session, input, Math.min(0.05, ctx.dt));
+    const advanced = advanceDive(s, controllable ? inputOf(ctx) : IDLE_INPUT, Math.min(0.05, ctx.dt));
+    const next = advanced.explore.dive;
     if (!next.done) {
-      ctx.store.replace({ ...s, explore: { ...s.explore, dive: next } });
+      if (advanced !== s) ctx.store.replace(advanced);
       return next;
     }
 
-    ctx.store.replace(finishDive(s, next));
-    ctx.sfx(next.alive ? "hook" : "hit");
+    ctx.store.replace(finishDive(advanced, next));
+    ctx.sfx(next.forced ? "alarm" : next.alive ? "hook" : "hit");
     const where = controllable ? "" : "（你人在别的屏，氧气可没停）";
     ctx.toast(
-      next.alive
-        ? `上浮成功，捞回 ${next.loot.length} 件深海货。${where}`
-        : `被鲨鱼贴脸了，掉了 18 血。${where}${quip()}`,
+      next.forced
+        ? `${next.message || "紧急上浮"}${where}捞到的 ${next.loot.length} 件照算。`
+        : next.alive
+          ? `上浮成功，捞回 ${next.loot.length} 件深海货。${where}`
+          : `被鲨鱼贴脸了，掉了 ${DIVE_RULES.failHpLoss ?? 18} 血。${where}${quip()}`,
       next.alive ? "good" : "bad",
     );
     return null;
@@ -70,7 +81,9 @@ export const diveScreen = {
     const el = h("section", {}, [
       h("h2", { text: "深海" }),
       h("p", { class: "cww-hint", id: "dive-hint" }),
-      h("div", { class: "cww-meter", id: "dive-o2" }, [h("i"), h("em")]),
+      h("div", { class: "cww-grid", id: "dive-zones" }),
+      h("p", { class: "cww-hint", id: "dive-zone-note" }),
+      h("div", { class: "cww-meter", id: "dive-o2", role: "meter", "aria-label": "氧气" }, [h("i"), h("em")]),
       h("p", { class: "cww-hint", id: "dive-stat" }),
       h("div", { class: "cww-row" }, [
         h("button", { "data-act": "dive-start", id: "dive-start", class: "primary", text: "下潜" }),
@@ -93,6 +106,8 @@ export const diveScreen = {
     ]);
     ctx.refs.dive = {
       hint: el.querySelector("#dive-hint"),
+      zones: el.querySelector("#dive-zones"),
+      zoneNote: el.querySelector("#dive-zone-note"),
       o2: el.querySelector("#dive-o2"),
       o2fill: el.querySelector("#dive-o2 i"),
       o2label: el.querySelector("#dive-o2 em"),
@@ -129,43 +144,74 @@ export const diveScreen = {
     const s = ctx.state;
     const r = ctx.refs.dive;
     const stage = ctx.refs.diveStage;
-    const hasDock = s.buildings.some((b) => b.type === "dive_dock");
     const session = s.explore.dive;
+    const hud = diveHud(s);
+    const zones = diveZones(s);
+    const picked = wantedZone(ctx);
+    const gate = canDive(s, picked);
 
-    const active = !!session?.ok && !session.done;
+    const active = hud.active;
     setClass(ctx.refs.diveLayer, "on", active && s.meta.screen === "dive");
 
-    const zone = DIVE_ZONES[session?.zone || "wreck"];
+    const here = zones.find((z) => z.id === (active ? hud.zone : picked));
     setText(
       r.hint,
-      !hasDock
-        ? "得先造潜水船坞，徒手下去只能喂鱼。"
-        : active
-          ? `${session.zoneName || zone?.name || "海底"}：${zone?.flavor || "氧气不等人，捡完就上。"}`
-          : "氧气有限，鲨鱼没有。捡到东西记得回浅水区上浮。",
+      active
+        ? `${hud.zoneName || here?.name || "海底"}：${here?.flavor || "氧气不等人，捡完就上。"}`
+        : gate.ok
+          ? `${here?.name || "海区"}：${here?.flavor || "氧气有限，鲨鱼没有。"}`
+          : gate.reason,
+    );
+    setClass(r.hint, "bad", !active && !gate.ok);
+
+    // 海区面板：解锁状态与拒绝原因都由 diveZones 给，UI 不复读解锁表。
+    rebuildIf(
+      r.zones,
+      zones.map((z) => `${z.id}${z.unlocked ? 1 : 0}${z.id === picked ? "*" : ""}${active ? "a" : ""}`).join("|"),
+      () =>
+        zones.map((z) =>
+          h("button", {
+            class: `cww-pick${z.id === picked ? " on" : ""}${z.unlocked ? "" : " poor"}`,
+            "data-act": "dive-zone",
+            "data-zone": z.id,
+            "aria-pressed": z.id === picked ? "true" : "false",
+            title: z.unlocked ? z.flavor : z.reason,
+            // 锁着的海区照样可点：点一下把理由说清楚，比一个灰按钮有用。
+            disabled: active ? true : null,
+          }, [
+            h("b", { text: z.name }),
+            h("span", { text: z.unlocked ? `氧气 ${z.oxygen} · 鲨鱼 ${z.sharks} · 稀有 ${Math.round(z.rareChance * 100)}%` : z.reason }),
+          ]),
+        ),
+    );
+    setText(
+      r.zoneNote,
+      active
+        ? `正在潜：${hud.zoneName} · 天气 ${hud.weather}${hud.diveO2 === hud.o2Mult ? "" : "（氧耗倍率中途变了）"}`
+        : `已开 ${zones.filter((z) => z.unlocked).length}/${zones.length} 片海区 · 天气 ${hud.weather}（氧耗 ×${hud.diveO2.toFixed(1)}）`,
     );
 
-    const o2max = active ? session.oxygenMax || 100 : 100;
-    const o2 = active ? Math.max(0, session.oxygen) : 0;
-    setStyle(r.o2fill, "width", `${((o2 / o2max) * 100).toFixed(1)}%`);
-    setClass(r.o2, "low", active && o2 / o2max < 0.35);
-    setText(r.o2label, active ? `氧气 ${Math.ceil(o2)} / ${Math.round(o2max)}` : "氧气 —— 未下潜");
+    const o2max = hud.oxygenMax || 100;
+    setStyle(r.o2fill, "width", `${((active ? hud.oxygenPct : 0) * 100).toFixed(1)}%`);
+    setClass(r.o2, "low", active && hud.oxygenPct < 0.35);
+    setText(r.o2label, active ? `氧气 ${hud.oxygen} / ${Math.round(o2max)}` : "氧气 —— 未下潜");
+    setAttr(r.o2, "aria-valuenow", active ? Math.round(hud.oxygenPct * 100) : 0);
     setText(
       r.stat,
       active
-        ? `深度 ${Math.round(session.depth)} / ${Math.round(depthOf(session))} 米 · 已捡 ${session.loot.length} 件 · 剩余点位 ${session.nodes.length} · 气泡 ${(session.bubbles || []).length}`
-        : `潜水船坞：${hasDock ? "已就绪" : "未建造"} · 深海是蓝图与传说碎片的主要来源。`,
+        ? `深度 ${hud.depth} / ${Math.round(hud.maxDepth || MAX_DEPTH)} 米 · 已捡 ${hud.loot} 件 · 剩余点位 ${hud.nodes} · 气泡 ${hud.bubbles}${hud.warning ? " · 氧气告急！" : ""}`
+        : `${gate.ok ? "船坞已就绪" : gate.reason} · 深海是蓝图与传说碎片的主要来源。`,
     );
-    setDisabled(r.start, !hasDock || active);
+    setDisabled(r.start, !gate.ok || active);
     setDisabled(r.up, !active);
 
-    if (!active || !stage) return;
+    if (!active || !stage || !session) return;
 
     const max = depthOf(session);
     rebuildIf(stage.nodes, session.nodes.map((n) => n.id).join(","), () =>
       session.nodes.map((n) =>
         h("div", {
-          class: `cww-node${n.res === "blueprint" || n.res === "shard" ? " rare" : ""}${n.kind === "wreck" ? " wreck" : ""}`,
+          class: `cww-node${n.rare || n.res === "blueprint" || n.res === "shard" ? " rare" : ""}${n.kind === "wreck" ? " wreck" : ""}`,
           title: `${n.label || resName(n.res)}：${resName(n.res)}×${n.n}`,
           style: {
             left: `${n.x}%`,
@@ -205,30 +251,50 @@ export const diveScreen = {
     setStyle(stage.danger, "top", `${(session.depth / max) * 100}%`);
   },
 
-  action(ctx, act) {
-    if (act === "dive-start") {
-      const session = startDive(ctx.state, "wreck");
-      if (!session.ok) {
-        ctx.toast(`${session.reason} ${quip()}`, "bad");
+  action(ctx, act, el) {
+    if (act === "dive-zone") {
+      const zone = el?.dataset?.zone;
+      if (!zone) return true;
+      const gate = canDive(ctx.state, zone);
+      if (!gate.ok) {
+        ctx.toast(`${gate.reason} ${quip()}`, "bad");
         ctx.sfx("deny");
         return true;
       }
-      ctx.store.replace({ ...ctx.state, explore: { ...ctx.state.explore, dive: session } });
+      ctx.ui.dive.zone = zone;
+      ctx.sfx("tap");
+      return true;
+    }
+    if (act === "dive-start") {
+      const s = ctx.state;
+      const zone = wantedZone(ctx);
+      const next = beginDive(s, zone);
+      // beginDive 不合规时原样返回：理由问 canDive，UI 不复读解锁表。
+      if (next === s) {
+        ctx.toast(`${canDive(s, zone).reason} ${quip()}`, "bad");
+        ctx.sfx("deny");
+        return true;
+      }
+      ctx.store.replace(next);
       ctx.sfx("dive");
-      ctx.toast(`下水了。氧气 ${Math.round(session.oxygenMax || 100)}，别贪。`);
+      const session = next.explore.dive;
+      ctx.toast(`下水了：${session.zoneName}，氧气 ${Math.round(session.oxygenMax || 100)}。别贪。`);
       return true;
     }
     if (act === "dive-up") {
       const s = ctx.state;
       const session = s.explore.dive;
-      if (!session?.ok) return true;
+      if (!session?.ok || session.done) return true;
       if (session.depth >= SURFACE_DEPTH) {
         ctx.toast("太深了，先游回水面那层再上浮。", "bad");
         return true;
       }
-      ctx.store.replace(finishDive(s, { ...session, done: true }));
+      ctx.store.replace(finishDive(s, { ...session, done: true, surfaced: true }));
       ctx.sfx("hook");
-      ctx.toast(`上来了，带回 ${session.loot.length} 件货：${session.loot.map((n) => `${resName(n.res)}×${num(n.n)}`).join(" · ") || "两手空空"}。`, "good");
+      ctx.toast(
+        `上来了，带回 ${session.loot.length} 件货：${session.loot.map((n) => `${resName(n.res)}×${num(n.n)}`).join(" · ") || "两手空空"}。`,
+        "good",
+      );
       return true;
     }
     return false;
@@ -245,9 +311,12 @@ export const diveScreen = {
   // 换屏时把海底舞台收起来（会话留在 state 里，回来接着潜）——但氧气不会跟着停。
   leave(ctx) {
     setClass(ctx.refs.diveLayer, "on", false);
-    const session = ctx.state.explore.dive;
-    if (session?.ok && !session.done) {
-      ctx.toast(`人还在水下！氧气 ${Math.ceil(Math.max(0, session.oxygen))} 还在扣，左上角有回去的按钮。`, "bad");
+    const hud = diveHud(ctx.state);
+    if (hud.active) {
+      ctx.toast(
+        `人还在水下！氧气 ${hud.oxygen} 还在扣，遇上${hud.weather === "海啸预警" ? "这浪头" : "海啸"}会被强制捞上来。左上角有回去的按钮。`,
+        "bad",
+      );
     }
   },
 };
