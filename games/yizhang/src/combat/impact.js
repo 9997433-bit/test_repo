@@ -6,6 +6,7 @@ import { applyStatus, refreshDerived } from "./statuses.js";
 import {
   clamp,
   clamp01,
+  clockOf,
   horizDir,
   inCone,
   isTileAlive,
@@ -36,6 +37,27 @@ export function knockbackScale(target) {
 }
 
 /**
+ * 记一次「被打飞」：归属、时间戳、失控窗口。不动速度，
+ * 磁掌拉近这类直接改写速度的技能也走这里，保证宿主看到同一套记账。
+ *
+ * 字段有两套名字：combat 契约用 `knockbackT` / `lastHitAt`，`src/sim` 的
+ * physics/step 用 `kbT` / `lastHitT`。两边都写，冲量才不会当帧被地面摩擦吃光，
+ * 掉下台时也才找得到击杀归属。
+ */
+export function markKnockback(state, target, speed, opts = {}) {
+  if (!target) return 0;
+  const now = num(opts.now, clockOf(state));
+  target.lastHitBy = opts.srcId ?? target.lastHitBy ?? null;
+  target.lastHitAt = now;
+  if (typeof target.lastHitT === "number") target.lastHitT = now;
+  if (opts.window === false) return 0;
+  const window = clamp(num(speed) * HIT.knockbackTimePerSpeed, HIT.knockbackTimeMin, HIT.knockbackTimeMax);
+  target.knockbackT = Math.max(num(target.knockbackT), window);
+  if (typeof target.kbT === "number") target.kbT = Math.max(target.kbT, window);
+  return window;
+}
+
+/**
  * 给目标一个水平冲量 + 抬升，直接写进速度。
  * @returns {{x:number,y:number,z:number}} 实际施加的冲量
  */
@@ -49,14 +71,13 @@ export function applyKnockback(state, target, dirX, dirZ, mag, lift = 0, opts = 
     target.vy = num(target.vy) + impulse.y;
     if (target.grounded === true) target.grounded = false;
     if (target.onGround === true) target.onGround = false;
+    if (typeof target.coyoteT === "number") target.coyoteT = 0;
   }
-  target.lastHitBy = opts.srcId ?? target.lastHitBy ?? null;
-  target.lastHitAt = num(opts.now, num(state && state.t));
-  if (opts.knockbackWindow !== false) {
-    const speed = Math.hypot(impulse.x, impulse.z);
-    const window = clamp(speed * HIT.knockbackTimePerSpeed, HIT.knockbackTimeMin, HIT.knockbackTimeMax);
-    target.knockbackT = Math.max(num(target.knockbackT), window);
-  }
+  markKnockback(state, target, Math.hypot(impulse.x, impulse.z), {
+    srcId: opts.srcId,
+    now: num(opts.now, clockOf(state)),
+    window: opts.knockbackWindow !== false,
+  });
   return impulse;
 }
 
@@ -87,10 +108,11 @@ export function damageTilesInRadius(state, cx, cz, radius, damage, opts = {}) {
   const falloffMin = num(opts.falloffMin, 0.55);
   for (const tile of tileList(state)) {
     if (!isTileAlive(tile)) continue;
+    const tr = tileRadius(tile, state);
     const d = Math.hypot(num(tile.x) - cx, num(tile.z) - cz);
-    const reach = radius + tileRadius(tile);
+    const reach = radius + tr;
     if (d > reach) continue;
-    if (inner > 0 && d + tileRadius(tile) < inner) continue;
+    if (inner > 0 && d + tr < inner) continue;
     const k = radius > 0 ? clamp01(1 - d / reach) : 1;
     const dmg = damage * (falloffMin + (1 - falloffMin) * k);
     const res = damageTile(state, tile, dmg, opts.srcId ?? null);
@@ -161,7 +183,17 @@ export function landHit(state, attacker, target, cfg) {
   } = cfg || {};
 
   const parried = tryParry(state, attacker, target, power, now);
-  if (parried) return { id: target.id, parried: true, impulse: { x: 0, y: 0, z: 0 }, reflect: parried };
+  if (parried) {
+    // 这一掌被吃掉了：targetId 留空，宿主就不会把它记成一次落地的命中。
+    return {
+      id: target.id,
+      targetId: null,
+      applied: true,
+      parried: true,
+      impulse: { x: 0, y: 0, z: 0 },
+      reflect: parried,
+    };
+  }
 
   const dir = dirOverride || horizDir(attacker, target);
   const behind = behindBonus && cfg.behind === true ? HIT.behindMul : 1;
@@ -180,12 +212,18 @@ export function landHit(state, attacker, target, cfg) {
 
   const hit = {
     id: target.id,
+    // sim.step 的 applyHits 按 targetId 找人，applied 表示冲量已经写进速度、
+    // 宿主只需要记账（连击、掌意、击杀归属），不要再施加一次。
+    targetId: target.id,
+    applied: true,
     impulse,
     power: mag,
     kind,
     skillId,
     distance: num(dir.dist, 0),
     behind: behind > 1,
+    hitX: num(target.x),
+    hitZ: num(target.z),
     attackerId: attacker.id,
   };
   pushEvent(state, {

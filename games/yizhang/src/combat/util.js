@@ -148,13 +148,17 @@ export function arenaRadius(state) {
   return num(state && state.arena && state.arena.radius, num(state && state.arenaRadius, ARENA.radius));
 }
 
-export function tileRadius(tile) {
-  if (!tile) return ARENA.tileRadius;
-  if (typeof tile.r === "number") return tile.r;
-  if (typeof tile.radius === "number") return tile.radius;
-  if (typeof tile.half === "number") return tile.half;
-  if (typeof tile.size === "number") return tile.size / 2;
-  if (typeof tile.w === "number") return Math.max(tile.w, num(tile.d, tile.w)) / 2;
+export function tileRadius(tile, state) {
+  if (tile) {
+    if (typeof tile.r === "number") return tile.r;
+    if (typeof tile.radius === "number") return tile.radius;
+    if (typeof tile.half === "number") return tile.half;
+    if (typeof tile.size === "number") return tile.size / 2;
+    if (typeof tile.w === "number") return Math.max(tile.w, num(tile.d, tile.w)) / 2;
+  }
+  // src/sim 的方格台面只在 arena 上记一次边长。
+  const size = num(state && state.arena && state.arena.tileSize, 0);
+  if (size > 0) return size / 2;
   return ARENA.tileRadius;
 }
 
@@ -196,10 +200,27 @@ export function combatOf(state) {
   return c;
 }
 
-/** 时钟：sim 有 state.t 就跟 state.t，否则 combat 自己攒。 */
+/** 时钟：宿主给了 `t`（testkit）或 `time`（src/sim）就跟宿主，否则 combat 自己攒。 */
 export function clockOf(state) {
-  if (state && typeof state.t === "number" && Number.isFinite(state.t)) return state.t;
+  if (!state) return 0;
+  if (typeof state.t === "number" && Number.isFinite(state.t)) return state.t;
+  if (typeof state.time === "number" && Number.isFinite(state.time)) return state.time;
   return combatOf(state).clock;
+}
+
+/**
+ * 宿主是不是 `src/sim`：sim 的 player 自带前后摇状态机（`attack.phase`）与
+ * 两条冷却计时（`slapCd` / `skillCd`），它已经闸过一道出招节奏。
+ * 这种玩家上 combat 不再叠自己的冷却与无敌帧倒计时，否则两套计时会互相吃掉。
+ */
+export function simDrivenPlayer(player) {
+  return !!(
+    player &&
+    player.attack &&
+    typeof player.attack.phase === "string" &&
+    typeof player.slapCd === "number" &&
+    typeof player.skillCd === "number"
+  );
 }
 
 export function nextId(state, prefix) {

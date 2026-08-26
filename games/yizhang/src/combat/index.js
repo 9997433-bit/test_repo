@@ -13,7 +13,10 @@
 //    没冷却好就返回空命中列表 / { ok:false }。
 //  * 被击退者会拿到 `knockbackT`（秒）。sim 在这段时间内必须**大幅削弱地面摩擦与
 //    位移控制**，否则冲量当帧就被摩擦吃掉，谁也扇不出岛。tickStatuses 负责倒计时。
+//    `src/sim` 把同一个窗口记在 `kbT` 上，impact.js 两个字段都写。
+//  * import 本模块即完成 `sim.installCombat`（见 ./sim-bridge.js）。
 
+import { GLOVES as DATA_GLOVES } from "../data/index.js";
 import {
   ARENA,
   AWAKEN,
@@ -31,6 +34,7 @@ import { gainMeter, landHit } from "./impact.js";
 import {
   SKILL_HANDLERS,
   SKILL_IDS,
+  normalizeSkillId,
   resolveGhostSlap,
   resolveMeteorImpact,
   skillConfig,
@@ -50,8 +54,11 @@ import {
   playerList,
   pushEvent,
   rightFromYaw,
+  simDrivenPlayer,
   yawTo,
 } from "./util.js";
+// 副作用：把本模块装进 src/sim 的依赖表（sim 缺席时静默跳过）。
+import "./sim-bridge.js";
 
 // ---------------------------------------------------------------- 手套数据源
 
@@ -69,19 +76,13 @@ export function registerGloves(gloveByIdOrList) {
   return registeredGloveById;
 }
 
-/** 可选：`../data/gloves.js` 存在时异步接管兜底表（不存在则静默保留兜底）。 */
-export async function loadGloveData(specifier = "../data/gloves.js") {
-  try {
-    const mod = await import(/* @vite-ignore */ specifier);
-    const table = mod.GLOVE_BY_ID || (Array.isArray(mod.GLOVES) ? mod.GLOVES : null);
-    if (table) return registerGloves(table);
-  } catch {
-    /* 数据模块尚未落地：继续用 FALLBACK_GLOVE_BY_ID */
-  }
-  return null;
-}
+/** 数值权威表：`src/data/gloves.js`。data 缺字段时用同构的兜底常量补齐。 */
+export const GLOVES = (Array.isArray(DATA_GLOVES) && DATA_GLOVES.length ? DATA_GLOVES : FALLBACK_GLOVES).map(
+  (g) => ({ ...FALLBACK_GLOVE_BY_ID[g.id], ...g }),
+);
+export const GLOVE_BY_ID = Object.fromEntries(GLOVES.map((g) => [g.id, g]));
 
-/** 读取优先级：state 注入 > registerGloves > 全局 > 兜底常量。 */
+/** 读取优先级：state 注入 > registerGloves > `src/data` > 兜底常量。 */
 export function gloveTable(state) {
   const fromState =
     (state && state.gloveById) ||
@@ -89,7 +90,7 @@ export function gloveTable(state) {
     (state && Array.isArray(state.gloves)
       ? Object.fromEntries(state.gloves.filter((g) => g && g.id).map((g) => [g.id, g]))
       : null);
-  return fromState || registeredGloveById || (typeof globalThis !== "undefined" && globalThis.GLOVE_BY_ID) || FALLBACK_GLOVE_BY_ID;
+  return fromState || registeredGloveById || GLOVE_BY_ID;
 }
 
 export function activeGloveId(player) {
@@ -104,7 +105,7 @@ const COTTON = FALLBACK_GLOVE_BY_ID[DEFAULT_GLOVE_ID];
 /** 补齐缺失字段，保证任何来源的手套对象都能直接算。 */
 export function normalizeGlove(glove) {
   const g = glove && typeof glove === "object" ? glove : COTTON;
-  const skillId = SKILL_IDS.includes(g.skillId) ? g.skillId : "none";
+  const skillId = normalizeSkillId(g.skillId);
   return {
     id: g.id || DEFAULT_GLOVE_ID,
     name: g.name || COTTON.name,
@@ -125,10 +126,15 @@ export function normalizeGlove(glove) {
 
 /** glove 可以是对象、id 字符串，或省略（走玩家当前掌）。 */
 export function resolveGlove(state, attacker, glove) {
-  if (glove && typeof glove === "object") return normalizeGlove(glove);
   const table = gloveTable(state);
+  if (glove && typeof glove === "object") {
+    // sim 在 data 还没注入时会传自带的占位掌（placeholder:true），
+    // 这时按 id 换成真表里的那一只，别拿占位数值打架。
+    const real = glove.placeholder === true && glove.id ? table[glove.id] : null;
+    return normalizeGlove(real || glove);
+  }
   const id = typeof glove === "string" ? glove : activeGloveId(attacker);
-  return normalizeGlove(table[id] || FALLBACK_GLOVE_BY_ID[id] || COTTON);
+  return normalizeGlove(table[id] || GLOVE_BY_ID[id] || FALLBACK_GLOVE_BY_ID[id] || COTTON);
 }
 
 // ---------------------------------------------------------------- 觉醒
@@ -195,6 +201,7 @@ function actorReady(attacker) {
 
 export function canSlap(state, attacker, glove, now = clockOf(state)) {
   if (!actorReady(attacker)) return false;
+  if (simDrivenPlayer(attacker)) return true;
   const cd = cooldownsOf(attacker);
   return now >= cd.slapAt && now >= num(attacker.busyUntil);
 }
@@ -203,6 +210,7 @@ export function canSkill(state, attacker, glove, now = clockOf(state)) {
   if (!actorReady(attacker)) return false;
   const g = effectiveGlove(state, attacker, glove);
   if (g.skillId === "none") return false;
+  if (simDrivenPlayer(attacker)) return num(attacker.skillCd) <= 0;
   const cd = cooldownsOf(attacker);
   return now >= cd.skillAt && now >= num(attacker.busyUntil);
 }
@@ -223,16 +231,22 @@ function slapTargets(state, attacker, g) {
   return out;
 }
 
+/** 命中列表兼容层：数组本身就是命中列表，`.hits` 指向自己给 sim.step 用。 */
+function hitList(hits) {
+  Object.defineProperty(hits, "hits", { value: hits, enumerable: false, configurable: true });
+  return hits;
+}
+
 function doSlap(state, attacker, g, now, chargeCooldown) {
   const hits = [];
+  attacker.lastSlapAt = now;
+  attacker.slapSeq = num(attacker.slapSeq) + 1;
   if (chargeCooldown) {
     const cd = cooldownsOf(attacker);
     cd.slapAt = now + g.slapCooldown;
     attacker.busyUntil = Math.max(num(attacker.busyUntil), now + g.windup + g.recovery);
     attacker.windupUntil = now + g.windup;
     attacker.recoverUntil = now + g.windup + g.recovery;
-    attacker.lastSlapAt = now;
-    attacker.slapSeq = num(attacker.slapSeq) + 1;
   }
 
   // 木棉觉醒：连挥第 3 下变强击退。
@@ -277,15 +291,22 @@ function doSlap(state, attacker, g, now, chargeCooldown) {
 
 /**
  * 扇击解算。命中即刻生效（冲量已写进目标速度）。
- * @returns {Array<{id:string, impulse:{x:number,y:number,z:number}}>}
+ *
+ * 返回值同时是命中数组和 `{ hits }`：契约里 combat 直接返回命中列表，
+ * 而 `sim.step` 读 `res.hits` 再交给 applyHits，两者指向同一份记录。
+ * @returns {Array<{id:string, targetId:string, applied:boolean, impulse:{x:number,y:number,z:number}}>}
  */
 export function resolveSlap(state, attacker, glove, now = clockOf(state)) {
-  if (!state || !attacker) return [];
-  if (!actorReady(attacker)) return [];
+  if (!state || !attacker) return hitList([]);
+  if (!actorReady(attacker)) return hitList([]);
   const g = applyAwaken(attacker, resolveGlove(state, attacker, glove));
+
+  // sim 自己跑前后摇：它只在 strike 那一帧调过来，这里再闸一次冷却只会吃掉命中。
+  if (simDrivenPlayer(attacker)) return hitList(doSlap(state, attacker, g, now, false));
+
   const cd = cooldownsOf(attacker);
-  if (now < cd.slapAt || now < num(attacker.busyUntil)) return [];
-  return doSlap(state, attacker, g, now, true);
+  if (now < cd.slapAt || now < num(attacker.busyUntil)) return hitList([]);
+  return hitList(doSlap(state, attacker, g, now, true));
 }
 
 /**
@@ -323,8 +344,14 @@ export function resolveSkill(state, attacker, glove, now = clockOf(state)) {
   if (g.skillId === "none") return empty("no-skill", "none");
 
   const cd = cooldownsOf(attacker);
-  if (now < cd.skillAt) return empty("cooldown", g.skillId);
-  if (now < num(attacker.busyUntil)) return empty("busy", g.skillId);
+  // sim 用 p.skillCd 自己闸一道，并在成功后按返回的 cooldown 重置；
+  // 两套计时同时长，浮点上差半帧就会把技能吞掉，所以宿主管节奏时 combat 只认宿主。
+  if (simDrivenPlayer(attacker)) {
+    if (num(attacker.skillCd) > 0) return empty("cooldown", g.skillId);
+  } else {
+    if (now < cd.skillAt) return empty("cooldown", g.skillId);
+    if (now < num(attacker.busyUntil)) return empty("busy", g.skillId);
+  }
 
   const cfg = skillConfig(g.skillId, !!g.awakened);
   const handler = SKILL_HANDLERS[g.skillId] || SKILL_HANDLERS.none;
@@ -428,7 +455,9 @@ export function tickStatuses(state, dt) {
   if (!state || !(dt > 0)) return { t: clockOf(state), ...sink };
 
   const c = combatOf(state);
-  const now = typeof state.t === "number" && Number.isFinite(state.t) ? state.t : c.clock + dt;
+  // 宿主的钟优先（testkit 用 state.t，src/sim 用 state.time），没有就自己累加。
+  const hostClock = num(state.t, num(state.time, NaN));
+  const now = Number.isFinite(hostClock) ? hostClock : c.clock + dt;
   c.clock = now;
 
   for (const p of playerList(state)) {
