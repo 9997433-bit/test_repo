@@ -6,6 +6,12 @@ import { EXPLORE_REASON, modOf, weatherLabel } from "./mods.js";
  * 海区与通用常数全部来自 data/dive.js（唯一真源，原先 explore 这边那份写死的
  * shallow/reef/wreck/trench 已删）。布局不写死：每次下潜由 (meta.seed, meta.tick, zone)
  * 派生 rng 现场生成，同一 (seed, tick, zone) 必然重放出同一张图。
+ *
+ * 三处收口（Round 3）：
+ *   氧耗   —— 只有 diveDrain 一个算式，纯步进（diveStep）与 state 路径（advanceDive）
+ *             共用；倍率 0（天气禁潜）在两条路上都是强制上浮，不是「白送氧气」。
+ *   拒绝   —— canDive 把「海区门槛（顺序冻结）+ 人还在水下」一次说全，每条附上要多少/现在多少。
+ *   结账   —— 每场下潜带 runId，finishDive 按台账幂等：巡检与 UI 抢着结算也只入一次袋。
  */
 export { DIVE_ZONES, DIVE_RULES };
 
@@ -18,6 +24,9 @@ const BOOST_SPEED = 1.35;
 const BOOST_O2 = 1.6;
 /** 深度标尺：UI 的海底舞台按 90 米满格绘制，海区表只调氧耗与掉落，不调标尺。 */
 const MAX_DEPTH = 90;
+
+/** 结账记档最多留最近这么多次下潜：够挡住重复结账，又不会把存档撑肥。 */
+const SETTLED_KEEP = 8;
 
 function num(v, fallback) {
   return Number.isFinite(v) ? v : fallback;
@@ -43,9 +52,37 @@ function round2(n) {
 }
 
 function dockLevel(state) {
-  return (state.buildings || [])
+  return (state?.buildings || [])
     .filter((b) => b.type === "dive_dock")
     .reduce((best, b) => Math.max(best, b.level || 1), 0);
+}
+
+/**
+ * 氧耗倍率钳域：非有限数或负数一律回退。负倍率会让氧气倒着涨，
+ * 0 是「这天气不许下水」的约定值（禁潜），两者都不能悄悄放行。
+ */
+function o2MultOf(v, fallback) {
+  return Number.isFinite(v) && v >= 0 ? v : fallback;
+}
+
+/** 会话的氧耗两件套：会话自己写了就用自己的，旧档缺字段按它那片海区的表补（不再一律按沉船）。 */
+function drainOf(session) {
+  const def = DIVE_ZONES[session?.zone];
+  return {
+    base: num(session?.o2Base, num(def?.o2DrainBase, 6)),
+    perDepth: num(session?.o2PerDepth, num(def?.o2DrainPerDepth, 0.04)),
+  };
+}
+
+/**
+ * 每秒氧耗的唯一算式：(海区基准 + 深度×每米加成) × 天气倍率 ×(冲刺 1.6)。
+ * diveStep 的子步与 advanceDive 的每次推进都只认这一处 —— 两条路径的氧耗按定义一致，
+ * 差别只剩「倍率从哪儿取」：advanceDive 每次推进现问天气，纯步进用会话上存的那份。
+ */
+export function diveDrain(session, opts = {}) {
+  const { base, perDepth } = drainOf(session);
+  const mult = o2MultOf(opts.o2Mult, o2MultOf(session?.o2Mult, 1));
+  return (base + num(session?.depth, 0) * perDepth) * mult * (opts.boost ? BOOST_O2 : 1);
 }
 
 /** 天气氧耗倍率（0 = 该天气禁潜）。轴名由 DIVE_RULES.weatherField 给。 */
@@ -68,34 +105,100 @@ function bandOf(y) {
   return y < MAX_DEPTH * 0.4 ? "upper" : y < MAX_DEPTH * 0.75 ? "mid" : "deep";
 }
 
+/** 正在水下（未结束）的会话；没在潜返回 null。done 但还没结账的不算「在潜」。 */
+function activeDive(state) {
+  const cur = state?.explore?.dive;
+  return cur?.ok === true && !cur.done ? cur : null;
+}
+
 /**
- * 前置检查：海区存在 → 船坞等级 → 关卡进度 → 天气。
- * UI 拿它给海区按钮上锁并写原因，不用自己复读解锁表。
+ * 海区本身开没开：海区存在 → 有船坞 → dockLevel → stage → 天气（顺序冻结）。
+ * 每条拒绝除了人话还带上「要多少 / 现在多少」，UI 与测试不用去解析文案。
  */
-export function canDive(state, zone = DEFAULT_ZONE) {
+function zoneGate(state, zone) {
   const def = DIVE_ZONES[zone];
-  if (!def) return { ok: false, reason: "没这个海区。", code: EXPLORE_REASON.UNKNOWN_TYPE };
+  if (!def) return { ok: false, reason: "没这个海区。", code: EXPLORE_REASON.UNKNOWN_TYPE, zone };
   const level = dockLevel(state);
-  if (!level) return { ok: false, reason: "先造潜水船坞。", code: EXPLORE_REASON.REQUIRES_BUILDING };
   const needDock = num(def.unlock?.dockLevel, 1);
+  if (!level) {
+    return {
+      ok: false,
+      reason: "先造潜水船坞。",
+      code: EXPLORE_REASON.REQUIRES_BUILDING,
+      zone: def.id,
+      building: "dive_dock",
+      dockLevel: 0,
+      needDockLevel: needDock,
+    };
+  }
   if (level < needDock) {
-    return { ok: false, reason: `${def.name}要 ${needDock} 级潜水船坞。`, code: EXPLORE_REASON.LOCKED };
+    return {
+      ok: false,
+      reason: `${def.name}要 ${needDock} 级潜水船坞，现在 ${level} 级。`,
+      code: EXPLORE_REASON.LOCKED,
+      zone: def.id,
+      dockLevel: level,
+      needDockLevel: needDock,
+    };
   }
   const needStage = num(def.unlock?.stage, 0);
-  if (needStage > 0 && (state.campaign?.bestStage || 0) < needStage) {
-    return { ok: false, reason: `${def.name}要先打到第 ${needStage} 关。`, code: EXPLORE_REASON.LOCKED };
+  const bestStage = num(state?.campaign?.bestStage, 0);
+  if (needStage > 0 && bestStage < needStage) {
+    return {
+      ok: false,
+      reason: `${def.name}要先打到第 ${needStage} 关，现在第 ${bestStage} 关。`,
+      code: EXPLORE_REASON.LOCKED,
+      zone: def.id,
+      dockLevel: level,
+      bestStage,
+      needStage,
+    };
   }
   const o2 = diveO2Mul(state);
   if (!(o2 > 0)) {
-    return { ok: false, reason: `${weatherLabel(state)}：这浪头下水就是喂鲨，等等。`, code: EXPLORE_REASON.WEATHER, diveO2: o2 };
+    return {
+      ok: false,
+      reason: `${weatherLabel(state)}：这浪头下水就是喂鲨，等等。`,
+      code: EXPLORE_REASON.WEATHER,
+      zone: def.id,
+      dockLevel: level,
+      diveO2: o2,
+      weather: weatherLabel(state),
+    };
   }
   return { ok: true, reason: "", code: "", zone: def.id, dockLevel: level, diveO2: o2 };
 }
 
-/** 海区选择面板数据：每个海区的解锁状态与拒绝原因。 */
+/**
+ * 「这会儿能不能下这片海」= 海区门槛（顺序冻结：海区存在 → 船坞 → dockLevel → stage → 天气）
+ * 再加一条终检：人已经在水下就不许再开一次 —— 否则 beginDive 会把没结账的会话连同战利品盖掉。
+ * UI 拿它给海区按钮上锁并写原因，不用自己复读解锁表。
+ */
+export function canDive(state, zone = DEFAULT_ZONE) {
+  const gate = zoneGate(state, zone);
+  if (!gate.ok) return gate;
+  const busy = activeDive(state);
+  if (busy) {
+    return {
+      ...gate,
+      ok: false,
+      reason: `老大还在${busy.zoneName || "水"}下面，先上浮再挑海区。`,
+      code: EXPLORE_REASON.BUSY,
+      busyZone: busy.zone,
+    };
+  }
+  return gate;
+}
+
+/**
+ * 海区选择面板数据。unlocked / reason / code 说的是「这片海区开了没有」（不含在潜与否），
+ * available / blockReason / blockCode 说的是「此刻能不能点下潜」—— 潜水中三片海区照样显示已开。
+ */
 export function diveZones(state) {
+  const busy = activeDive(state);
   return Object.values(DIVE_ZONES).map((def) => {
-    const gate = canDive(state, def.id);
+    const gate = zoneGate(state, def.id);
+    const now = gate.ok && busy ? canDive(state, def.id) : gate;
     return {
       id: def.id,
       name: def.name,
@@ -106,8 +209,33 @@ export function diveZones(state) {
       unlocked: gate.ok,
       reason: gate.ok ? "" : gate.reason,
       code: gate.ok ? "" : gate.code,
+      needDockLevel: num(def.unlock?.dockLevel, 1),
+      needStage: num(def.unlock?.stage, 0),
+      available: now.ok,
+      blockReason: now.ok ? "" : now.reason,
+      blockCode: now.ok ? "" : now.code,
     };
   });
+}
+
+/**
+ * 一次下潜的身份证：结账幂等靠它认人。同一 tick 里死了再下也不会撞号 ——
+ * 结完账 diveRecord.runs 就 +1，序号跟着变。
+ */
+function runIdOf(state, zoneId, seed, tick) {
+  return `${zoneId}#${seed}#${tick}#${num(state?.explore?.diveRecord?.runs, 0)}`;
+}
+
+/** 旧档会话没有 runId：用 (海区, 布局种子, 起潜 tick) 兜一个等价键，照样能认出是同一场。 */
+function runKeyOf(session) {
+  const id = session?.runId;
+  return typeof id === "string" && id ? id : `${session?.zone ?? "?"}#${session?.seed ?? 0}#${session?.startedTick ?? 0}`;
+}
+
+/** 已结账的下潜号码；存档被手改成别的形状时当作没结过（宁可漏挡也不能崩）。 */
+function settledRuns(state) {
+  const raw = state?.explore?.diveRecord?.settled;
+  return Array.isArray(raw) ? raw.filter((k) => typeof k === "string") : [];
 }
 
 export function startDive(state, zone = DEFAULT_ZONE) {
@@ -180,12 +308,14 @@ export function startDive(state, zone = DEFAULT_ZONE) {
     });
   }
 
+  const startedTick = state.meta?.tick ?? 0;
   return {
     ok: true,
     zone: def.id,
     zoneName: def.name,
     seed,
-    startedTick: state.meta?.tick ?? 0,
+    startedTick,
+    runId: runIdOf(state, def.id, seed, startedTick),
     oxygen: oxygenMax,
     oxygenMax,
     x: 50,
@@ -203,10 +333,10 @@ export function startDive(state, zone = DEFAULT_ZONE) {
     warning: false,
     surfaced: false,
     dockLevel: level,
-    // 氧耗三件套跟着会话走：diveStep 是纯函数拿不到 state，advanceDive 每步再刷新倍率。
+    // 氧耗三件套跟着会话走：diveStep 是纯函数拿不到 state，advanceDive 每次推进再刷新倍率。
     o2Base: num(def.o2DrainBase, 6),
     o2PerDepth: num(def.o2DrainPerDepth, 0.04),
-    o2Mult: gate.diveO2,
+    o2Mult: o2MultOf(gate.diveO2, 1),
     weather: weatherLabel(state),
     message: `${def.name}：氧气 ${oxygenMax}，${def.flavor || "下去别贪。"}`,
   };
@@ -220,8 +350,10 @@ function currentAt(depth, time) {
 /** 旧档里的会话缺 time/oxygenMax/bubbles/o2* 等新字段，先补默认值再步进，避免算出 NaN。 */
 function hydrate(session) {
   const maxDepth = num(session.maxDepth, MAX_DEPTH);
+  const drain = drainOf(session);
   return {
     ...session,
+    runId: runKeyOf(session),
     x: num(session.x, 0),
     depth: num(session.depth, 0),
     maxDepth,
@@ -230,9 +362,9 @@ function hydrate(session) {
     oxygen: num(session.oxygen, 100),
     oxygenMax: num(session.oxygenMax, Math.max(100, num(session.oxygen, 100))),
     danger: num(session.danger, 0),
-    o2Base: num(session.o2Base, 6),
-    o2PerDepth: num(session.o2PerDepth, 0.04),
-    o2Mult: num(session.o2Mult, 1),
+    o2Base: drain.base,
+    o2PerDepth: drain.perDepth,
+    o2Mult: o2MultOf(session.o2Mult, 1),
     loot: Array.isArray(session.loot) ? session.loot : [],
     nodes: Array.isArray(session.nodes) ? session.nodes : [],
     bubbles: Array.isArray(session.bubbles) ? session.bubbles : [],
@@ -264,9 +396,7 @@ function substep(prev, input, dt) {
   next.x = clamp(next.x + (ix * spd + currentAt(next.depth, next.time)) * dt, 0, 100);
   next.depth = clamp(next.depth + iy * spd * dt, 0, next.maxDepth ?? MAX_DEPTH);
   next.bestDepth = Math.max(next.bestDepth, next.depth);
-  // 氧耗 = (海区基准 + 深度×每米加成) × 天气 diveO2 × 冲刺。
-  const drain = (next.o2Base + next.depth * next.o2PerDepth) * next.o2Mult;
-  next.oxygen -= dt * drain * (boost ? BOOST_O2 : 1);
+  next.oxygen -= dt * diveDrain(next, { boost });
   if (ix !== 0) next.facing = ix > 0 ? 1 : -1;
 
   let nearest = Infinity;
@@ -330,19 +460,37 @@ function substep(prev, input, dt) {
 }
 
 /**
+ * 天气禁潜（diveO2 = 0）时那条会话长什么样，只在这儿定义一次：
+ * 纯步进与 advanceDive / 巡检拽上来的会话字段逐个对得上，播报也是同一句。
+ */
+function surfacedByWeather(session, label) {
+  return {
+    ...session,
+    done: true,
+    surfaced: true,
+    forced: true,
+    message: `${label}：紧急上浮，别贪那点铁。`,
+  };
+}
+
+/**
  * 纯步进。dt 大时内部按 0.05s 拆分，低帧率下不会穿过鲨鱼或资源点。
- * opts.o2Mult 可覆盖会话里存的天气氧耗倍率（advanceDive 每步刷新用）。
+ * opts.o2Mult 覆盖会话里存的天气氧耗倍率（advanceDive 每次推进现问天气用），
+ * opts.weather 只在强制上浮那句播报里出现。
  * 会话已结束或不是 ok 会话时返回原引用。
  */
 export function diveStep(session, input, dt, opts = {}) {
   if (!session?.ok || session.done) return session;
+  const o2Mult = o2MultOf(opts?.o2Mult, o2MultOf(session.o2Mult, 1));
+  // 禁潜倍率不是「白送氧气」：倍率 0 一律当场强制上浮。以前纯步进这条路会算出
+  // 氧耗 0 —— 海啸里直调 diveStep 能无限潜水，跟 advanceDive 的判定正好相反。
+  if (!(o2Mult > 0)) return surfacedByWeather(session, opts?.weather || session.weather || "这天气");
   const total = clamp(Number(dt) || 0, 0, 2);
   if (total <= 0) return session;
   const inp = input || {};
   const steps = Math.max(1, Math.ceil(total / SUBSTEP));
   const slice = total / steps;
-  let cur = hydrate(session);
-  if (Number.isFinite(opts?.o2Mult)) cur = { ...cur, o2Mult: opts.o2Mult };
+  let cur = { ...hydrate(session), o2Mult };
   for (let i = 0; i < steps; i += 1) {
     cur = substep(cur, inp, slice);
     if (cur.done) break;
@@ -350,15 +498,19 @@ export function diveStep(session, input, dt, opts = {}) {
   return cur;
 }
 
-function diveRecordOf(state, session, loot) {
+function diveRecordOf(state, session, loot, runKey) {
   const prev = state.explore?.diveRecord || {};
   return {
+    ...prev,
     runs: (prev.runs || 0) + 1,
     deaths: (prev.deaths || 0) + (session.alive ? 0 : 1),
     bestDepth: round2(Math.max(prev.bestDepth || 0, session.bestDepth || 0)),
     bestHaul: Math.max(prev.bestHaul || 0, session.alive ? loot.length : 0),
+    // 结账台账：认过号的下潜不再入第二次袋（巡检与 UI 谁先喊都一样）。
+    settled: [...settledRuns(state), runKey].slice(-SETTLED_KEEP),
     lastRun: {
       zone: session.zone,
+      runId: runKey,
       depth: round2(session.bestDepth || 0),
       loot: loot.length,
       alive: !!session.alive,
@@ -367,14 +519,26 @@ function diveRecordOf(state, session, loot) {
   };
 }
 
+/** 清掉挂在 state 上的残留会话；本来就没有就还回原引用。 */
+function dropDive(state) {
+  if ((state.explore?.dive ?? null) === null) return state;
+  return { ...state, explore: { ...state.explore, dive: null } };
+}
+
 /**
  * session 缺省取 state.explore.dive。传入 {ok:false} 或 null 属调用方违规：
  * 不抛异常，只在 explore.dive 上有残留会话时清掉，否则返回原引用。
+ *
+ * 幂等 [附加]：每场下潜按 runId 记一笔台账，认过号的再喊一次只清残留会话、不二次入袋。
+ * 量子巡检（stepSim 给 done 会话补的那次结账）与 UI 手上的会话副本因此可以抢着结算，
+ * 战利品、经验、掉血、生涯统计都只算一遍。
  */
 export function finishDive(state, session = state.explore?.dive ?? null) {
-  if (!session || session.ok !== true) {
-    if ((state.explore?.dive ?? null) === null) return state;
-    return { ...state, explore: { ...state.explore, dive: null } };
+  if (!session || session.ok !== true) return dropDive(state);
+  const runKey = runKeyOf(session);
+  if (settledRuns(state).includes(runKey)) {
+    const live = state.explore?.dive ?? null;
+    return live && runKeyOf(live) === runKey ? dropDive(state) : state;
   }
   const loot = Array.isArray(session.loot) ? session.loot : [];
   const resources = { ...state.resources };
@@ -391,7 +555,7 @@ export function finishDive(state, session = state.explore?.dive ?? null) {
       hp: session.alive ? state.player.hp : Math.max(8, state.player.hp - rule("failHpLoss", 18)),
       exp: state.player.exp + loot.length * rule("xpPerLoot", 10),
     },
-    explore: { ...state.explore, dive: null, diveRecord: diveRecordOf(state, session, loot) },
+    explore: { ...state.explore, dive: null, diveRecord: diveRecordOf(state, session, loot, runKey) },
     log: [
       session.alive
         ? `上浮成功，捞到 ${loot.length} 件深海货${rare ? `（含稀有点 ${rare}）` : ""}。`
@@ -401,32 +565,30 @@ export function finishDive(state, session = state.explore?.dive ?? null) {
   };
 }
 
-/** 会话写进 state.explore.dive，刷新/存档不丢；缺船坞、等级不够或天气禁潜返回原引用。 */
+/**
+ * 会话写进 state.explore.dive，刷新/存档不丢；缺船坞、等级不够、天气禁潜或人还在水下
+ * （canDive 的 E_BUSY）返回原引用。
+ * 上一场已经结束却还没结账的会话先当场结账再开新的 —— 谁也别想把战利品盖没了。
+ */
 export function beginDive(state, zone = DEFAULT_ZONE) {
-  const session = startDive(state, zone);
-  if (!session.ok) return state;
+  const pending = state.explore?.dive;
+  const base = pending?.ok === true && pending.done ? finishDive(state, pending) : state;
+  const session = startDive(base, zone);
+  if (!session.ok) return base;
   return {
-    ...state,
-    explore: { ...state.explore, dive: session },
-    log: [`下潜${session.zoneName}。氧气 ${session.oxygenMax}。`, ...state.log].slice(0, 24),
+    ...base,
+    explore: { ...base.explore, dive: session },
+    log: [`下潜${session.zoneName}。氧气 ${session.oxygenMax}。`, ...base.log].slice(0, 24),
   };
 }
 
-/** 天气翻脸（diveO2 = 0）时把人捞上来：会话直接结束，战利品照算。 */
+/** 天气翻脸（diveO2 = 0）时把人捞上来：会话直接结束（战利品留给 finishDive 结账）。 */
 function forceSurface(state, session) {
+  const label = weatherLabel(state);
   return {
     ...state,
-    explore: {
-      ...state.explore,
-      dive: {
-        ...session,
-        done: true,
-        surfaced: true,
-        forced: true,
-        message: `${weatherLabel(state)}：紧急上浮，别贪那点铁。`,
-      },
-    },
-    log: [`${weatherLabel(state)}：把老大从水里拽上来了。`, ...state.log].slice(0, 24),
+    explore: { ...state.explore, dive: surfacedByWeather(session, label) },
+    log: [`${label}：把老大从水里拽上来了。`, ...state.log].slice(0, 24),
   };
 }
 
@@ -438,13 +600,19 @@ export function syncDiveWeather(state) {
   return forceSurface(state, cur);
 }
 
-/** 按 dt 推进 state 里的会话（每步按当前天气刷新氧耗倍率）；没有在潜的会话就返回原引用。 */
+/**
+ * 按 dt 推进 state 里的会话；没有在潜的会话就返回原引用。
+ * 每次推进现问一次天气倍率，并把它写回会话（o2Mult）——所以推进后 diveHud 的
+ * o2Mult 与 diveO2 必然相等，纯步进接着算也是同一份倍率，两条路径氧耗不会分叉。
+ */
 export function advanceDive(state, input, dt) {
   const cur = state.explore?.dive;
   if (!cur?.ok || cur.done) return state;
   const o2Mult = diveO2Mul(state);
+  const label = weatherLabel(state);
+  // 禁潜倍率交给 forceSurface：会话字段与 diveStep 那条路完全同形，只多一行播报。
   if (!(o2Mult > 0)) return forceSurface(state, cur);
-  const next = diveStep(cur, input, dt, { o2Mult });
+  const next = diveStep(cur, input, dt, { o2Mult, weather: label });
   if (next === cur) return state;
   return { ...state, explore: { ...state.explore, dive: next } };
 }
@@ -462,6 +630,7 @@ export function diveHud(state) {
       loot: 0,
       danger: 0,
       warning: false,
+      drain: 0,
       diveO2: diveO2Mul(state),
       weather: weatherLabel(state),
     };
@@ -470,6 +639,7 @@ export function diveHud(state) {
     active: !s.done,
     zone: s.zone,
     zoneName: s.zoneName,
+    runId: runKeyOf(s),
     oxygen: Math.round(s.oxygen),
     oxygenMax: s.oxygenMax ?? 100,
     oxygenPct: round2(clamp(s.oxygen / (s.oxygenMax || 100), 0, 1)),
@@ -484,10 +654,12 @@ export function diveHud(state) {
     alive: !!s.alive,
     done: !!s.done,
     forced: !!s.forced,
-    // diveO2 是当下天气的倍率，o2Mult 是这次下潜正在按的倍率（UI 的 diveStep 路径
-    // 只在开潜那一刻取值，两者不等就说明天气中途翻脸了）。
+    // 当下每秒烧多少氧（含深度加成，不含冲刺）——与 diveStep 子步用的是同一个算式。
+    drain: round2(diveDrain(s)),
+    // diveO2 是当下天气的倍率，o2Mult 是这次下潜正在按的倍率。走 advanceDive 推进的会话
+    // 每次推进都会把倍率刷成当下天气，两者不等只可能出现在「没人推进」的静止帧。
     diveO2: diveO2Mul(state),
-    o2Mult: num(s.o2Mult, 1),
+    o2Mult: o2MultOf(s.o2Mult, 1),
     weather: weatherLabel(state),
     startWeather: s.weather || "",
     message: s.message || "",
