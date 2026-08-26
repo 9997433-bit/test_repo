@@ -27,8 +27,8 @@
 | 准备 | 完成 | 契约、GDD、脚手架已初始化 |
 | Round 1 | 完成 | 10/10 已回收。简报见 `round1/BRIEF.md` |
 | Round 2 | 完成 | 10/10 已回收。简报见 `round2/BRIEF.md` |
-| Round 3 | 进行中 | 9/10 已回收。仅 O4 effects 消费仍在跑 |
-| 归档合并 | 待启动 | — |
+| Round 3 | 完成 | 10/10 已回收。简报见 `round3/BRIEF.md`。L1 达成 |
+| 归档合并 | 进行中 | 结构化 PR 验收后合入 main |
 
 ## 目标验收（SOTA）
 
