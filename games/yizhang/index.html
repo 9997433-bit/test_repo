@@ -12,10 +12,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>异掌</title>
-    <!-- Fable-2 的 src/styles/index.css 用 @import 拉 Rajdhani / Noto Serif SC（display=swap，
-         非阻塞）。先握手，字体到得早一点；断网时回退栈照常渲染。 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- 零 CDN（红线 R-13）：页面不向第三方域名握手，字体只用系统栈或自托管资源。 -->
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b111b'/%3E%3Cpath d='M6 24 Q16 3 26 24' stroke='%23d9a441' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M11 24 L21 24' stroke='%23c8702c' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"
@@ -44,6 +41,9 @@
         overscroll-behavior: none;
         background: var(--yz-dusk-0);
         color: var(--yz-ivory);
+        /* 首帧字体：本机精品栈，不外链。src/styles 到位后由它覆盖。 */
+        font-family: "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC",
+          "Microsoft YaHei", system-ui, sans-serif;
         -webkit-text-size-adjust: 100%;
         -webkit-tap-highlight-color: transparent;
       }
