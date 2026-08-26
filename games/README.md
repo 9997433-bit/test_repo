@@ -8,6 +8,14 @@
 | `linghuashi/` | 《灵画师》（其他任务，如存在） | 4173 |
 | `bingqi-wangzhe/` | 《兵器王者》（其他任务，如存在） | — |
 
+线上 Pages（项目站再加一级游戏目录，互不抢根）：
+
+| 游戏 | 地址 |
+| --- | --- |
+| 目录 | https://9997433-bit.github.io/test_repo/ |
+| 赵云与阿斗 | https://9997433-bit.github.io/test_repo/zhao-yun-adou/ |
+| 兵器王者 | https://9997433-bit.github.io/test_repo/bingqi-wangzhe/ |
+
 启动本任务游戏：
 
 ```bash

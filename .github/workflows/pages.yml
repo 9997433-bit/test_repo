@@ -1,0 +1,65 @@
+# Project Pages lives at https://9997433-bit.github.io/test_repo/
+# Each game is published under one extra path segment so they never share a root.
+# This job only rebuilds zhao-yun-adou/ and the catalog; it never deletes sibling games.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "games/zhao-yun-adou/**"
+      - "pages/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-zhao-yun-adou:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/games/zhao-yun-adou/package-lock.json
+
+      - name: Build 赵云与阿斗
+        working-directory: src/games/zhao-yun-adou
+        run: |
+          npm ci
+          npm run build
+
+      - name: Stage subdirectory + catalog
+        run: |
+          rm -rf site/zhao-yun-adou
+          mkdir -p site/zhao-yun-adou
+          cp -a src/games/zhao-yun-adou/dist/. site/zhao-yun-adou/
+          cp src/pages/index.html site/index.html
+          touch site/.nojekyll
+
+      - name: Publish gh-pages
+        working-directory: site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No Pages changes."
+            exit 0
+          fi
+          git commit -m "deploy: zhao-yun-adou to /zhao-yun-adou/"
+          git push origin HEAD:gh-pages
