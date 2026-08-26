@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { simulateBattle } from "../src/combat/battle.js";
-import { recruit, assignHero, starUp } from "../src/heroes/roster.js";
+import { stepSim } from "../src/core/engine.js";
 import { createStore } from "../src/core/store.js";
+import { STAGES } from "../src/data/stages.js";
+import { applyBattleInjuries, assignHero, canAssign, isInjured, recruit, starUp } from "../src/heroes/roster.js";
 import { placeBuilding } from "../src/world/build.js";
 
 describe("combat + heroes", () => {
@@ -33,5 +35,29 @@ describe("combat + heroes", () => {
     s = { ...s, resources: { ...s.resources, shard: 99 } };
     s = starUp(s, "h-sam");
     expect(s.heroes[0].star).toBe(2);
+  });
+
+  it("keeps a fallen hero injured until ticks expire, then allows reassignment", () => {
+    let s = placeBuilding(createStore().get(), "house", 0, 0, 0);
+    s = recruit(s, "sam");
+    const buildingId = s.buildings[0].id;
+    s = assignHero(s, "h-sam", buildingId);
+
+    s = applyBattleInjuries(s, { leftover: [{ id: "h-sam", side: "ally", hp: 0 }] }, 0.1);
+    const injured = s.heroes.find((hero) => hero.id === "h-sam");
+    expect(isInjured(s, injured)).toBe(true);
+    expect(canAssign(s, "h-sam", buildingId)).toMatchObject({ ok: false, reason: "E_LOCKED" });
+
+    s = stepSim(s);
+    expect(isInjured(s, s.heroes.find((hero) => hero.id === "h-sam"))).toBe(false);
+    s = assignHero(s, "h-sam", buildingId);
+    expect(s.heroes.find((hero) => hero.id === "h-sam")?.assignedBuildingId).toBe(buildingId);
+    expect(s.buildings.find((building) => building.id === buildingId)?.occupantHeroId).toBe("h-sam");
+  });
+
+  it("keeps sampled opening, boss, and late stages at five enemies", () => {
+    for (const stageIndex of [0, 4, 9, 19, 29]) {
+      expect(STAGES[stageIndex].enemies).toHaveLength(5);
+    }
   });
 });

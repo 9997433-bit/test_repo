@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createStore } from "../src/core/store.js";
 import { placeBuilding } from "../src/world/build.js";
+import { tickWorld } from "../src/world/sim.js";
 import { collectFlotsam, spawnFlotsam } from "../src/explore/salvage.js";
-import { castLine, gradeCast, GRADES, resolveHook } from "../src/explore/fishing.js";
-import { startDive, diveStep, finishDive } from "../src/explore/dive.js";
+import { canCast, castLine, gradeCast, GRADES, resolveHook } from "../src/explore/fishing.js";
+import { canDive, startDive, diveStep, finishDive } from "../src/explore/dive.js";
 import { mulberry32 } from "../src/core/rng.js";
 import { flotsamPoint, pickFlotsam, seaLayout } from "../src/world/canvas.js";
 
@@ -45,6 +46,21 @@ describe("explore", () => {
     expect(resolveHook(s, cast, perfectTiming).explore.fishing.lastCatch.grade).toBe(GRADES.PERFECT);
     expect(resolveHook(s, cast, goodTiming).explore.fishing.lastCatch.grade).toBe(GRADES.GOOD);
     expect(resolveHook(s, cast, missTiming).explore.fishing.lastCatch.grade).toBe(GRADES.MISS);
+  });
+
+  it("returns E_WEATHER for fishing and diving during a tsunami", () => {
+    let s = createStore().get();
+    s = {
+      ...s,
+      player: { ...s.player, level: 5 },
+      resources: { ...s.resources, wood: 100, scrap: 100, plastic: 100 },
+    };
+    s = placeBuilding(s, "dive_dock", 0, 0, 0);
+    s = placeBuilding(s, "fish_chair", 4, 4, 0);
+    s = tickWorld({ ...s, world: { ...s.world, weather: "tsunami", weatherTimer: 60 } }, 0.1);
+
+    expect(canCast(s)).toMatchObject({ ok: false, code: "E_WEATHER", fishing: 0 });
+    expect(canDive(s, "wreck")).toMatchObject({ ok: false, code: "E_WEATHER", diveO2: 0 });
   });
 
   it("does not throw or replace state for a rejected dive session", () => {

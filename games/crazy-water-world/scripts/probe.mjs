@@ -22,6 +22,11 @@ s = placeBuilding(s, "hq", 0, 0, 0);
 ok("hq placed", s.buildings.some((b) => b.type === "hq"));
 s = tickWorld(s, 5);
 ok("time advances", s.world.timeOfDay !== createStore().get().world.timeOfDay || s.player.hunger < 80);
+ok(
+  "hq tick exposes weather mods",
+  s.buildings.some((b) => b.type === "hq") && s.world.mods && typeof s.world.mods === "object",
+  `weather=${s.world.mods?.weather || "missing"}`,
+);
 
 const opening = createStore().get();
 const withChair = placeBuilding(opening, "fish_chair", 2, 2, 0);
