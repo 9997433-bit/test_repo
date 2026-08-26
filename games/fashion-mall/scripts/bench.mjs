@@ -13,14 +13,13 @@ import {
 } from "../src/data/balance.js";
 import { defaultState, tick } from "../src/core/state.js";
 import { furnitureBonus, settleOffline, totalOnlinePerSec } from "../src/core/economy.js";
+import { PARTNER_LEVEL_MAX, SHOP_LEVEL_MAX } from "../src/core/limits.js";
 
 const FIXED_NOW = 1_800_000_000_000;
 const TICK_COUNT = 1_000_000;
 const TICK_DT_SEC = 0.25;
 const LONG_TICK_DAYS = 365;
-// balance.js 没有店铺/伙伴等级上限；Lv.100 仅是可重复比较的“满级”估算口径。
-const ESTIMATED_MAX_LEVEL = 100;
-const THROUGHPUT_FLOOR = 2_000;
+const THROUGHPUT_FLOOR = 50_000;
 
 function baselineState() {
   const state = defaultState(FIXED_NOW);
@@ -131,7 +130,7 @@ function maxedMallEstimate() {
   for (const shop of SHOPS) {
     Object.assign(state.shops[shop.id], {
       unlocked: true,
-      level: ESTIMATED_MAX_LEVEL,
+      level: SHOP_LEVEL_MAX,
       staff: shop.staffSlots,
       auto: true,
     });
@@ -142,14 +141,14 @@ function maxedMallEstimate() {
     const matching = SHOPS.filter((shop) => shop.specialty === partner.specialty);
     const cursor = specialtyCursor.get(partner.specialty) || 0;
     partner.owned = true;
-    partner.level = ESTIMATED_MAX_LEVEL;
+    partner.level = PARTNER_LEVEL_MAX;
     partner.assigned = matching[cursor % matching.length]?.id || SHOPS[cursor % SHOPS.length].id;
     specialtyCursor.set(partner.specialty, cursor + 1);
   }
 
   let shopAndStaffCost = 0;
   for (const shop of SHOPS) {
-    for (let level = 1; level < ESTIMATED_MAX_LEVEL; level += 1) {
+    for (let level = 1; level < SHOP_LEVEL_MAX; level += 1) {
       shopAndStaffCost += shopUpgradeCost(shop, level);
     }
     for (let staff = 0; staff < shop.staffSlots; staff += 1) {
@@ -159,7 +158,7 @@ function maxedMallEstimate() {
 
   let partnerTrainingCost = 0;
   for (const _partner of PARTNERS) {
-    for (let level = 1; level < ESTIMATED_MAX_LEVEL; level += 1) {
+    for (let level = 1; level < PARTNER_LEVEL_MAX; level += 1) {
       partnerTrainingCost += partnerTrainCost(level);
     }
   }
@@ -173,9 +172,9 @@ function maxedMallEstimate() {
   assert.ok(Number.isFinite(estimatedBuildCost), "maxed mall cost overflowed");
   assert.ok(Number.isFinite(onlinePerSec), "maxed mall income overflowed");
   return {
-    assumedShopLevel: ESTIMATED_MAX_LEVEL,
-    assumedPartnerLevel: ESTIMATED_MAX_LEVEL,
-    canonicalLevelCapPresent: false,
+    assumedShopLevel: SHOP_LEVEL_MAX,
+    assumedPartnerLevel: PARTNER_LEVEL_MAX,
+    canonicalLevelCapPresent: true,
     shops: SHOPS.length,
     partners: PARTNERS.length,
     onlinePerSec: Math.floor(onlinePerSec),
