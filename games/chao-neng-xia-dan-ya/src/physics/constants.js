@@ -56,6 +56,15 @@ export const MIN_CONTACT_IMPACT = 24;
 /** 位置修正的穿透松弛量（px），保留微小重叠可避免抖动 */
 export const PENETRATION_SLOP = 0.01;
 
+/**
+ * 同一枚蛋再次命中同一个静态体的最小间隔（s）。
+ * 低于该间隔的接触仍会记数与上报，但 `contact.fresh` 为 false，
+ * 战斗层据此避免一次擦身而过结算两次伤害。
+ */
+export const CONTACT_COOLDOWN = 0.08;
+/** 每枚蛋保留的最近命中记录条数（用于 fresh 判定，定长避免无限增长） */
+export const HIT_LOG_SIZE = 8;
+
 /** 分裂蛋继承的速度比例（GDD：0.7） */
 export const SPLIT_SPEED_SCALE = 0.7;
 /** 分裂蛋默认扇形张角（弧度） */
@@ -86,4 +95,6 @@ export const MATERIAL = {
   ramp: { restitution: 0.9, friction: 0.08 },
   ice: { restitution: 0.94, friction: 0.005 },
   rubber: { restitution: 1.18, friction: 0.2 },
+  /** 敌人：肉感碰撞盒，弹性低于砖块（与 core/sim.js 的 0.72 对齐） */
+  enemy: { restitution: 0.72, friction: 0.14 },
 };

@@ -6,7 +6,9 @@
  */
 
 import { SPLIT_SPEED_SCALE, SPLIT_SPREAD } from "./constants.js";
+import { circleVsAABB, circleVsCircle, circleVsSegment, createManifold } from "./collide.js";
 import { clamp, closestPointOnSegment, vec } from "./math.js";
+import { isEnemyBody } from "./shapes.js";
 import {
   damageStatic,
   drainBlasts,
@@ -153,6 +155,66 @@ export function queryAABB(world, minX, minY, maxX, maxY, opts = {}) {
     }
   }
   return { eggs, statics };
+}
+
+/* ------------------------------------------------------------------ *
+ * 敌人重叠
+ *
+ * 战斗层需要「现在谁压在谁身上」的即时答案：预测线要在 reflect 之前
+ * 知道会不会打中，技能/光环要按几何重叠而不是按事件流判定。
+ * 这些查询与步进解耦，任何时刻调用结果都一致。
+ * ------------------------------------------------------------------ */
+
+const overlapManifold = createManifold();
+
+/** 圆与任意静态体的重叠检测（不含 oneWay 语义，纯几何） */
+export function overlapCircleBody(x, y, r, body, m = overlapManifold) {
+  if (body.shape === "circle") return circleVsCircle(x, y, r, body.x, body.y, body.r, m);
+  if (body.shape === "aabb") return circleVsAABB(x, y, r, body, m);
+  return circleVsSegment(x, y, r, body, m, x, y);
+}
+
+/** 场上活跃的敌人碰撞盒 */
+export function enemyBodies(world, opts = {}) {
+  syncStatics(world);
+  const out = [];
+  for (let i = 0; i < world.statics.length; i++) {
+    const body = world.statics[i];
+    if (body.active === false) continue;
+    if (!isEnemyBody(body)) continue;
+    if (opts.team && body.team !== opts.team) continue;
+    out.push(body);
+  }
+  return out;
+}
+
+/**
+ * 与圆重叠的敌人。
+ * @returns {Array<{body,depth,nx,ny,x,y}>} 按穿透深度从深到浅
+ */
+export function enemiesOverlapping(world, x, y, r = 0, opts = {}) {
+  const bodies = enemyBodies(world, opts);
+  const out = [];
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i];
+    const m = overlapCircleBody(x, y, r, body, overlapManifold);
+    if (!m.hit) continue;
+    out.push({ body, depth: m.depth, nx: m.nx, ny: m.ny, x: m.px, y: m.py });
+  }
+  out.sort((a, b) => b.depth - a.depth);
+  return out;
+}
+
+/**
+ * 一枚蛋此刻压在哪些敌人身上。
+ *
+ * 注意：反弹之后蛋已经被推出碰撞盒，靠这个函数做「有没有打中」的事后
+ * 判定会永远是空——命中请读 `egg.enemyContacts` / `egg.firstEnemyContact`
+ * 或步进事件里的 `contact`。本函数只回答「当前是否几何重叠」。
+ */
+export function eggEnemyOverlaps(world, egg, opts = {}) {
+  normalizeEgg(egg);
+  return enemiesOverlapping(world, egg.x, egg.y, egg.r, opts);
 }
 
 /** 距离某点最近的活跃蛋 */

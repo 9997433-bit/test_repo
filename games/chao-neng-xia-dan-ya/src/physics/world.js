@@ -13,6 +13,7 @@
  */
 
 import {
+  CONTACT_COOLDOWN,
   EGG_DRAG,
   EGG_FRICTION,
   EGG_LIFETIME,
@@ -21,6 +22,7 @@ import {
   FIXED_DT,
   GRAVITY,
   GRID_CELL,
+  HIT_LOG_SIZE,
   MAX_EVENTS,
   MAX_SPEED,
   MAX_SUBSTEPS,
@@ -45,7 +47,7 @@ import {
   resolveEggPair,
   resolveStaticContact,
 } from "./collide.js";
-import { fieldContains, makeSegment, normalizeBody } from "./shapes.js";
+import { fieldContains, isEnemyBody, makeSegment, normalizeBody } from "./shapes.js";
 import { clamp, damp, normalizeAngle } from "./math.js";
 
 export { WORLD_W, WORLD_H, GRAVITY, FIXED_DT } from "./constants.js";
@@ -119,6 +121,11 @@ export function createWorld(opts = {}) {
     /** 发射台默认位置（顶部中央），UI 与关卡可覆盖 */
     launch: { x: (bounds.left + bounds.right) / 2, y: bounds.top + 44 },
 
+    /** 接触流水号，供战斗层去重（幽灵蛋不消耗） */
+    contactSeq: 0,
+    /** 同一枚蛋重复命中同一物体的最小间隔（s） */
+    contactCooldown: opts.contactCooldown ?? CONTACT_COOLDOWN,
+
     seed: opts.seed ?? 20260826,
     /**
      * 随机数以整型状态保存而非闭包，world 必须保持「可 structuredClone
@@ -138,14 +145,34 @@ export function createWorld(opts = {}) {
   return world;
 }
 
-/** 解算上下文：ghost 模式（弹道预测）不写事件、不改世界统计 */
+/**
+ * 解算上下文：ghost 模式（弹道预测）不写事件、不改世界统计。
+ *
+ * `time` 是本次推进的逻辑时刻。真实模拟用 `world.time`，幽灵蛋自带一条
+ * 独立时间轴，这样穿透冷却、命中冷却在预测里与实弹走同一套判定。
+ * `collect` 打开后每次接触会被推进 `contacts`，供预测线读首命中点。
+ */
 export function createStepContext(emit = true) {
   return {
     emit,
     ghost: !emit,
+    time: 0,
+    seq: 0,
     candidates: [],
     manifold: createManifold(),
+    collect: false,
+    contacts: [],
+    lastContact: null,
   };
+}
+
+/** 复用 ghost 上下文前清空一次接触缓存 */
+export function resetStepContext(ctx, time = 0) {
+  ctx.time = time;
+  ctx.seq = 0;
+  ctx.contacts.length = 0;
+  ctx.lastContact = null;
+  return ctx;
 }
 
 /** 重置世界到空场（保留参数与种子） */
@@ -162,6 +189,7 @@ export function resetWorld(world) {
   world.staticsDirty = true;
   world._gridLength = -1;
   world.rngState = world.seed >>> 0;
+  world.contactSeq = 0;
   for (const key of Object.keys(world.stats)) world.stats[key] = 0;
   return world;
 }
@@ -344,6 +372,18 @@ export function createEgg(opts = {}) {
     eggHits: 0,
     portalUses: 0,
 
+    // —— 接触账本（reflect 之前写入，见 noteContact）——
+    /** 与静态体 / 边界的有效接触次数 */
+    contacts: 0,
+    /** 其中命中敌人碰撞盒的次数 */
+    enemyContacts: 0,
+    /** 首次接触 / 首次命中敌人 / 最近一次接触，均为 reflect 前的快照 */
+    firstContact: null,
+    firstEnemyContact: null,
+    lastContact: null,
+    /** 最近命中过的物体 id + 时刻，用于 `fresh` 冷却判定 */
+    hitLog: [],
+
     /** 剩余分裂次数 */
     splitsLeft: opts.splitsLeft ?? 0,
     /** 剩余穿透次数：>0 时穿过可碎砖不反弹 */
@@ -405,6 +445,13 @@ export function normalizeEgg(egg) {
   egg.brickHits = numOr(egg.brickHits, 0);
   egg.eggHits = numOr(egg.eggHits, 0);
   egg.portalUses = numOr(egg.portalUses, 0);
+
+  egg.contacts = numOr(egg.contacts, 0);
+  egg.enemyContacts = numOr(egg.enemyContacts, 0);
+  if (egg.firstContact === undefined) egg.firstContact = null;
+  if (egg.firstEnemyContact === undefined) egg.firstEnemyContact = null;
+  if (egg.lastContact === undefined) egg.lastContact = null;
+  if (!Array.isArray(egg.hitLog)) egg.hitLog = [];
 
   egg.splitsLeft = numOr(egg.splitsLeft, 0);
   egg.pierce = numOr(egg.pierce, 0);
@@ -588,11 +635,33 @@ export function integrateEgg(world, egg, dt) {
  * ------------------------------------------------------------------ */
 
 /**
+ * 解析式边界的占位「物体」。常量共享、只读，因此不进 world，
+ * 也就不影响 world 的 structuredClone 体积。
+ */
+const BOUND_BODY = {
+  left: { id: "bound:left", kind: "wall", team: "neutral", bound: "left" },
+  right: { id: "bound:right", kind: "wall", team: "neutral", bound: "right" },
+  top: { id: "bound:top", kind: "wall", team: "neutral", bound: "top" },
+  bottom: { id: "bound:bottom", kind: "wall", team: "neutral", bound: "bottom" },
+};
+const boundManifold = createManifold();
+
+/**
  * 边界反弹。nx/ny 为出射法线（指向场内）。
  * @returns {number} 是否计入一次反弹
  */
-function bounceOffBound(world, egg, ctx, nx, ny, e, f) {
+function bounceOffBound(world, egg, ctx, nx, ny, e, f, side) {
   const impact = -(egg.vx * nx + egg.vy * ny);
+  if (impact > MIN_CONTACT_IMPACT) {
+    // 与静态体同样的规矩：先落账，再动速度
+    boundManifold.hit = true;
+    boundManifold.nx = nx;
+    boundManifold.ny = ny;
+    boundManifold.depth = 0;
+    boundManifold.px = egg.x - nx * egg.r;
+    boundManifold.py = egg.y - ny * egg.r;
+    noteContact(world, egg, BOUND_BODY[side], boundManifold, ctx, false);
+  }
   let rn = impact * e;
   if (rn < RESTING_VELOCITY) rn = 0;
   if (nx !== 0) {
@@ -627,21 +696,126 @@ export function collideWithBounds(world, egg, ctx) {
 
   if (mode.left === "bounce" && egg.x - egg.r < b.left) {
     egg.x = b.left + egg.r;
-    if (egg.vx < 0) hits += bounceOffBound(world, egg, ctx, 1, 0, e, f);
+    if (egg.vx < 0) hits += bounceOffBound(world, egg, ctx, 1, 0, e, f, "left");
   }
   if (mode.right === "bounce" && egg.x + egg.r > b.right) {
     egg.x = b.right - egg.r;
-    if (egg.vx > 0) hits += bounceOffBound(world, egg, ctx, -1, 0, e, f);
+    if (egg.vx > 0) hits += bounceOffBound(world, egg, ctx, -1, 0, e, f, "right");
   }
   if (mode.top === "bounce" && egg.y - egg.r < b.top) {
     egg.y = b.top + egg.r;
-    if (egg.vy < 0) hits += bounceOffBound(world, egg, ctx, 0, 1, e, f);
+    if (egg.vy < 0) hits += bounceOffBound(world, egg, ctx, 0, 1, e, f, "top");
   }
   if (mode.bottom === "bounce" && egg.y + egg.r > b.bottom) {
     egg.y = b.bottom - egg.r;
-    if (egg.vy > 0) hits += bounceOffBound(world, egg, ctx, 0, -1, e, f);
+    if (egg.vy > 0) hits += bounceOffBound(world, egg, ctx, 0, -1, e, f, "bottom");
   }
   return hits;
+}
+
+/* ------------------------------------------------------------------ *
+ * 接触账本（reflect 之前）
+ * ------------------------------------------------------------------ */
+
+/** 这枚蛋上次命中 bodyId 的时刻，没有记录返回 -1 */
+export function lastHitTimeOf(egg, bodyId) {
+  const log = egg.hitLog;
+  if (!log) return -1;
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].id === bodyId) return log[i].time;
+  }
+  return -1;
+}
+
+function recordHit(egg, bodyId, time) {
+  const log = egg.hitLog;
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].id === bodyId) {
+      log[i].time = time;
+      return;
+    }
+  }
+  log.push({ id: bodyId, time });
+  if (log.length > HIT_LOG_SIZE) log.shift();
+}
+
+/** 清空一枚蛋的接触账本（复用蛋对象或重新发射时调用） */
+export function resetEggContacts(egg) {
+  egg.contacts = 0;
+  egg.enemyContacts = 0;
+  egg.firstContact = null;
+  egg.firstEnemyContact = null;
+  egg.lastContact = null;
+  if (Array.isArray(egg.hitLog)) egg.hitLog.length = 0;
+  return egg;
+}
+
+/**
+ * 记录一次接触——**必须在 reflect / 位置修正之前调用**。
+ *
+ * 反弹会把蛋推出碰撞盒，步进结束后再做重叠检测永远是 false，
+ * 预测线的「这一杆会打中敌人」提示就永远不亮（Round 1 的 O4 缺陷）。
+ * 因此命中判定与首命中点一律在这里落账，`vx/vy` 是入射速度。
+ *
+ * 记账门槛：敌人只要处在冷却窗口外就算数（哪怕擦身而过），
+ * 其余表面沿用 `MIN_CONTACT_IMPACT`，避免躺在砖上的蛋每步刷一次。
+ *
+ * @returns {object|null} 接触快照，未达门槛时返回 null
+ */
+export function noteContact(world, egg, body, m, ctx, pierced = false) {
+  const vx = egg.vx;
+  const vy = egg.vy;
+  const impact = -(vx * m.nx + vy * m.ny);
+  const enemy = isEnemyBody(body);
+  const now = ctx.time;
+  const cooldown = world.contactCooldown ?? CONTACT_COOLDOWN;
+  const last = lastHitTimeOf(egg, body.id);
+  const fresh = last < 0 || now - last >= cooldown;
+
+  if (!pierced && !(enemy ? fresh : impact > MIN_CONTACT_IMPACT)) return null;
+
+  const contact = {
+    seq: ctx.ghost ? ++ctx.seq : ++world.contactSeq,
+    eggId: egg.id,
+    bodyId: body.id,
+    kind: body.kind,
+    team: body.team ?? "neutral",
+    enemy,
+    /** 接触点（碰撞盒表面） */
+    x: m.px,
+    y: m.py,
+    /** 出射法线，指向把蛋推离物体的方向 */
+    nx: m.nx,
+    ny: m.ny,
+    depth: m.depth,
+    /** 蛋心与入射速度，均为 reflect 前的值 */
+    ex: egg.x,
+    ey: egg.y,
+    vx,
+    vy,
+    speed: Math.hypot(vx, vy),
+    /** 法向接近速度；分离中为负 */
+    impact,
+    time: now,
+    step: world.stepIndex,
+    fresh,
+    pierced,
+    ghost: !!ctx.ghost,
+  };
+
+  egg.contacts++;
+  egg.lastContact = contact;
+  if (!egg.firstContact) egg.firstContact = contact;
+  if (enemy) {
+    egg.enemyContacts++;
+    if (!egg.firstEnemyContact) egg.firstEnemyContact = contact;
+  }
+  recordHit(egg, body.id, now);
+
+  ctx.lastContact = contact;
+  if (ctx.collect) ctx.contacts.push(contact);
+  if (ctx.emit) emit(world, { type: "contact", egg, body, contact });
+  return contact;
 }
 
 function onBounce(world, egg, body, surface, x, y, nx, ny, impact, ctx) {
@@ -707,7 +881,7 @@ export function collideWithStatics(world, egg, ctx, fromX, fromY) {
   for (let i = 0; i < list.length; i++) {
     const body = list[i];
     if (body.active === false) continue;
-    if (egg._ignoreId === body.id && world.time < egg._ignoreUntil) continue;
+    if (egg._ignoreId === body.id && ctx.time < egg._ignoreUntil) continue;
 
     collideCircleBody(egg, body, m, fromX, fromY);
     if (!m.hit) continue;
@@ -723,12 +897,13 @@ export function collideWithStatics(world, egg, ctx, fromX, fromY) {
       }
       continue;
     }
-    // 穿透：可碎砖直接穿过，只记一次接触
+    // 穿透：可碎砖 / 敌人直接穿过，只记一次接触
     if (egg.pierce > 0 && body.breakable) {
+      noteContact(world, egg, body, m, ctx, true);
       egg.pierce--;
       egg.brickHits++;
       egg._ignoreId = body.id;
-      egg._ignoreUntil = world.time + 0.3;
+      egg._ignoreUntil = ctx.time + 0.3;
       if (ctx.emit) {
         world.stats.brickHits++;
         body.hits++;
@@ -748,6 +923,8 @@ export function collideWithStatics(world, egg, ctx, fromX, fromY) {
       continue;
     }
 
+    // 先落账再反弹：reflect 会把蛋推出碰撞盒，事后检测必然 miss
+    noteContact(world, egg, body, m, ctx, false);
     const impact = resolveStaticContact(egg, body, m);
     if (impact > MIN_CONTACT_IMPACT) {
       hits += onBounce(world, egg, body, body.kind, m.px, m.py, m.nx, m.ny, impact, ctx);
@@ -869,6 +1046,8 @@ function collideEggPairs(world, ctx) {
  * @returns {number} 本步的反弹次数
  */
 export function stepEgg(world, egg, dt, ctx) {
+  // 幽灵蛋自带时间轴，其余情况跟随世界钟；两者都保证冷却判定单调推进
+  if (!ctx.ghost) ctx.time = world.time;
   // 预留一步重力增量，避免刚发射（v≈0）时低估位移
   const projected = Math.hypot(egg.vx, egg.vy) + world.gravity * dt;
   const budget = Math.max(egg.r * SUBSTEP_TRAVEL_RATIO, 1);
@@ -882,6 +1061,27 @@ export function stepEgg(world, egg, dt, ctx) {
     hits += collideWithStatics(world, egg, ctx, fromX, fromY);
     hits += collideWithBounds(world, egg, ctx);
   }
+  if (ctx.ghost) ctx.time += dt;
+  return hits;
+}
+
+/**
+ * 单枚蛋的一次完整推进：数值兜底 → 记录插值起点 → `stepEgg` → 再兜底。
+ *
+ * `stepWorld` 与 `predictTrajectory` 都只经由这里推进，任何一方要改积分
+ * 顺序都必须改这一个函数，预测虚线因此不可能与实弹跑偏。
+ *
+ * @returns {number} 本步反弹次数
+ */
+export function advanceEgg(world, egg, dt, ctx) {
+  if (!Number.isFinite(egg.invMass)) normalizeEgg(egg);
+  if (!egg.alive) return 0;
+  sanitizeEgg(world, egg);
+  egg.prevX = egg.x;
+  egg.prevY = egg.y;
+  if (egg.sleeping) return 0;
+  const hits = stepEgg(world, egg, dt, ctx);
+  sanitizeEgg(world, egg);
   return hits;
 }
 
@@ -902,17 +1102,10 @@ export function stepWorld(world, dt = world.dt ?? FIXED_DT) {
   const ctx = world._ctx;
   ctx.emit = true;
   ctx.ghost = false;
+  ctx.time = world.time;
 
   for (let i = 0; i < eggs.length; i++) {
-    const egg = eggs[i];
-    if (!Number.isFinite(egg.invMass)) normalizeEgg(egg);
-    if (!egg.alive) continue;
-    sanitizeEgg(world, egg);
-    egg.prevX = egg.x;
-    egg.prevY = egg.y;
-    if (egg.sleeping) continue;
-    stepEgg(world, egg, h, ctx);
-    sanitizeEgg(world, egg);
+    advanceEgg(world, eggs[i], h, ctx);
   }
   collideEggPairs(world, ctx);
 

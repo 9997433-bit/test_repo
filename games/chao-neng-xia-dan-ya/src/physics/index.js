@@ -4,6 +4,13 @@
  * 稳定契约（其他模块只依赖这些）：
  *   createWorld / stepWorld / predictTrajectory / WORLD_W / WORLD_H / GRAVITY / FIXED_DT
  * 其余导出供关卡数据、战斗结算与 UI 使用，全部 headless、无 DOM 依赖。
+ *
+ * 切到本目录时（Round 2 的 O4）关心这几组：
+ *   - 同源：`stepWorld` 与 `predictTrajectory` 都只经 `advanceEgg` 推进
+ *   - 命中：`predictTrajectoryDetailed().firstEnemyHit` / 步进事件 `contact`
+ *     一律在 reflect **之前**落账，事后重叠检测必然 miss
+ *   - 敌人：`makeEnemy` / `enemyBodies` / `eggEnemyOverlaps`
+ *   - 对拍：`createSimBridge` / `compareTrajectories`（见 compat.js）
  */
 
 export {
@@ -20,6 +27,7 @@ export {
   addArenaWalls,
   addField,
   addStatic,
+  advanceEgg,
   advanceWorld,
   aimToVelocity,
   createEgg,
@@ -30,15 +38,19 @@ export {
   emit,
   getStatic,
   isSettled,
+  lastHitTimeOf,
   launchEgg,
   markStaticsDirty,
   nextRandom,
+  noteContact,
   normalizeEgg,
   removeField,
   removeStatic,
   recycleEgg,
   renderPosition,
+  resetEggContacts,
   resetEggIds,
+  resetStepContext,
   resetWorld,
   spawnEgg,
   stepEgg,
@@ -50,8 +62,12 @@ export { predictAim, predictTrajectory, predictTrajectoryDetailed } from "./traj
 export {
   bodyCenter,
   distanceToBody,
+  eggEnemyOverlaps,
+  enemiesOverlapping,
+  enemyBodies,
   explode,
   nearestEgg,
+  overlapCircleBody,
   queryAABB,
   queryCircle,
   resolveBlasts,
@@ -61,10 +77,12 @@ export {
 export {
   computeAABB,
   fieldContains,
+  isEnemyBody,
   makeBombBrick,
   makeBrick,
   makeBrickField,
   makeBumper,
+  makeEnemy,
   makeFan,
   makeGravityField,
   makeIce,
@@ -76,9 +94,17 @@ export {
   makeSlowField,
   makeWall,
   makeWind,
+  moveBody,
   normalizeBody,
   resetBodyIds,
 } from "./shapes.js";
+
+export {
+  compareTrajectories,
+  createSimBridge,
+  normalizePoints,
+  toSimPrediction,
+} from "./compat.js";
 
 export {
   circleVsAABB,
@@ -91,10 +117,12 @@ export {
 } from "./collide.js";
 
 export {
+  CONTACT_COOLDOWN,
   EGG_RADIUS,
   EGG_RESTITUTION,
   MATERIAL,
   MAX_SPEED,
+  MIN_CONTACT_IMPACT,
   PREDICT_MAX_BOUNCES,
   SLEEP_SPEED,
   SLEEP_TIME,
