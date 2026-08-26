@@ -85,7 +85,7 @@ const PLOT_CSS = `
   left: 0;
   right: 0;
   top: 12%;
-  bottom: 34%;
+  bottom: 36%;
   z-index: 2;
   transform-origin: 50% 100%;
   pointer-events: none;
@@ -152,7 +152,7 @@ const PLOT_CSS = `
   position: absolute;
   left: 50%;
   bottom: var(--stem);
-  width: 66%;
+  width: 56%;
   aspect-ratio: 1;
   transform-origin: 50% 50%;
   transform: translate(-50%, 50%) rotate(var(--tilt)) scale(var(--open));
@@ -206,9 +206,9 @@ const PLOT_CSS = `
 
 .garden .plot[data-stage="seeded"] { --stem: 0%; --open: 0; --leaf-op: 0; }
 .garden .plot[data-stage="sprout"] { --stem: 24%; --open: 0; --leaf-op: 1; }
-.garden .plot[data-stage="bud"] { --stem: 44%; --open: 0.5; --spread: 0.16; --reach: 0%; --leaf-op: 1; }
-.garden .plot[data-stage="bloom"] { --stem: 56%; --open: 1; --spread: 1; --reach: -14%; --leaf-op: 1; }
-.garden .plot[data-stage="wilt"] { --stem: 40%; --open: 0.78; --spread: 0.94; --reach: 4%; --leaf-op: 1; --petal-scale: 0.84; }
+.garden .plot[data-stage="bud"] { --stem: 42%; --open: 0.5; --spread: 0.16; --reach: 0%; --leaf-op: 1; }
+.garden .plot[data-stage="bloom"] { --stem: 52%; --open: 1; --spread: 1; --reach: -14%; --leaf-op: 1; }
+.garden .plot[data-stage="wilt"] { --stem: 38%; --open: 0.78; --spread: 0.94; --reach: 4%; --leaf-op: 1; --petal-scale: 0.84; }
 
 .garden .plot[data-stage="wilt"] .plot-plant {
   filter: grayscale(0.3) sepia(0.85) brightness(0.86) contrast(1.05);
@@ -273,7 +273,8 @@ const PLOT_CSS = `
   font-family: var(--font-body);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
 }
-.plot-tag[data-kind="ready"] { background: #e7c56b; color: #3d2c06; animation: plot-thirst 1.6s ease-in-out infinite; }
+.plot-tag[data-kind="ready"] { background: #e7c56b; color: #3d2c06; animation: plot-ready 1.8s ease-in-out infinite; }
+@keyframes plot-ready { 0%, 100% { opacity: 0.74; } 50% { opacity: 1; } }
 .plot-tag[data-kind="dry"] { background: #8c5230; color: #ffe9d6; }
 .plot-tag[data-kind="fert"] { background: #6b9a5e; color: #f1ffe8; }
 .plot-tag[data-kind="wilt"] { background: #7b5c3c; color: #f4e5cf; }
@@ -305,9 +306,27 @@ const PLOT_CSS = `
   gap: 3px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
-.plot-caption { display: flex; justify-content: center; gap: 6px; align-items: baseline; }
-.plot-name { font-family: var(--font-display); font-size: 14px; letter-spacing: 0.04em; }
-.plot-stage { font-size: 10px; opacity: 0.82; }
+/* 名字与状态各占一行：「星辰郁金香」这类长名在窄花圃里挤成两行会压住状态。 */
+.plot-caption { display: grid; justify-items: center; min-width: 0; }
+.plot-name {
+  max-width: 100%;
+  font-family: var(--font-display);
+  font-size: 13px;
+  line-height: 1.3;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plot-stage {
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1.3;
+  opacity: 0.82;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .garden .plot .bar { background: rgba(18, 12, 6, 0.62); }
 .garden .plot .bar > i { transition: width 0.25s linear; }
 .garden .plot .bar > i[data-tone="fresh"] { background: linear-gradient(90deg, var(--bloom), var(--accent)); }
