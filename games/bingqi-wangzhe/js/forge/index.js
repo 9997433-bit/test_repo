@@ -34,4 +34,15 @@ export {
   codexBonusOf,
   billableMinutes,
 } from './idle.js';
+export {
+  sweepStage,
+  previewSweep,
+  sweepableStages,
+  sweepCostFor,
+  affordableSweeps,
+  freeSweepsLeft,
+  sweepsUsedToday,
+  expectedSweepLoot,
+  starsOf,
+} from './sweep.js';
 export { createRngAdapter } from './rng.js';

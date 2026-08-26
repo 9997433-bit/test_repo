@@ -209,6 +209,9 @@ export const UI = Object.freeze({
   forgePreview: '开炉前瞻',
   enhance: '强化',
   dismantle: '分解',
+  sweep: '扫荡',
+  sweepFree: '今日免体力',
+  sweepLocked: '三星后开放',
   collectIdle: '收取挂机',
   masterForge: '大师熔炉',
   masterForgeUsed: '今日已用',
@@ -255,6 +258,9 @@ export const REASON = Object.freeze({
   weapon_in_lineup: '这把兵器还在阵上，先下阵。',
   nothing_to_collect: '炉子还没攒够东西，稍等一会儿。',
   no_rng: '缺少随机源，无法开炉。',
+  unknown_stage: '没有这一关。',
+  sweep_locked: '打到三星才能扫荡这一关。',
+  insufficient_stamina: '体力不够，等一会儿再来。',
 });
 
 export const TIPS = Object.freeze([
@@ -266,6 +272,7 @@ export const TIPS = Object.freeze([
   '同类型 2 把、同元素 3 把就有羁绊；神话 1 把就能唤醒兵魂。',
   '离线最多结算 8 小时，睡前记得把关卡推高一点。',
   '每 3 级解锁一个技能槽，最多 3 个。',
+  '关卡打到三星就能扫荡：1 点体力换一次重复掉落，每日前两次还不收体力。',
 ]);
 
 export const EMPTY_STATES = Object.freeze({
@@ -283,6 +290,7 @@ export const LOG_TEMPLATES = Object.freeze({
   dismantle: '分解【{name}】，回收 {refund}。',
   idle: '收取挂机产出：{gains}。',
   stageClear: '通过【{stage}】。',
+  sweep: '扫荡【{stage}】×{times}，得 {gains}。',
 });
 
 export default Object.freeze({

@@ -337,12 +337,81 @@ export const STAMINA = Object.freeze({
   regenAmount: 1,
 });
 
+/**
+ * 验收目标：积极玩家 40–60 分钟推到第 20 关（Round 2 简报 §SOTA-1）。
+ * `startStamina` 取 core/state.js `defaultResources()` 的开局体力；core 若调整，
+ * 这里跟着改，`staminaSupply()` 与 selfcheck 的总账断言都以它为准。
+ */
+export const PROGRESSION_TARGET = Object.freeze({
+  stage: 20,
+  minutesMin: 40,
+  minutesMax: 60,
+  startStamina: 60,
+  /** 体力总账要留出的重试余量：按「每关平均多打 0.35 场」估。 */
+  retryRatio: 0.35,
+});
+
+/**
+ * 到第 `minutes` 分钟为止，一个从头玩到尾的账号总共能拿到多少体力。
+ * 只算「开局 + 自然回复」，不含首通返还与钻石兑换 —— 那两项是余量，不是底线。
+ */
+export function staminaSupply(minutes, startStamina = PROGRESSION_TARGET.startStamina) {
+  const ticks = Math.floor((Math.max(0, minutes) * 60000) / STAMINA.regenMs);
+  return startStamina + ticks * STAMINA.regenAmount;
+}
+
+/**
+ * 关卡体力曲线（Round 3 重校）。
+ *
+ * fable-3 §3 原表是全程 3 / 6，1–20 关合计 72 点；而开局 60 点 + 60 分钟自然回复 10 点
+ * 只有 70 点，全胜都不够，一次失败就把「60 分钟到 20 关」判死（R2 简报 §1）。
+ * 这里把「新手段」= 前 20 关（正好是 40–60 分钟验收窗口覆盖的范围）对折成 2 / 4，
+ * 并给四道章节墙加首通返还：打穿 BOSS 立刻回一口血，
+ * 重试的代价从「等 6 分钟回 1 点」变成「多打两把」。
+ * 第 21 关及以后一点没动，中后期的体力压力仍然按文档的 3 / 6 来。
+ */
+export const STAGE_STAMINA = Object.freeze({
+  /** 含本关在内享受新手折扣 */
+  discountThroughStage: 20,
+  cost: Object.freeze({ earlyNormal: 2, earlyElite: 4, normal: 3, elite: 6 }),
+  /** 1–20 关普通战体力硬预算，selfcheck 守这条线 */
+  normalBudgetTo20: 48,
+  /** 精英关首通返还的体力 */
+  eliteRefund: Object.freeze({ 5: 10, 10: 10, 15: 12, 20: 12 }),
+});
+
+/**
+ * 扫荡（fable-3 §5 freeSweeps 的落地形态）。
+ *
+ * 三星过的关卡可以不进战斗直接结算重复掉落：每次 1 点体力，每日前 2 次免体力。
+ * 「三星」而不是「首通」是刻意的门槛 —— 险胜的关卡还得再打一遍练手，
+ * 打到碾压才给速通权，扫荡才不会变成跳过战斗的开关。
+ */
+export const SWEEP_RULES = Object.freeze({
+  unlock: 'threeStar',
+  minStars: 3,
+  /** 每次扫荡固定 1 点体力，与本关战斗消耗脱钩 */
+  staminaCost: 1,
+  /** 每日前 N 次不收体力 */
+  freeDaily: 2,
+  /** 单次调用最多扫几遍 */
+  maxBatch: 10,
+  instant: true,
+  /** 扫荡只发重复掉落，不补首通奖励，也不推进度 */
+  grantsFirstClear: false,
+  advancesProgress: false,
+});
+
 export const STAMINA_RULES = Object.freeze({
   cap: STAMINA.max,
   regenSeconds: STAMINA.regenMs / 1000,
   startFull: true,
-  costNormal: 3,
-  costElite: 6,
+  costNormal: STAGE_STAMINA.cost.normal,
+  costElite: STAGE_STAMINA.cost.elite,
+  earlyCostNormal: STAGE_STAMINA.cost.earlyNormal,
+  earlyCostElite: STAGE_STAMINA.cost.earlyElite,
+  earlyThroughStage: STAGE_STAMINA.discountThroughStage,
+  costSweep: SWEEP_RULES.staminaCost,
 });
 
 /**
@@ -352,13 +421,6 @@ export const STAMINA_RULES = Object.freeze({
 export const STARTER_KIT = Object.freeze({
   coin: FORGE_COST.iron.coin * 3,
   iron: FORGE_COST.iron.iron * 3,
-});
-
-export const SWEEP_RULES = Object.freeze({
-  unlock: 'firstClear',
-  freeDaily: 2,
-  staminaCost: 'same-as-stage',
-  instant: true,
 });
 
 /** 图鉴收集度：每收集 1 把原型 +0.625%，封顶 15%。 */
@@ -379,7 +441,7 @@ export const MAX_LINEUP = 5;
 
 export const DAILY_RULES = Object.freeze({
   masterForgePerDay: 1,
-  freeSweeps: 2,
+  freeSweeps: SWEEP_RULES.freeDaily,
   quest: Object.freeze({ luckyCharm: 1, coin: 500, diamond: 10 }),
   trials: Object.freeze({
     normal: Object.freeze({ freeRuns: 2, extraStamina: 8, rewards: Object.freeze({ iron: 40, coin: 350 }) }),
@@ -470,9 +532,12 @@ export const BAG = Object.freeze({
  * shardChance  命中时掉 1 个 shardTier 品质碎片
  * crystalChance 命中时掉 1 个本关元素晶
  * 首通同时发放该关一次 repeat 掉落。
+ *
+ * 下面的字面量是文档原样，`staminaCost` 与前 20 关的首通体力返还由
+ * `STAGE_STAMINA` 在导出前覆盖（见该常量的注释），两处不要各写一份数字。
  * ------------------------------------------------------------------ */
 
-export const STAGE_BALANCE = Object.freeze([
+const FABLE3_STAGE_ROWS = [
   {"id":1,"elite":false,"element":"fire","waves":1,"staminaCost":3,"enemyPower":40,"firstClear":{"coin":75,"iron":12,"shards":{"common":4}},"repeat":{"coin":[16,30],"iron":[2,4],"crystalChance":0.35,"shardChance":0.3,"shardTier":"common"}},
   {"id":2,"elite":false,"element":"ice","waves":1,"staminaCost":3,"enemyPower":48,"firstClear":{"coin":120,"iron":14,"shards":{"common":4}},"repeat":{"coin":[22,40],"iron":[3,5],"crystalChance":0.35,"shardChance":0.3,"shardTier":"common"}},
   {"id":3,"elite":false,"element":"thunder","waves":1,"staminaCost":3,"enemyPower":57,"firstClear":{"coin":170,"iron":15,"shards":{"common":4}},"repeat":{"coin":[27,51],"iron":[3,6],"crystalChance":0.35,"shardChance":0.3,"shardTier":"common"}},
@@ -513,7 +578,27 @@ export const STAGE_BALANCE = Object.freeze([
   {"id":38,"elite":false,"element":"ice","waves":3,"staminaCost":3,"enemyPower":8712,"firstClear":{"coin":1780,"goldOre":12,"crystal":5,"shards":{"mythic":1}},"repeat":{"coin":[223,415],"iron":[6,10],"silverOre":[5,14],"goldOre":[0,2],"crystalChance":0.35,"shardChance":0.3,"shardTier":"mythic"}},
   {"id":39,"elite":false,"element":"thunder","waves":3,"staminaCost":3,"enemyPower":9671,"firstClear":{"coin":1825,"goldOre":12,"crystal":5,"shards":{"mythic":1}},"repeat":{"coin":[229,425],"iron":[6,10],"silverOre":[5,14],"goldOre":[0,2],"crystalChance":0.35,"shardChance":0.3,"shardTier":"mythic"}},
   {"id":40,"elite":true,"element":"fire","waves":3,"staminaCost":6,"enemyPower":14491,"firstClear":{"coin":1870,"goldOre":13,"crystal":6,"shards":{"mythic":2},"luckyCharm":1,"diamond":20},"repeat":{"coin":[234,436],"iron":[6,10],"silverOre":[6,15],"goldOre":[0,2],"crystalChance":0.35,"shardChance":0.3,"shardTier":"mythic"}}
-].map((row) => Object.freeze(row)));
+];
+
+/** 本关体力：新手段（前 20 关）对折，其余照文档。 */
+export function staminaCostOfStage(index, elite) {
+  const early = index <= STAGE_STAMINA.discountThroughStage;
+  const c = STAGE_STAMINA.cost;
+  if (elite) return early ? c.earlyElite : c.elite;
+  return early ? c.earlyNormal : c.normal;
+}
+
+function applyStaminaCurve(row) {
+  const refund = STAGE_STAMINA.eliteRefund[row.id] ?? 0;
+  return Object.freeze({
+    ...row,
+    staminaCost: staminaCostOfStage(row.id, row.elite),
+    firstClear: Object.freeze(refund > 0 ? { ...row.firstClear, stamina: refund } : { ...row.firstClear }),
+    repeat: Object.freeze({ ...row.repeat }),
+  });
+}
+
+export const STAGE_BALANCE = Object.freeze(FABLE3_STAGE_ROWS.map(applyStaminaCurve));
 
 export const STAGE_BALANCE_BY_ID = Object.freeze(
   STAGE_BALANCE.reduce((acc, row) => {
@@ -522,7 +607,44 @@ export const STAGE_BALANCE_BY_ID = Object.freeze(
   }, Object.create(null)),
 );
 
-export const BALANCE_VERSION = 2;
+/**
+ * 体力总账：从第 1 关打到第 `throughStage` 关，全胜一遍要花多少、返多少。
+ *
+ *   gross  = 普通战 + 精英战的体力
+ *   refund = 精英关首通返还
+ *   net    = 实际净支出
+ *   withRetries = 按 PROGRESSION_TARGET.retryRatio 估的带重试支出
+ *
+ * @param {number} [throughStage]
+ */
+export function staminaLedger(throughStage = PROGRESSION_TARGET.stage) {
+  const rows = STAGE_BALANCE.filter((row) => row.id <= throughStage);
+  let normal = 0;
+  let elite = 0;
+  let refund = 0;
+  for (const row of rows) {
+    if (row.elite) elite += row.staminaCost;
+    else normal += row.staminaCost;
+    refund += row.firstClear.stamina ?? 0;
+  }
+  const gross = normal + elite;
+  return Object.freeze({
+    throughStage,
+    stages: rows.length,
+    normal,
+    elite,
+    gross,
+    refund,
+    net: gross - refund,
+    withRetries: Math.ceil(gross * (1 + PROGRESSION_TARGET.retryRatio)) - refund,
+    sweepCost: SWEEP_RULES.staminaCost,
+  });
+}
+
+/** 1–20 关的体力总账（selfcheck 与 UI 都读这份，别再各算各的）。 */
+export const STAMINA_LEDGER_TO_20 = staminaLedger(PROGRESSION_TARGET.stage);
+
+export const BALANCE_VERSION = 3;
 
 export default Object.freeze({
   BALANCE_VERSION,
@@ -566,6 +688,12 @@ export default Object.freeze({
   IDLE,
   STAMINA,
   STAMINA_RULES,
+  STAGE_STAMINA,
+  PROGRESSION_TARGET,
+  staminaSupply,
+  staminaCostOfStage,
+  staminaLedger,
+  STAMINA_LEDGER_TO_20,
   STARTER_KIT,
   SWEEP_RULES,
   CODEX_BONUS,
@@ -583,3 +711,9 @@ export default Object.freeze({
   STAGE_BALANCE,
   STAGE_BALANCE_BY_ID,
 });
+
+/* 供 UI / 经济回归打印的一行总账。 */
+export const STAMINA_LEDGER_LINE =
+  `1–20 关：普通 ${STAMINA_LEDGER_TO_20.normal} + 精英 ${STAMINA_LEDGER_TO_20.elite}`
+  + ` = ${STAMINA_LEDGER_TO_20.gross} 体力，首通返还 ${STAMINA_LEDGER_TO_20.refund}，`
+  + `净 ${STAMINA_LEDGER_TO_20.net}；60 分钟自然供给 ${staminaSupply(PROGRESSION_TARGET.minutesMax)}。`;

@@ -6,6 +6,7 @@
  *   enhanceWeapon(state, weaponId)
  *   dismantleWeapon(state, weaponId)
  *   collectIdle(state, nowMs)
+ *   sweepStage(state, stageId, opts, rng)   // 实现在 ./sweep.js，这里只再导出
  *
  * 约束：
  *  - 逻辑层，禁止 window / document / Math.random；随机一律由调用方注入 rng。
@@ -48,6 +49,7 @@ import { createRngAdapter } from './rng.js';
 import { rollAffixes, affixCountFor } from './affix.js';
 import { computeWeaponStats, levelCapFor, skillSlotsFor } from './stats.js';
 import { previewIdle, idleRatesFor, regenStamina, lastCollectAtOf } from './idle.js';
+import { sweepStage, previewSweep, sweepableStages, sweepCostFor, starsOf } from './sweep.js';
 
 const DAY_MS = 86400000;
 const LEGENDARY_RANK = QUALITY_RANK.legendary;
@@ -821,10 +823,13 @@ export {
   rollAffixes,
 };
 
+export { sweepStage, previewSweep, sweepableStages, sweepCostFor, starsOf };
+
 export default {
   previewForge,
   forgeWeapon,
   enhanceWeapon,
   dismantleWeapon,
   collectIdle,
+  sweepStage,
 };
