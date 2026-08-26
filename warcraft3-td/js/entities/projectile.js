@@ -29,9 +29,9 @@
 
   Projectile.prototype.init = function (id, from, target, aim, payload, proj) {
     this.id = id;
-    this.x = this.sx = from.x;
-    this.y = this.sy = from.y;
-    this.z = this.sz = from.z || 30;
+    this.x = this.sx = this.px = from.x;
+    this.y = this.sy = this.py = from.y;
+    this.z = this.sz = this.pz = from.z || 30;
     this.target = target;
     this.targetId = target ? target.id : 0;
     this.tx = aim.x;
@@ -52,6 +52,9 @@
   };
 
   Projectile.prototype.update = function (dt, game) {
+    this.px = this.x;
+    this.py = this.y;
+    this.pz = this.z;
     this.ttl -= dt;
     if (this.ttl <= 0) { game.despawnProjectile(this, false); return; }
 

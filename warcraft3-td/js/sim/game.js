@@ -582,6 +582,12 @@
     if (this.logQueue.length > MAX_LOG) this.logQueue.shift();
   };
 
+  Game.prototype.drainLog = function () {
+    var q = this.logQueue;
+    this.logQueue = [];
+    return q;
+  };
+
   Game.prototype.pushEvent = function (kind, data) {
     this.events.push({ kind: kind, data: data, time: this.time });
     if (this.events.length > 64) this.events.shift();

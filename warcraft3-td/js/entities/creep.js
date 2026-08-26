@@ -59,8 +59,9 @@
     this.z = this.flying ? 54 : 0;
     this.pathLength = path.length;
     path.sample(0, SAMPLE);
-    this.x = SAMPLE.x;
-    this.y = SAMPLE.y;
+    this.x = this.px = SAMPLE.x;
+    this.y = this.py = SAMPLE.y;
+    this.pz = this.z;
     this.angle = SAMPLE.angle;
     return this;
   };
@@ -112,6 +113,9 @@
   };
 
   Creep.prototype.update = function (dt, game) {
+    this.px = this.x;
+    this.py = this.y;
+    this.pz = this.z;
     this.anim += dt;
     if (this.hurtFlash > 0) this.hurtFlash -= dt;
 

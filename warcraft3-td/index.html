@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>洛丹伦要塞 · 塔防 | Azeroth Keep TD</title>
+<link rel="stylesheet" href="css/wc3.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- ===================== top resource bar ===================== -->
+  <div id="topbar" class="chrome">
+    <div class="topleft">
+      <button class="tbtn" id="btn-menu" data-hotkey="F10"><span>☰</span><em data-i18n="menu">菜单</em></button>
+      <div class="speedbox">
+        <button class="sbtn" data-speed="pause" id="btn-pause" title="Space">❚❚</button>
+        <button class="sbtn active" data-speed="1">1×</button>
+        <button class="sbtn" data-speed="1.5">1.5×</button>
+        <button class="sbtn" data-speed="2">2×</button>
+      </div>
+      <div class="wavebox">
+        <div class="wave-label"><span data-i18n="wave">波次</span>
+          <b><span id="wave-now">0</span>/<span id="wave-max">30</span></b></div>
+        <div class="wave-next" id="wave-next">—</div>
+        <button class="callbtn" id="btn-call"><span data-i18n="nextWave">下一波</span>
+          <em id="call-timer"></em></button>
+      </div>
+    </div>
+
+    <div class="resbar">
+      <div class="res" id="res-gold" title="Gold"><i class="ic gold"></i><span id="val-gold">0</span></div>
+      <div class="res" id="res-lumber" title="Lumber"><i class="ic lumber"></i><span id="val-lumber">0</span></div>
+      <div class="res" id="res-lives" title="Lives"><i class="ic lives"></i><span id="val-lives">0</span></div>
+      <div class="res clock"><i class="ic clock"></i><span id="val-time">0:00</span></div>
+    </div>
+  </div>
+
+  <!-- ===================== quest / log strip ===================== -->
+  <div id="logstrip"></div>
+
+  <div id="fpsbox" class="hidden"></div>
+
+  <!-- ===================== bottom console ===================== -->
+  <div id="bottombar">
+    <div class="panel portrait-panel">
+      <div class="portrait-frame">
+        <canvas id="portrait" width="112" height="112"></canvas>
+      </div>
+      <div class="portrait-meta">
+        <div class="unit-name" id="sel-name">—</div>
+        <div class="unit-sub" id="sel-sub"></div>
+        <div class="hpbar"><i id="sel-hp"></i><span id="sel-hp-text"></span></div>
+        <div class="hpbar mana hidden" id="sel-mana-wrap"><i id="sel-mana"></i><span id="sel-mana-text"></span></div>
+      </div>
+    </div>
+
+    <div class="panel stats-panel">
+      <div id="stat-grid"></div>
+      <div id="stat-desc"></div>
+    </div>
+
+    <div class="panel card-panel">
+      <div id="command-card"></div>
+    </div>
+
+    <div class="panel minimap-panel">
+      <div class="minimap-frame">
+        <canvas id="minimap" width="212" height="140"></canvas>
+      </div>
+      <div class="minimap-legend">
+        <span><i style="background:#e0524a"></i><span data-i18n="creeps">敌人</span></span>
+        <span><i style="background:#6fe08a"></i><span data-i18n="towersBuilt">防御塔</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== tooltip ===================== -->
+  <div id="tooltip" class="hidden"></div>
+
+  <!-- ===================== modal screens ===================== -->
+  <div id="modal" class="modal-wrap">
+    <div class="modal-card" id="modal-card"></div>
+  </div>
+</div>
+
+<script src="js/config.js" defer></script>
+<script src="js/engine/rng.js" defer></script>
+<script src="js/engine/path.js" defer></script>
+<script src="js/engine/spatial.js" defer></script>
+<script src="js/engine/loop.js" defer></script>
+<script src="js/engine/camera.js" defer></script>
+<script src="js/engine/input.js" defer></script>
+<script src="js/engine/audio.js" defer></script>
+<script src="js/data/damageTable.js" defer></script>
+<script src="js/data/towers.js" defer></script>
+<script src="js/data/waves.js" defer></script>
+<script src="js/data/strings.zh.js" defer></script>
+<script src="js/data/strings.en.js" defer></script>
+<script src="js/data/i18n.js" defer></script>
+<script src="js/entities/entity.js" defer></script>
+<script src="js/entities/creep.js" defer></script>
+<script src="js/entities/tower.js" defer></script>
+<script src="js/entities/projectile.js" defer></script>
+<script src="js/entities/fx.js" defer></script>
+<script src="js/entities/hero.js" defer></script>
+<script src="js/sim/game.js" defer></script>
+<script src="js/render/terrain.js" defer></script>
+<script src="js/render/sprites.js" defer></script>
+<script src="js/render/renderer.js" defer></script>
+<script src="js/ui/tooltip.js" defer></script>
+<script src="js/ui/minimap.js" defer></script>
+<script src="js/ui/commandCard.js" defer></script>
+<script src="js/ui/hud.js" defer></script>
+<script src="js/ui/menus.js" defer></script>
+<script src="js/main.js" defer></script>
+</body>
+</html>

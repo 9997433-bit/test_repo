@@ -26,15 +26,32 @@
     this.shakeX = 0;
     this.shakeY = 0;
     this.edgePan = true;
+    // The HUD covers strips at the top and bottom; the world is centred in
+    // whatever is left over.
+    this.insetTop = 0;
+    this.insetBottom = 0;
+    this.offsetY = 0;
   }
+
+  Camera.prototype.setInsets = function (top, bottom) {
+    this.insetTop = top;
+    this.insetBottom = bottom;
+    this.offsetY = (top - bottom) / 2;
+    this.clamp();
+  };
+
+  /** Zoom at which the whole map fits inside the uncovered play area. */
+  Camera.prototype.fitZoom = function () {
+    var viewH = Math.max(140, this.vh - this.insetTop - this.insetBottom);
+    var fitX = this.vw / (this.worldW + 40);
+    var fitY = viewH / ((this.worldH + 40) * this.tilt);
+    return Math.min(fitX, fitY);
+  };
 
   Camera.prototype.resize = function (w, h) {
     this.vw = w;
     this.vh = h;
-    // Never let the viewport show more than the world plus a small margin.
-    var fitX = w / (this.worldW + 160);
-    var fitY = h / ((this.worldH + 160) * this.tilt);
-    this.minZoom = Math.max(Config.CAMERA.minZoom, Math.min(fitX, fitY));
+    this.minZoom = Math.max(Config.CAMERA.minZoom, this.fitZoom() * 0.9);
     this.zoom = clamp(this.zoom, this.minZoom, this.maxZoom);
     this.clamp();
   };
@@ -88,7 +105,8 @@
   };
 
   Camera.prototype.toScreenY = function (wy, lift) {
-    return ((wy - this.y) * this.tilt - (lift || 0)) * this.zoom + this.vh / 2 + this.shakeY;
+    return ((wy - this.y) * this.tilt - (lift || 0)) * this.zoom +
+      this.vh / 2 + this.offsetY + this.shakeY;
   };
 
   Camera.prototype.toScreen = function (wx, wy, lift) {
@@ -98,7 +116,7 @@
   Camera.prototype.toWorld = function (sx, sy) {
     return {
       x: (sx - this.vw / 2 - this.shakeX) / this.zoom + this.x,
-      y: (sy - this.vh / 2 - this.shakeY) / (this.zoom * this.tilt) + this.y
+      y: (sy - this.vh / 2 - this.offsetY - this.shakeY) / (this.zoom * this.tilt) + this.y
     };
   };
 
@@ -107,11 +125,12 @@
     var p = pad || 0;
     var halfW = this.vw / (2 * this.zoom);
     var halfH = this.vh / (2 * this.zoom * this.tilt);
+    var cy = this.y - this.offsetY / (this.zoom * this.tilt);
     return {
       x0: this.x - halfW - p,
       x1: this.x + halfW + p,
-      y0: this.y - halfH - p,
-      y1: this.y + halfH + p
+      y0: cy - halfH - p,
+      y1: cy + halfH + p
     };
   };
 
@@ -128,10 +147,12 @@
     var dx = 0;
     var dy = 0;
     if (input) {
-      if (input.isDown('KeyA') || input.isDown('ArrowLeft')) dx -= 1;
-      if (input.isDown('KeyD') || input.isDown('ArrowRight')) dx += 1;
-      if (input.isDown('KeyW') || input.isDown('ArrowUp')) dy -= 1;
-      if (input.isDown('KeyS') || input.isDown('ArrowDown')) dy += 1;
+      // Arrow keys only: the letter keys belong to the command card, exactly
+      // like Warcraft III.
+      if (input.isDown('ArrowLeft')) dx -= 1;
+      if (input.isDown('ArrowRight')) dx += 1;
+      if (input.isDown('ArrowUp')) dy -= 1;
+      if (input.isDown('ArrowDown')) dy += 1;
       if (this.edgePan && input.pointerInside && !input.dragging) {
         var m = Config.CAMERA.edgePanMargin;
         if (input.sx <= m) dx -= 1;

@@ -65,8 +65,8 @@
     this.id = id;
     this.def = HEROES[defId] || HEROES.paladin;
     this.alive = true;
-    this.x = this.homeX = this.orderX = x;
-    this.y = this.homeY = this.orderY = y;
+    this.x = this.px = this.homeX = this.orderX = x;
+    this.y = this.py = this.homeY = this.orderY = y;
     this.level = 1;
     this.xp = 0;
     this.xpNext = 8;
@@ -131,6 +131,8 @@
   };
 
   Hero.prototype.update = function (dt, game) {
+    this.px = this.x;
+    this.py = this.y;
     this.anim += dt;
     var st = this.stats();
 
