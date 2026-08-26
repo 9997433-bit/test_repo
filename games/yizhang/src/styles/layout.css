@@ -1,0 +1,74 @@
+/* ============================================================
+   异掌 · 布局壳：HUD 层、安全区、公共动画
+   布局法：HUD 只贴边带与角落，屏幕中心 ≥70% 无 UI。
+   横屏优先；竖屏在各组件文件内自适应。
+   ============================================================ */
+
+/* ---- #hud · 战斗 HUD 层（被动信息层，默认不吃指针） ---- */
+#hud {
+  position: fixed;
+  inset: 0;
+  z-index: var(--yz-z-hud);
+  pointer-events: none;
+  padding: var(--yz-inset-t) var(--yz-inset-r) var(--yz-inset-b)
+    var(--yz-inset-l);
+  font-family: var(--yz-font-text);
+  font-size: var(--yz-fs-sm);
+}
+
+/* ---- 公共关键帧 ---- */
+
+/* 落定：轻微上移淡入，禁弹跳 */
+@keyframes yz-settle {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 淡入 */
+@keyframes yz-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 击杀条目：右侧滑入 */
+@keyframes yz-slide-l {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 残时脉动：明度微呼吸（非发光、非缩放跳动） */
+@keyframes yz-breathe {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.22);
+  }
+}
+
+/* 觉醒扫光：金色高光沿条面缓慢掠过（局部，不是全屏 bloom） */
+@keyframes yz-sweep {
+  from {
+    background-position: -80px 0;
+  }
+  to {
+    background-position: 160px 0;
+  }
+}

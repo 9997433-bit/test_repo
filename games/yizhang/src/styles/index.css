@@ -1,0 +1,20 @@
+/* ============================================================
+   异掌 · 样式入口（Opus-4 在 src/main.js 或 src/ui/shell.js：
+   import "./styles/index.css";  即可全量接入）
+   类名与 JS 钩子文档：games/yizhang/docs/ART_DIRECTION.md §11
+   ------------------------------------------------------------
+   外链字体（OFL 授权，display=swap 非阻塞：未到达前走回退栈，
+   到达后换入；断网时回退栈独立成立）。@import 必须置于文件最顶。
+   建议 Opus-4 在 index.html <head> 加：
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   ============================================================ */
+@import url("https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600&display=swap");
+
+@import "./tokens.css";
+@import "./fonts.css";
+@import "./base.css";
+@import "./layout.css";
+@import "./hud.css";
+@import "./touch.css";
+@import "./menus.css";

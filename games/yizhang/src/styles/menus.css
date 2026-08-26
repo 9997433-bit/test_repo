@@ -1,0 +1,432 @@
+/* ============================================================
+   异掌 · 菜单 / 屏幕层
+   结构：
+   .yz-screen（全屏容器，变体 --deep 主菜单 / --frost 暂停·结算）
+   ├── .yz-panel（磨砂主板）
+   │   ├── .yz-title / .yz-subtitle
+   │   ├── .yz-menu > .yz-btn（--primary / --ghost）
+   │   ├── .yz-glove-grid > .yz-glove-tile（is-main/is-off/is-locked）
+   │   ├── .yz-seg > .yz-seg-opt（画质档等分段选择）
+   │   └── .yz-results-*（结算）
+   └── .yz-foot（版本/提示小字）
+   弹窗：.yz-modal-backdrop > .yz-modal
+   显隐一律用 [hidden]。
+   ============================================================ */
+
+/* ---- 全屏容器 ---- */
+.yz-screen {
+  position: fixed;
+  inset: 0;
+  z-index: var(--yz-z-menu);
+  display: grid;
+  place-items: center;
+  padding: calc(var(--yz-inset-t) + var(--yz-s2)) var(--yz-inset-r)
+    calc(var(--yz-inset-b) + var(--yz-s2)) var(--yz-inset-l);
+  animation: yz-fade var(--yz-t-med) var(--yz-ease) both;
+}
+
+/* 主菜单：暮蓝纵深 + 台底裂纹透出的一线暖金（低alpha，非泛光） */
+.yz-screen--deep {
+  background:
+    radial-gradient(
+      120% 60% at 50% 92%,
+      rgb(207 155 69 / 0.09),
+      transparent 62%
+    ),
+    linear-gradient(180deg, rgb(43 59 88 / 0.94), rgb(8 12 20 / 0.97));
+}
+
+/* 暂停/结算：压在战场上，磨砂退后 */
+.yz-screen--frost {
+  background: rgb(8 12 20 / 0.55);
+  backdrop-filter: blur(14px) saturate(0.8);
+  -webkit-backdrop-filter: blur(14px) saturate(0.8);
+}
+
+/* ---- 主板 ---- */
+.yz-panel {
+  width: min(440px, 94vw);
+  max-height: calc(100vh - var(--yz-inset-t) - var(--yz-inset-b) - var(--yz-s4));
+  padding: var(--yz-s3) var(--yz-s3) var(--yz-s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--yz-s2);
+  animation: yz-settle var(--yz-t-med) var(--yz-ease) both;
+}
+
+.yz-panel--wide {
+  width: min(720px, 94vw);
+}
+
+.yz-panel .yz-scroll {
+  max-height: 52vh;
+  margin: 0 calc(-1 * var(--yz-s1));
+  padding: 0 var(--yz-s1);
+}
+
+/* 主菜单内容列（无板，直接立在深背景上） */
+.yz-home {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--yz-s4);
+  animation: yz-settle var(--yz-t-slow) var(--yz-ease) both;
+}
+
+/* ---- 标题：展示字 + 旧金磨损衬线 ---- */
+.yz-title {
+  margin: 0;
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-title);
+  line-height: 1.1;
+  letter-spacing: 0.14em;
+  text-align: center;
+  color: var(--yz-bone-100);
+}
+
+.yz-title::after {
+  content: "";
+  display: block;
+  width: 56%;
+  height: 2px;
+  margin: var(--yz-s1) auto 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--yz-gold-500) 30%,
+    var(--yz-gold-700) 50%,
+    var(--yz-gold-500) 70%,
+    transparent
+  );
+}
+
+.yz-subtitle {
+  margin: 0;
+  font-size: var(--yz-fs-sm);
+  letter-spacing: 0.32em;
+  text-align: center;
+  color: var(--yz-text-mute);
+}
+
+/* 面板小节标题（选掌 / 画质等） */
+.yz-heading {
+  margin: 0;
+  font-family: var(--yz-font-display);
+  font-size: var(--yz-fs-lg);
+  letter-spacing: 0.12em;
+  color: var(--yz-bone-300);
+}
+
+/* ---- 按钮 ---- */
+.yz-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--yz-s2);
+  width: min(320px, 82vw);
+  margin: 0 auto;
+}
+
+.yz-btn {
+  appearance: none;
+  cursor: pointer;
+  position: relative;
+  min-height: var(--yz-touch-min);
+  padding: 0 var(--yz-s3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--yz-s1);
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-md);
+  letter-spacing: 0.18em;
+  color: var(--yz-bone-300);
+  border: 1px solid var(--yz-steel-700);
+  border-radius: var(--yz-r2);
+  background:
+    linear-gradient(180deg, rgb(240 235 223 / 0.05), rgb(240 235 223 / 0) 46%),
+    rgb(13 19 31 / 0.6);
+  box-shadow:
+    inset 0 1px 0 var(--yz-edge-hi),
+    inset 0 -1px 0 var(--yz-edge-lo);
+  transition:
+    filter var(--yz-t-fast) var(--yz-ease),
+    transform var(--yz-t-fast) var(--yz-ease),
+    border-color var(--yz-t-fast) var(--yz-ease);
+}
+
+.yz-btn:hover,
+.yz-btn:focus-visible {
+  filter: brightness(1.16);
+  border-color: var(--yz-steel-500);
+}
+
+.yz-btn:active {
+  transform: translateY(1px);
+  filter: brightness(1.05);
+}
+
+.yz-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* 主操作：识别色左刻痕 + 色沿，一屏只放一个 */
+.yz-btn--primary {
+  color: var(--yz-bone-100);
+  border-color: color-mix(in oklab, var(--yz-accent) 46%, var(--yz-steel-700));
+  background:
+    linear-gradient(180deg, rgb(240 235 223 / 0.06), rgb(240 235 223 / 0) 46%),
+    linear-gradient(0deg, var(--yz-accent-soft), var(--yz-accent-soft)),
+    rgb(13 19 31 / 0.6);
+}
+
+.yz-btn--primary::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  background: var(--yz-accent);
+}
+
+/* 次操作：仅框线 */
+.yz-btn--ghost {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ---- 选掌网格 ---- */
+.yz-glove-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: var(--yz-s1);
+}
+
+.yz-glove-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--yz-s-h);
+  padding: var(--yz-s1) var(--yz-s-h);
+  cursor: pointer;
+  transition:
+    border-color var(--yz-t-fast) var(--yz-ease),
+    filter var(--yz-t-fast) var(--yz-ease);
+}
+
+.yz-glove-tile:hover {
+  filter: brightness(1.12);
+}
+
+/* 选掌页的掌徽放大；未被选中的降饱和，把峰值留给已选 */
+.yz-glove-tile .yz-glove-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.yz-glove-tile:not(.is-main):not(.is-off) .yz-glove-swatch {
+  filter: saturate(0.55) brightness(0.85);
+}
+
+.yz-glove-tile .yz-glove-name {
+  font-size: var(--yz-fs-sm);
+  color: var(--yz-bone-300);
+}
+
+.yz-glove-role {
+  font-size: var(--yz-fs-xs);
+  color: var(--yz-text-mute);
+}
+
+/* 已选标记：角章（主=识别色，副=钢灰） */
+.yz-glove-tile.is-main {
+  border-color: color-mix(in oklab, var(--yz-accent) 55%, var(--yz-steel-700));
+}
+
+.yz-glove-tile.is-main::after,
+.yz-glove-tile.is-off::after {
+  position: absolute;
+  top: var(--yz-s-h);
+  right: var(--yz-s-h);
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: var(--yz-r1);
+  font-family: var(--yz-font-text);
+}
+
+.yz-glove-tile.is-main::after {
+  content: "主";
+  background: var(--yz-accent);
+  color: var(--yz-accent-ink);
+}
+
+.yz-glove-tile.is-off {
+  border-color: var(--yz-steel-500);
+}
+
+.yz-glove-tile.is-off::after {
+  content: "副";
+  background: var(--yz-steel-500);
+  color: var(--yz-ink-950);
+}
+
+/* 未解锁：整体做旧灰化 + 挑战文案 */
+.yz-glove-tile.is-locked {
+  cursor: default;
+  filter: grayscale(0.9) brightness(0.72);
+}
+
+.yz-glove-tile.is-locked:hover {
+  filter: grayscale(0.9) brightness(0.72);
+}
+
+.yz-lock-note {
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--yz-text-mute);
+}
+
+/* ---- 分段选择（画质 high/mid/low 等） ---- */
+.yz-seg {
+  display: inline-flex;
+  border: 1px solid var(--yz-steel-700);
+  border-radius: var(--yz-r2);
+  overflow: hidden;
+  align-self: center;
+}
+
+.yz-seg-opt {
+  appearance: none;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  min-height: 32px;
+  padding: var(--yz-s-h) var(--yz-s2);
+  font-family: var(--yz-font-text);
+  font-size: var(--yz-fs-sm);
+  color: var(--yz-text-mute);
+}
+
+.yz-seg-opt + .yz-seg-opt {
+  border-left: 1px solid var(--yz-steel-700);
+}
+
+.yz-seg-opt.is-on {
+  background: rgb(240 235 223 / 0.08);
+  color: var(--yz-bone-100);
+  box-shadow: inset 0 1px 0 var(--yz-edge-hi);
+}
+
+/* ---- 结算 ---- */
+.yz-results-title {
+  margin: 0;
+  font-family: var(--yz-font-display);
+  font-size: var(--yz-fs-xl);
+  letter-spacing: 0.2em;
+  text-align: center;
+  color: var(--yz-bone-300);
+}
+
+.yz-results-title.is-win {
+  color: var(--yz-gold-300);
+}
+
+.yz-results-row {
+  display: grid;
+  grid-template-columns: 1fr repeat(3, 52px);
+  align-items: center;
+  gap: var(--yz-s1);
+  padding: var(--yz-s1) var(--yz-s2);
+  border-bottom: 1px solid rgb(107 118 132 / 0.25);
+  font-size: var(--yz-fs-sm);
+  color: var(--yz-text-dim);
+}
+
+.yz-results-row.is-head {
+  color: var(--yz-text-mute);
+  font-size: var(--yz-fs-xs);
+  border-bottom-color: var(--yz-steel-700);
+}
+
+.yz-results-row.is-winner {
+  border-left: 2px solid var(--yz-gold-500);
+  background: rgb(207 155 69 / 0.07);
+  color: var(--yz-bone-100);
+}
+
+.yz-results-row.is-me .yz-results-name {
+  color: var(--yz-accent);
+}
+
+.yz-results-row > :nth-child(n + 2) {
+  text-align: right;
+}
+
+/* ---- 弹窗 ---- */
+.yz-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--yz-z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--yz-s3);
+  background: rgb(8 12 20 / 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: yz-fade var(--yz-t-fast) var(--yz-ease) both;
+}
+
+.yz-modal {
+  width: min(400px, 92vw);
+  padding: var(--yz-s3);
+  animation: yz-settle var(--yz-t-med) var(--yz-ease) both;
+}
+
+.yz-modal-title {
+  margin: 0 0 var(--yz-s1);
+  font-family: var(--yz-font-display);
+  font-size: var(--yz-fs-lg);
+  letter-spacing: 0.12em;
+  color: var(--yz-bone-100);
+}
+
+.yz-modal-body {
+  margin: 0 0 var(--yz-s3);
+  color: var(--yz-text-dim);
+}
+
+.yz-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--yz-s1);
+}
+
+/* ---- 页脚小字 ---- */
+.yz-foot {
+  position: fixed;
+  left: 50%;
+  bottom: var(--yz-inset-b);
+  transform: translateX(-50%);
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.1em;
+  color: var(--yz-text-mute);
+  pointer-events: none;
+}
+
+/* ---- 竖屏：面板贴顶滚动，标题收小 ---- */
+@media (orientation: portrait) {
+  .yz-panel--wide {
+    width: min(440px, 94vw);
+  }
+
+  .yz-title {
+    font-size: clamp(34px, 12vmin, 64px);
+  }
+}

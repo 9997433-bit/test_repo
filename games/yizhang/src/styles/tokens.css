@@ -1,0 +1,119 @@
+/* ============================================================
+   异掌 · 设计令牌（单一事实来源）
+   底座 B「风格化精品」。色相家族 ≤ 5：
+   暮蓝（含钢灰同族）/ 骨白 / 暖金 / 绛红 + 1 个动态手套识别色。
+   饱和峰值只允许出现在「当前手套识别色」上（--yz-accent）。
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- 色 · 暮蓝基底（天空/底色，去饱和） ---- */
+  --yz-ink-950: #080c14;
+  --yz-ink-900: #0b101c;
+  --yz-ink-800: #121a2a;
+  --yz-ink-700: #1a2433; /* 与 index.html theme-color 对齐 */
+  --yz-dusk-500: #31415c;
+  --yz-dusk-300: #5d7093;
+
+  /* ---- 色 · 钢灰（磨损金属框，暮蓝同族低饱和） ---- */
+  --yz-steel-700: #39424e;
+  --yz-steel-500: #6b7684;
+  --yz-steel-300: #9aa4b0;
+
+  /* ---- 色 · 骨白（正文/数字，偏暖象牙） ---- */
+  --yz-bone-100: #f0ebdf;
+  --yz-bone-300: #cfc8b8;
+  --yz-bone-500: #9a927f;
+
+  /* ---- 色 · 暖金（裂纹/觉醒，环境用色偏哑） ---- */
+  --yz-gold-300: #eec678;
+  --yz-gold-500: #cf9b45;
+  --yz-gold-700: #8f6a2a;
+
+  /* ---- 色 · 绛红（死亡/危险，去饱和氧化红，克制使用） ---- */
+  --yz-danger: #a5524a;
+
+  /* ---- 色 · 语义 ---- */
+  --yz-bg: var(--yz-ink-900);
+  --yz-text: var(--yz-bone-100);
+  --yz-text-dim: var(--yz-bone-300);
+  --yz-text-mute: var(--yz-bone-500);
+
+  /* 磨砂暗玻璃（HUD/面板底），1px 边缘受光 */
+  --yz-glass: rgb(18 26 42 / 0.6);
+  --yz-glass-strong: rgb(11 16 28 / 0.8);
+  --yz-edge-hi: rgb(240 235 223 / 0.14); /* 顶部 1px 受光 */
+  --yz-edge-lo: rgb(4 7 12 / 0.55);      /* 底部 1px 暗沿 */
+  --yz-frame: var(--yz-steel-700);        /* 磨损金属框线 */
+
+  /* ---- 手套识别色（唯一饱和峰值；默认木棉） ----
+     切换手套时由 JS 设置容器 data-glove，或直接改写 --yz-accent */
+  --yz-accent: #e2604a;
+  --yz-accent-ink: #140d0b; /* 识别色上的深色文字 */
+
+  /* ---- 间距 · 8px 网格（4px 为半步） ---- */
+  --yz-s-h: 4px;
+  --yz-s1: 8px;
+  --yz-s2: 16px;
+  --yz-s3: 24px;
+  --yz-s4: 32px;
+  --yz-s5: 40px;
+  --yz-s6: 48px;
+
+  /* ---- 圆角（轻倒角，忌胶囊糖果感） ---- */
+  --yz-r1: 4px;
+  --yz-r2: 8px;
+  --yz-r3: 12px;
+  --yz-r-round: 999px;
+
+  /* ---- 字号 ---- */
+  --yz-fs-xs: 11px;
+  --yz-fs-sm: 12px;
+  --yz-fs-md: 14px;
+  --yz-fs-lg: 17px;
+  --yz-fs-xl: 22px;
+  --yz-fs-timer: clamp(19px, 2.4vmax, 26px);
+  --yz-fs-title: clamp(40px, 9vmin, 88px);
+
+  /* ---- 动效（缓入缓出的「落定」，禁弹跳） ---- */
+  --yz-t-fast: 120ms;
+  --yz-t-med: 220ms;
+  --yz-t-slow: 420ms;
+  --yz-ease: cubic-bezier(0.3, 0.7, 0.3, 1);
+
+  /* ---- 层级 ---- */
+  --yz-z-gl: 0;
+  --yz-z-hud: 10;
+  --yz-z-touch: 20;
+  --yz-z-menu: 30;
+  --yz-z-modal: 40;
+
+  /* ---- 触控尺寸（dp≈px） ---- */
+  --yz-touch-min: 48px;
+  --yz-touch-slap: 72px;
+
+  /* ---- 安全区留白（取安全区与网格的较大值） ---- */
+  --yz-inset-t: max(var(--yz-s1), env(safe-area-inset-top, 0px));
+  --yz-inset-r: max(var(--yz-s2), env(safe-area-inset-right, 0px));
+  --yz-inset-b: max(var(--yz-s1), env(safe-area-inset-bottom, 0px));
+  --yz-inset-l: max(var(--yz-s2), env(safe-area-inset-left, 0px));
+}
+
+/* 派生识别色调：必须在每个元素上重解析（自定义属性的 var() 在定义处求值，
+   若只写在 :root，data-glove 换色后派生色不会跟随） */
+* {
+  --yz-accent-dim: color-mix(in oklab, var(--yz-accent) 46%, var(--yz-ink-800));
+  --yz-accent-soft: color-mix(in oklab, var(--yz-accent) 22%, var(--yz-ink-800));
+}
+
+/* ---- 8 掌识别色：在任意容器（html / #hud / .yz-screen）设 data-glove 即生效
+   与 src/data/gloves.js 的 color 字段保持一致（见 ART_DIRECTION.md） ---- */
+[data-glove="cotton"]     { --yz-accent: #e2604a; --yz-accent-ink: #140d0b; } /* 木棉 · 珊瑚红 */
+[data-glove="granite"]    { --yz-accent: #cf8a3b; --yz-accent-ink: #131009; } /* 磐石 · 赭橙 */
+[data-glove="gale"]       { --yz-accent: #55c07f; --yz-accent-ink: #0a130d; } /* 疾风 · 苔绿 */
+[data-glove="frost"]      { --yz-accent: #56b8d6; --yz-accent-ink: #0a1216; } /* 冰霜 · 冰青 */
+[data-glove="spring"]     { --yz-accent: #b4c53f; --yz-accent-ink: #12130a; } /* 弹簧 · 苇黄绿 */
+[data-glove="afterimage"] { --yz-accent: #9d80e0; --yz-accent-ink: #100d16; } /* 分身 · 暮紫 */
+[data-glove="magnet"]     { --yz-accent: #d8639e; --yz-accent-ink: #150c11; } /* 磁掌 · 磁洋红 */
+[data-glove="meteor"]     { --yz-accent: #7d8bf0; --yz-accent-ink: #0c0e16; } /* 陨掌 · 星蓝 */
