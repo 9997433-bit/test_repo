@@ -39,7 +39,7 @@ rg -in "outline" src/render src/styles   # R-02 排查（命中需人工判读�
 ```sh
 rg -n "SELF_ID" src/main.js                                      # G-04：必须指向 "p0"，出现 "p1" 即门红
 rg -n "installData|installCombat" src/main.js src/sim/index.js   # G-05：注入/静态引入证据（再以裸 step 技能测试为准）
-rg -n "googleapis|gstatic" src dist                              # G-07 / R-13：必须零命中（含构建产物）
+rg -n "googleapis|gstatic" src dist index.html                   # G-07 / RG-04 / R-13：必须零命中（index.html 不在 src 下，必须单列；含构建产物）
 rg -c "\.yz-" src/ui/shell.css src/styles/*.css                  # K-1：双 CSS 同名类面积对照（人工判读漂移）
 ```
 
@@ -63,6 +63,8 @@ npm run bench    # L3-11（Round 3）
 核对输出 JSON：3 个固定 seed 的 60s 1+3 Bot 运行零异常、无 NaN、活性达标、`avgStepMs` 达标（Round 3 ≤0.5ms）；Round 2 起确定性 hash 两跑一致；Round 2 起 Bot 三性格统计可分。
 
 **Round 2 起**：探针输出 `status:"soft-pass"`（零杀）按 FAIL 计 —— 退出门 G-02 要求 `kills ≥ 1` 硬门（Round 1 基线 2 kills，不得回退）；probe 当前单 seed（`0x1a2b3c4d`），本轮应硬化到 T-07 规格的 3 固定 seed，验收按实际 seed 数如实记录。
+
+**Round 3 起（`usingRealCombat` 判读，语义勘定见 SOTA_CHECKLIST §9.2）**：该标志定义为「没装测试替身」（`usingRealCombat = !combatMod`，`src/sim/deps.js`），生产静态桥恒为 true；当前 `scripts/harness.mjs` 自装原生 combat 导致探针回报 false 并打印「real combat not wired」，属**自伤误报**（且让探针压的是绕过 combat-bridge 的混合方言路径）。harness 修复（删自装）前，false 不按未接线记，以裸 `getDeps()` 读数 + RG-06 八掌矩阵为准；修复后按字面判读，false 即门红。
 
 ### 第 5 步 · 构建
 
@@ -99,6 +101,7 @@ M-01～M-07 逐条执行（Round 1–2 仿真即可并标注"仿真"；Round 3 �
 以 SOTA_CHECKLIST §0 Gate 表为准。补充裁量规则：
 
 - **Round 2 退出门前置**：SOTA_CHECKLIST §0 的 G-01～G-07 全绿是 L2 记分的前置条件；门内任何一项红 → 直接 REJECT，不再往下记分（修复清单照常出）。
+- **Round 3 终局门重定标**：以 SOTA_CHECKLIST §9 的 RG-01～RG-06 为本轮唯一记分门；L2/L3/M 转 stretch（命中记分不否决，本轮不发 L3 签字）；红线 R-10～R-13 照常即时否决。
 - **桩的标准**：接口存在、可调用、不抛错、有 `// 桩` 注释或 TODO 标记；假装实现（返回硬编码"正确值"骗过测试）按造假计，直接 REJECT。
 - **测试占位标准**：`it.todo(...)` 或带说明的 `skip`；空文件不算。
 - **复验**：每轮必须重跑上轮全部绿项，回退（regression）按该项 FAIL 计。
@@ -199,3 +202,23 @@ npm run build          # 构建 + 体积预算
 - WARNING 清单（R-01～R-09 预扫，R2 起正式记）：R-04 风险（shell.css 自持系统字体 token `--yz-display` 系与 F2 `--yz-font-*` 分叉）；R-01/R-07 风险（fallback Canvas2D 顶班路径存活，渲染器创建抛错即整场平光）；R-03 观察（bloom 三档常开 0.7–0.9，选择性层设计合规但 low 档应可关）。全表见 SOTA_CHECKLIST §5.1 风险图 K-1～K-6。
 - 修复指派（按 OWNERSHIP）：`p0` 统一 + 启动注入 → Opus-4（main）协同 Opus-1（sim 静态引入路线）；yaw 冻结（yaw=0 朝 -Z）与契约测 helpers → GPT-sol-1 + Opus-1；出台缘判死 → Opus-1；glove schema + `isGloveUnlocked` → Fable-3；magnet/技能接线进 `step` → Opus-3；字体自托管 + token 统一 + shell.css 收缩为 fallback → Fable-2 与 Opus-4；probe 3-seed + 禁零杀 soft-pass → GPT-sol-2。
 - 证据包：实测命令输出（`npm test` 91/97、probe JSON `{"kills":2,"p99StepMs":0.042,…,"ai":"think"}`、`npm run build` 退出码 0、`rg googleapis dist` 命中行）随本轮复核 PR 描述提交；数据同录 `.agent_workspace/yizhang/round1/BRIEF.md` 与 SOTA_CHECKLIST §8。
+
+### 异掌 Round 3 验收判定（终局门首验 · Round 2 合入态基线）
+
+- 被验分支/commit：`cursor/yizhang-db8d` @ `160122a`（Round 2 十路合入 + 简报；R3 执行代理工作未落地，验收不等其他代理——本判定即当前树的诚实基线）
+- 验收人/日期：Fable-4 / 2026-08-26（实测重跑：`npm ci` → 静态检查 → `npm test` → `npm run probe` → `npm run build` → 裸 `step` 八掌矩阵）
+- 结论：**REJECT**（RG-01 测试红 + RG-04 googleapis 仍在 src/index.html/dist —— 后者同时是 R-13 红线，按 §4 规则 1 即时否决）
+
+| 门（SOTA_CHECKLIST §9.1） | 判定 | 一句话证据 |
+|---|---|---|
+| RG-01 测试全绿 | FAIL | 145/152、7 红、退出码 1；另 `sim-integration.test.js` 加载失败（import 已删除的 `sim/fallback-combat.js`）致 8 条用例不进分母，全绿目标 ≈160/160；7 红中 6 条为测试陈旧（ADR-19 静态接线 / awakenModifiers schema / `"none"` 哨兵），1 条（出台缘第 1 步即判死）疑似实现 bug 待 Opus-1 裁定 |
+| RG-02 探针 | PASS* | `status:"pass"` / 3 kills / p99 0.094ms / `ai:"think"` / botSlapAttempts 5439；`usingRealCombat:false` 为 harness 自装替身的自伤误报（语义勘定 SOTA §9.2），裸路径实测 true；* = harness 删自装后须复验字面 true |
+| RG-03 构建 | PASS | vite 退出码 0；主 chunk 590.46kB / gzip 159.73kB（含 three） |
+| RG-04 零 googleapis | FAIL | `src/styles/index.css` `@import` ×2 + 注释引 gstatic、`index.html` preconnect ×2，均原样进 `dist/assets/index-*.css` 与 `dist/index.html` |
+| RG-05 p0 | PASS | `rg '"p1"' src/main.js` 零命中；`SELF_ID="p0"`（`src/core/view.js`）；probe roster 校验 human=p0 |
+| RG-06 八掌经裸 step | PASS | 不做任何 `install*`，裸矩阵 8/8：granite 目标位移 / gale 冲刺 8.16m / frost 挂 `slow` / spring 反弹 vz=10.81 / afterimage 换位 3.00m / magnet 拉近 4.00→1.40m / meteor 腾空 4.65+目标冲量 / cotton `"none"` 安全 no-op；全程 `usingRealData/usingRealCombat=true` |
+
+- L2/L3/M：本轮 stretch，不记分不否决（重定标声明 SOTA §9.0）；**L3 不签字**。
+- WARNING 清单：技能 id 四处别名表未收敛成一张（`data/skills.js`、`sim/combat-bridge.js`、`core/modules.js`、`combat/skills.js`，运行时靠桥结果正确）；bloom 三档常开（0.9/0.8/0.7）low 不可关（R-03 检查点）；probe 单 seed（T-07 规格 3 seed）；`tiles.js`/`deps.js` 注释仍引已删除的 fallback-combat。
+- 修复指派：RG-04 字体外链摘除（index.css `@import` ×2 + index.html preconnect ×2 + 自托管子集或系统栈决策）→ Fable-2 协同 Opus-4；七红一载 → SOTA §9.4（测试侧 6+1 条 GPT-sol-1 / Fable-3，出台缘裁定 Opus-1）；harness 删自装 + 3 seed 硬化 → GPT-sol-2。
+- 证据包：`npm test` 输出（145/152 + FAIL 清单）、probe JSON 原文 `{"status":"pass","steps":3600,…,"kills":3,"p99StepMs":0.0937,"ai":"think","botThinkCalls":10800,"botSlapAttempts":5439,"usingRealCombat":false}`、build 输出与体积、`rg googleapis src dist index.html` 命中行、裸 step 八掌矩阵输出（8/8 PASS）——随本轮验收 commit 提交于 PR 描述。
