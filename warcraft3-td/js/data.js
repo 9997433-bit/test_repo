@@ -49,6 +49,9 @@
       orc: "兽族",
       nightelf: "暗夜精灵",
       undead: "亡灵",
+      lumberShop: "伐木场升级",
+      bossIncoming: "首领来袭",
+      counter: "建议",
     },
     en: {
       title: "Azeroth Keep TD",
@@ -93,8 +96,118 @@
       orc: "Orc",
       nightelf: "Night Elf",
       undead: "Undead",
+      lumberShop: "Lumber Mill Upgrades",
+      bossIncoming: "Boss Incoming",
+      counter: "Counter",
     },
   };
+
+  // Templated log/announcement lines. `{token}` slots are filled by msg().
+  const MSG = {
+    opening: {
+      zh: "黑暗之门开始集结……第 1 波：{name}。",
+      en: "A pack gathers at the dark portal… Wave 1: {name}.",
+    },
+    waveStart: {
+      zh: "第 {n}/{total} 波：{name} ×{count} · {armor}甲{fly} · 建议 {counter}",
+      en: "Wave {n}/{total}: {count}× {name} · {armor} armor{fly} · counter with {counter}",
+    },
+    waveCleared: {
+      zh: "第 {n} 波肃清。{secs} 秒后下一波。",
+      en: "Wave {n} cleared. Next in {secs}s.",
+    },
+    waveNext: {
+      zh: "下一波预告：{name} ×{count}（{armor}甲{fly}）",
+      en: "Up next: {count}× {name} ({armor} armor{fly})",
+    },
+    bossFar: {
+      zh: "★ 侦察兵报告：{waves} 波后 {name} 将降临，携带「{ability}」。",
+      en: "★ Scouts report: {name} arrives in {waves} waves, wielding {ability}.",
+    },
+    bossSoon: {
+      zh: "★ 黑暗之门剧烈震颤——{name} 即将穿越！",
+      en: "★ The dark portal shudders — {name} is coming through!",
+    },
+    bossCountdown: {
+      zh: "★ {secs} 秒后首领入场，做好准备！",
+      en: "★ Boss enters in {secs}s — brace yourselves!",
+    },
+    bossWave: {
+      zh: "★ 首领战 · {name}（{hp} 生命 · {armor}甲） — {ability}",
+      en: "★ BOSS · {name} ({hp} HP · {armor} armor) — {ability}",
+    },
+    bossSpawn: {
+      zh: "★ {name} 踏入战场！",
+      en: "★ {name} strides onto the field!",
+    },
+    bossEnrage: {
+      zh: "★ {name} 陷入狂暴，移动速度提升！",
+      en: "★ {name} enrages and picks up speed!",
+    },
+    bossStompWarn: {
+      zh: "★ {name} 高举武器——战争践踏即将落下！",
+      en: "★ {name} raises its weapon — War Stomp incoming!",
+    },
+    bossStomp: {
+      zh: "★ 战争践踏！{n} 座防御塔被震晕。",
+      en: "★ War Stomp! {n} tower(s) stunned.",
+    },
+    countdown: {
+      zh: "下一波 {secs} 秒后出发。",
+      en: "Next wave in {secs}s.",
+    },
+    interest: { zh: "金库利息 +{gold}", en: "Treasury interest +{gold}" },
+    lumberGain: { zh: "伐木场送来 1 木材（共 {total}）", en: "+1 lumber from the mill (total {total})" },
+    lumberBuy: { zh: "木材升级：{name} Lv{level} — {effect}", en: "Lumber upgrade: {name} Lv{level} — {effect}" },
+    lumberDenied: { zh: "木材不足或已满级：{name}", en: "Not enough lumber, or maxed: {name}" },
+    heroCast: { zh: "{hero} 施放 {spell}！", en: "{hero} casts {spell}!" },
+    heroDown: { zh: "{hero} 倒下了，{secs} 秒后重生。", en: "{hero} has fallen — reviving in {secs}s." },
+    heroRevive: { zh: "{hero} 在要塞重生。", en: "{hero} revives at the keep." },
+    leak: { zh: "敌军漏入要塞！剩余生命 {lives}", en: "A creep leaked into the keep! Lives {lives}" },
+  };
+
+  function fmt(text, params) {
+    return String(text).replace(/\{(\w+)\}/g, function (all, key) {
+      return params && params[key] != null ? params[key] : "";
+    });
+  }
+
+  function msg(key, lang, params) {
+    const row = MSG[key];
+    if (!row) return key;
+    return fmt(row[lang] || row.zh, params);
+  }
+
+  const ARMOR_LABEL = {
+    unarmored: { zh: "无", en: "unarmored" },
+    light: { zh: "轻", en: "light" },
+    medium: { zh: "中", en: "medium" },
+    heavy: { zh: "重", en: "heavy" },
+    fortified: { zh: "城", en: "fortified" },
+    hero: { zh: "英雄", en: "hero" },
+    divine: { zh: "神圣", en: "divine" },
+  };
+
+  // Which attack type the player should build against a given armor type.
+  const COUNTER_HINT = {
+    unarmored: { zh: "穿刺", en: "pierce" },
+    light: { zh: "穿刺", en: "pierce" },
+    medium: { zh: "普通", en: "normal" },
+    heavy: { zh: "魔法", en: "magic" },
+    fortified: { zh: "攻城", en: "siege" },
+    hero: { zh: "英雄/混沌", en: "hero/chaos" },
+    divine: { zh: "混沌", en: "chaos" },
+  };
+
+  function armorLabel(type, lang) {
+    const row = ARMOR_LABEL[type] || ARMOR_LABEL.unarmored;
+    return row[lang] || row.zh;
+  }
+
+  function counterHint(type, lang) {
+    const row = COUNTER_HINT[type] || COUNTER_HINT.unarmored;
+    return row[lang] || row.zh;
+  }
 
   const TILE = 48;
   const MAP_W = 24;
@@ -179,28 +292,87 @@
       color: "#8d6e63", desc: { zh: "腐尸溅射，克制城甲与重甲。", en: "Disease splash vs fort/heavy." } },
   ];
 
+  /**
+   * Hero kits. Every ability carries the numbers the sim reads, so each
+   * commander plays differently:
+   *  - Paladin  : tower damage aura + burst heal-nova, survives melee
+   *  - Blademaster: single-target burst, cleave and multi-strike windows
+   *  - Demon Hunter: sustained AoE, armor shred, ranged Metamorphosis
+   *  - Death Knight: tower attack-speed aura, drain, raises skeletons
+   */
   const HEROES = [
     { id: "paladin", name: { zh: "乌瑟尔", en: "Uther" }, title: { zh: "圣骑士", en: "Paladin" },
-      color: "#f5e6a8", attackType: "hero", dmg: 22, rate: 0.85, range: 90, hp: 420, mana: 180,
-      q: { zh: "圣光术", en: "Holy Light", mana: 40, cd: 8, dmg: 90 },
-      w: { zh: "虔诚光环", en: "Devotion Aura", mana: 0, cd: 0, aura: 4 },
-      e: { zh: "神圣护盾", en: "Divine Shield", mana: 50, cd: 20, dur: 4 } },
+      color: "#f5e6a8", attackType: "hero", dmg: 22, rate: 0.85, range: 90, hp: 460, mana: 180,
+      q: { zh: "圣光术", en: "Holy Light", mana: 40, cd: 8, dmg: 95, nova: 0.5, novaRadius: 70, heal: 150, cast: 260,
+        desc: { zh: "对目标造成 95 法术伤害，周围敌人受到一半，并治疗自身。", en: "95 spell damage to a target, half to nearby foes, heals the Paladin." } },
+      w: { zh: "虔诚光环", en: "Devotion Aura", mana: 30, cd: 20, affects: "towers", stat: "dmg", aura: 0.15, boost: 0.4, dur: 8, radius: 200,
+        desc: { zh: "被动：范围内防御塔 +15% 伤害；激活后 8 秒内提升到 +40%。", en: "Passive: +15% damage to towers in range. Active: +40% for 8s." } },
+      e: { zh: "神圣护盾", en: "Divine Shield", mana: 50, cd: 20, dur: 5, hasteMul: 0.5, invuln: true,
+        desc: { zh: "5 秒内免疫伤害且攻速翻倍。", en: "5s of damage immunity and double attack speed." } } },
     { id: "blademaster", name: { zh: "格罗玛什", en: "Grom" }, title: { zh: "剑圣", en: "Blademaster" },
       color: "#e07030", attackType: "hero", dmg: 28, rate: 0.7, range: 70, hp: 380, mana: 140,
-      q: { zh: "致命一击", en: "Crit Stance", mana: 25, cd: 6, crit: 2.2 },
-      w: { zh: "镜像", en: "Mirror Image", mana: 35, cd: 14, dur: 6 },
-      e: { zh: "疾步风", en: "Wind Walk", mana: 30, cd: 12, dur: 3 } },
+      q: { zh: "致命一击", en: "Crit Stance", mana: 25, cd: 6, crit: 2.2, dur: 5, cleave: 0.35, cleaveRadius: 52,
+        desc: { zh: "5 秒内攻击暴击 2.2 倍并顺劈 35%。", en: "5s of 2.2x crits with 35% cleave." } },
+      w: { zh: "镜像", en: "Mirror Image", mana: 35, cd: 14, dur: 6, images: 2, imageDmg: 0.45,
+        desc: { zh: "6 秒内镜像同时攻击至多 3 个目标（分身 45% 伤害）。", en: "6s: strike up to 3 targets, images deal 45%." } },
+      e: { zh: "疾步风", en: "Wind Walk", mana: 30, cd: 12, dur: 3, speed: 2.1, ambush: 3,
+        desc: { zh: "3 秒疾行且不可被攻击，脱离时首次攻击 3 倍伤害。", en: "3s of untouchable sprint; the next strike hits for 3x." } } },
     { id: "demonhunter", name: { zh: "伊利丹", en: "Illidan" }, title: { zh: "恶魔猎手", en: "Demon Hunter" },
       color: "#7e57c2", attackType: "hero", dmg: 26, rate: 0.72, range: 75, hp: 360, mana: 200,
-      q: { zh: "法力燃烧", en: "Mana Burn", mana: 20, cd: 7, dmg: 70 },
-      w: { zh: "献祭", en: "Immolation", mana: 8, cd: 1, aura: 8 },
-      e: { zh: "变身", en: "Metamorphosis", mana: 80, cd: 24, dur: 8 } },
+      q: { zh: "法力燃烧", en: "Mana Burn", mana: 20, cd: 7, dmg: 75, cast: 260, shred: 5, shredDur: 8, bossBonus: 60,
+        desc: { zh: "75 法术伤害并撕裂 5 点护甲 8 秒，对首领额外伤害。", en: "75 spell damage, shreds 5 armor for 8s, bonus versus bosses." } },
+      w: { zh: "献祭", en: "Immolation", mana: 8, cd: 1.5, toggle: true, affects: "creeps", aura: 16, radius: 82, drain: 7,
+        desc: { zh: "开关：每秒对周围敌人造成 16 伤害，持续消耗法力。", en: "Toggle: 16 dps around the hero while mana drains." } },
+      e: { zh: "变身", en: "Metamorphosis", mana: 80, cd: 24, dur: 8, dmgMul: 1.5, rangeBonus: 70, splash: 58, splashRatio: 0.4, hasteMul: 0.85,
+        desc: { zh: "8 秒恶魔形态：+50% 伤害、+70 射程且攻击溅射。", en: "8s demon form: +50% damage, +70 range, splashing attacks." } } },
     { id: "deathknight", name: { zh: "阿尔萨斯", en: "Arthas" }, title: { zh: "死亡骑士", en: "Death Knight" },
       color: "#90caf9", attackType: "hero", dmg: 24, rate: 0.8, range: 80, hp: 400, mana: 190,
-      q: { zh: "死亡缠绕", en: "Death Coil", mana: 35, cd: 7, dmg: 85 },
-      w: { zh: "邪恶光环", en: "Unholy Aura", mana: 0, cd: 0, aura: 0.18 },
-      e: { zh: "亡者复生", en: "Animate Dead", mana: 60, cd: 22, dur: 6 } },
+      q: { zh: "死亡缠绕", en: "Death Coil", mana: 35, cd: 7, dmg: 90, heal: 130, cast: 270,
+        desc: { zh: "90 法术伤害并汲取生命治疗自身。", en: "90 spell damage that drains life back to the hero." } },
+      w: { zh: "邪恶光环", en: "Unholy Aura", mana: 25, cd: 18, affects: "towers", stat: "rate", aura: 0.12, boost: 0.35, dur: 8, radius: 200,
+        desc: { zh: "被动：范围内防御塔 +12% 攻速；激活后 8 秒 +35%。", en: "Passive: +12% tower attack speed. Active: +35% for 8s." } },
+      e: { zh: "亡者复生", en: "Animate Dead", mana: 60, cd: 22, dur: 14, count: 2, dmg: 26, gold: 15,
+        desc: { zh: "召唤 2 具骷髅战士作战 14 秒，并从尸体上搜刮黄金。", en: "Raise 2 skeletons for 14s and loot gold from the corpses." } } },
   ];
+
+  // Summoned unit statlines reuse the tower shape so HUD/renderer can draw them.
+  const SUMMONS = {
+    skeleton: {
+      id: "sum_skeleton", race: "undead", line: 0, temp: true,
+      name: { zh: "骷髅战士", en: "Skeletal Warrior" },
+      attackType: "normal", canHitFlying: false, splash: 0,
+      cost: [0, 0, 0], dmg: [18, 18, 18], rate: [1, 1, 1], range: [120, 120, 120], armor: 0,
+      color: "#cfd8dc",
+      desc: { zh: "亡者复生召唤的临时单位。", en: "Temporary minion raised by Animate Dead." },
+    },
+  };
+
+  // Lumber sinks (Element TD style). Levels are cumulative and permanent.
+  const LUMBER_UPGRADES = [
+    { id: "interest", cost: 1, max: 3,
+      name: { zh: "金库利息", en: "Treasury Interest" },
+      desc: { zh: "每级 +2% 利息，上限 8%", en: "+2% interest per level, capped at 8%" },
+      effect: { zh: "利息 {value}", en: "interest {value}" } },
+    { id: "armory", cost: 2, max: 3,
+      name: { zh: "兵工厂锻造", en: "Armory Forging" },
+      desc: { zh: "所有防御塔 +8% 伤害", en: "+8% damage for every tower" },
+      effect: { zh: "塔伤害 {value}", en: "tower damage {value}" } },
+    { id: "sentry", cost: 2, max: 2,
+      name: { zh: "哨戒视野", en: "Sentry Sights" },
+      desc: { zh: "所有防御塔 +8% 射程", en: "+8% range for every tower" },
+      effect: { zh: "塔射程 {value}", en: "tower range {value}" } },
+    { id: "repair", cost: 2, max: 3,
+      name: { zh: "要塞修缮", en: "Keep Repairs" },
+      desc: { zh: "立即恢复 3 点生命", en: "Instantly restore 3 lives" },
+      effect: { zh: "生命 {value}", en: "lives {value}" } },
+  ];
+
+  function lumberUpgradeById(id) {
+    for (let i = 0; i < LUMBER_UPGRADES.length; i++) {
+      if (LUMBER_UPGRADES[i].id === id) return LUMBER_UPGRADES[i];
+    }
+    return null;
+  }
 
   const CREEP_ARCH = [
     { key: "footman", name: { zh: "步兵", en: "Footman" }, armorType: "heavy", armor: 2, flying: false, speed: 46, color: "#6a8cbf" },
@@ -222,6 +394,52 @@
     return CREEP_ARCH[0];
   }
 
+  // Boss mechanics. Each is telegraphed in the log before it resolves.
+  const BOSS_ABILITIES = {
+    stomp: {
+      id: "stomp", name: { zh: "战争践踏", en: "War Stomp" },
+      desc: { zh: "周期性震晕附近防御塔 1.6 秒", en: "periodically stuns nearby towers for 1.6s" },
+      cd: 9, warn: 1.3, radius: 132, stun: 1.6,
+    },
+    regen: {
+      id: "regen", name: { zh: "石肤再生", en: "Stone Regeneration" },
+      desc: { zh: "每秒恢复 0.7% 最大生命", en: "regenerates 0.7% max health per second" },
+      regen: 0.007,
+    },
+    frost: {
+      id: "frost", name: { zh: "寒冰光环", en: "Frost Aura" },
+      desc: { zh: "附近防御塔攻速降低 25%", en: "slows nearby tower attack speed by 25%" },
+      radius: 150, slow: 0.25,
+    },
+    shroud: {
+      id: "shroud", name: { zh: "邪影护罩", en: "Shadow Shroud" },
+      desc: { zh: "为附近敌军提供 +3 护甲", en: "grants +3 armor to nearby creeps" },
+      radius: 132, armor: 3,
+    },
+  };
+
+  const BOSS_ENRAGE = { at: 0.5, speed: 1.25 };
+
+  const BOSS_PROFILES = [
+    { name: { zh: "血蹄督军", en: "Bloodhoof Warlord" }, abilities: ["stomp"] },
+    { name: { zh: "腐烂石魔", en: "Rotting Golem" }, abilities: ["regen"] },
+    { name: { zh: "寒霜巫王", en: "Frostwake Lich" }, abilities: ["frost"] },
+    { name: { zh: "暗影编织者", en: "Shadow Weaver" }, abilities: ["shroud"] },
+    { name: { zh: "末日领主", en: "Doomlord" }, abilities: ["stomp", "regen"] },
+    { name: { zh: "燃烧军团统帅", en: "Legion Overlord" }, abilities: ["frost", "shroud", "stomp"] },
+  ];
+
+  function abilityText(ids, lang) {
+    const zh = lang === "zh";
+    return (ids || []).map(function (id) {
+      const a = BOSS_ABILITIES[id];
+      if (!a) return id;
+      const name = a.name[lang] || a.name.zh;
+      const desc = a.desc[lang] || a.desc.zh;
+      return zh ? name + "（" + desc + "）" : name + " (" + desc + ")";
+    }).join(zh ? "，" : "; ");
+  }
+
   function makeWaves() {
     const plan = [];
     const seq = [
@@ -239,6 +457,7 @@
       const boss = (i + 1) % 5 === 0;
       const hp = 28 + i * 18 + (boss ? 220 + i * 20 : 0);
       const bounty = 4 + Math.floor(i / 2) + (boss ? 18 : 0);
+      const profile = boss ? BOSS_PROFILES[Math.floor(i / 5) % BOSS_PROFILES.length] : null;
       plan.push({
         index: i + 1,
         boss: boss,
@@ -253,6 +472,11 @@
         color: a.color,
         name: a.name,
         key: a.key,
+        bossName: profile ? profile.name : null,
+        abilities: profile ? profile.abilities.slice() : [],
+        // Bosses give the player a longer build phase and a portal charge-up.
+        prep: boss ? 18 : 12,
+        spawnDelay: boss ? 1.8 : 0,
       });
     }
     return plan;
@@ -260,6 +484,18 @@
 
   root.GameData = {
     STR: STR,
+    MSG: MSG,
+    msg: msg,
+    fmt: fmt,
+    armorLabel: armorLabel,
+    counterHint: counterHint,
+    LUMBER_UPGRADES: LUMBER_UPGRADES,
+    lumberUpgradeById: lumberUpgradeById,
+    SUMMONS: SUMMONS,
+    BOSS_ABILITIES: BOSS_ABILITIES,
+    BOSS_PROFILES: BOSS_PROFILES,
+    BOSS_ENRAGE: BOSS_ENRAGE,
+    abilityText: abilityText,
     TILE: TILE,
     MAP_W: MAP_W,
     MAP_H: MAP_H,

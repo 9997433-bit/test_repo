@@ -6,6 +6,12 @@
   let _id = 1;
   function nid() { return _id++; }
 
+  const HERO_SOURCE = { kind: "hero", canHitFlying: true };
+  const HERO_MANA_REGEN = 6;
+  const HERO_HP_REGEN = 3;
+  const HERO_MELEE_RANGE = 30;
+  const HERO_DOWN_TIME = 22;
+
   function Game(opts) {
     opts = opts || {};
     this.seed = opts.seed || 1337;
@@ -25,6 +31,10 @@
     this.interestRate = 0.02;
     this.interestAcc = 0;
     this.goldEarned = 0;
+    this.lumberSpent = 0;
+    this.tech = { interest: 0, armory: 0, sentry: 0, repair: 0 };
+    this.towerDamageMul = 1;
+    this.towerRangeMul = 1;
     this.mapW = D.MAP_W;
     this.mapH = D.MAP_H;
     this.tile = D.TILE;
@@ -55,12 +65,21 @@
     this.hero = this._spawnHero();
     this.audio = opts.audio || null;
     this.headless = !!opts.headless;
-    this.announce("A pack gathers at the dark portal… / 黑暗之门开始集结……");
+    this.bossAlert = null;
+    this._bossCreeps = [];
+    this._frostSources = [];
+    this._portalAcc = 0;
+    this._warnedBoss = -1;
+    this.announce(this.msg("opening", { name: this.waves[0].name[this.lang] || this.waves[0].name.zh }));
   }
 
   Game.prototype.t = function (key) {
     const pack = D.STR[this.lang] || D.STR.zh;
     return pack[key] || key;
+  };
+
+  Game.prototype.msg = function (key, params) {
+    return D.msg(key, this.lang, params);
   };
 
   Game.prototype._scatterDoodads = function () {
@@ -82,19 +101,24 @@
     return out;
   };
 
+  Game.prototype._heroHome = function () {
+    const keep = this.path[this.path.length - 1];
+    return { x: keep.x - 40, y: keep.y - 30 };
+  };
+
   Game.prototype._spawnHero = function () {
     const def = D.heroById(this.heroId) || D.HEROES[0];
-    const keep = this.path[this.path.length - 1];
+    const home = this._heroHome();
     return {
       id: nid(),
       kind: "hero",
       def: def,
-      x: keep.x - 40,
-      y: keep.y - 30,
-      px: keep.x - 40,
-      py: keep.y - 30,
-      tx: keep.x - 40,
-      ty: keep.y - 30,
+      x: home.x,
+      y: home.y,
+      px: home.x,
+      py: home.y,
+      tx: home.x,
+      ty: home.y,
       hp: def.hp,
       maxHp: def.hp,
       mana: def.mana,
@@ -102,9 +126,18 @@
       cd: { q: 0, w: 0, e: 0 },
       shield: 0,
       critUntil: 0,
+      cleaveUntil: 0,
+      imagesUntil: 0,
       metaUntil: 0,
+      frenzyUntil: 0,
+      invulnUntil: 0,
+      auraBoostUntil: 0,
+      speedBoost: 0,
+      ambush: false,
       immolation: false,
       attackCd: 0,
+      dead: false,
+      respawn: 0,
     };
   };
 
@@ -113,12 +146,32 @@
     if (this.log.length > 30) this.log.pop();
   };
 
+  /** Log line plus a large floating banner drawn over the middle of the lane. */
+  Game.prototype.banner = function (msg, color) {
+    this.announce(msg);
+    this.fx.push({
+      kind: "text",
+      x: this.mapW * this.tile * 0.5 - 150,
+      y: this.mapH * this.tile * 0.42,
+      text: msg,
+      color: color || "#ffe082",
+      life: 3.4,
+      max: 3.4,
+      vy: -8,
+      banner: true,
+    });
+  };
+
   Game.prototype.float = function (x, y, text, color) {
     this.fx.push({ kind: "text", x: x, y: y, text: text, color: color || "#fff", life: 0.9, max: 0.9, vy: -22 });
   };
 
   Game.prototype.spark = function (x, y, color) {
     this.fx.push({ kind: "spark", x: x, y: y, color: color || "#ffe082", life: 0.25, max: 0.25, r: 4 });
+  };
+
+  Game.prototype.ring = function (x, y, color, life, r) {
+    this.fx.push({ kind: "ring", x: x, y: y, color: color || "#fff", life: life || 0.4, max: life || 0.4, r: r || 20 });
   };
 
   Game.prototype.tileAt = function (x, y) {
@@ -162,6 +215,7 @@
       poison: def.poison || 0,
       root: def.root || 0,
       cd: 0,
+      stun: 0,
     };
     this.gold -= cost;
     this.occupied[t.tx + "," + t.ty] = tower.id;
@@ -173,7 +227,7 @@
 
   Game.prototype.upgradeSelected = function () {
     const t = this.selected;
-    if (!t || t.kind !== "tower") return false;
+    if (!t || t.kind !== "tower" || t.temp) return false;
     if (t.tier >= 3) return false;
     const cost = t.def.cost[t.tier];
     if (this.gold < cost) return false;
@@ -200,16 +254,121 @@
     return refund;
   };
 
+  /* ------------------------------------------------------------------ *
+   * Lumber economy
+   * ------------------------------------------------------------------ */
+
+  Game.prototype.lumberUpgradeState = function (id) {
+    const def = D.lumberUpgradeById(id);
+    if (!def) return null;
+    const level = this.tech[id] || 0;
+    return {
+      def: def,
+      level: level,
+      maxed: level >= def.max,
+      cost: def.cost,
+      affordable: this.lumber >= def.cost && level < def.max,
+    };
+  };
+
+  /** Spend lumber on a permanent upgrade (1 lumber = +2% interest, etc.). */
+  Game.prototype.spendLumber = function (id) {
+    const def = D.lumberUpgradeById(id);
+    if (!def) return false;
+    const level = this.tech[id] || 0;
+    if (level >= def.max || this.lumber < def.cost) {
+      this.announce(this.msg("lumberDenied", { name: def.name[this.lang] || def.name.zh }));
+      return false;
+    }
+    this.lumber -= def.cost;
+    this.lumberSpent += def.cost;
+    this.tech[id] = level + 1;
+    let value = "";
+    if (id === "interest") {
+      this.interestRate = S.nextInterestRate(this.interestRate, 1);
+      value = Math.round(this.interestRate * 100) + "%";
+    } else if (id === "armory") {
+      this.towerDamageMul = 1 + this.tech.armory * 0.08;
+      value = "+" + Math.round((this.towerDamageMul - 1) * 100) + "%";
+    } else if (id === "sentry") {
+      this.towerRangeMul = 1 + this.tech.sentry * 0.08;
+      value = "+" + Math.round((this.towerRangeMul - 1) * 100) + "%";
+    } else if (id === "repair") {
+      this.lives += 3;
+      value = this.lives;
+    }
+    const effect = D.fmt(def.effect[this.lang] || def.effect.zh, { value: value });
+    this.announce(this.msg("lumberBuy", {
+      name: def.name[this.lang] || def.name.zh,
+      level: this.tech[id],
+      effect: effect,
+    }));
+    if (this.audio) this.audio.build();
+    return true;
+  };
+
+  /* ------------------------------------------------------------------ *
+   * Waves
+   * ------------------------------------------------------------------ */
+
+  Game.prototype.waveLabel = function (wave) {
+    if (!wave) return "";
+    return (wave.bossName ? (wave.bossName[this.lang] || wave.bossName.zh) : (wave.name[this.lang] || wave.name.zh));
+  };
+
+  /** Structured preview of an upcoming wave for the HUD / log. */
+  Game.prototype.wavePreview = function (offset) {
+    const wave = this.waves[this.waveIndex + (offset || 0)];
+    if (!wave) return null;
+    return {
+      index: wave.index,
+      name: this.waveLabel(wave),
+      count: wave.count,
+      boss: wave.boss,
+      flying: wave.flying,
+      armorType: wave.armorType,
+      armor: D.armorLabel(wave.armorType, this.lang),
+      counter: D.counterHint(wave.armorType, this.lang),
+      spellImmune: !!wave.spellImmune,
+      abilities: wave.abilities || [],
+      abilityText: D.abilityText(wave.abilities, this.lang),
+      hp: S.waveHp(wave.hp, this.difficulty),
+    };
+  };
+
+  Game.prototype._flyTag = function (wave) {
+    if (!wave.flying) return "";
+    return this.lang === "zh" ? " · 飞行" : " · flying";
+  };
+
   Game.prototype.startNextWave = function () {
     if (this.ended) return;
     if (!this.betweenWaves) return;
     if (this.waveIndex >= this.waves.length) return;
     this.betweenWaves = false;
     this.waveSpawned = 0;
-    this.waveAcc = 0;
     const w = this.waves[this.waveIndex];
-    const nm = w.name[this.lang] || w.name.zh;
-    this.announce((this.lang === "zh" ? "第 " : "Wave ") + w.index + (this.lang === "zh" ? " 波：" : ": ") + nm + (w.boss ? " ★" : ""));
+    this.waveAcc = -(w.spawnDelay || 0);
+    this.bossAlert = null;
+    this.announce(this.msg("waveStart", {
+      n: w.index,
+      total: this.waves.length,
+      name: w.name[this.lang] || w.name.zh,
+      count: w.count,
+      armor: D.armorLabel(w.armorType, this.lang),
+      fly: this._flyTag(w),
+      counter: D.counterHint(w.armorType, this.lang),
+    }));
+    if (w.boss) {
+      this.banner(this.msg("bossWave", {
+        name: this.waveLabel(w),
+        hp: S.waveHp(w.hp, this.difficulty),
+        armor: D.armorLabel(w.armorType, this.lang),
+        ability: D.abilityText(w.abilities, this.lang),
+      }), "#ff8a65");
+      const portal = this.path[0];
+      this.ring(portal.x, portal.y, "#ff5252", 1.2, 48);
+    }
     if (this.audio) this.audio.wave();
   };
 
@@ -217,11 +376,11 @@
     const start = this.path[0];
     const hp = S.waveHp(wave.hp, this.difficulty);
     const bounty = S.waveBounty(wave.bounty, this.difficulty);
-    this.creeps.push({
+    const creep = {
       id: nid(),
       kind: "creep",
       wave: wave.index,
-      name: wave.name,
+      name: wave.boss && wave.bossName ? wave.bossName : wave.name,
       x: start.x,
       y: start.y,
       px: start.x,
@@ -231,6 +390,7 @@
       maxHp: hp,
       bounty: bounty,
       armor: wave.armor,
+      armorBonus: 0,
       armorType: wave.armorType,
       flying: wave.flying,
       spellImmune: !!wave.spellImmune,
@@ -240,7 +400,27 @@
       slow: 0,
       root: 0,
       poison: 0,
-    });
+      shred: 0,
+      shredAmt: 0,
+      abilities: wave.abilities || [],
+      castCd: 0,
+      warned: false,
+      enraged: false,
+    };
+    if (wave.boss) {
+      const stomp = this._abilityDef(creep, "stomp");
+      creep.castCd = stomp ? stomp.cd : 0;
+      this.banner(this.msg("bossSpawn", { name: this.waveLabel(wave) }), "#ff8a65");
+      this.ring(start.x, start.y, "#ff5252", 0.8, 34);
+      if (this.audio) this.audio.wave();
+    }
+    this.creeps.push(creep);
+    return creep;
+  };
+
+  Game.prototype._abilityDef = function (creep, id) {
+    if (!creep.abilities || creep.abilities.indexOf(id) < 0) return null;
+    return D.BOSS_ABILITIES[id] || null;
   };
 
   Game.prototype._rebuildHash = function () {
@@ -251,16 +431,19 @@
     }
   };
 
+  Game.prototype._effectiveArmor = function (creep) {
+    let armor = creep.armor + (creep.armorBonus || 0);
+    if (creep.shred > 0) armor -= creep.shredAmt || 0;
+    return armor;
+  };
+
   Game.prototype._hitCreep = function (creep, base, attackType, source) {
-    const res = S.applyHit(base, attackType, creep.armorType, creep.armor, {
+    const res = S.applyHit(base, attackType, creep.armorType, this._effectiveArmor(creep), {
       flying: creep.flying,
       canHitFlying: !source || source.canHitFlying !== false || source.kind === "hero",
       spellImmune: creep.spellImmune,
     });
     if (res.damage <= 0) return res;
-    if (creep.root > 0 && source && source.root) {
-      /* already rooted */
-    }
     creep.hp -= res.damage;
     if (this.settings.dmgNumbers) {
       this.float(creep.x, creep.y - 12, Math.round(res.damage).toString(), res.multiplier >= 1.4 ? "#ffee66" : "#ffffff");
@@ -283,6 +466,11 @@
     this.goldEarned += creep.bounty;
     this.float(creep.x, creep.y, "+" + creep.bounty, "#ffd54f");
     this.fx.push({ kind: "ring", x: creep.x, y: creep.y, color: "#cfd8dc", life: 0.35, max: 0.35, r: 14 });
+    if (creep.boss) {
+      this.banner(this.lang === "zh"
+        ? "★ " + (creep.name[this.lang] || creep.name.zh) + " 已被击杀！"
+        : "★ " + (creep.name[this.lang] || creep.name.en) + " has fallen!", "#aed581");
+    }
   };
 
   Game.prototype._leak = function (creep) {
@@ -291,7 +479,7 @@
     creep.hp = 0;
     this.lives = S.livesAfterLeak(this.lives, 1, creep.boss ? 2 : 1);
     if (this.audio) this.audio.leak();
-    this.announce(this.lang === "zh" ? "敌军漏入要塞！" : "A creep leaked into the keep!");
+    this.announce(this.msg("leak", { lives: this.lives }));
     if (this.lives <= 0) this._end("defeat");
   };
 
@@ -318,39 +506,152 @@
     } catch (e) { /* headless */ }
   };
 
+  /* ------------------------------------------------------------------ *
+   * Hero abilities
+   * ------------------------------------------------------------------ */
+
   Game.prototype.cast = function (slot) {
     const h = this.hero;
     if (!h || this.ended) return false;
     const def = h.def[slot];
     if (!def) return false;
+    if (h.dead) return false;
     if (h.cd[slot] > 0) return false;
-    if (h.mana < def.mana) return false;
-    h.mana -= def.mana;
-    h.cd[slot] = def.cd;
-    const target = this._closestCreep(h.x, h.y, 220);
-    if (slot === "q") {
-      if (h.def.id === "paladin") {
-        if (target) this._hitCreep(target, def.dmg, "spells", { canHitFlying: true });
-      } else if (h.def.id === "blademaster") {
-        h.critUntil = this.time + 5;
-      } else if (h.def.id === "demonhunter" && target) {
-        this._hitCreep(target, def.dmg, "spells", { canHitFlying: true });
-      } else if (target) {
-        this._hitCreep(target, def.dmg, "spells", { canHitFlying: true });
-      }
-    } else if (slot === "w") {
-      if (h.def.id === "demonhunter") h.immolation = !h.immolation;
-    } else if (slot === "e") {
-      if (h.def.id === "paladin") h.shield = def.dur;
-      if (h.def.id === "blademaster") h.speedBoost = def.dur;
-      if (h.def.id === "demonhunter") h.metaUntil = this.time + def.dur;
-      if (h.def.id === "deathknight") {
-        this.gold += 25;
-        this.float(h.x, h.y, "+25", "#90caf9");
-      }
+    if (def.toggle && h.immolation) {
+      h.immolation = false;
+      h.cd[slot] = def.cd || 1;
+      this.announce(this.msg("heroCast", {
+        hero: h.def.name[this.lang] || h.def.name.zh,
+        spell: (def[this.lang] || def.zh) + (this.lang === "zh" ? "（关闭）" : " (off)"),
+      }));
+      return true;
     }
+    if (h.mana < (def.mana || 0)) return false;
+    h.mana -= def.mana || 0;
+    h.cd[slot] = def.cd || 0;
+    if (def.toggle) h.immolation = true;
+    else if (slot === "q") this._castQ(h, def);
+    else if (slot === "w") this._castW(h, def);
+    else if (slot === "e") this._castE(h, def);
+    this.announce(this.msg("heroCast", {
+      hero: h.def.name[this.lang] || h.def.name.zh,
+      spell: def[this.lang] || def.zh,
+    }));
     this.fx.push({ kind: "ring", x: h.x, y: h.y, color: h.def.color, life: 0.4, max: 0.4, r: 28 });
     return true;
+  };
+
+  Game.prototype._castQ = function (h, def) {
+    const id = h.def.id;
+    const target = this._closestCreep(h.x, h.y, def.cast || 240);
+    if (id === "blademaster") {
+      h.critUntil = this.time + (def.dur || 5);
+      h.cleaveUntil = this.time + (def.dur || 5);
+      this.ring(h.x, h.y, "#ff7043", 0.5, 34);
+      return;
+    }
+    if (!target) {
+      if (def.heal) this._healHero(h, def.heal * 0.5);
+      return;
+    }
+    let dmg = def.dmg || 0;
+    if (id === "demonhunter" && target.boss) dmg += def.bossBonus || 0;
+    this._hitCreep(target, dmg, "spells", { canHitFlying: true });
+    this.ring(target.x, target.y, h.def.color, 0.45, 26);
+    if (id === "paladin" && def.nova) {
+      const near = this.hash.queryRadius(target.x, target.y, def.novaRadius || 70);
+      for (let i = 0; i < near.length; i++) {
+        if (near[i] === target) continue;
+        this._hitCreep(near[i], dmg * def.nova, "spells", { canHitFlying: true });
+      }
+    }
+    if (id === "demonhunter" && def.shred) {
+      target.shred = Math.max(target.shred || 0, def.shredDur || 8);
+      target.shredAmt = Math.max(target.shredAmt || 0, def.shred);
+      this.float(target.x, target.y - 22, "-" + def.shred + " ARM", "#b39ddb");
+    }
+    if (def.heal) this._healHero(h, def.heal);
+  };
+
+  Game.prototype._castW = function (h, def) {
+    const id = h.def.id;
+    if (id === "blademaster") {
+      h.imagesUntil = this.time + (def.dur || 6);
+      this.ring(h.x, h.y, "#ffb74d", 0.6, 30);
+      return;
+    }
+    if (def.affects === "towers") {
+      h.auraBoostUntil = this.time + (def.dur || 8);
+      this.ring(h.x, h.y, h.def.color, 0.8, def.radius || 200);
+    }
+  };
+
+  Game.prototype._castE = function (h, def) {
+    const id = h.def.id;
+    if (id === "paladin") {
+      h.shield = def.dur || 4;
+      h.invulnUntil = this.time + (def.dur || 4);
+      h.frenzyUntil = this.time + (def.dur || 4);
+      this._healHero(h, h.maxHp * 0.15);
+    } else if (id === "blademaster") {
+      h.speedBoost = def.dur || 3;
+      h.invulnUntil = this.time + (def.dur || 3);
+      h.ambush = true;
+    } else if (id === "demonhunter") {
+      h.metaUntil = this.time + (def.dur || 8);
+      this.ring(h.x, h.y, "#7e57c2", 0.9, 40);
+    } else if (id === "deathknight") {
+      const n = def.count || 2;
+      for (let i = 0; i < n; i++) this._summonSkeleton(h, i, n, def);
+      if (def.gold) {
+        this.gold += def.gold;
+        this.goldEarned += def.gold;
+        this.float(h.x, h.y, "+" + def.gold, "#90caf9");
+      }
+    }
+  };
+
+  Game.prototype._healHero = function (h, amount) {
+    if (!amount) return;
+    const before = h.hp;
+    h.hp = Math.min(h.maxHp, h.hp + amount);
+    const healed = Math.round(h.hp - before);
+    if (healed > 0) this.float(h.x, h.y - 20, "+" + healed, "#a5d6a7");
+  };
+
+  Game.prototype._summonSkeleton = function (h, i, n, def) {
+    const skDef = D.SUMMONS.skeleton;
+    const ang = (Math.PI * 2 * i) / n + 0.6;
+    const x = S.clamp(h.x + Math.cos(ang) * 34, 8, this.mapW * this.tile - 8);
+    const y = S.clamp(h.y + Math.sin(ang) * 34, 8, this.mapH * this.tile - 8);
+    const dmg = (def.dmg || 24) + this.waveIndex * 2;
+    this.towers.push({
+      id: nid(),
+      kind: "tower",
+      temp: true,
+      expire: this.time + (def.dur || 12),
+      def: skDef,
+      race: skDef.race,
+      x: x,
+      y: y,
+      tx: -1,
+      ty: -1,
+      tier: 3,
+      invested: 0,
+      range: skDef.range[2],
+      dmg: dmg,
+      rate: skDef.rate[2],
+      attackType: skDef.attackType,
+      canHitFlying: skDef.canHitFlying,
+      splash: 0,
+      chain: 0,
+      slow: 0,
+      poison: 0,
+      root: 0,
+      cd: 0,
+      stun: 0,
+    });
+    this.ring(x, y, "#cfd8dc", 0.5, 18);
   };
 
   Game.prototype._closestCreep = function (x, y, range) {
@@ -371,6 +672,26 @@
     this.hero.ty = y;
   };
 
+  /** Tower-facing aura contributed by the hero's W (Devotion / Unholy). */
+  Game.prototype._heroAura = function () {
+    const h = this.hero;
+    if (!h || h.dead) return null;
+    const w = h.def.w;
+    if (!w || w.affects !== "towers" || !w.aura) return null;
+    const power = h.auraBoostUntil > this.time ? (w.boost || w.aura) : w.aura;
+    return {
+      x: h.x,
+      y: h.y,
+      r2: (w.radius || 180) * (w.radius || 180),
+      dmg: w.stat === "dmg" ? power : 0,
+      rate: w.stat === "rate" ? power : 0,
+    };
+  };
+
+  /* ------------------------------------------------------------------ *
+   * Simulation
+   * ------------------------------------------------------------------ */
+
   Game.prototype.update = function (dt) {
     if (this.paused || this.ended) {
       this._tickFx(dt);
@@ -382,6 +703,7 @@
     this._tickWave(step);
     this._tickCreeps(step);
     this._rebuildHash();
+    this._tickBossAbilities(step);
     this._tickTowers(step);
     this._tickHero(step);
     this._tickProjectiles(step);
@@ -396,14 +718,22 @@
       const g = S.interestGold(this.gold, this.interestRate);
       this.gold += g;
       this.goldEarned += g;
-      if (g > 0) this.announce((this.lang === "zh" ? "利息 +" : "Interest +") + g);
+      if (g > 0) this.announce(this.msg("interest", { gold: g }));
     }
   };
 
   Game.prototype._tickWave = function (dt) {
     if (this.betweenWaves) {
+      const next = this.waves[this.waveIndex];
+      if (next && next.boss) this._chargePortal(dt);
       if (this.waveIndex > 0 && this.waveIndex < this.waves.length) {
+        const before = this.autoWave;
         this.autoWave -= dt;
+        if (before > 5 && this.autoWave <= 5 && this.autoWave > 0) {
+          this.announce(next && next.boss
+            ? this.msg("bossCountdown", { secs: 5 })
+            : this.msg("countdown", { secs: 5 }));
+        }
         if (this.autoWave <= 0) this.startNextWave();
       }
       return;
@@ -419,17 +749,33 @@
     }
   };
 
+  /** Portal pulses ahead of a boss wave so the player can read the threat. */
+  Game.prototype._chargePortal = function (dt) {
+    this._portalAcc += dt;
+    if (this._portalAcc < 0.6) return;
+    this._portalAcc = 0;
+    const p = this.path[0];
+    this.ring(p.x, p.y, "#ff5252", 0.6, 26);
+  };
+
   Game.prototype._tickCreeps = function (dt) {
     const path = this.path;
+    const bosses = [];
     for (let i = 0; i < this.creeps.length; i++) {
       const c = this.creeps[i];
       c.px = c.x;
       c.py = c.y;
+      c.armorBonus = 0;
+      if (c.shred > 0) c.shred -= dt;
       if (c.hp <= 0) continue;
+      if (c.boss) {
+        bosses.push(c);
+        this._tickBossState(c, dt);
+      }
       if (c.poison > 0) {
         c.poison -= dt;
         c.hp -= 6 * dt;
-        if (c.hp <= 0) this._killCreep(c);
+        if (c.hp <= 0) { this._killCreep(c); continue; }
       }
       if (c.root > 0) { c.root -= dt; continue; }
       const slowMul = c.slow > 0 ? 0.65 : 1;
@@ -440,15 +786,83 @@
       c.y = pos.y;
       if (pos.done) this._leak(c);
     }
+    this._bossCreeps = bosses;
     this.creeps = this.creeps.filter(function (c) { return c.hp > 0 && !c._dead; });
   };
 
-  Game.prototype._tickTowers = function (dt) {
+  /** Per-boss regeneration and the enrage threshold. */
+  Game.prototype._tickBossState = function (c, dt) {
+    const regen = this._abilityDef(c, "regen");
+    if (regen) {
+      c.hp = Math.min(c.maxHp, c.hp + c.maxHp * regen.regen * dt);
+    }
+    if (!c.enraged && c.hp <= c.maxHp * D.BOSS_ENRAGE.at) {
+      c.enraged = true;
+      c.speed *= D.BOSS_ENRAGE.speed;
+      this.banner(this.msg("bossEnrage", { name: c.name[this.lang] || c.name.zh }), "#ff7043");
+      this.ring(c.x, c.y, "#ff5252", 0.7, 30);
+    }
+  };
+
+  /** Boss auras and the telegraphed War Stomp. */
+  Game.prototype._tickBossAbilities = function (dt) {
+    const bosses = this._bossCreeps;
+    this._frostSources = [];
+    if (!bosses.length) return;
+    for (let i = 0; i < bosses.length; i++) {
+      const c = bosses[i];
+      if (c.hp <= 0) continue;
+      const frost = this._abilityDef(c, "frost");
+      if (frost) this._frostSources.push({ x: c.x, y: c.y, r2: frost.radius * frost.radius, slow: frost.slow });
+      const shroud = this._abilityDef(c, "shroud");
+      if (shroud) {
+        const near = this.hash.queryRadius(c.x, c.y, shroud.radius);
+        for (let k = 0; k < near.length; k++) near[k].armorBonus = (near[k].armorBonus || 0) + shroud.armor;
+      }
+      const stomp = this._abilityDef(c, "stomp");
+      if (!stomp) continue;
+      c.castCd -= dt;
+      if (!c.warned && c.castCd <= stomp.warn) {
+        c.warned = true;
+        this.banner(this.msg("bossStompWarn", { name: c.name[this.lang] || c.name.zh }), "#ffab40");
+        this.ring(c.x, c.y, "#ffab40", stomp.warn, stomp.radius);
+      }
+      if (c.castCd <= 0) {
+        c.castCd = stomp.cd;
+        c.warned = false;
+        this._warStomp(c, stomp);
+      }
+    }
+  };
+
+  Game.prototype._warStomp = function (boss, stomp) {
+    let hitCount = 0;
     for (let i = 0; i < this.towers.length; i++) {
       const t = this.towers[i];
+      if (S.dist2(boss.x, boss.y, t.x, t.y) > stomp.radius * stomp.radius) continue;
+      t.stun = Math.max(t.stun || 0, stomp.stun);
+      this.float(t.x, t.y - 26, this.lang === "zh" ? "震晕" : "STUN", "#ffab40");
+      hitCount += 1;
+    }
+    this.ring(boss.x, boss.y, "#ff8a65", 0.6, stomp.radius);
+    if (hitCount > 0) this.announce(this.msg("bossStomp", { n: hitCount }));
+  };
+
+  Game.prototype._tickTowers = function (dt) {
+    const aura = this._heroAura();
+    const frost = this._frostSources;
+    let expired = false;
+    for (let i = 0; i < this.towers.length; i++) {
+      const t = this.towers[i];
+      if (t.temp && t.expire <= this.time) { expired = true; continue; }
+      if (t.stun > 0) {
+        t.stun -= dt;
+        continue;
+      }
       t.cd -= dt;
       if (t.cd > 0) continue;
-      const targets = this.hash.queryRadius(t.x, t.y, t.range);
+      const range = t.range * this.towerRangeMul;
+      const targets = this.hash.queryRadius(t.x, t.y, range);
       let pick = null;
       let best = -1;
       for (let k = 0; k < targets.length; k++) {
@@ -457,13 +871,35 @@
         if (c.dist > best) { best = c.dist; pick = c; }
       }
       if (!pick) continue;
-      t.cd = t.rate;
-      this._fire(t, pick);
+      let rate = t.rate;
+      let dmg = t.dmg * this.towerDamageMul;
+      if (aura && S.dist2(aura.x, aura.y, t.x, t.y) <= aura.r2) {
+        if (aura.rate) rate /= 1 + aura.rate;
+        if (aura.dmg) dmg *= 1 + aura.dmg;
+      }
+      for (let f = 0; f < frost.length; f++) {
+        if (S.dist2(frost[f].x, frost[f].y, t.x, t.y) <= frost[f].r2) {
+          rate *= 1 + frost[f].slow;
+          break;
+        }
+      }
+      t.cd = rate;
+      this._fire(t, pick, dmg);
       if (this.audio) this.audio.shoot(t.race);
+    }
+    if (expired) {
+      const now = this.time;
+      const self = this;
+      this.towers = this.towers.filter(function (t) {
+        if (!t.temp || t.expire > now) return true;
+        self.ring(t.x, t.y, "#90a4ae", 0.4, 16);
+        if (self.selected === t) self.selected = null;
+        return false;
+      });
     }
   };
 
-  Game.prototype._fire = function (tower, target) {
+  Game.prototype._fire = function (tower, target, dmg) {
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const len = Math.hypot(dx, dy) || 1;
@@ -474,7 +910,7 @@
       vx: (dx / len) * spd,
       vy: (dy / len) * spd,
       targetId: target.id,
-      dmg: tower.dmg,
+      dmg: dmg == null ? tower.dmg : dmg,
       attackType: tower.attackType,
       splash: tower.splash,
       chain: tower.chain,
@@ -545,17 +981,19 @@
     h.cd.q = Math.max(0, h.cd.q - dt);
     h.cd.w = Math.max(0, h.cd.w - dt);
     h.cd.e = Math.max(0, h.cd.e - dt);
-    h.mana = Math.min(h.maxMana, h.mana + 6 * dt);
-    if (h.shield > 0) h.shield -= dt;
-    const auraArmor = h.def.w && h.def.w.aura && h.def.id === "paladin" ? h.def.w.aura : 0;
-    this._heroAuraArmor = auraArmor;
-    if (h.def.id === "deathknight") {
-      for (let i = 0; i < this.creeps.length; i++) {
-        /* unholy: towers already shoot faster visually via rate — apply small haste */
-      }
+    if (h.dead) {
+      h.respawn -= dt;
+      h.mana = Math.min(h.maxMana, h.mana + HERO_MANA_REGEN * 0.5 * dt);
+      if (h.respawn <= 0) this._reviveHero(h);
+      return;
     }
-    const spd = 90 * (h.speedBoost > 0 ? 1.6 : 1);
-    if (h.speedBoost > 0) h.speedBoost -= dt;
+    h.mana = Math.min(h.maxMana, h.mana + HERO_MANA_REGEN * dt);
+    h.hp = Math.min(h.maxHp, h.hp + HERO_HP_REGEN * dt);
+    if (h.shield > 0) h.shield = Math.max(0, h.shield - dt);
+    if (h.speedBoost > 0) h.speedBoost = Math.max(0, h.speedBoost - dt);
+
+    const sprint = h.speedBoost > 0 ? (h.def.e.speed || 1.6) : 1;
+    const spd = 90 * sprint;
     const dx = h.tx - h.x;
     const dy = h.ty - h.y;
     const dist = Math.hypot(dx, dy);
@@ -563,23 +1001,125 @@
       h.x += (dx / dist) * spd * dt;
       h.y += (dy / dist) * spd * dt;
     }
+
     h.attackCd -= dt;
-    const range = h.metaUntil > this.time ? h.def.range + 40 : h.def.range;
-    const tgt = this._closestCreep(h.x, h.y, range);
-    if (tgt && h.attackCd <= 0) {
-      h.attackCd = h.def.rate;
-      let dmg = h.def.dmg * (h.metaUntil > this.time ? 1.45 : 1);
-      if (h.critUntil > this.time) dmg *= 2.2;
-      this._hitCreep(tgt, dmg, "hero", { canHitFlying: true });
+    if (h.attackCd <= 0) this._heroAttack(h);
+    this._heroImmolation(h, dt);
+    this._heroTakeDamage(h, dt);
+  };
+
+  Game.prototype._heroAttack = function (h) {
+    const meta = h.metaUntil > this.time;
+    const range = h.def.range + (meta ? (h.def.e.rangeBonus || 0) : 0);
+    const target = this._closestCreep(h.x, h.y, range);
+    if (!target) return;
+    let rate = h.def.rate;
+    if (h.frenzyUntil > this.time) rate *= h.def.e.hasteMul || 0.5;
+    if (meta) rate *= h.def.e.hasteMul || 1;
+    h.attackCd = rate;
+
+    let dmg = h.def.dmg;
+    if (meta) dmg *= h.def.e.dmgMul || 1.45;
+    if (h.critUntil > this.time) dmg *= h.def.q.crit || 2.2;
+    if (h.ambush) {
+      dmg *= h.def.e.ambush || 3;
+      h.ambush = false;
+      this.float(target.x, target.y - 26, this.lang === "zh" ? "偷袭!" : "AMBUSH!", "#ffcc80");
     }
-    if (h.immolation) {
-      h.mana = Math.max(0, h.mana - h.def.w.mana * dt);
-      if (h.mana <= 0) h.immolation = false;
-      const near = this.hash.queryRadius(h.x, h.y, 70);
+    this._hitCreep(target, dmg, "hero", HERO_SOURCE);
+
+    if (h.cleaveUntil > this.time && h.def.q.cleave) {
+      const near = this.hash.queryRadius(target.x, target.y, h.def.q.cleaveRadius || 50);
       for (let i = 0; i < near.length; i++) {
-        this._hitCreep(near[i], (h.def.w.aura || 8) * dt, "spells", { canHitFlying: true });
+        if (near[i] === target) continue;
+        this._hitCreep(near[i], dmg * h.def.q.cleave, "hero", HERO_SOURCE);
       }
     }
+    if (meta && h.def.e.splash) {
+      const near = this.hash.queryRadius(target.x, target.y, h.def.e.splash);
+      for (let i = 0; i < near.length; i++) {
+        if (near[i] === target) continue;
+        this._hitCreep(near[i], dmg * (h.def.e.splashRatio || 0.4), "hero", HERO_SOURCE);
+      }
+    }
+    if (h.imagesUntil > this.time && h.def.w.images) {
+      const extras = this.hash.queryRadius(h.x, h.y, h.def.range + 24);
+      let struck = 0;
+      for (let i = 0; i < extras.length && struck < h.def.w.images; i++) {
+        if (extras[i] === target || extras[i].hp <= 0) continue;
+        this._hitCreep(extras[i], h.def.dmg * (h.def.w.imageDmg || 0.45), "hero", HERO_SOURCE);
+        struck += 1;
+      }
+    }
+  };
+
+  Game.prototype._heroImmolation = function (h, dt) {
+    if (!h.immolation) return;
+    const w = h.def.w;
+    h.mana = Math.max(0, h.mana - (w.drain || 8) * dt);
+    if (h.mana <= 0) {
+      h.immolation = false;
+      return;
+    }
+    const near = this.hash.queryRadius(h.x, h.y, w.radius || 70);
+    for (let i = 0; i < near.length; i++) {
+      this._hitCreep(near[i], (w.aura || 8) * dt, "spells", { canHitFlying: true });
+    }
+  };
+
+  /** Ground creeps in melee range chew on the hero unless it is immune. */
+  Game.prototype._heroTakeDamage = function (h, dt) {
+    if (h.invulnUntil > this.time) return;
+    const near = this.hash.queryRadius(h.x, h.y, HERO_MELEE_RANGE);
+    let dps = 0;
+    for (let i = 0; i < near.length; i++) {
+      const c = near[i];
+      if (c.flying || c.hp <= 0) continue;
+      dps += 3 + c.wave * 0.5 + (c.boss ? 12 : 0);
+    }
+    if (dps <= 0) return;
+    h.hp -= Math.min(dps, 60) * dt;
+    if (h.hp <= 0) this._heroDown(h);
+  };
+
+  Game.prototype._heroDown = function (h) {
+    h.hp = 0;
+    h.dead = true;
+    h.respawn = HERO_DOWN_TIME;
+    h.immolation = false;
+    h.critUntil = 0;
+    h.cleaveUntil = 0;
+    h.imagesUntil = 0;
+    h.metaUntil = 0;
+    h.frenzyUntil = 0;
+    h.auraBoostUntil = 0;
+    h.shield = 0;
+    const home = this._heroHome();
+    h.x = home.x;
+    h.y = home.y;
+    h.tx = home.x;
+    h.ty = home.y;
+    this.announce(this.msg("heroDown", {
+      hero: h.def.name[this.lang] || h.def.name.zh,
+      secs: HERO_DOWN_TIME,
+    }));
+    if (this.audio) this.audio.leak();
+  };
+
+  Game.prototype._reviveHero = function (h) {
+    h.dead = false;
+    h.hp = h.maxHp;
+    h.mana = Math.max(h.mana, h.maxMana * 0.5);
+    h.attackCd = 0;
+    const home = this._heroHome();
+    h.x = home.x;
+    h.y = home.y;
+    h.px = home.x;
+    h.py = home.y;
+    h.tx = home.x;
+    h.ty = home.y;
+    this.announce(this.msg("heroRevive", { hero: h.def.name[this.lang] || h.def.name.zh }));
+    this.ring(h.x, h.y, h.def.color, 0.8, 30);
   };
 
   Game.prototype._tickFx = function (dt) {
@@ -600,15 +1140,40 @@
     this.waveIndex += 1;
     if (this.waveIndex % 5 === 0) {
       this.lumber += 1;
-      this.announce(this.lang === "zh" ? "获得 1 木材" : "+1 lumber");
+      this.announce(this.msg("lumberGain", { total: this.lumber }));
     }
     if (this.waveIndex >= this.waves.length) {
       this._end("victory");
       return;
     }
+    const next = this.waves[this.waveIndex];
     this.betweenWaves = true;
-    this.autoWave = 12;
-    this.announce(this.lang === "zh" ? "波次肃清。12 秒后下一波。" : "Wave cleared. Next in 12s.");
+    this.autoWave = next.prep || 12;
+    this._portalAcc = 0;
+    this.announce(this.msg("waveCleared", { n: wave.index, secs: this.autoWave }));
+    this._previewNext(next);
+  };
+
+  Game.prototype._previewNext = function (next) {
+    this.announce(this.msg("waveNext", {
+      name: this.waveLabel(next),
+      count: next.count,
+      armor: D.armorLabel(next.armorType, this.lang),
+      fly: this._flyTag(next),
+    }));
+    if (next.boss) {
+      this.banner(this.msg("bossSoon", { name: this.waveLabel(next) }), "#ff8a65");
+      return;
+    }
+    const later = this.waves[this.waveIndex + 1];
+    if (later && later.boss && this._warnedBoss !== later.index) {
+      this._warnedBoss = later.index;
+      this.announce(this.msg("bossFar", {
+        waves: 2,
+        name: this.waveLabel(later),
+        ability: D.abilityText(later.abilities, this.lang),
+      }));
+    }
   };
 
   Game.prototype.pickAt = function (x, y) {
@@ -623,12 +1188,14 @@
   };
 
   Game.prototype.snapshot = function () {
+    let towers = 0;
+    for (let i = 0; i < this.towers.length; i++) if (!this.towers[i].temp) towers += 1;
     return {
       gold: this.gold,
       lumber: this.lumber,
       lives: this.lives,
       wave: this.waveIndex,
-      towers: this.towers.length,
+      towers: towers,
       creeps: this.creeps.length,
       ended: this.ended,
       time: Math.round(this.time * 1000) / 1000,
