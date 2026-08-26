@@ -7,10 +7,11 @@
 
 /* --------------------------------------------------------------------------
    0. 组件 token 缺口补丁
-   tokens.css 尚未覆盖、但 DESIGN_SYSTEM 已给出取值的量集中在此，便于后续并入 token 层
+   tokens.css 尚未覆盖、但 DESIGN_SYSTEM 已给出取值的量都集中在此，便于后续并入 token 层
    -------------------------------------------------------------------------- */
 :root {
   --btn-primary-shadow-press: var(--shadow-btn-press); /* §9.1 要求但 tokens.css 未定义 */
+  --btn-gold-bg-press: linear-gradient(160deg, var(--gold-400) 0%, var(--gold-600) 100%);
   --btn-ghost-bg-hover: var(--cream-100);
   --btn-ghost-bg-press: var(--cream-200);
   --choice-selected-ring: var(--rose-500);
@@ -324,6 +325,11 @@ button {
   text-shadow: none;
   box-shadow: var(--btn-gold-shadow);
 }
+@media (hover: hover) and (pointer: fine) {
+  .btn.gold:hover:not([disabled]) { box-shadow: var(--btn-gold-shadow); }
+}
+/* 金按钮不能落到主按钮的玫瑰按压底上，按压走金渐变深端 */
+.btn.gold:active:not([disabled]) { background: var(--btn-gold-bg-press); box-shadow: var(--shadow-gold); }
 .btn.gold:focus-visible { box-shadow: var(--btn-gold-shadow), var(--ring-focus); }
 
 .btn[disabled], .btn:disabled {
