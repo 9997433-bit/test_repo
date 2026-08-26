@@ -71,14 +71,16 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
       const wantDist = 7.1 + Math.min(1.6, speed * 0.11) + airborne * 0.12;
       state.dist = damp(state.dist, wantDist, 3.2, dt);
 
+      // yaw = 0 面向 -Z（与 sim 的 forwardX/forwardZ 一致），
+      // 所以「身后」是 +(sin yaw, cos yaw)，镜头就架在那儿。
       const sy = Math.sin(state.yaw);
       const cy = Math.cos(state.yaw);
       const height = 2.5 + Math.sin(pitch) * state.dist * 0.9;
 
       desired.set(
-        focus.x - sy * state.dist,
+        focus.x + sy * state.dist,
         focus.y + height,
-        focus.z - cy * state.dist
+        focus.z + cy * state.dist
       );
       // 别钻进云海，也别贴着台面刮
       if (desired.y < focus.y + 1.2) desired.y = focus.y + 1.2;
@@ -94,10 +96,11 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
         state.lead.x = damp(state.lead.x, vel.x * 0.16, 4, dt);
         state.lead.z = damp(state.lead.z, vel.z * 0.16, 4, dt);
       }
+      // 视点落在角色正前方一米多的地方，构图上人物就不会永远钉在画面正中
       lookTarget.set(
-        focus.x + state.lead.x + sy * 1.1,
+        focus.x + state.lead.x - sy * 1.1,
         focus.y + 1.45,
-        focus.z + state.lead.z + cy * 1.1
+        focus.z + state.lead.z - cy * 1.1
       );
       state.look.x = damp(state.look.x, lookTarget.x, 9, dt);
       state.look.y = damp(state.look.y, lookTarget.y, 7, dt);
