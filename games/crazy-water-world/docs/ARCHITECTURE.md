@@ -1,9 +1,9 @@
-# 架构（Round 2 落地版）
+# 架构（Round 3 第一波结账版）
 
-> 维护者：Fable-1（架构 / API 契约）。基线：Round 2 合并树 commit `633f731`，分支 `cursor/crazy-water-world-c895`（Round 1 冻结稿基线 `14b21c9`）。
+> 维护者：Fable-1（架构 / API 契约）。基线：Round 2 合并树 commit `633f731` + Round 3 Opus-1 结账（分支 `cursor/r3-opus1-quantum-patrol-and-save-normalize-18ac`，tip `30d3eb4`：stepSim 挂巡检 + normalize 收编 + store 撤领域层 import），主分支 `cursor/crazy-water-world-c895`（Round 1 冻结稿基线 `14b21c9`）。
 > 配套文档：`docs/API_CONTRACT.md`（严格契约与禁止改名清单）。改代码前先读契约。
 >
-> 标记约定：**[冻结]** 不得变更；**[附加]** 允许新增、不得破坏既有行为；**[R3]** 下一轮要落实。
+> 标记约定：**[冻结]** 不得变更；**[附加]** 允许新增、不得破坏既有行为；**[R3]** 本轮要落实。
 
 ## 0. 技术选型 [冻结]
 
@@ -26,7 +26,7 @@
              │                                │
    ┌─────────▼─────────┐            ┌─────────▼─────────────┐
    │ world/sim.js      │            │ ui/app.js render()    │──▶ ui/screens/* ui/dom.js
-   │ explore/salvage.js│            │  （唯一 DOM 组装点）    │──▶ world/canvas.js audio/sfx.js
+   │ explore/* heroes/*│            │  （唯一 DOM 组装点）    │──▶ world/canvas.js audio/sfx.js
    └─────────┬─────────┘            └─────────┬─────────────┘
              │      两侧都只通过 store 交换状态  │
    ┌─────────▼────────────────────────────────▼─────────┐
@@ -50,22 +50,22 @@
    └────────────────────────────────────────────────────┘
 ```
 
-允许的依赖边（import 方向）**[冻结，含一处已记录豁免]**：
+允许的依赖边（import 方向）**[冻结，Round 2 的唯一豁免已撤销]**：
 
 | 发起方 | 允许 import |
 | --- | --- |
 | `src/data/**` | 什么都不许（叶子层，纯常量 + 无副作用工厂函数） |
 | `core/reasons.js` | 什么都不许（叶子层） |
 | `world/ explore/ heroes/ combat/` | `src/data/**`、`core/rng.js`、`core/reasons.js`，以及本目录内文件 |
-| `core/store.js` | `src/data/**`、`core/rng.js`；**豁免：`world/mods.js`**（为 `defaultState` 落 `world.mods` 快照；无环，契约 §10-N6 记录，R3 决定正式放宽或迁走） |
-| `core/engine.js` | `core/**`、`world/sim.js`、`explore/salvage.js`；**不得 import `ui/**`（静态与动态都禁，D1 已关并有此现状）** |
+| `core/store.js` | `src/data/**`、`core/rng.js`；**不再 import 任何领域层**（Round 2 的 `world/mods.js` 豁免已撤：`defaultState` 不再预算 `world.mods`，快照盖章归 `tickWorld`，契约 §10-N6 已关） |
+| `core/engine.js` | `core/**`、`world/sim.js`、`explore/index.js`、`heroes/index.js`（巡检与下潜结账走各域门面）；**不得 import `ui/**`（静态与动态都禁，D1 已关并有此现状）** |
 | `ui/**` | 任何 `src/**` |
 | `src/main.js` | `core/**`、`ui/app.js`（render 注入）、`styles/**` |
 | 任何文件 | **禁止** import 仓库根、`../../`、其他 `games/*`、任何 npm 运行时包 |
 
 跨域读数不走 import 的两个特例 [冻结]：
 
-1. **explore 读天气不 import world**：`world/sim.js` 每量子把 `weatherMods()` 结果落成 `state.world.mods` 快照，`explore/mods.js` 优先读快照、缺席时按 `data/weather.js` 回退——数值只有一份，依赖边也没破。
+1. **explore 读天气不 import world**：`world/sim.js` 每量子把 `weatherMods()` 结果落成 `state.world.mods` 快照，`explore/mods.js` 优先读快照、缺席时按 `data/weather.js` 回退——数值只有一份，依赖边也没破。快照现在**只由 `tickWorld` 盖章**（`defaultState` 不再预算，存档带来的 mods 由 normalize 剥离）：新档第一个量子之前 mods 缺席，回退路径因此不是死代码。
 2. **explore 的失败码不 import core/reasons**：`EXPLORE_REASON` 按值复刻码面字符串（另加探索独有 `E_WEATHER`），避免反向依赖；码面必须与 `core/reasons.js` 保持字面一致。
 
 每个领域目录的 `index.js` 是对外唯一门面，UI 与测试原则上只从门面或契约列出的具体文件导入。
@@ -73,7 +73,7 @@
 ## 2. 时钟模型
 
 - **模拟量子 [冻结]**：0.1s（`engine.QUANTUM`）。`boot()` 里 rAF 累加真实时间 × `meta.speed`（1/2/4），每攒满 0.1s 执行一次 `stepSim`。`meta.tick` 是**唯一的模拟时间轴**，所有派生随机都以它为盐（§4），伤病到期时刻也锚在它上面（`heroes.nowSeconds = tick × 0.1`）。
-- **纯量子入口 `stepSim` [冻结]**，铁序：`settleOffline(s, idleSince)` → `tickWorld(s, 0.1)` → `spawnFlotsam(s, deriveRng(seed, tick, "salvage"))` → `idleSince = 0` → `tick += 1`。测试驱动与线上完全一致的时间轴。**[R3]** `tickInjuries` 与 `syncExploreWeather` 已是「无事原引用」的纯巡检，接入位置应在 tick+1 之前追加（属附加变更，但会改挂机日志序列，需声明）——见契约 §10-N3。
+- **纯量子入口 `stepSim` [冻结]**，铁序（Round 3 起）：`settleOffline(s, idleSince)` → `tickWorld(s, 0.1)`（内含 `world.mods` 盖章） → `spawnFlotsam(s, deriveRng(seed, tick, "salvage"))`（只换 `salvage.flotsam`，`picked/rarePicked/lastPick` 累计字段保留） → `tickInjuries(s)` → `syncExploreWeather(s)` → 被巡检拽上来的 `explore.dive.done` 会话当场 `finishDive` 结账 → `idleSince = 0` → `tick += 1`。测试驱动与线上完全一致的时间轴。巡检铁律：排在 `tickWorld` 之后（读到的就是本量子刚盖章的新天气）、**不消费随机数**（拾荒派生流与接线前逐位一致；巡检日后要掷骰必须另派独立盐，不许蹭 `"salvage"` 游标）；无事时巡检与结账全部原引用短路，挂满每个量子的成本为零。接线已如约改变挂机日志序列（归队 / 强制收杆 / 强制上浮 / 下潜结账日志入流）——契约 §10-N3 已关。
 - 单帧真实 dt 上限 0.05s：掉帧时模拟变慢而不是跳变（有意为之，不算缺陷）。
 - 昼夜：`timeOfDay += dt/240`，一天 240 秒（1x 速度）。天气时长读 `WEATHERS[*].durationSec`；权重按 `hqLevel` 取 `WEATHER_SCHEDULE` 档位（开荒期不出海啸），无档回退 `WEATHER_WEIGHTS`。
 - **离线补算 [冻结]**：`saveState` 盖 `meta.savedAt`（墙钟毫秒，仅存档壳层写）；`hydrateSave` 把差值折进 `campaign.idleSince`（8h 封顶）；`stepSim` 首步 `settleOffline` 切 ≤120 块粗粒度 `tickWorld` 补产出，不补漂浮物、不留逐条天气日志。残留：块间天气派生流重放（契约 §10-N7）。
@@ -119,7 +119,7 @@
 - `store.patch` 是**顶层浅合并**——改嵌套字段必须自带展开（`{ meta: { ...s.meta, x } }`）。深层直接赋值 = 契约违规。
 - 存档：`localStorage["cww.save.v1"]`，内容 = `JSON.stringify(GameState)` 全量 + `savedAt`。键前缀 `cww.` 是本游戏在 localStorage 的命名空间 **[冻结]**。
 - 自动存档：started 状态下每 4s 一次 + `beforeunload` 落盘；读档时 `started` 强制回 false（回标题屏）。
-- **读档健壮性 [冻结]**：`hydrateSave/normalize` 深合并 + 逐字段钳域 + tiles 重建 + `world.mods` 作废重算，坏 JSON/脏档不再毒化模拟（D10 钳域侧已关）。**已知债**：explore 分支白名单丢附加字段（契约 §10-N1）。
+- **读档健壮性 [冻结]**：`hydrateSave/normalize` 深合并 + 逐字段钳域 + tiles 重建 + 存档 `world.mods` 剥离（首个量子 `tickWorld` 重新盖章），坏 JSON/脏档不再毒化模拟（D10 钳域侧已关）。explore 分支已从整段白名单改为**逐字段收编 + 钳域**（图鉴 / 拾荒计数 / 潜水战绩 / 进行中的竿全部落档不丢，契约 §4 与 §10-N1 已关）。
 - **版本迁移 [R3]**：`meta.version` 与存档键版本号一起变；不兼容时改键名 `cww.save.v2` 并写迁移函数，禁止让旧档直接崩运行时。当前只有钳域没有迁移。
 
 ## 6. 与同仓库其他游戏的隔离 [冻结]
@@ -165,16 +165,20 @@ Round 1 账本 D1–D18 处置如下；**残留项与新发现统一并入契约
 | --- | --- | --- | --- |
 | D5 | 离线分块的天气派生流重放（tick 不变、nonce 未掺块序） | N7 | Opus-1 |
 | D9 | 新档 seed 写死 20260108 | N9 | Opus-4（壳层）|
-| D12 | `tickInjuries` 未挂量子（归队日志缺席；可用性不受影响） | N3② | Opus-1 |
 | D15 | 钓鱼 cast 仍在 `ctx.ui` 双轨（潜水侧已入 state） | N4 | Opus-4 |
 | D17 | 居民恒 1 人、事件恒 null、coins 无消费 | N10 / N11 | Opus-1 + Fable-3 |
 
-**Round 2 新发现**（同表在契约 §10）：N1 normalize 丢探索附加字段（Opus-1/2）；N2 `STAGE_RULES.seedFormula` 文案过期（Fable-3 一行）；N3 `tickInjuries/syncExploreWeather` 未入量子——海啸对进行中会话无强制措施（Opus-1/2）；N5 can* 两套形状（Fable-1 定收敛方案）；N6 store→world/mods 豁免边（Fable-1 裁决）；N8 双份常量口径（各归属方同步）。
+（D12 的最后残留 N3②——`tickInjuries` 未挂量子——已随 Round 3 结账关闭，D12 全关。）
 
-## 10. Round 3 落地顺序建议
+**Round 2 新发现的处置**（同表在契约 §10）：**已关（Round 3 第一波结账，Opus-1，`engine.js`/`store.js` 两文件）**：N1 normalize 丢探索附加字段、N3 巡检未入量子（海啸对进行中会话已有强制收杆/上浮 + 当场结账）、N6 store→world/mods 豁免边（盖章迁走方案）。**仍开**：N2 `STAGE_RULES.seedFormula` 文案过期（Fable-3 一行）；N5 can* 两套形状（Fable-1 定收敛方案）；N8 双份常量口径（各归属方同步）。
 
-1. **stepSim 追加巡检**（N3）：`tickInjuries` + `syncExploreWeather` 挂量子（tick+1 前、独立盐、无事原引用短路，成本为零）。这是「海啸对进行中会话有真实后果」的最后一根线，也让 dive 屏可以退回消费 `advanceDive`（每步刷新 o2Mult）。会改变挂机日志序列，与快照重落盘排同一批。
-2. **收敛钓鱼 cast 双轨**（N4）：fish 屏迁移到 `beginCast/hookCast`（state 路径），刷新不丢竿、`syncFishingWeather` 才管得到 UI 的竿；迁移前两条路径都冻结。
-3. **normalize 收编探索字段**（N1）：在图鉴/生涯统计有 UI 之前修掉，否则玩家第一次刷新就丢数据。
-4. **N6 依赖边裁决**：建议把 `world.mods` 盖章挪到 stepSim（defaultState 不算 mods，消费方已有回退），恢复「core 不 import 领域层」的干净表述。同批顺手清 N2 文案与 N8 双份常量。
-5. 事件/居民/coins 消费（N10/N11）依赖 Fable-3 数值与 Opus-1 接线，可与上面并行；D9/版本迁移是壳层小活，见缝插针。
+## 10. Round 3 进度与剩余落地顺序
+
+**第一波已结账（Opus-1）**：N3——stepSim 挂 `tickInjuries` + `syncExploreWeather`，被巡检拽上来的 done 会话当场 `finishDive` 结账（§2 铁序，拾荒派生流逐位不变，挂机日志序列改变已声明）；N1——`normalize` 逐字段收编探索附加字段（契约 §4）；N6——`world.mods` 盖章交还 `tickWorld`，`core/store` 不再 import 领域层（§1 豁免撤销）。验收记账归 Fable-4（`docs/ACCEPTANCE.md`）。
+
+剩余顺序建议：
+
+1. **收敛探索 UI 双轨**（N4，Opus-4）：fish 屏迁移到 `beginCast/hookCast`（state 路径），刷新不丢竿、`syncFishingWeather` 才管得到 UI 的竿；同性质残留（自 N3 移入）：dive 屏仍直调 `diveStep` 不刷新 `o2Mult`，宜同批退回消费 `advanceDive`（海啸禁潜的强制上浮已由量子巡检兜底，剩的是非零倍率天气的氧耗时效性）。迁移前两条路径都冻结。
+2. **N2 文案与 N8 双份常量**：`STAGE_RULES.seedFormula` 改一行（Fable-3）；双份常量按归属方收敛为读表/读契约常量。
+3. 事件/居民/coins 消费（N10/N11）依赖 Fable-3 数值与 Opus 接线，可与上面并行；D9（N9 随机 seed）与版本迁移是壳层小活，见缝插针。
+4. **N5 收敛**（explore 结果补 `message` 字段的附加式方案）与 **N7**（离线块序掺 nonce）排低优先，不阻塞其他线。

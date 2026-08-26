@@ -1,7 +1,7 @@
-# API 契约（Round 2 落地版）
+# API 契约（Round 3 第一波结账版）
 
-> 维护者：Fable-1。基线：Round 2 合并树 commit `633f731`（Round 1 冻结稿基线 `14b21c9`）。
-> 本版在 Round 1 冻结稿上**只附加、不改名、不改参数顺序**；Round 1 标记为 [R2] 的目标语义凡已落地，一律改标 **[冻结]** 并按实现写实。
+> 维护者：Fable-1。基线：Round 2 合并树 commit `633f731` + Round 3 Opus-1 结账（分支 `cursor/r3-opus1-quantum-patrol-and-save-normalize-18ac`，tip `30d3eb4`，改动仅 `core/engine.js` 与 `core/store.js`；N1/N3/N6 已关）。Round 1 冻结稿基线 `14b21c9`。
+> 本版在 Round 1 冻结稿上**只附加、不改名、不改参数顺序**；此前标记为目标语义的项凡已落地，一律改标 **[冻结]** 并按实现写实。
 > 测试、探针、bench 只依赖本文符号；**§9 清单内的导出禁止改名、禁止改参数顺序**。
 > 类型用 TS 记法描述（代码本体仍是 JS）。`int` = 整数，`u32` = 32 位无符号整数，数值区间用 `a..b` 闭区间。
 > 标记：**[冻结]** 现状即契约；**[附加]** 本轮新收编的符号（同样冻结改名，但允许继续加可选参数/返回键）；**[R3]** 下一轮要落实的目标语义。
@@ -97,25 +97,29 @@ interface GameState {
     event: null | string; // 预留（EVENTS 表已备、无消费方，§10-N11），恒 null
     seaSeed: u32;         // 海面渲染专用，不参与规则
     weatherTimer: number; // 秒；读表 durationSec 掷出
-    mods?: ModsSnapshot;  // [附加] 派生倍率快照：tickWorld 每量子回写、defaultState 现算。
-                          //   存档带来的 mods 一律作废重算（防手改档毒化模拟）。
+    mods?: ModsSnapshot;  // [附加] 派生倍率快照：只由 tickWorld 每量子盖章（defaultState 不再预算，
+                          //   N6 已关）；新档第一个量子前缺席。存档带来的 mods 由 normalize 剥离
+                          //   （防手改档毒化模拟，首个量子重新盖章）。
                           //   消费方：explore/mods.exploreMods 优先读它，缺席回退天气表。
   };
   explore: {
     salvage: {
       flotsam: Flotsam[];
-      picked?: int;         // [附加] 累计拾取数（normalize 会丢，§10-N1）
+      picked?: int;         // [附加] 累计拾取数（normalize 收编钳 ≥0；stepSim 刷漂浮物只换 flotsam 不抹它）
       rarePicked?: int;     // [附加] 累计稀有拾取（同上）
-      lastPick?: object;    // [附加] 最近一次拾取摘要 { id,res,name,n,gain,rare,tier,tick }（同上）
+      lastPick?: object;    // [附加] 最近一次拾取摘要 { id,res,name,n,gain,rare,tier,tick }（normalize 原样带过）
     };
     fishing: {
       lastCatch: null | LastCatch;
-      cast?: FishingCastOk | null;  // [附加] 进行中的竿（beginCast 写入；normalize 会丢，§10-N1；UI 现走 ctx.ui 双轨，§10-N4）
-      castTick?: int;               // [附加] 抛竿时刻（同上）
-      codex?: Record<string, FishCodexEntry>; // [附加] 鱼类图鉴（resolveHook 维护；normalize 会丢，§10-N1）
+      cast?: FishingCastOk | null;  // [附加] 进行中的竿（beginCast 写入；normalize 只认 castLine 成功形状
+                                    //   ——ok:true + fish + 合法窗口，半截 cast 清 null；UI 现走 ctx.ui 双轨，§10-N4）
+      castTick?: int;               // [附加] 抛竿时刻（normalize 收编钳 ≥0）
+      codex?: Record<string, FishCodexEntry>; // [附加] 鱼类图鉴（resolveHook 维护；normalize 逐条钳域收编，读档不丢）
     };
-    dive: null | DiveSession;       // [冻结] 潜水会话挂 state（M11 已关）
-    diveRecord?: DiveRecord;        // [附加] 潜水生涯统计（finishDive 维护；normalize 会丢，§10-N1）
+    dive: null | DiveSession;       // [冻结] 潜水会话挂 state（M11 已关）；normalize 只保形状，
+                                    //   会话内部缺字段由 explore/dive.js 的 hydrate 现场补齐
+    diveRecord?: DiveRecord;        // [附加] 潜水生涯统计（finishDive 维护；normalize 逐字段收编，
+                                    //   可选键——没潜过不凭空造空战绩）
   };
   campaign: {
     stage: int;           // 下一个待打关（1 起）
@@ -204,7 +208,8 @@ interface DiveRecord {     // [附加]
 
 ```ts
 createStore(seed?: DeepPartial<GameState>): Store       // [冻结]
-defaultState(seed?: DeepPartial<GameState>): GameState  // [冻结] 现为深合并 + normalize 钳域（M8 已关）
+defaultState(seed?: DeepPartial<GameState>): GameState  // [冻结] 深合并 + normalize 钳域（M8 已关）；
+                                                        //   不再预算 world.mods（N6 已关，盖章归 tickWorld）
 Store.get(): GameState
 Store.patch(partial: Partial<GameState>): GameState     // 顶层浅合并！嵌套字段调用方自己展开
 Store.replace(next: GameState): GameState               // 整体换引用；领域动词的结果用这个回写
@@ -218,8 +223,8 @@ OFFLINE_CAP_SECONDS: 28800                              // [附加]
 ```
 
 - `patch` 与 `replace` 每次调用同步通知全部订阅者，无去重、无批处理 [冻结]。
-- `defaultState` 内部 `deepMerge`（递归对象合并）+ `normalize`：每个字段钳回合法域、缺失补默认值、tiles 按 width×height 重建、resources 全 key 补零、`world.mods` 一律现算作废存档值。**传嵌套片段不再坏档**（M8 已关）。
-- **已知债（§10-N1）**：`normalize` 的 explore 分支是白名单制，只保 `salvage.flotsam` / `fishing.lastCatch` / `dive`——`fishing.codex/cast/castTick`、`salvage.picked/rarePicked/lastPick`、`diveRecord` 会在读档时丢失。
+- `defaultState` 内部 `deepMerge`（递归对象合并）+ `normalize`：每个字段钳回合法域、缺失补默认值、tiles 按 width×height 重建、resources 全 key 补零、存档里的 `world.mods` 一律剥离（首个量子 `tickWorld` 重新盖章；`core/store` 因此不再 import `world/**`，N6 已关）。**传嵌套片段不再坏档**（M8 已关）。
+- **explore 分支已逐字段收编（N1 已关，整段白名单已废）**：`flotsam` 逐件钳域（`ttl/x/vx/n` 防 NaN，`tier/phase/shimmer` 等附加键原样带过）；`picked/rarePicked` 钳 ≥0、`lastPick` 原样；`cast` 只认 castLine 成功形状（`ok:true` + `fish` + 合法窗口），半截竿清 null（半截 cast 喂给 `hookCast` 会算出 NaN 判定）；`castTick` 钳 ≥0；`codex` 逐条钳域；`diveRecord` 逐字段钳域且保持可选键语义（缺席时不凭空造）；`dive` 只保形状（会话内部缺字段由 `explore/dive.js` 的 hydrate 补齐）。未知附加键随对象展开带过（只加不删）。
 - 存档键 `cww.save.v1` [冻结]；schema 破坏性变更时升键名 `cww.save.v2` 并写迁移（迁移函数仍缺，[R3]）。
 
 ## 5. core/engine.js 与 core/rng.js
@@ -229,8 +234,14 @@ boot(root: HTMLElement, store: Store, options?: { render?: (root, store) => void
   // [冻结] DOM 壳：rAF 循环 + 每 AUTOSAVE_MS 自动存档 + beforeunload 落盘。
   // render 由壳层（main.js）注入；不给 render 就只跑模拟（headless）。
   // core 对 ui 零依赖——静态与动态 import 都没有（D1 已关）。
-stepSim(state: GameState): GameState                // [冻结] 纯量子，铁序：
-  // settleOffline(s, idleSince) → tickWorld(s, 0.1) → spawnFlotsam(s, deriveRng(seed, tick, "salvage")) → idleSince=0 → tick+1
+stepSim(state: GameState): GameState                // [冻结] 纯量子，铁序（Round 3 起，N3 已关）：
+  // settleOffline(s, idleSince) → tickWorld(s, 0.1)（内含 world.mods 盖章）
+  // → spawnFlotsam(s, deriveRng(seed, tick, "salvage"))（只换 salvage.flotsam，picked/rarePicked/lastPick 保留）
+  // → tickInjuries(s) → syncExploreWeather(s) → explore.dive.done 时 finishDive(s) 当场结账
+  // → idleSince=0 → tick+1。
+  // 巡检排在 tickWorld 之后（读到的是本量子刚盖章的新天气）、不消费随机数——拾荒派生流与
+  // 接线前逐位一致；巡检日后要掷骰必须另派独立盐，不许蹭 "salvage" 游标。无事时巡检与
+  // 结账全部原引用短路。巡检入流改变了挂机日志序列（归队/强制收杆/强制上浮/下潜结账），已声明。
 QUANTUM: 0.1  MAX_FRAME_DT: 0.05  AUTOSAVE_MS: 4000  // [附加]
 
 mulberry32(seed: u32): () => number                 // [冻结] 返回 [0,1) 流
@@ -360,7 +371,8 @@ weatherLabel(state): string
 syncExploreWeather(state): GameState
   // 天气巡检总入口 = syncFishingWeather ∘ syncDiveWeather：海啸（fishing/diveO2 = 0）时
   // 强制收杆（不计图鉴不算空军，lastCatch.forced=true）+ 强制上浮（会话 done+forced，战利品照算）。
-  // 两线都没受影响返回原引用，可每量子无脑调用。当前运行时无人调用（§10-N3）。
+  // 两线都没受影响返回原引用，可每量子无脑调用。stepSim 每量子调用（N3 已关）；
+  // 被巡检拽上来的 done 会话由 stepSim 紧接着 finishDive 当场结账，不留残尸挂在 explore.dive 上。
 ```
 
 ### 7.1 拾荒 [冻结]
@@ -493,7 +505,8 @@ applyBattleInjuries(state, result: BattleResult, seconds?: number): GameState
   // 双侧同步离岗（委任加成当场消失）。无人阵亡返回原引用。
   // campaign 战后已接线（胜败都结算，战败有代价）。
 
-tickInjuries(state): GameState   // 每量子推进：到期销假 + 归队日志；没人到期返回原引用（可零成本挂 stepSim）
+tickInjuries(state): GameState   // 每量子推进：到期销假 + 归队日志；没人到期返回原引用。
+                                 //   stepSim 每量子调用（N3 已关，排在 tickWorld 之后、tick+1 之前）
 clearHealed(state): GameState    // 手动销假（读档清理用）；无变化原引用
 
 // heroes/lineup.js [附加·冻结]
@@ -608,14 +621,17 @@ interface BattleResult {   // 键序 [冻结]：Round 1 五键在前，附加键
 
 Round 1 的 M1–M16 处置：M1/M2/M3（契约文本缺口）本版收编完毕；M4/M5（reason 码与 can* 配套）、M6（tiles.level 双写，已同步维护，occupant 保留死值）、M7（expandRaft 非法 dir）、M8（defaultState 坏档）、M9（ttl/dt 与拾荒游标）、M10（潜水布局与 finishDive 抛异常）、M11（会话挂 state）、M12（assignHero 校验/悬挂引用/伤病接线）、M13（savedAt/离线补算/读档钳域）、M14（localeCompare/门槛/buff/multishot）、M15（5v5 上限/截断/取舍 UI）、M16（钓鱼滑条/移动/旋转/拆除 UI）**已修并按实现写进上文**。
 
+**Round 3 第一波结账（Opus-1）已关三条，条目按流程删除**（验收记账归 Fable-4，`docs/ACCEPTANCE.md`）：
+
+- ~~N1~~ `normalize` explore 分支已逐字段收编 + 钳域（图鉴/拾荒计数/潜水战绩/进行中的竿读档不丢），写实见 §3/§4。
+- ~~N3~~ `tickInjuries` + `syncExploreWeather` 已挂 stepSim（tickWorld 之后、tick+1 之前，不消费随机数，拾荒派生流逐位不变），被巡检拽上来的 done 会话当场 `finishDive` 结账；挂机日志序列改变已声明。UI 潜水屏的 `o2Mult` 时效性残留移入 N4。
+- ~~N6~~ `world.mods` 盖章交还 `tickWorld`（`defaultState` 不再预算），`core/store` 撤销对 `world/mods.js` 的豁免 import，「core 不 import 领域层」恢复干净表述（ARCHITECTURE §1）。
+
 现存不一致（N 编号；修复归属见 ARCHITECTURE §9 / PROGRESS.md）：
 
-- **N1 store.normalize 白名单丢探索附加字段（已知债）**。`normalize` 的 explore 分支只保 `salvage.flotsam`、`fishing.lastCatch`、`dive` 三项——读档会丢 `fishing.codex`（图鉴清零）、`fishing.cast/castTick`（竿丢了倒还合理但与 beginCast 语义矛盾）、`salvage.picked/rarePicked/lastPick`、`diveRecord`（生涯统计清零）。修法：explore 分支逐字段收编 + 钳域，禁止再用整段白名单。
 - **N2 seedFormula 文案过期**。实现已统一为 `combat.battleSeed`（campaign 私有公式已删），但 `data/stages.js` 的 `STAGE_RULES.seedFormula` 仍写 `"meta.seed + stage*99"`。改文案即可（Fable-3，一行）。
-- **N3 量子巡检未挂 stepSim**。`tickInjuries` 与 `syncExploreWeather` 已导出冻结、语义齐备（无事原引用），但 `stepSim` 不调用——后果：① 海啸对**进行中**的钓鱼/潜水没有强制收杆/上浮（新开一竿/新下潜已被 `canCast/canDive` 拦截；UI 潜水路径直调 `diveStep` 且不刷新 `o2Mult`，`advanceDive/syncDiveWeather` 悬空）；② 养伤到期没有归队日志（可用性不受影响，`isInjured` 按 tick 自动过期）。接线时注意：往 `stepSim` 追加步骤属**附加**（放在 tick+1 之前、用独立盐），但会改变挂机日志序列，需同步声明。伤病结算（`applyBattleInjuries`）与阵容取舍（`selectLineup/readyHeroes`）已由 campaign 接线，从本条移除。
-- **N4 钓鱼 cast 双轨**。契约字段 `explore.fishing.cast`（`beginCast/hookCast` 读写）与 fish 屏的 `ctx.ui.fish.cast`（`castLine/resolveHook` 直连）并存，线上走后者：刷新丢竿、`syncFishingWeather` 管不到 UI 的竿、`fishingHud.casting` 恒 false。R3 决定 UI 是否迁移到 state 路径；迁移前两条路径都冻结。
+- **N4 探索 UI 双轨**。钓鱼：契约字段 `explore.fishing.cast`（`beginCast/hookCast` 读写）与 fish 屏的 `ctx.ui.fish.cast`（`castLine/resolveHook` 直连）并存，线上走后者——刷新丢竿、`syncFishingWeather` 管不到 UI 的竿（量子巡检只救得了 state 里的竿）、`fishingHud.casting` 恒 false。潜水（同性质残留，自 N3 移入）：dive 屏直调 `diveStep` 且不按帧刷新 `o2Mult`，天气中途翻脸时氧耗倍率停留在下潜那一刻（海啸 `diveO2=0` 的强制上浮已由量子巡检兜底，剩的是非零倍率天气的时效性），`advanceDive` 仍悬空。R3 决定 UI 是否迁移到 state 路径（fish 屏 → `beginCast/hookCast`，dive 屏 → `advanceDive`）；迁移前两条路径都冻结。
 - **N5 can* 返回形状两套口径**。world/heroes：`{ ok:false, reason: E_码, message: 中文 }`；explore：`{ ok:false, reason: 中文, code: E_码 }`。两者都已被测试与 UI 消费，**都不许动**。R3 收敛方案（附加式）：explore 结果补 `message` 字段（= 现 reason 文案），文案迁过去后 reason 逐步对齐为码；期间测试铁律不变——world/heroes 断言 `reason`，explore 断言 `code`。
-- **N6 core/store.js import world/mods.js**。为了 `defaultState` 落 `world.mods` 快照违反了「core 不 import 领域层」的冻结依赖边（无环：mods→grid→reasons 全是下层）。本版临时豁免并记录于 ARCHITECTURE §1；R3 二选一：正式放宽该边，或把快照盖章挪到 stepSim/调用方、defaultState 不再算 mods（消费方 `exploreMods` 已有缺席回退，可平滑迁移）。
 - **N7 离线补算的天气派生流按块重放**。`settleOffline` 分块调 `tickWorld` 时 `meta.tick` 不变，`deriveRng(seed, tick, "weather", roll)` 每块重掷出同一序列（roll 只在单次调用内区分）。观感问题非安全问题（D5 残留）；修法：把块序号掺进 nonce。
 - **N8 双份常量（数值一致、口径双写，改数值时必须同步）**。`STAR_RULES` vs roster 的 `MAX_STAR/SHARD_PER_STAR`；`lineup.DEFAULT_GROWTH` vs `combat.STAR_GROWTH`；`ui/screens/dive.js` 复写的 `MAX_DEPTH/SURFACE_DEPTH`；`heroes.TICK_SECONDS` vs `engine.QUANTUM`（这对属依赖边约束下的有意双份，其余建议 R3 收敛为读表/读契约常量）。campaign `hpTable` 已改读 `HEROES[key].growth`，从本条移除。
 - **N9 新档 seed 仍写死 20260108**（D9 未落）。目标不变：壳层「启航」时生成随机 seed 注入，领域层只消费；测试仍用固定 seed。
