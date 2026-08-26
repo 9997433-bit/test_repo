@@ -60,7 +60,10 @@
     app.renderer = new Renderer($("stage"));
     app.hud = new HUD(app);
     app.renderer.resize();
-    on(window, "resize", function () { app.renderer.resize(); });
+    on(window, "resize", function () {
+      app.renderer.resize();
+      clampCam();
+    });
     try {
       loadSettings();
       bindMenu();
@@ -385,6 +388,7 @@
       if (!app.game) return;
       e.preventDefault();
       app.game.cam.z = SimCore.clamp(app.game.cam.z * (e.deltaY > 0 ? 0.92 : 1.08), 0.65, 1.8);
+      clampCam();
     }, { passive: false });
 
     const mini = $("minimap");
@@ -440,11 +444,16 @@
     on(window, "blur", function () { app.panning = false; });
   }
 
+  /** Keep the view inside the map so the camera never drifts into the void. */
   function clampCam() {
     const g = app.game;
     if (!g) return;
-    g.cam.x = SimCore.clamp(g.cam.x, 0, g.mapW * g.tile);
-    g.cam.y = SimCore.clamp(g.cam.y, 0, g.mapH * g.tile);
+    const mapW = g.mapW * g.tile;
+    const mapH = g.mapH * g.tile;
+    const viewW = (app.renderer && app.renderer.w ? app.renderer.w : mapW) / g.cam.z;
+    const viewH = (app.renderer && app.renderer.h ? app.renderer.h : mapH) / g.cam.z;
+    g.cam.x = viewW >= mapW ? mapW / 2 : SimCore.clamp(g.cam.x, viewW / 2, mapW - viewW / 2);
+    g.cam.y = viewH >= mapH ? mapH / 2 : SimCore.clamp(g.cam.y, viewH / 2, mapH - viewH / 2);
   }
 
   /** Classic RTS minimap navigation: click or drag to move the camera. */
