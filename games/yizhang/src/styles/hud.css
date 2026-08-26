@@ -1,15 +1,21 @@
 /* ============================================================
    异掌 · 战斗 HUD
-   结构（Opus-4 按此挂载，全部为 #hud 子节点）：
+   结构（Opus-4 按此挂载，全部为 #hud 子节点；完整 DOM 契约见
+   docs/ART_DIRECTION.md §11）：
    .yz-hud-top    顶带：击杀刻度 | 计时 | 暂停
+   .yz-score      战况列（左上：全员击杀）
    .yz-feed       击杀播报（右上）
-   .yz-glove-dock 掌位坞：掌意条 + 主/副掌卡（桌面左下，触屏下中）
+   .yz-glove-dock 掌位坞：掌意条 + 主/副掌卡 + 冷却排
    .yz-reticle    准星微点
    .yz-hit-flash  受击去饱和帧（替代红晕）
    .yz-respawn    重组浮层（#hud.is-dead 时出现）
    .yz-center-note 中央短讯（解锁/开局提示）
-   JS 钩子：--meter(0..1)、--cd(0..1)、data-glove、
-            #hud.is-dead / .is-awakened、.yz-timer.is-low
+   .yz-toast      顶部提示（画质切换/觉醒/塌台）
+   JS 钩子：--meter(0..1)、--cd(1→0)、data-glove、
+            #hud.is-dead / .is-awakened、.yz-timer.is-low、
+            .yz-toast.is-on
+   注：与 shell.css 同名的选择器（.yz-score* / .yz-meter* / .yz-toast）
+   在此全量声明并后注入压制；shell.css 只读不改。
    ============================================================ */
 
 /* ---- 顶带 ---- */
@@ -103,6 +109,61 @@
   }
 }
 
+/* ---- 战况列（左上，与右上播报对称）：全员击杀数 ----
+   行钩子：.is-me 本机、.is-dead 重组中；身份色走行内 --row-color
+   （渲染层 player.color），或在行上设 data-glove 用识别色。 */
+.yz-score {
+  position: absolute;
+  top: calc(var(--yz-inset-t) + 56px);
+  left: var(--yz-inset-l);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--yz-s-h);
+  min-width: 0;
+}
+
+.yz-score-row {
+  display: flex;
+  align-items: center;
+  gap: var(--yz-s1);
+  min-width: 128px;
+  padding: 2px 10px 2px 8px;
+  font-size: var(--yz-fs-xs);
+  color: var(--yz-text-dim);
+  background: rgb(11 16 28 / 0.45);
+  border-left: 2px solid var(--row-color, var(--yz-steel-500));
+  border-radius: var(--yz-r1);
+  opacity: 1;
+}
+
+.yz-score-row.is-me,
+.yz-score-row[data-self] {
+  color: var(--yz-bone-100);
+  background: rgb(18 26 42 / 0.62);
+  border-left-color: var(--row-color, var(--yz-accent));
+}
+
+.yz-score-row.is-dead,
+.yz-score-row[data-dead] {
+  opacity: 0.45;
+}
+
+.yz-score-name {
+  flex: 1;
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yz-score-kills {
+  min-width: 1.4em;
+  text-align: right;
+  color: var(--yz-bone-100);
+  font-weight: 600;
+}
+
 /* ---- 击杀播报（右上，纵向堆叠，右滑入） ---- */
 .yz-feed {
   position: absolute;
@@ -147,6 +208,44 @@
   display: flex;
   align-items: flex-end;
   gap: var(--yz-s1);
+}
+
+/* ---- 冷却排（桌面）：扇/技/冲 三枚方章，conic 罩显示冷却 ----
+   触屏时冷却直接长在触控钮上，本排隐藏。
+   钩子：章上设 --cd(1→0)；.is-off = 该掌无主动技。 */
+.yz-cd-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--yz-s-h);
+  margin-left: var(--yz-s-h);
+}
+
+.yz-cd-slot {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-sm);
+  color: var(--yz-text-dim);
+  border: 1px solid var(--yz-steel-700);
+  border-radius: var(--yz-r1);
+  background:
+    linear-gradient(180deg, rgb(240 235 223 / 0.05), rgb(240 235 223 / 0) 46%),
+    rgb(11 16 28 / 0.55);
+  box-shadow:
+    inset 0 1px 0 var(--yz-edge-hi),
+    inset 0 -1px 0 var(--yz-edge-lo);
+}
+
+.yz-cd-slot.is-off {
+  opacity: 0.38;
+}
+
+[data-touch="1"] .yz-cd-strip {
+  display: none;
 }
 
 /* 掌卡：磨砂板 + 金属框；主掌卡带识别色边与顶部刻痕 */
@@ -239,9 +338,13 @@
   display: none;
 }
 
-/* ---- 掌意条 ---- */
+/* ---- 掌意条 ----
+   契约 DOM：.yz-meter > .yz-meter-fill（无 track 中间层）。
+   display/box-shadow 显式声明，压制 shell.css 同名类的
+   grid 布局与发光投影。 */
 .yz-meter {
   position: relative;
+  display: block;
   width: 200px;
   height: 10px;
   border: 1px solid var(--yz-steel-700);
@@ -263,7 +366,44 @@
     color-mix(in oklab, var(--yz-accent) 42%, var(--yz-ink-800)),
     var(--yz-accent)
   );
+  box-shadow: none; /* 禁外发光（shell.css 旧条带 glow） */
   transition: width var(--yz-t-fast) linear;
+}
+
+/* 过渡期兼容：旧 shell 结构是 .yz-meter > (.yz-meter-label +
+   .yz-meter-track > .yz-meter-fill)。检测到 track 时外层退回堆叠，
+   track 顶上本表的条面材质，等 Opus-4 换契约 DOM 后此段自然失效。 */
+.yz-meter:has(> .yz-meter-track) {
+  display: grid;
+  gap: var(--yz-s-h);
+  width: 200px;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.yz-meter-label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--yz-s1);
+  font-family: var(--yz-font-display);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--yz-text-mute);
+}
+
+.yz-meter-track {
+  position: relative;
+  display: block;
+  height: 10px;
+  border: 1px solid var(--yz-steel-700);
+  border-radius: var(--yz-r-round);
+  background: rgb(8 12 20 / 0.62);
+  box-shadow: inset 0 1px 2px rgb(4 7 12 / 0.6);
+  overflow: hidden;
 }
 
 /* 亮沿只给推进端：2px 骨白端帽，不外发光 */
@@ -278,12 +418,17 @@
 }
 
 /* 觉醒态（挂在 #hud 或 .yz-glove-dock 的 .is-awakened）：
-   条面转暖金 + 局部扫光；框沿转旧金。 */
-.is-awakened .yz-meter {
+   条面转暖金 + 局部扫光；框沿转旧金。
+   [data-awake] 为旧 shell 钩子别名，迁移后可删。 */
+.is-awakened .yz-meter,
+.yz-meter[data-awake],
+.yz-meter-track[data-awake] {
   border-color: var(--yz-gold-700);
 }
 
-.is-awakened .yz-meter-fill {
+.is-awakened .yz-meter-fill,
+.yz-meter[data-awake] .yz-meter-fill,
+.yz-meter-track[data-awake] .yz-meter-fill {
   background:
     linear-gradient(
         100deg,
@@ -408,6 +553,41 @@
   border-color: var(--yz-gold-700);
 }
 
+/* ---- 顶部提示（画质切换 / 掌意觉醒 / 台面塌块）----
+   常驻节点，JS 改文本并加 .is-on（约 1.4~1.8s 后移除）。
+   [data-on] 为旧 shell 钩子别名。 */
+.yz-toast {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--yz-inset-t) + 72px);
+  transform: translateX(-50%);
+  z-index: var(--yz-z-hud);
+  padding: var(--yz-s-h) var(--yz-s2);
+  font-family: var(--yz-font-display);
+  font-size: var(--yz-fs-sm);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  color: var(--yz-bone-100);
+  background: var(--yz-glass-strong);
+  border: 1px solid var(--yz-frame);
+  border-radius: var(--yz-r1);
+  box-shadow: inset 0 1px 0 var(--yz-edge-hi);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--yz-t-fast) var(--yz-ease);
+}
+
+.yz-toast.is-on,
+.yz-toast[data-on] {
+  opacity: 1;
+}
+
+/* 觉醒/解锁类提示转暖金（一屏仍只此一个金色峰） */
+.yz-toast.is-gold {
+  color: var(--yz-gold-300);
+  border-color: var(--yz-gold-700);
+}
+
 /* ---- 触屏坞位调整：横屏移到底部中央，让出摇杆/按钮角 ---- */
 [data-touch="1"] .yz-glove-dock {
   left: 50%;
@@ -438,7 +618,41 @@
     height: 24px;
   }
 
+  /* 坞占了左上，战况列让到坞下方 */
+  [data-touch="1"] .yz-score {
+    top: calc(var(--yz-inset-t) + 190px);
+  }
+
   .yz-feed {
     max-width: 60vw;
+  }
+}
+
+/* ---- 横屏手机（竖向 ≤480px）：HUD 整体收一档 ---- */
+@media (max-height: 480px) {
+  .yz-meter {
+    width: 160px;
+  }
+
+  .yz-meter:has(> .yz-meter-track) {
+    width: 160px;
+  }
+
+  .yz-glove-card {
+    width: 56px;
+  }
+
+  .yz-glove-icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  .yz-score-row {
+    min-width: 108px;
+    font-size: 10px;
+  }
+
+  .yz-score {
+    gap: 2px;
   }
 }

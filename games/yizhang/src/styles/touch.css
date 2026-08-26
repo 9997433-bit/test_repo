@@ -10,8 +10,12 @@
        └── .yz-tbtn--dash / --switch / --slap
    尺寸法：扇击 ≥72dp（实做 88/76px），其余 ≥48dp；全部避开安全区。
    JS 钩子：.yz-stick 的 --x/--y（区内定位）与 --sx/--sy（推杆位移）、
-            .is-active、按钮 .is-pressed、技能钮内放 .yz-cd。
+            .is-active、按钮 .is-pressed / :disabled、
+            冷却：任意钮内放 <span class="yz-cd">，钮上设 --cd(1→0)
+            （扇/技/换 都可挂；无主动技时技钮 :disabled）。
    相机拖拽不在此层：右侧空白触摸直接落在 #gl 画布上。
+   与 shell.css 同名类（.yz-touch/.yz-stick/.yz-tbtn）在此全量声明
+   并后注入压制；[data-*] 旧钩子设了别名，迁移完可删。
    ============================================================ */
 
 .yz-touch {
@@ -37,11 +41,14 @@
   touch-action: none;
 }
 
-/* 摇杆底盘：磨砂玻璃环，闲置半隐为「落点提示」 */
+/* 摇杆底盘：磨砂玻璃环，闲置半隐为「落点提示」
+   margin:0 显式声明：压制 shell.css 同名类的 -66px 负外边距，
+   居中只靠 translate(-50%,-50%)，与 JS 行内 left/top 兼容。 */
 .yz-stick {
   position: absolute;
   left: var(--x, 54%);
   top: var(--y, 58%);
+  margin: 0;
   transform: translate(-50%, -50%);
   width: 120px;
   height: 120px;
@@ -55,7 +62,8 @@
   transition: opacity var(--yz-t-fast) var(--yz-ease);
 }
 
-.yz-stick.is-active {
+.yz-stick.is-active,
+.yz-stick[data-on] {
   opacity: 0.9;
 }
 
@@ -81,7 +89,8 @@
   transition: transform var(--yz-t-fast) var(--yz-ease);
 }
 
-.yz-stick.is-active .yz-stick-nub {
+.yz-stick.is-active .yz-stick-nub,
+.yz-stick[data-on] .yz-stick-nub {
   transition: none;
 }
 
@@ -149,26 +158,73 @@
   pointer-events: none;
 }
 
+/* 钮面文字：<b> 字形 + <small> 键位小注（契约 DOM 保留此结构） */
+.yz-tbtn b {
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+.yz-tbtn small {
+  font-family: var(--yz-font-num);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--yz-text-mute);
+}
+
 .yz-tbtn:active,
-.yz-tbtn.is-pressed {
+.yz-tbtn.is-pressed,
+.yz-tbtn[data-pressed] {
   transform: scale(0.94);
   filter: brightness(1.18);
+  border-color: var(--yz-steel-500); /* 压制 shell.css 的暖金描沿 */
 }
 
 .yz-tbtn:disabled,
-.yz-tbtn.is-disabled {
+.yz-tbtn.is-disabled,
+.yz-tbtn[data-off] {
   opacity: 0.4;
   pointer-events: none;
 }
 
-/* 扇击：最大主钮（≥72dp），骨白字更亮 */
-.yz-tbtn--slap {
-  grid-area: slap;
+/* 冷却中不整体压暗（conic 罩已是唯一冷却信号）；中和旧 shell 钩子 */
+.yz-tbtn[data-cool] {
+  opacity: 1;
+}
+
+/* 扇击：最大主钮（≥72dp），骨白字更亮。
+   [data-slap] 为旧 shell 钩子别名（只接皮肤，不接 grid-area，
+   免得干扰旧 .yz-pad 的行列布点）。 */
+.yz-tbtn--slap,
+.yz-tbtn[data-slap] {
   width: 88px;
   height: 88px;
   font-size: 22px;
   color: var(--yz-bone-100);
   border-color: var(--yz-steel-500);
+  background:
+    repeating-linear-gradient(
+      105deg,
+      rgb(240 235 223 / 0.02) 0 1px,
+      transparent 1px 3px
+    ),
+    radial-gradient(
+      circle at 34% 26%,
+      rgb(240 235 223 / 0.07),
+      rgb(240 235 223 / 0) 55%
+    ),
+    rgb(13 19 31 / 0.55);
+}
+
+.yz-tbtn--slap {
+  grid-area: slap;
+}
+
+.yz-tbtn[data-slap] b {
+  font-size: inherit;
+  color: inherit;
 }
 
 /* 技能：随当前手套识别色描沿（唯一饱和点） */
@@ -210,7 +266,8 @@
     bottom: calc(var(--yz-inset-b) + var(--yz-s2));
   }
 
-  .yz-tbtn--slap {
+  .yz-tbtn--slap,
+  .yz-tbtn[data-slap] {
     width: 76px;
     height: 76px;
     font-size: 19px;

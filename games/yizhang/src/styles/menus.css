@@ -1,16 +1,24 @@
 /* ============================================================
    异掌 · 菜单 / 屏幕层
-   结构：
+   结构（完整 DOM 契约见 docs/ART_DIRECTION.md §11）：
    .yz-screen（全屏容器，变体 --deep 主菜单 / --frost 暂停·结算）
-   ├── .yz-panel（磨砂主板）
-   │   ├── .yz-title / .yz-subtitle
-   │   ├── .yz-menu > .yz-btn（--primary / --ghost）
-   │   ├── .yz-glove-grid > .yz-glove-tile（is-main/is-off/is-locked）
-   │   ├── .yz-seg > .yz-seg-opt（画质档等分段选择）
-   │   └── .yz-results-*（结算）
+   ├── .yz-lobby（主菜单配装大厅：标题行 + 掌位 + 选掌网格 + 底部操作）
+   │   ├── .yz-loadout > .yz-slot（双掌位，.is-active = 待填）
+   │   └── .yz-glove-grid > .yz-glove-tile（is-main/is-off/is-locked）
+   ├── .yz-panel（磨砂主板：暂停 / 设置 / 结算）
+   │   ├── .yz-subtitle + .yz-heading（板内题头）
+   │   ├── .yz-settings > .yz-set（设置行）+ .yz-seg > .yz-seg-opt
+   │   ├── .yz-keys（键位表，触屏隐藏）
+   │   ├── .yz-results-*（结算）
+   │   └── .yz-actions > .yz-btn（--primary / --ghost）
    └── .yz-foot（版本/提示小字）
    弹窗：.yz-modal-backdrop > .yz-modal
+   降级提示：.yz-notes > .yz-note（.is-ok / .is-gold）
    显隐一律用 [hidden]。
+   与 shell.css 同名的类（.yz-screen/.yz-title/.yz-btn/.yz-seg/
+   .yz-loadout/.yz-slot/.yz-settings/.yz-set/.yz-keys/.yz-notes/
+   .yz-note/.yz-actions/.yz-hintline）在此全量声明并后注入压制；
+   [data-primary] 等旧钩子设了别名，迁移完可删。shell.css 只读不改。
    ============================================================ */
 
 /* ---- 全屏容器 ---- */
@@ -22,6 +30,8 @@
   place-items: center;
   padding: calc(var(--yz-inset-t) + var(--yz-s2)) var(--yz-inset-r)
     calc(var(--yz-inset-b) + var(--yz-s2)) var(--yz-inset-l);
+  font-family: var(--yz-font-text);
+  color: var(--yz-text);
   animation: yz-fade var(--yz-t-med) var(--yz-ease) both;
 }
 
@@ -51,6 +61,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--yz-s2);
+  overflow: hidden auto;
   animation: yz-settle var(--yz-t-med) var(--yz-ease) both;
 }
 
@@ -64,13 +75,147 @@
   padding: 0 var(--yz-s1);
 }
 
-/* 主菜单内容列（无板，直接立在深背景上） */
+/* 主菜单内容列（无板，直接立在深背景上；标题屏用） */
 .yz-home {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--yz-s4);
   animation: yz-settle var(--yz-t-slow) var(--yz-ease) both;
+}
+
+/* ---- 配装大厅（主菜单实战布局）：一屏放下双掌位 + 八掌网格 ---- */
+.yz-lobby {
+  width: min(880px, 100%);
+  max-height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--yz-s2);
+  animation: yz-settle var(--yz-t-med) var(--yz-ease) both;
+}
+
+.yz-lobby > .yz-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.yz-lobby-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--yz-s3);
+  flex-wrap: wrap;
+}
+
+.yz-lobby-head .yz-title {
+  text-align: left;
+  font-size: clamp(32px, 6vmin, 56px);
+}
+
+.yz-lobby-head .yz-title::after {
+  margin-left: 0;
+  width: 72%;
+}
+
+.yz-intro {
+  margin: 0;
+  max-width: 52ch;
+  font-size: var(--yz-fs-sm);
+  line-height: 1.7;
+  color: var(--yz-text-mute);
+}
+
+.yz-lobby-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--yz-s2);
+  flex-wrap: wrap;
+}
+
+.yz-lobby-foot .yz-btn--primary {
+  min-width: 176px;
+}
+
+.yz-hintline {
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.06em;
+  line-height: 1.7;
+  color: var(--yz-text-mute);
+}
+
+/* ---- 掌位（双选槽）：点亮 .is-active 的槽等待下一次选掌 ----
+   槽上设 data-glove 让边沿吃识别色；旧 shell 的行内 --slot-color
+   与 [data-active="1"] 钩子同样被接住。 */
+.yz-loadout {
+  display: flex;
+  gap: var(--yz-s1);
+  flex-wrap: wrap;
+}
+
+.yz-slot {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  flex: 1 1 220px;
+  min-width: 176px;
+  min-height: var(--yz-touch-min);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--yz-s1) var(--yz-s2);
+  text-align: left;
+  color: var(--yz-text);
+  background:
+    linear-gradient(180deg, rgb(240 235 223 / 0.05), rgb(240 235 223 / 0) 46%),
+    rgb(13 19 31 / 0.6);
+  border: 1px solid var(--yz-frame);
+  border-left: 2px solid var(--slot-color, var(--yz-accent-dim));
+  border-radius: var(--yz-r2);
+  box-shadow:
+    inset 0 1px 0 var(--yz-edge-hi),
+    inset 0 -1px 0 var(--yz-edge-lo);
+  transition:
+    border-color var(--yz-t-fast) var(--yz-ease),
+    filter var(--yz-t-fast) var(--yz-ease);
+}
+
+.yz-slot:hover,
+.yz-slot:focus-visible {
+  filter: brightness(1.12);
+}
+
+.yz-slot.is-active,
+.yz-slot[data-active="1"] {
+  border-color: color-mix(in oklab, var(--yz-accent) 45%, var(--yz-steel-700));
+  border-left-color: var(--slot-color, var(--yz-accent));
+  background:
+    linear-gradient(180deg, rgb(240 235 223 / 0.06), rgb(240 235 223 / 0) 46%),
+    linear-gradient(0deg, var(--yz-accent-soft), var(--yz-accent-soft)),
+    rgb(13 19 31 / 0.6);
+}
+
+/* 槽内文字：span 槽名 / b 掌名 / em 定位一句话（结构沿用，免改 JS） */
+.yz-slot span {
+  font-family: var(--yz-font-display);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-indent: 0;
+  color: var(--yz-text-mute);
+}
+
+.yz-slot b {
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-lg);
+  letter-spacing: 0.1em;
+  color: var(--yz-bone-100);
+}
+
+.yz-slot em {
+  font-style: normal;
+  font-size: var(--yz-fs-xs);
+  color: var(--yz-text-dim);
 }
 
 /* ---- 标题：展示字 + 旧金磨损衬线 ---- */
@@ -81,6 +226,7 @@
   font-size: var(--yz-fs-title);
   line-height: 1.1;
   letter-spacing: 0.14em;
+  text-indent: 0; /* 压制 shell.css 的 0.34em 缩进 */
   text-align: center;
   color: var(--yz-bone-100);
 }
@@ -101,10 +247,15 @@
   );
 }
 
-.yz-subtitle {
+/* 小字上眉（.yz-kicker 为旧 shell 同义类，一并接管） */
+.yz-subtitle,
+.yz-kicker {
   margin: 0;
+  font-family: var(--yz-font-display);
   font-size: var(--yz-fs-sm);
   letter-spacing: 0.32em;
+  text-indent: 0;
+  text-transform: none;
   text-align: center;
   color: var(--yz-text-mute);
 }
@@ -119,12 +270,25 @@
 }
 
 /* ---- 按钮 ---- */
-.yz-menu {
+
+/* 纵向按钮栈（标题屏用；一屏只放一个 primary） */
+.yz-btn-stack {
   display: flex;
   flex-direction: column;
   gap: var(--yz-s2);
   width: min(320px, 82vw);
   margin: 0 auto;
+}
+
+/* 横向操作行（暂停 / 结算板底部） */
+.yz-actions {
+  display: flex;
+  gap: var(--yz-s1);
+  flex-wrap: wrap;
+}
+
+.yz-actions .yz-btn {
+  flex: 1 1 auto;
 }
 
 .yz-btn {
@@ -141,6 +305,7 @@
   font-weight: 600;
   font-size: var(--yz-fs-md);
   letter-spacing: 0.18em;
+  text-indent: 0; /* 压制 shell.css 缩进 */
   color: var(--yz-bone-300);
   border: 1px solid var(--yz-steel-700);
   border-radius: var(--yz-r2);
@@ -159,6 +324,7 @@
 .yz-btn:hover,
 .yz-btn:focus-visible {
   filter: brightness(1.16);
+  color: var(--yz-bone-100);
   border-color: var(--yz-steel-500);
 }
 
@@ -172,17 +338,24 @@
   pointer-events: none;
 }
 
-/* 主操作：识别色左刻痕 + 色沿，一屏只放一个 */
-.yz-btn--primary {
+/* 主操作：识别色左刻痕 + 色沿，一屏只放一个。
+   [data-primary] 为旧 shell 钩子别名：压掉双色渐变金按钮。 */
+.yz-btn--primary,
+.yz-btn[data-primary] {
   color: var(--yz-bone-100);
   border-color: color-mix(in oklab, var(--yz-accent) 46%, var(--yz-steel-700));
   background:
     linear-gradient(180deg, rgb(240 235 223 / 0.06), rgb(240 235 223 / 0) 46%),
     linear-gradient(0deg, var(--yz-accent-soft), var(--yz-accent-soft)),
     rgb(13 19 31 / 0.6);
+  box-shadow:
+    inset 0 1px 0 var(--yz-edge-hi),
+    inset 0 -1px 0 var(--yz-edge-lo);
+  font-weight: 600;
 }
 
-.yz-btn--primary::before {
+.yz-btn--primary::before,
+.yz-btn[data-primary]::before {
   content: "";
   position: absolute;
   left: 0;
@@ -193,40 +366,76 @@
   background: var(--yz-accent);
 }
 
-/* 次操作：仅框线 */
-.yz-btn--ghost {
+/* 旧钩子的禁用态（shell.css 是 0,3,0 的灰渐变，这里同权重后注入压制） */
+.yz-btn[data-primary]:disabled {
+  opacity: 0.45;
+  cursor: default;
+  color: var(--yz-bone-100);
+  background:
+    linear-gradient(180deg, rgb(240 235 223 / 0.06), rgb(240 235 223 / 0) 46%),
+    linear-gradient(0deg, var(--yz-accent-soft), var(--yz-accent-soft)),
+    rgb(13 19 31 / 0.6);
+  box-shadow:
+    inset 0 1px 0 var(--yz-edge-hi),
+    inset 0 -1px 0 var(--yz-edge-lo);
+}
+
+/* 次操作：仅框线。[data-ghost] 为旧钩子别名。 */
+.yz-btn--ghost,
+.yz-btn[data-ghost] {
   background: transparent;
+  border-color: var(--yz-steel-700);
   box-shadow: none;
 }
 
-/* ---- 选掌网格 ---- */
+/* ---- 选掌网格 ----
+   tile 是 <button class="yz-plate yz-glove-tile" data-glove="…">，
+   内容：tile-top（掌徽 + 名/定位）→ 技能一句话 → 觉醒一句话 →
+   解锁状态行。未解锁 = .is-locked + :disabled。 */
 .yz-glove-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--yz-s1);
 }
 
 .yz-glove-tile {
+  appearance: none;
+  font: inherit;
+  color: var(--yz-text);
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
+  text-align: left;
   gap: var(--yz-s-h);
-  padding: var(--yz-s1) var(--yz-s-h);
+  padding: var(--yz-s1);
   cursor: pointer;
   transition:
     border-color var(--yz-t-fast) var(--yz-ease),
     filter var(--yz-t-fast) var(--yz-ease);
 }
 
-.yz-glove-tile:hover {
+.yz-glove-tile:hover,
+.yz-glove-tile:focus-visible {
   filter: brightness(1.12);
+}
+
+.yz-glove-tile-top {
+  display: flex;
+  align-items: center;
+  gap: var(--yz-s1);
+  min-width: 0;
+}
+
+.yz-glove-tile-top > div {
+  min-width: 0;
 }
 
 /* 选掌页的掌徽放大；未被选中的降饱和，把峰值留给已选 */
 .yz-glove-tile .yz-glove-icon {
-  width: 40px;
-  height: 40px;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
 }
 
 .yz-glove-tile:not(.is-main):not(.is-off) .yz-glove-swatch {
@@ -234,16 +443,43 @@
 }
 
 .yz-glove-tile .yz-glove-name {
-  font-size: var(--yz-fs-sm);
+  display: block;
+  font-size: var(--yz-fs-md);
   color: var(--yz-bone-300);
+  white-space: nowrap;
+}
+
+.yz-glove-tile.is-main .yz-glove-name,
+.yz-glove-tile.is-off .yz-glove-name {
+  color: var(--yz-bone-100);
 }
 
 .yz-glove-role {
+  display: block;
   font-size: var(--yz-fs-xs);
+  letter-spacing: 0.08em;
   color: var(--yz-text-mute);
 }
 
-/* 已选标记：角章（主=识别色，副=钢灰） */
+.yz-glove-skill {
+  margin: 0;
+  font-size: var(--yz-fs-xs);
+  line-height: 1.5;
+  color: var(--yz-text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.yz-glove-awaken {
+  display: block;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--yz-text-mute);
+}
+
+/* 已选标记：角章（主=识别色，副=钢灰，主副同掌=双字章） */
 .yz-glove-tile.is-main {
   border-color: color-mix(in oklab, var(--yz-accent) 55%, var(--yz-steel-700));
 }
@@ -276,52 +512,120 @@
   color: var(--yz-ink-950);
 }
 
-/* 未解锁：整体做旧灰化 + 挑战文案 */
-.yz-glove-tile.is-locked {
-  cursor: default;
-  filter: grayscale(0.9) brightness(0.72);
+.yz-glove-tile.is-main.is-off::after {
+  content: "主·副";
+  background: var(--yz-accent);
+  color: var(--yz-accent-ink);
 }
 
-.yz-glove-tile.is-locked:hover {
+/* 未解锁：整体做旧灰化 + 解锁挑战文案（不是灰一片没有下文） */
+.yz-glove-tile.is-locked,
+.yz-glove-tile:disabled {
+  cursor: default;
+  pointer-events: none;
+  opacity: 1;
   filter: grayscale(0.9) brightness(0.72);
 }
 
 .yz-lock-note {
+  display: block;
   font-size: 10px;
   line-height: 1.3;
-  text-align: center;
   color: var(--yz-text-mute);
 }
 
-/* ---- 分段选择（画质 high/mid/low 等） ---- */
+/* ---- 分段选择（画质 / 音效 / 触控层等） ----
+   契约 DOM：.yz-seg > button.yz-seg-opt(.is-on)。
+   选择器带上父级：权重 (0,2,0)+ 压过 shell.css 的
+   .yz-seg button / .yz-seg button[data-on]（金底填充）。 */
 .yz-seg {
   display: inline-flex;
+  gap: 0;
   border: 1px solid var(--yz-steel-700);
   border-radius: var(--yz-r2);
   overflow: hidden;
   align-self: center;
 }
 
-.yz-seg-opt {
+.yz-seg .yz-seg-opt,
+.yz-seg > button {
   appearance: none;
   cursor: pointer;
   border: 0;
   background: transparent;
+  box-shadow: none;
   min-height: 32px;
   padding: var(--yz-s-h) var(--yz-s2);
   font-family: var(--yz-font-text);
   font-size: var(--yz-fs-sm);
+  letter-spacing: 0.02em;
   color: var(--yz-text-mute);
 }
 
-.yz-seg-opt + .yz-seg-opt {
+.yz-seg .yz-seg-opt + .yz-seg-opt,
+.yz-seg > button + button {
   border-left: 1px solid var(--yz-steel-700);
 }
 
-.yz-seg-opt.is-on {
+.yz-seg .yz-seg-opt.is-on,
+.yz-seg > button[data-on] {
   background: rgb(240 235 223 / 0.08);
   color: var(--yz-bone-100);
+  border-color: var(--yz-steel-700);
   box-shadow: inset 0 1px 0 var(--yz-edge-hi);
+}
+
+/* ---- 设置行（暂停板 / 设置板） ---- */
+.yz-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--yz-s1);
+}
+
+.yz-set {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--yz-s1);
+  min-height: 32px;
+  font-size: var(--yz-fs-sm);
+  color: var(--yz-text-dim);
+}
+
+.yz-set input[type="range"] {
+  width: 148px;
+  accent-color: var(--yz-accent);
+}
+
+/* ---- 键位表（触屏隐藏整块） ---- */
+.yz-keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: var(--yz-s-h) var(--yz-s2);
+  font-size: var(--yz-fs-xs);
+  color: var(--yz-text-mute);
+}
+
+.yz-keys > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--yz-s1);
+  padding: 2px 0;
+  border-bottom: 1px solid rgb(57 66 78 / 0.5);
+}
+
+.yz-keys kbd {
+  font-family: var(--yz-font-num);
+  font-size: 10px;
+  color: var(--yz-text-dim);
+  background: rgb(11 16 28 / 0.55);
+  border: 1px solid var(--yz-steel-700);
+  border-radius: var(--yz-r1);
+  padding: 0 5px;
+}
+
+[data-touch="1"] .yz-keys {
+  display: none;
 }
 
 /* ---- 结算 ---- */
@@ -338,9 +642,18 @@
   color: var(--yz-gold-300);
 }
 
+/* 判定缘由一行（先到 7 杀 / 时间到） */
+.yz-results-sub {
+  margin: 0;
+  font-size: var(--yz-fs-xs);
+  text-align: center;
+  color: var(--yz-text-mute);
+}
+
+/* 行：名次 | 名字 | 击杀 | 坠落 */
 .yz-results-row {
   display: grid;
-  grid-template-columns: 1fr repeat(3, 52px);
+  grid-template-columns: 1.6em minmax(0, 1fr) 56px 56px;
   align-items: center;
   gap: var(--yz-s1);
   padding: var(--yz-s1) var(--yz-s2);
@@ -365,8 +678,61 @@
   color: var(--yz-accent);
 }
 
-.yz-results-row > :nth-child(n + 2) {
+.yz-results-rank {
+  text-align: center;
+  color: var(--yz-text-mute);
+}
+
+.yz-results-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yz-results-row > :nth-child(n + 3) {
   text-align: right;
+}
+
+/* ---- 降级提示 / 系统状态（主菜单底部堆叠） ----
+   tone：默认 warn（降级中）；.is-ok 已接入；.is-gold 解锁。
+   [data-tone="ok"] 为旧 shell 钩子别名。 */
+.yz-notes {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b) + var(--yz-s1));
+  transform: translateX(-50%);
+  z-index: var(--yz-z-menu);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--yz-s-h);
+  max-width: min(92vw, 640px);
+  pointer-events: none;
+}
+
+.yz-note {
+  padding: 2px 12px;
+  font-family: var(--yz-font-text);
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+  color: var(--yz-text-mute);
+  background: rgb(11 16 28 / 0.66);
+  border: 1px solid var(--yz-steel-700);
+  /* 警示沿：氧化红掺钢灰去饱和，避免多行破「一屏一处绛红」 */
+  border-left: 2px solid color-mix(in oklab, var(--yz-danger) 55%, var(--yz-steel-700));
+  border-radius: var(--yz-r1);
+}
+
+.yz-note.is-ok,
+.yz-note[data-tone="ok"] {
+  color: var(--yz-text-dim);
+  border-left-color: var(--yz-dusk-300);
+}
+
+.yz-note.is-gold {
+  color: var(--yz-gold-300);
+  border-left-color: var(--yz-gold-500);
 }
 
 /* ---- 弹窗 ---- */
@@ -420,7 +786,7 @@
   pointer-events: none;
 }
 
-/* ---- 竖屏：面板贴顶滚动，标题收小 ---- */
+/* ---- 竖屏：面板贴顶滚动，标题收小，大厅收窄 ---- */
 @media (orientation: portrait) {
   .yz-panel--wide {
     width: min(440px, 94vw);
@@ -428,5 +794,28 @@
 
   .yz-title {
     font-size: clamp(34px, 12vmin, 64px);
+  }
+
+  .yz-lobby-head .yz-title {
+    font-size: clamp(28px, 9vmin, 44px);
+  }
+
+  .yz-glove-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
+}
+
+/* 横屏手机：大厅纵向空间紧，标题行与网格收一档 */
+@media (max-height: 480px) {
+  .yz-lobby {
+    gap: var(--yz-s1);
+  }
+
+  .yz-lobby-head .yz-title {
+    font-size: clamp(24px, 7vmin, 36px);
+  }
+
+  .yz-glove-skill {
+    -webkit-line-clamp: 1;
   }
 }

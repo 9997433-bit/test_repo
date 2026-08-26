@@ -37,6 +37,15 @@ body {
   display: none !important;
 }
 
+/* ---- 壳根兼容 ----
+   Opus-4 的 UI 根节点带 class="yz"（shell.css 遗留）。本表注入在
+   shell.css 之后：把根上的字体/颜色重指到设计令牌，防止旧主题的
+   衬线数字栈与象牙色泄进 .yz-* 子树。shell.css 本身不改。 */
+.yz {
+  font-family: var(--yz-font-text);
+  color: var(--yz-text);
+}
+
 /* ---- #gl · 全视口 WebGL 画布 ----
    WebGL 首帧前显示暮蓝天空渐变占位，避免黑闪。
    touch-action:none：画布上的触摸只交给视角拖拽，不滚动页面。 */
