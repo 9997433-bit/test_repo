@@ -119,3 +119,29 @@ SOTA 验收条：
 6. 全量 `tsc` + `npm test` + 构建；交叉核验无回归。
 
 **Round 3 纪律**：只推 `agent/my-garden-world`；禁止切走 `/workspace`；禁止再开平行实现分支往主支硬并。
+
+---
+
+## 《Round 3 · Fable-4 UX 终审简报》
+
+槽位：Fable-4（fable-ux），模型 `claude-fable-5-thinking-xhigh`。FILE LOCK：`src/data/story.ts`、`src/ui/tutorial.ts`、`docs/UX.md`；锁外零接线。提交 `61af126`（仅含 lock 内两文件）。
+
+### 核查结论：邻访 API 已出现在 src，且两份设计稿均被落地
+
+- **邻访（UX.md 六）已全链路实现**：`engine/neighbors.ts`（三邻居、seed=邻居id+游戏日、保底盛放+缺水、日限与交情）→ `ui/panels.ts` 访邻花笺（名录 ⇄ 园子两页）→ `app.ts` dock「访邻」印章（`visit` 预留门控位如约生效）；`social` 段随存档 schema v3 入档。
+- **锚位摆放模式（UX.md 七）已实现**：`systems/decorate.ts` 八锚位同名落地 + `decorAnchors` 覆盖表（旧档零迁移）；`scene/decor-layer.ts` 陈列牌行尾「摆放」tap-tap（拿起/安置/对调/回匣/Esc），空锚绿呼吸、占位琥珀、aria 文案逐字同稿。
+- **番外折**：`renderSideStory` 由「无人调用」变为 `fence`/`borrow` 已接线（访邻面板）；`settle` 待接线——建议点在 `app.ts` `place` 处理器 `placeDecor` 成功分支，一行即可（见 UX.md 8.4）。
+
+### 实际偏差（已在 UX.md 6.0 / 7.0 逐条落档）
+
+访邻走轻量花笺而非全屏接管（无划场、dock 不藏、Esc 两级退）；每涨一心即得碎片（比设计慷慨）；帮浇为 tap 无拖浇；进出园无 aria-live 播报（遗留小差）。摆放入口从三处并为「摆放」一钮；替换升级为对调；幽灵章改双端高亮；数据用覆盖表替代数组升级。`scene/neighbor-view.ts` 为场景槽平行备件（仅测试消费，访邻花笺未接它）。
+
+### 本槽位产出（lock 内）
+
+- `docs/UX.md`：6.0 / 7.0 新增「实际 vs 设计」终审对账表；一至五节对齐现状（主循环补访邻与摆放、陈列牌空态、Esc 分层全景）；八节改记接线现状 + 8.4 settle 指引；6.1–6.7 / 7.1–7.6 原稿标注存档。
+- `src/data/story.ts`：`settle` 文案对齐锚位实现（货郎自动落座 + 指点「摆放」入口）；trigger 注释改记实际接线位。三折 id 与 trigger 字面量未动，教程数据未动。
+- `src/ui/tutorial.ts`：**零改动**——教程六 API 签名与行为一字未动。
+
+### 验证
+
+`tsc --noEmit` 干净；`vitest run` 25 文件 **214 测全绿**（含 tutorial 6 例、round3-final 契约 7 例、round3-social 18 例、decor-anchors/place-mode/visit-ui/neighbor-scene）。
