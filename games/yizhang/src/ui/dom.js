@@ -44,13 +44,35 @@ export function formatClock(seconds) {
   return `${m}:${String(r).padStart(2, "0")}`;
 }
 
+/**
+ * 指针捕获是「锦上添花」：拿不到也只是手指滑出按钮后收不到 pointerup，
+ * 由 lostpointercapture / pointercancel 兜底。但它会在指针已经抬起时抛
+ * NotFoundError，而捕获排在业务回调之前 —— 不吞掉的话这一下按键就没了。
+ */
+export function capturePointer(el, pointerId) {
+  try {
+    el.setPointerCapture?.(pointerId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function releasePointer(el, pointerId) {
+  try {
+    el.releasePointerCapture?.(pointerId);
+  } catch {
+    /* 指针早就没了，忽略 */
+  }
+}
+
 /** 触控按钮：pointer 事件统一处理，按下即触发，抬起/离开即释放。 */
 export function bindHoldButton(el, onDown, onUp) {
   let pointerId = null;
   const down = (e) => {
     if (pointerId !== null) return;
     pointerId = e.pointerId;
-    el.setPointerCapture?.(e.pointerId);
+    capturePointer(el, e.pointerId);
     el.dataset.pressed = "1";
     e.preventDefault();
     onDown(e);
@@ -59,7 +81,7 @@ export function bindHoldButton(el, onDown, onUp) {
     if (pointerId !== e.pointerId) return;
     pointerId = null;
     delete el.dataset.pressed;
-    el.releasePointerCapture?.(e.pointerId);
+    releasePointer(el, e.pointerId);
     e.preventDefault();
     if (onUp) onUp(e);
   };

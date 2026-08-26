@@ -5,7 +5,7 @@
 // 全部锚在 env(safe-area-inset-*) 上。摇杆走 --x/--y（落点）与 --sx/--sy（推杆）。
 // 所有 pointer 事件都 preventDefault：iOS 的边缘返回、下拉刷新、双指缩放不许抢手势。
 
-import { h, bindHoldButton } from "./dom.js";
+import { h, bindHoldButton, capturePointer } from "./dom.js";
 
 const STICK_RADIUS = 52; // .yz-stick 半径 60px 减去杆帽余量
 
@@ -33,7 +33,7 @@ export function createTouchLayer({ input, audio }) {
       if (stickId !== null) return;
       e.preventDefault();
       stickId = e.pointerId;
-      zone.setPointerCapture?.(e.pointerId);
+      capturePointer(zone, e.pointerId);
       const rect = zone.getBoundingClientRect();
       originX = e.clientX - rect.left;
       originY = e.clientY - rect.top;
