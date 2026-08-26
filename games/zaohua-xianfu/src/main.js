@@ -26,6 +26,12 @@ const ui = createUI(store);
 startEngine({ store, render: ui.frame });
 ui.paint(store.get());
 
+// 纯视图点击（切页签、选地块）不进 dispatch，而 engine 每帧只热补 HUD，
+// 所以在 composition root 上补一次重绘；已 dispatch 的点击此处会被 HTML 比对短路。
+document.addEventListener("click", (event) => {
+  if (event.target?.closest?.("[data-act]")) ui.paint(store.get());
+});
+
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") store.flush();
   else store.dispatch({ type: "RESUME", now: Date.now() });
