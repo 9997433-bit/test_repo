@@ -3,10 +3,9 @@
  *
  * 章节表与关卡名为手写；**经济字段**（体力、首通、重复掉落）逐关取自
  * `balance.STAGE_BALANCE`（fable-3 §3 的 400 种子校准表），
- * **战斗字段**（recommendPower / waves / 敌人面板）仍由本文件的曲线算出 ——
- * 文档的 enemyPower 是按 baseAtk 20–32 的原型标定的，而 data/weapons.js 的原型高约 1.5 倍，
- * 直接换会让整条难度曲线失真。文档值另存为 `stage.balancePower` 供经济回归比对，
- * 等 opus-3 的实战引擎重跑天级投影后再统一（fable-3 §11-1）。
+ * **战斗字段**（recommendPower / waves）1–20 关按 fable-3 Round 3 重锚：
+ * `enemyPower × 1.5`（普通）/ `× 1.3`（精英），对齐武器原型量纲。
+ * 21–40 关仍走原指数曲线。文档值另存为 `stage.balancePower`。
  */
 
 import {
@@ -302,8 +301,13 @@ function buildStages() {
     const isElite = i % 5 === 0;
     const element = stageElement(chapter, indexInChapter);
     const basePower = POWER_START * POWER_STEP ** (i - 1);
-    const power = round(basePower * (isElite ? ELITE_POWER_SCALE : 1));
     const row = STAGE_BALANCE[i - 1];
+    const docPower = Number(row?.enemyPower) || basePower;
+    const power = i <= 19
+      ? round(docPower * (isElite ? 1.3 : 1.5))
+      : i === 20
+        ? 820
+        : round(basePower * (isElite ? ELITE_POWER_SCALE : 1));
     const repeat = buildRepeat(row, element);
 
     list.push(
@@ -327,8 +331,8 @@ function buildStages() {
         repeat,
         dropTable: buildDropTable(repeat),
         unlockLineupSlot: LINEUP_UNLOCK_AT[i] ?? null,
-        /** 精英关需要战力门槛，普通关不设限 */
-        powerGate: isElite ? round(power * 0.72) : 0,
+        /** 1–20 关不设战力门槛，保证积极操作能挑战第 20 关。 */
+        powerGate: i <= 20 ? 0 : isElite ? round(power * 0.72) : 0,
         /** 扫荡门槛：打到三星才开放，每次固定 1 点体力（balance.SWEEP_RULES）。 */
         sweepStars: SWEEP_RULES.minStars,
         sweepStaminaCost: SWEEP_RULES.staminaCost,

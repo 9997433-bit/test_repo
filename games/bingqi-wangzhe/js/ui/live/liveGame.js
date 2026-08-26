@@ -126,8 +126,17 @@ export function createLiveGame(runtime, override = {}) {
     const s = st();
     if (!s.flags || typeof s.flags !== 'object') s.flags = {};
     if (!s.idle || typeof s.idle !== 'object') s.idle = {};
-    if (!s.campaign || typeof s.campaign !== 'object') s.campaign = { highestStage: 0, cleared: {} };
-    if (!s.campaign.cleared || typeof s.campaign.cleared !== 'object') s.campaign.cleared = {};
+    if (!s.campaign || typeof s.campaign !== 'object') s.campaign = { highestStage: 0, cleared: 0, stars: {} };
+    // core 把 cleared 存成「最高关序号」；旧 UI 曾存成字典。数字形态绝不能抹成 {}。
+    if (typeof s.campaign.cleared === 'number') {
+      s.campaign.highestStage = Math.max(
+        Math.floor(s.campaign.highestStage || 0),
+        Math.floor(s.campaign.cleared || 0),
+      );
+    } else if (!s.campaign.cleared || typeof s.campaign.cleared !== 'object') {
+      s.campaign.cleared = Math.floor(s.campaign.highestStage || 0);
+    }
+    if (!s.campaign.stars || typeof s.campaign.stars !== 'object') s.campaign.stars = {};
     if (!s.arena || typeof s.arena !== 'object') s.arena = {};
     if (!s.arena.daily || typeof s.arena.daily !== 'object') s.arena.daily = { day: -1, attacks: 0 };
     if (!Array.isArray(s.flags.arenaLog)) s.flags.arenaLog = [];
@@ -482,11 +491,16 @@ export function createLiveGame(runtime, override = {}) {
 
   function campaign() {
     const s = ensureShape();
-    const stars = {};
-    Object.entries(s.campaign.cleared).forEach(([id, rec]) => {
-      stars[id] = typeof rec === 'number' ? rec : Number(rec?.stars) || 0;
-    });
-    return { cleared: Math.max(0, Math.floor(s.campaign.highestStage || 0)), stars };
+    const stars = { ...(s.campaign.stars || {}) };
+    if (s.campaign.cleared && typeof s.campaign.cleared === 'object') {
+      Object.entries(s.campaign.cleared).forEach(([id, rec]) => {
+        stars[id] = typeof rec === 'number' ? rec : Number(rec?.stars) || 0;
+      });
+    }
+    const clearedNum = typeof s.campaign.cleared === 'number'
+      ? Math.floor(s.campaign.cleared)
+      : Math.max(0, Math.floor(s.campaign.highestStage || 0));
+    return { cleared: Math.max(clearedNum, Math.floor(s.campaign.highestStage || 0)), stars };
   }
 
   /** 战斗种子从存档的 rng 流里取，保证「同存档同一战」可复现。 */
@@ -583,16 +597,15 @@ export function createLiveGame(runtime, override = {}) {
 
     if (result.winner === 'player') {
       add(stageRewardMap(stage));
-      const prev = s.campaign.cleared[stage.id];
-      const prevStars = typeof prev === 'number' ? prev : Number(prev?.stars) || 0;
-      const firstClear = !prev;
+      const prevStars = Number(s.campaign.stars?.[stage.id]) || 0;
+      const firstClear = prevStars === 0 && (typeof s.campaign.cleared !== 'number' || s.campaign.cleared < stage.index);
       if (firstClear) add(stage.firstClear);
-      s.campaign.cleared[stage.id] = {
-        stars: Math.max(prevStars, result.stars),
-        clears: (typeof prev === 'object' ? Number(prev.clears) || 0 : 0) + 1,
-        at: runtime.nowMs()
-      };
-      if (stage.index > cleared) s.campaign.highestStage = stage.index;
+      if (!s.campaign.stars || typeof s.campaign.stars !== 'object') s.campaign.stars = {};
+      s.campaign.stars[stage.id] = Math.max(prevStars, result.stars);
+      if (stage.index > cleared) {
+        s.campaign.highestStage = stage.index;
+        s.campaign.cleared = stage.index;
+      }
       result.firstClear = firstClear;
     } else if (raw.rewards?.coin) {
       // 败北保底：引擎给的铜钱落袋（exp 不是资源，不入账）。

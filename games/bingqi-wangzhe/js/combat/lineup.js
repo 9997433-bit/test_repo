@@ -26,7 +26,7 @@ export const MIN_LINEUP = 1;
 export const MAX_LINEUP = 5;
 
 /** 阵容栏位随主线进度解锁：1 / 2 / 3 / 4 / 5。 */
-export const SLOT_UNLOCK_STAGES = Object.freeze([1, 3, 8, 15, 25]);
+export const SLOT_UNLOCK_STAGES = Object.freeze([0, 2, 4, 9, 14]);
 
 export const EMPTY_EFFECTS = Object.freeze({
   atkPct: 0,

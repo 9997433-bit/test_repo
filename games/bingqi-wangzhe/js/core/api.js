@@ -233,13 +233,17 @@ export function installGameApi(game, modules = {}) {
   /** 战斗结果 → 界面战报（battleReport.js 读 kind / survivors / total）。 */
   function viewBattle(result, rewards) {
     const timeline = (result.timeline ?? [])
-      .filter((ev) => ev.text)
       .map((ev) => ({
+        ...ev,
         round: ev.round ?? 0,
         kind: ev.side === 'player' ? 'ally' : ev.side === 'enemy' ? 'foe' : 'sys',
         element: ev.element ?? null,
-        type: ev.t,
-        text: escapeHtml(namedSkills(ev.text)),
+        type: ev.type || ev.t,
+        text: ev.text ? escapeHtml(namedSkills(ev.text)) : ev.text,
+        statusId: ev.statusId ?? null,
+        aoe: Boolean(ev.aoe),
+        multiHit: Boolean(ev.multiHit),
+        boss: Boolean(ev.boss),
       }));
     const total = (result.players ?? []).length;
     return {
@@ -474,8 +478,17 @@ export function installGameApi(game, modules = {}) {
     const stage = stageById[stageId];
     if (!stage) return { ok: false, error: '关卡不存在' };
 
-    const cleared = num(state.campaign.cleared, 0);
-    if (stage.index > cleared + 1) return { ok: false, error: '前置关卡未通关' };
+    const clearedRaw = state.campaign.cleared;
+    const cleared = typeof clearedRaw === 'number'
+      ? num(clearedRaw, 0)
+      : Math.max(
+        num(state.campaign.highestStage, 0),
+        ...Object.keys(clearedRaw && typeof clearedRaw === 'object' ? clearedRaw : {}).map((id) => {
+          const idx = Number(String(id).replace(/\D/g, ''));
+          return Number.isFinite(idx) ? idx : 0;
+        }),
+      );
+    if (stage.index > cleared + 1) return { ok: false, error: '前置关卡未通关', reason: 'stage_locked' };
 
     const party = lineupWeapons();
     if (party.length === 0) return { ok: false, error: '请先在战阵中上阵兵器' };
@@ -484,7 +497,7 @@ export function installGameApi(game, modules = {}) {
       return { ok: false, error: `战力不足，建议 ${stage.powerGate} 以上再来` };
     }
     if (!game.spend({ stamina: stage.staminaCost }, 'campaign')) {
-      return { ok: false, error: '体力不足' };
+      return { ok: false, error: '体力不足', reason: 'insufficient_stamina' };
     }
 
     state.campaign.attempts = num(state.campaign.attempts, 0) + 1;
