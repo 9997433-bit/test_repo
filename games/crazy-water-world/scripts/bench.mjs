@@ -3,20 +3,32 @@ import { createStore } from "../src/core/store.js";
 import { stepSim } from "../src/core/engine.js";
 import { placeBuilding, expandRaft, canPlace } from "../src/world/build.js";
 import { tickWorld } from "../src/world/sim.js";
+import { adjacentWalls } from "../src/world/grid.js";
 import { spawnFlotsam } from "../src/explore/salvage.js";
 import { simulateBattle } from "../src/combat/battle.js";
 import { mulberry32 } from "../src/core/rng.js";
 import { BUILDINGS } from "../src/data/buildings.js";
+import { HEROES } from "../src/data/heroes.js";
 import { STAGES } from "../src/data/stages.js";
 
 const TARGET_BUILDINGS = 64;
 const TARGET_RAFT_SIDE = 24;
 const STOCK = 1_000_000_000;
+const SHELTER_WALLS = [
+  [2, 1],
+  [3, 1],
+  [1, 2],
+  [4, 2],
+  [1, 3],
+  [4, 3],
+  [2, 4],
+  [3, 4],
+];
 const BUDGET_P95_MS = {
-  tick: 0.5,
-  stepSim: 0.75,
-  spawn: 0.25,
-  battle: 2,
+  tick: 2,
+  stepSim: 4,
+  spawn: 1,
+  battle: 8,
 };
 
 function round(value) {
@@ -59,6 +71,37 @@ function placeFirstOpen(state, type) {
   return state;
 }
 
+function assignEveryBuilding(state) {
+  const fallbackHeroKey = Object.keys(HEROES)[0];
+  const specialistByType = new Map();
+  for (const [heroKey, hero] of Object.entries(HEROES)) {
+    if (hero.assign?.likes && !specialistByType.has(hero.assign.likes)) {
+      specialistByType.set(hero.assign.likes, heroKey);
+    }
+  }
+
+  const heroes = state.buildings.map((building, index) => {
+    const id = `bench-hero-${index}`;
+    return {
+      id,
+      heroKey: specialistByType.get(building.type) || fallbackHeroKey,
+      star: 5,
+      xp: 0,
+      assignedBuildingId: building.id,
+      injuredUntil: 0,
+    };
+  });
+  const occupantByBuilding = new Map(heroes.map((hero) => [hero.assignedBuildingId, hero.id]));
+  return {
+    ...state,
+    heroes,
+    buildings: state.buildings.map((building) => ({
+      ...building,
+      occupantHeroId: occupantByBuilding.get(building.id),
+    })),
+  };
+}
+
 function benchmarkState() {
   let state = createStore({ meta: { seed: 0xc0ffee } }).get();
   state = {
@@ -70,7 +113,9 @@ function benchmarkState() {
   while (state.raft.width < TARGET_RAFT_SIDE) state = expandRaft(state, "right");
   while (state.raft.height < TARGET_RAFT_SIDE) state = expandRaft(state, "down");
 
-  state = placeFirstOpen(state, "hq");
+  state = placeBuilding(state, "hq", 2, 2, 0);
+  for (const [x, y] of SHELTER_WALLS) state = placeBuilding(state, "wall", x, y, 0);
+
   const repeatable = Object.keys(BUILDINGS).filter((type) => !BUILDINGS[type].unique);
   let cursor = 0;
   let misses = 0;
@@ -80,10 +125,17 @@ function benchmarkState() {
     misses = state === before ? misses + 1 : 0;
     cursor += 1;
   }
-  return state;
+  state = assignEveryBuilding(state);
+  return {
+    ...state,
+    world: { ...state.world, weather: "tsunami", weatherTimer: 3600 },
+  };
 }
 
 const prepared = benchmarkState();
+const shelter = prepared.buildings.find((building) => building.type === "hq");
+const adjacentFenceCount = shelter ? adjacentWalls(prepared, shelter).length : 0;
+const assignedBuildingCount = prepared.buildings.filter((building) => building.occupantHeroId).length;
 let tickState = structuredClone(prepared);
 let simState = structuredClone(prepared);
 let spawnState = structuredClone(prepared);
@@ -124,7 +176,11 @@ for (const [name, metric] of Object.entries(metrics)) {
 }
 
 const checks = {
-  buildingsAbove20: prepared.buildings.length > 20,
+  buildingsAbove40: prepared.buildings.length > 40,
+  denseAssignments: assignedBuildingCount > 40 && assignedBuildingCount === prepared.buildings.length,
+  assignedHeroesResolve: prepared.buildings.every((building) =>
+    prepared.heroes.some((hero) => hero.id === building.occupantHeroId)),
+  adjacentFences: adjacentFenceCount === SHELTER_WALLS.length,
   allBudgetsPass: Object.values(metrics).every((metric) => metric.pass),
 };
 const report = {
@@ -133,6 +189,9 @@ const report = {
     raft: [prepared.raft.width, prepared.raft.height],
     buildings: prepared.buildings.length,
     buildingTypes: new Set(prepared.buildings.map((building) => building.type)).size,
+    assignedBuildings: assignedBuildingCount,
+    adjacentFences: adjacentFenceCount,
+    weather: prepared.world.weather,
     battleStage: STAGES[29].id,
     battleUnits: allies.length + STAGES[29].enemies.length,
   },

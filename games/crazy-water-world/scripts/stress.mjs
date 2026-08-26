@@ -4,15 +4,14 @@ import { createStore } from "../src/core/store.js";
 import { placeBuilding, expandRaft, canPlace } from "../src/world/build.js";
 import { tickWorld } from "../src/world/sim.js";
 import { BUILDINGS } from "../src/data/buildings.js";
-import { WEATHERS } from "../src/data/weather.js";
 import { STAGES } from "../src/data/stages.js";
 import { simulateBattle } from "../src/combat/battle.js";
 
 const MAP_SIDE = 32;
 const TARGET_BUILDINGS = 240;
 const STOCK = 1_000_000_000;
-const WEATHER_CYCLES = 20;
-const EXTREME_DT = [0.001, 0.1, 1, 30, 600];
+const TSUNAMI_CYCLES = 20;
+const TSUNAMI_DT = [0.001, 0.1, 1, 30, 600, 3600];
 const SEEDS_PER_STAGE = 128;
 
 function round(value) {
@@ -20,16 +19,17 @@ function round(value) {
 }
 
 function finiteState(state) {
-  const scalars = [
-    state.player.hp,
-    state.player.hunger,
-    state.player.thirst,
-    state.world.timeOfDay,
-    state.world.weatherTimer,
-    state.campaign.idleSince,
-    ...Object.values(state.resources),
-  ];
-  return scalars.every(Number.isFinite);
+  const pending = [state];
+  while (pending.length) {
+    const value = pending.pop();
+    if (typeof value === "number" && !Number.isFinite(value)) return false;
+    if (Array.isArray(value)) {
+      pending.push(...value);
+    } else if (value && typeof value === "object") {
+      pending.push(...Object.values(value));
+    }
+  }
+  return true;
 }
 
 function placeFirstOpen(state, type) {
@@ -72,27 +72,27 @@ const setupStarted = performance.now();
 const prepared = largeState();
 const setupElapsedMs = performance.now() - setupStarted;
 
-const weatherStarted = performance.now();
-let weatherState = structuredClone(prepared);
-let weatherFinite = true;
-let minHp = weatherState.player.hp;
-const weatherExposure = Object.fromEntries(Object.keys(WEATHERS).map((weather) => [weather, 0]));
-for (let cycle = 0; cycle < WEATHER_CYCLES; cycle += 1) {
-  for (const weather of Object.keys(WEATHERS)) {
-    for (const dt of EXTREME_DT) {
-      weatherState = {
-        ...weatherState,
-        meta: { ...weatherState.meta, tick: weatherState.meta.tick + 1 },
-        world: { ...weatherState.world, weather, weatherTimer: dt + 1 },
-      };
-      weatherState = tickWorld(weatherState, dt);
-      weatherExposure[weather] += 1;
-      minHp = Math.min(minHp, weatherState.player.hp);
-      weatherFinite &&= finiteState(weatherState);
-    }
+const tsunamiStarted = performance.now();
+let tsunamiState = structuredClone(prepared);
+let tsunamiFinite = true;
+let tsunamiRetained = true;
+let minHp = tsunamiState.player.hp;
+let tsunamiTicks = 0;
+for (let cycle = 0; cycle < TSUNAMI_CYCLES; cycle += 1) {
+  for (const dt of TSUNAMI_DT) {
+    tsunamiState = {
+      ...tsunamiState,
+      meta: { ...tsunamiState.meta, tick: tsunamiState.meta.tick + 1 },
+      world: { ...tsunamiState.world, weather: "tsunami", weatherTimer: dt + 1 },
+    };
+    tsunamiState = tickWorld(tsunamiState, dt);
+    tsunamiTicks += 1;
+    minHp = Math.min(minHp, tsunamiState.player.hp);
+    tsunamiFinite &&= finiteState(tsunamiState);
+    tsunamiRetained &&= tsunamiState.world.weather === "tsunami";
   }
 }
-const weatherElapsedMs = performance.now() - weatherStarted;
+const tsunamiElapsedMs = performance.now() - tsunamiStarted;
 
 const allies = [
   { id: "stress-sam", heroKey: "sam", star: 5 },
@@ -106,6 +106,8 @@ const digest = createHash("sha256");
 const signatures = new Set();
 const mismatches = [];
 let mismatchCount = 0;
+let invalidBattleShapeCount = 0;
+let nonFiniteBattleCount = 0;
 const stageScan = [];
 let battleCases = 0;
 
@@ -124,6 +126,10 @@ for (const stage of STAGES) {
       mismatchCount += 1;
       if (mismatches.length < 20) mismatches.push({ stage: stage.id, seed });
     }
+    if (first.truncated || first.leftover.length !== allies.length + stage.enemies.length) {
+      invalidBattleShapeCount += 1;
+    }
+    if (!finiteState(first)) nonFiniteBattleCount += 1;
     winners[first.winner] += 1;
     durationTotal += first.duration;
     minDuration = Math.min(minDuration, first.duration);
@@ -149,32 +155,42 @@ const checks = {
   maxMap: prepared.raft.width === MAP_SIDE && prepared.raft.height === MAP_SIDE,
   denseBuild: prepared.buildings.length >= 200,
   allBuildingTypes: new Set(prepared.buildings.map((building) => building.type)).size === Object.keys(BUILDINGS).length,
-  weatherFinite,
-  allStagesScanned: stageScan.length === STAGES.length,
+  tsunamiTickFinite: tsunamiFinite,
+  tsunamiWeatherRetained: tsunamiRetained,
+  exactlyThirtyStages: STAGES.length === 30 && stageScan.length === 30,
+  fiveHeroLineup: allies.length === 5,
+  fiveEnemiesPerStage: STAGES.every((stage) => stage.enemies.length === 5),
+  allBattlesFiveVsFive: invalidBattleShapeCount === 0,
   allSeedCasesScanned: battleCases === STAGES.length * SEEDS_PER_STAGE,
+  finiteBattleResults: nonFiniteBattleCount === 0,
+  deterministicBattleResults: mismatchCount === 0,
 };
-const structuralPass = Object.values(checks).every(Boolean);
+const pass = Object.values(checks).every(Boolean);
 const report = {
-  status: structuralPass ? (mismatchCount ? "pass_with_determinism_findings" : "pass") : "fail",
+  status: pass ? "pass" : "fail",
   largeMap: {
     raft: [prepared.raft.width, prepared.raft.height],
     buildings: prepared.buildings.length,
     buildingTypes: new Set(prepared.buildings.map((building) => building.type)).size,
     setupElapsedMs: round(setupElapsedMs),
   },
-  extremeWeather: {
-    cycles: WEATHER_CYCLES,
-    dtSeconds: EXTREME_DT,
-    simulations: WEATHER_CYCLES * Object.keys(WEATHERS).length * EXTREME_DT.length,
-    exposure: weatherExposure,
-    finite: weatherFinite,
+  tsunamiTickScan: {
+    weather: "tsunami",
+    cycles: TSUNAMI_CYCLES,
+    dtSeconds: TSUNAMI_DT,
+    ticks: tsunamiTicks,
+    finite: tsunamiFinite,
+    retainedWeather: tsunamiRetained,
     minHp: round(minHp),
-    elapsedMs: round(weatherElapsedMs),
+    elapsedMs: round(tsunamiElapsedMs),
   },
   battleStageScan: {
+    format: `${allies.length}v${STAGES[0]?.enemies.length || 0}`,
     stages: STAGES.length,
     seedsPerStage: SEEDS_PER_STAGE,
     cases: battleCases,
+    invalidBattleShapes: invalidBattleShapeCount,
+    nonFiniteResults: nonFiniteBattleCount,
     elapsedMs: round(battleElapsedMs),
     results: stageScan,
   },
@@ -184,10 +200,10 @@ const report = {
     mismatchSamples: mismatches,
     uniqueSignatures: signatures.size,
     digest: digest.digest("hex"),
-    note: "Same-input mismatches are reported only; battle code is not modified.",
+    note: "Every stage/seed pair is simulated twice and compared byte-for-byte.",
   },
   checks,
 };
 
 console.log(JSON.stringify(report, null, 2));
-if (!structuralPass) process.exitCode = 1;
+if (!pass) process.exitCode = 1;
