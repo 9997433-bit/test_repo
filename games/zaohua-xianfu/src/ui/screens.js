@@ -149,12 +149,15 @@ function buildDetail(state, ui) {
     <div class="build-list">${list}</div></div>`;
 }
 
-/** 风水评签：分数落三档，档位写进 data-tier 交给样式层上色。 */
+/**
+ * 风水评签：UI 只落分数与 data-tier，评语「上吉/中平/下乘」由样式层的 ::before 自书，
+ * 免得同一句话写两遍；读屏取不到 ::before，故档位另抄进 aria-label 与 title。
+ */
 function fengshuiBadge(score) {
   const tier = fengshuiTier(score);
   if (!tier) return "";
-  return `<span class="fengshui" data-tier="${tier.tier}"
-    title="全府吃邻接的产出建筑平均乘区折成 0-100 分：70 分上吉，35 分中平，其下下乘">风水 ${score}/100 · ${tier.label}</span>`;
+  return `<span class="fengshui" data-tier="${tier.tier}" aria-label="风水 ${score}/100 · ${tier.label}"
+    title="全府吃邻接的产出建筑平均乘区折成 0-100 分：70 分上吉，35 分中平，其下下乘">风水 ${score}/100</span>`;
 }
 
 export function mansionView(state, ui = {}) {
