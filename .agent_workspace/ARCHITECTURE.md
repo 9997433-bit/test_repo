@@ -245,3 +245,66 @@ core 的 `idleRatesPerHour` 退役为内部估算，UI 挂机只走 facade 的 `
 技能 id snake_case 以 `data/skills.js` `SKILL_BY_ID` 为唯一命名法；战斗事件类型以 combat 实现的
 `start|wave|round|action|skill|damage|heal|buff|status|dot|shield|kill|end` 为准，不设别名；
 品质字段 `quality`、品质序 `QUALITY_ORDER`（combat/units.js）。
+
+## Round 3 补丁
+
+> 追加式契约（fable-1），实证与复现记录见 `.agent_workspace/round3/fable1-acceptance.md`。
+> 与 R2 补丁冲突处以本段为准。备注：R2-P1 规划的 `js/api.js` 实际落位 `js/core/api.js`
+> （`installGameApi`），以实现为准，不再迁移。
+
+### R3-P1. 单编排权威（opus-1 / opus-4）
+
+会**改 state** 的编排动词只允许存在一份实现：`core/api.js installGameApi()`。
+`ui/live/liveGame.js` 删除全部本地编排 fallback（challengeStage / arenaFight / setLineup /
+clearSlot / forgeWeapon / enhanceWeapon / dismantleWeapon / collectIdle / setWeaponLock /
+refreshArena）与 `ensureShape()`、`flags.forgeState` 镜像、`drainCorePending()`、本地竞技对手池，
+一律严格委托 `runtime.*`，缺失即 throw（禁止静默自实现）。core/api.js 补齐动词全表：R2-P2 表
++ `setWeaponLock(uid,locked)` + `refreshArena()` + `sweepStage(stageId,times=1)`。
+竞技对手池唯一：种子推导与 `count/basePower` 收编 liveGame 现行实现，`arenaOpponents()` 与
+`arenaFight()` 必须出自同一池。
+
+### R3-P2. 战报形状冻结（引擎形状）
+
+`challengeStage/arenaFight` 的 `result` 冻结为：
+`{ engine:true, skillNames, engineVersion, winner, rounds, stars, grade, timeline[]（原始事件，含 t/subtype）,
+players[], enemies[], bonds, survivors:number, total:number, rewards, seed, timeout, durationMs, stats,
+firstClear?, rankChange? }`。逻辑层**不预转义**文本、不改事件字段名；转义/技能名替换是 UI 渲染层
+（text 节点 + `skillNames` 字典）的职责。
+
+### R3-P3. campaign 存档形状冻结
+
+`campaign.cleared:number`（已通关最高关序号）、`campaign.stars: { [stageId]: 0..3 }`、
+`campaign.highestStage:number`，以 `core/state.js hydrate()` 为唯一权威。任何层不得再造第二种
+campaign 形状；形状修补只允许发生在 hydrate。
+
+### R3-P4. 权威表统一
+
+- 栏位解锁唯一权威：`balance.SLOT_UNLOCK_STAGES = [0,2,4,9,14]`（0 = 开局即有）。
+  core 经 `createGame(options.lineupUnlockStages)` 由组合根注入；combat/lineup.js 常量改为同表，
+  测试断言三处一致。
+- `core/state.js RESOURCE_IDS` 追加 `shardCommon|shardUncommon|shardRare|shardEpic|shardLegendary|shardMythic`，
+  `defaultResources()` 补 0 值。shard 不进 `IDLE_RESOURCE_IDS`。
+
+### R3-P5. 开局资源注入
+
+`createGame(options.starter = {coin, iron, stamina})`；`js/main.js` 注入
+`{ ...balance.STARTER_KIT, stamina: balance.STAMINA.max }`（startFull）。core 缺省值维持现值，
+core 不 import data 的约束不变；tests / bench 一律经 `createBoundGame()` 取得同一注入。
+
+### R3-P6. 扫荡动词
+
+`sweepStage(stageId, times=1)`：该关 `campaign.stars[stageId] > 0` 才可用（`SWEEP_RULES.unlock`）；
+每日前 `SWEEP_RULES.freeDaily` 次免体力，之后体力同关卡消耗；掉落用 `game.rng` 实抽
+`stage.dropTable`（可复现），即时入账并计 `campaign.daily.sweep`；返回 `{ok, loot, times}`，
+失败返回 `{ok:false, error}` 中文文案。
+
+### R3-P7. 音效（opus-4）
+
+新文件 `js/ui/audio.js`：WebAudio 合成音（锤击/克制暴击/胜/负/点击），`AudioContext` 首次用户
+手势惰性创建，禁止外部音频资产；开关持久化在 `flags.sound`（经 runtime 落档），设置页可切换。
+
+### R3-P8. 无 mock 成功路径
+
+正常 boot（core + data/forge/combat 齐备）必须 `source==='core'`。`gameAdapter.REQUIRED` 点名
+扩到编排动词全表（R3-P1）。任何 mock 兜底（探测失败 / 接线抛错 / `?demo=1`）必须在外壳顶部
+渲染**常驻**「演示数据」横幅，不允许仅设置页小字。
