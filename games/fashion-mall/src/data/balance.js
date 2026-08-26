@@ -1,6 +1,8 @@
 export const TICK_MS = 250;
 
-export const LEVEL_INCOME_GATES = [0, 800, 4000, 20000, 100000, 600000, 3000000];
+// 累计营收门（Lv2 门 800 为教学节点保持基线；上层门按 docs/ECONOMY.md
+// 贪心复投模拟轨迹重定：基线 4k/20k/100k/600k/3M 在新成本曲线下 6 分钟穿光）
+export const LEVEL_INCOME_GATES = [0, 800, 6000, 50000, 400000, 3000000, 20000000];
 export const LEVEL_XP_GATES = [0, 20, 60, 140, 300, 620, 1280];
 
 export const SHOPS = [
@@ -112,11 +114,13 @@ export const FURNITURE = [
   { id: "garden", name: "空中花房", bonus: 0.1, room: "spa" },
 ];
 
+// 研发定位为中期战略沉没（回本 200s→1700s 递增），基线 400 金 50 秒回本
+// 是早期收入火箭，会把前 3 分钟节奏直接打穿
 export const RESEARCH_NODES = [
-  { id: "line-a", name: "中央厨房流水线", cost: 400, income: 8 },
-  { id: "line-b", name: "冷链分拣", cost: 1800, income: 22 },
-  { id: "line-c", name: "联名包装厂", cost: 9000, income: 70 },
-  { id: "line-d", name: "城市配送枢纽", cost: 42000, income: 210 },
+  { id: "line-a", name: "中央厨房流水线", cost: 1200, income: 6 },
+  { id: "line-b", name: "冷链分拣", cost: 8000, income: 18 },
+  { id: "line-c", name: "联名包装厂", cost: 50000, income: 60 },
+  { id: "line-d", name: "城市配送枢纽", cost: 300000, income: 180 },
 ];
 
 export function shopRate(shop, level, staffFilled, partnerBonus, charm) {
@@ -225,30 +229,32 @@ export function paidGameExpectation(id) {
 
 /* ── 限时目标续期曲线（ARCHITECTURE §4.3 锁定接口：rollNextGoal(state) -> goal）──
  * core Round 2 接线：settle 管线里目标完成发奖后、或超时后调用本函数生成下一档。
- * tier 是自适应难度档：连续完成升档 ×1.35，超时降档，玩家强度自动收敛。 */
+ * 区间取「等级基准」与「累计营收 ×12%」的较大者：等级内收入爆发时目标随财富
+ * 自缩放，杜绝“秒完成→奖励泵”；tier 连续完成升档 ×1.35、超时降档，自适应玩家强度。 */
 export const GOAL_CURVE = {
   durationMs: 8 * 60 * 1000,
   baseSpan: 560, // Lv1 首档区间，对齐基线初始目标 600 − 起始金 40
-  levelMult: 3, // 每主角等级区间 ×3，贴合该等级收入量级
+  levelMult: 3, // 每主角等级基准区间 ×3
+  earnedShare: 0.12, // 区间下限 = 累计营收 ×12%
   tierMult: 1.35,
   tierMax: 6,
-  rewardShare: 0.35, // 金币奖励 = 区间 × 0.35
+  rewardShare: 0.25, // 金币奖励 = 区间 × 0.25（回流率受控，防奖励泵）
   xpBase: 14,
   xpPerLevel: 6,
   xpTierBoost: 0.15,
 };
 
-export function goalSpan(level, tier) {
-  return Math.round(
-    GOAL_CURVE.baseSpan *
-      GOAL_CURVE.levelMult ** (Math.max(1, level) - 1) *
-      GOAL_CURVE.tierMult ** tier,
+export function goalSpan(level, tier, goldEarned = 0) {
+  const base = Math.max(
+    GOAL_CURVE.baseSpan * GOAL_CURVE.levelMult ** (Math.max(1, level) - 1),
+    goldEarned * GOAL_CURVE.earnedShare,
   );
+  return Math.round(base * GOAL_CURVE.tierMult ** tier);
 }
 
-export function goalReward(level, tier) {
+export function goalReward(level, tier, goldEarned = 0) {
   return {
-    gold: Math.round(goalSpan(level, tier) * GOAL_CURVE.rewardShare),
+    gold: Math.round(goalSpan(level, tier, goldEarned) * GOAL_CURVE.rewardShare),
     xp: Math.round(
       (GOAL_CURVE.xpBase + GOAL_CURVE.xpPerLevel * Math.max(1, level)) *
         (1 + GOAL_CURVE.xpTierBoost * tier),
@@ -263,12 +269,13 @@ export function rollNextGoal(state, nowMs = Date.now()) {
     ? Math.min(GOAL_CURVE.tierMax, Math.max(0, prevTier + (prev.done ? 1 : -1)))
     : 0;
   const level = Math.max(1, state.level || 1);
+  const earned = state.goldEarned || 0;
   return {
-    target: Math.round((state.goldEarned || 0) + goalSpan(level, tier)),
+    target: Math.round(earned + goalSpan(level, tier, earned)),
     until: nowMs + GOAL_CURVE.durationMs,
     done: false,
     tier,
-    reward: goalReward(level, tier),
+    reward: goalReward(level, tier, earned),
   };
 }
 
@@ -283,13 +290,16 @@ export function passiveXpPerSec(level) {
 }
 
 /* ── 成本曲线（权威口径；基线内联在视图里的公式 Round 2 一律改查此处）──
- * 基线升级成本 80×1.45^n 对产出 1.18^n：回本时长每级 ×1.229，Lv40 回本 32 小时，
- * 且五店共用一条成本线导致后期店（base 64）升级近乎白送。
- * 新口径成本 ∝ shop.base，成本增速 = 产出增速 + 0.1，
- * 回本时长 = 12/(g−1) × ((g+0.1)/g)^(n−1)，每级仅 ×≈1.08，缓增不发散。 */
+ * 基线两个病灶：升级成本 80×1.45^n 对产出 1.18^n 回本每级 ×1.229（Lv40 回本
+ * 32 小时，硬墙）；且五店共用一条成本线，后期店（base 64）升级近乎白送。
+ * 新口径成本 ∝ shop.base，成本增速 = 产出增速 + 0.2：
+ * 回本时长 = 20/(g−1) × ((g+0.2)/g)^(n−1)，每级 ×≈1.16——受控缓增，
+ * 单店自然进入平台期把注意力推向新店/研发/伙伴，但不出现基线式硬墙。
+ * （曾试 +0.1 → 每级 ×1.08：贪心复投模拟下单店无限滚雪球，收入 1 小时破
+ * 千万/秒、等级门 6 分钟穿光，故加陡。结论见 docs/ECONOMY.md 模拟章节。） */
 export const COSTS = {
-  upgrade: { baseMult: 12, growthDelta: 0.1 },
-  hire: { base: 50, growth: 1.5 },
+  upgrade: { baseMult: 20, growthDelta: 0.2 },
+  hire: { baseMult: 4, growth: 1.5 },
   train: { base: 40, growth: 1.6 },
   furniturePerBonus: 40000,
 };
@@ -302,8 +312,10 @@ export function shopUpgradeCost(shop, level) {
   );
 }
 
-export function hireCost(staffCount) {
-  return Math.floor(COSTS.hire.base * COSTS.hire.growth ** Math.max(0, staffCount));
+// 招聘同样 ∝ shop.base：满员触发自动经营是 ×2.86 跳变（0.35→1 加员工加成），
+// 基线全店共用 50×1.5^n 使后期店几乎免费拿到该跳变
+export function hireCost(shop, staffCount) {
+  return Math.floor(COSTS.hire.baseMult * shop.base * COSTS.hire.growth ** Math.max(0, staffCount));
 }
 
 // 基线 40×level 线性成本对恒定边际收益（每级 +4.8% 店收入）可无限白嫖，改指数

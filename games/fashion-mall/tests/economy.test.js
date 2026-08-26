@@ -64,7 +64,7 @@ test("default state online rate is positive", () => {
 
 test("furniture and research helpers", () => {
   assert.ok(furnitureBonus(["sofa", "garden"]) > 0.15);
-  assert.ok(researchIncome(["line-a"]) === 8);
+  assert.ok(researchIncome(["line-a"]) === 6);
 });
 
 test("paid RNG games have negative gold expectation and carry shards", () => {
@@ -144,16 +144,18 @@ test("passive xp unblocks idle leveling slower than active play", () => {
   assert.ok(fastfoodTip(3).xp / 9 > passiveXpPerSec(1) * 5);
 });
 
-test("upgrade payback grows gently instead of diverging", () => {
+test("upgrade payback brakes compounding without hitting a wall", () => {
   for (const shop of SHOPS) {
-    // 回本时长每级增速 = 成本增速/产出增速，须 < 1.12（基线为 1.229，发散）
+    // 回本时长每级增速 = 成本增速/产出增速。必须 >1.05（否则贪心复投单店
+    // 无限滚雪球）且 <1.20（基线 1.229 是 Lv40 回本 32 小时的硬墙）
     const paybackRatio = shopUpgradeCost(shop, 21) / shopUpgradeCost(shop, 20) / shop.growth;
-    assert.ok(paybackRatio < 1.12, `${shop.id} 回本每级 ×${paybackRatio.toFixed(3)}`);
+    assert.ok(paybackRatio > 1.05 && paybackRatio < 1.2, `${shop.id} 回本每级 ×${paybackRatio.toFixed(3)}`);
     assert.ok(shopUpgradeCost(shop, 2) > shopUpgradeCost(shop, 1));
     // 成本与店铺体量挂钩：后期店不再共用前期店成本线
-    assert.equal(shopUpgradeCost(shop, 1), Math.floor(12 * shop.base));
+    assert.equal(shopUpgradeCost(shop, 1), Math.floor(20 * shop.base));
   }
-  assert.ok(hireCost(1) > hireCost(0));
+  assert.ok(hireCost(SHOPS[0], 1) > hireCost(SHOPS[0], 0));
+  assert.ok(hireCost(SHOPS[4], 0) > hireCost(SHOPS[0], 0));
   assert.ok(partnerTrainCost(5) > partnerTrainCost(4) * 1.5);
 });
 
