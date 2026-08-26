@@ -1,110 +1,36 @@
 import { hashSeed, mulberry32, pickWeighted } from "../core/rng.js";
+import { DIVE_ZONES, DIVE_RULES } from "../data/dive.js";
+import { EXPLORE_REASON, modOf, weatherLabel } from "./mods.js";
 
 /**
- * 潜水海区。布局不写死：每次下潜由 (meta.seed, meta.tick, zone) 派生 rng 现场生成，
- * 同一 (seed, tick, zone) 必然重放出同一张图。
+ * 海区与通用常数全部来自 data/dive.js（唯一真源，原先 explore 这边那份写死的
+ * shallow/reef/wreck/trench 已删）。布局不写死：每次下潜由 (meta.seed, meta.tick, zone)
+ * 派生 rng 现场生成，同一 (seed, tick, zone) 必然重放出同一张图。
  */
-export const DIVE_ZONES = {
-  shallow: {
-    id: "shallow",
-    name: "浅滩",
-    maxDepth: 40,
-    sharks: 1,
-    nodes: 4,
-    wrecks: 0,
-    bubbles: 3,
-    oxygenBonus: 10,
-    loot: [
-      ["scrap", 26],
-      ["plastic", 24],
-      ["rope", 18],
-      ["stone", 16],
-      ["salt", 12],
-      ["blueprint", 4],
-    ],
-    wreckLoot: [
-      ["blueprint", 60],
-      ["scrap", 40],
-    ],
-  },
-  reef: {
-    id: "reef",
-    name: "珊瑚礁",
-    maxDepth: 60,
-    sharks: 2,
-    nodes: 4,
-    wrecks: 1,
-    bubbles: 3,
-    oxygenBonus: 0,
-    loot: [
-      ["rawFish", 24],
-      ["plastic", 20],
-      ["rope", 18],
-      ["salt", 16],
-      ["stone", 12],
-      ["blueprint", 8],
-    ],
-    wreckLoot: [
-      ["blueprint", 55],
-      ["fillet", 30],
-      ["shard", 15],
-    ],
-  },
-  wreck: {
-    id: "wreck",
-    name: "沉船区",
-    maxDepth: 90,
-    sharks: 2,
-    nodes: 4,
-    wrecks: 1,
-    bubbles: 2,
-    oxygenBonus: 0,
-    loot: [
-      ["scrap", 30],
-      ["stone", 18],
-      ["rope", 14],
-      ["plastic", 14],
-      ["blueprint", 12],
-      ["fillet", 8],
-      ["shard", 4],
-    ],
-    wreckLoot: [
-      ["blueprint", 50],
-      ["shard", 30],
-      ["scrap", 20],
-    ],
-  },
-  trench: {
-    id: "trench",
-    name: "深渊裂谷",
-    maxDepth: 90,
-    sharks: 3,
-    nodes: 5,
-    wrecks: 2,
-    bubbles: 4,
-    oxygenBonus: -8,
-    loot: [
-      ["scrap", 22],
-      ["stone", 20],
-      ["blueprint", 20],
-      ["shard", 14],
-      ["fillet", 12],
-      ["salt", 12],
-    ],
-    wreckLoot: [
-      ["shard", 50],
-      ["blueprint", 35],
-      ["hourglass", 15],
-    ],
-  },
-};
+export { DIVE_ZONES, DIVE_RULES };
+
+export const DEFAULT_ZONE = "wreck";
 
 const SUBSTEP = 0.05;
-const SWIM_SPEED = 18;
-const PICKUP_R = 5;
-const SHARK_BITE_R = 6;
 const SHARK_AGGRO_R = 22;
-const SURFACE_DEPTH = 8;
+/** 冲刺的移速与氧耗系数（手感常数，表里没有）。 */
+const BOOST_SPEED = 1.35;
+const BOOST_O2 = 1.6;
+/** 深度标尺：UI 的海底舞台按 90 米满格绘制，海区表只调氧耗与掉落，不调标尺。 */
+const MAX_DEPTH = 90;
+
+function num(v, fallback) {
+  return Number.isFinite(v) ? v : fallback;
+}
+
+function rule(field, fallback) {
+  return num(DIVE_RULES?.[field], fallback);
+}
+
+const SWIM_SPEED = rule("moveSpd", 18);
+const PICKUP_R = rule("collectRadius", 5);
+const SHARK_BITE_R = rule("sharkRadius", 6);
+const SURFACE_DEPTH = rule("surfaceDepth", 8);
 /** 鲨鱼不上浮到这条线以上：浮到 SURFACE_DEPTH 以内就一定咬不到，上浮永远是活路。 */
 const SHARK_MIN_Y = SURFACE_DEPTH + SHARK_BITE_R;
 
@@ -122,71 +48,134 @@ function dockLevel(state) {
     .reduce((best, b) => Math.max(best, b.level || 1), 0);
 }
 
-function zoneDef(zone) {
-  return DIVE_ZONES[zone] || DIVE_ZONES.wreck;
+/** 天气氧耗倍率（0 = 该天气禁潜）。轴名由 DIVE_RULES.weatherField 给。 */
+export function diveO2Mul(state) {
+  return modOf(state, DIVE_RULES.weatherField || "diveO2", 1);
 }
 
 function layoutSeed(state, zone) {
   return hashSeed(`dive|${zone}|${state.meta?.seed ?? 0}|${state.meta?.tick ?? 0}`);
 }
 
-export function startDive(state, zone = "wreck") {
+/** [min,max] 区间掷一个整数；表里写单值或缺省都能兜住。 */
+function rollCount(rng, range, fallback) {
+  const lo = Math.round(num(Array.isArray(range) ? range[0] : range, fallback));
+  const hi = Math.round(num(Array.isArray(range) ? range[1] : range, lo));
+  return lo + Math.floor(rng() * Math.max(1, hi - lo + 1));
+}
+
+function bandOf(y) {
+  return y < MAX_DEPTH * 0.4 ? "upper" : y < MAX_DEPTH * 0.75 ? "mid" : "deep";
+}
+
+/**
+ * 前置检查：海区存在 → 船坞等级 → 关卡进度 → 天气。
+ * UI 拿它给海区按钮上锁并写原因，不用自己复读解锁表。
+ */
+export function canDive(state, zone = DEFAULT_ZONE) {
+  const def = DIVE_ZONES[zone];
+  if (!def) return { ok: false, reason: "没这个海区。", code: EXPLORE_REASON.UNKNOWN_TYPE };
   const level = dockLevel(state);
-  if (!level) return { ok: false, reason: "先造潜水船坞。", code: "E_REQUIRES_BUILDING" };
-  const def = zoneDef(zone);
+  if (!level) return { ok: false, reason: "先造潜水船坞。", code: EXPLORE_REASON.REQUIRES_BUILDING };
+  const needDock = num(def.unlock?.dockLevel, 1);
+  if (level < needDock) {
+    return { ok: false, reason: `${def.name}要 ${needDock} 级潜水船坞。`, code: EXPLORE_REASON.LOCKED };
+  }
+  const needStage = num(def.unlock?.stage, 0);
+  if (needStage > 0 && (state.campaign?.bestStage || 0) < needStage) {
+    return { ok: false, reason: `${def.name}要先打到第 ${needStage} 关。`, code: EXPLORE_REASON.LOCKED };
+  }
+  const o2 = diveO2Mul(state);
+  if (!(o2 > 0)) {
+    return { ok: false, reason: `${weatherLabel(state)}：这浪头下水就是喂鲨，等等。`, code: EXPLORE_REASON.WEATHER, diveO2: o2 };
+  }
+  return { ok: true, reason: "", code: "", zone: def.id, dockLevel: level, diveO2: o2 };
+}
+
+/** 海区选择面板数据：每个海区的解锁状态与拒绝原因。 */
+export function diveZones(state) {
+  return Object.values(DIVE_ZONES).map((def) => {
+    const gate = canDive(state, def.id);
+    return {
+      id: def.id,
+      name: def.name,
+      flavor: def.flavor || "",
+      oxygen: num(def.oxygen, 100),
+      sharks: num(def.sharks?.count, 0),
+      rareChance: num(def.rareChance, 0),
+      unlocked: gate.ok,
+      reason: gate.ok ? "" : gate.reason,
+      code: gate.ok ? "" : gate.code,
+    };
+  });
+}
+
+export function startDive(state, zone = DEFAULT_ZONE) {
+  const gate = canDive(state, zone);
+  if (!gate.ok) return gate;
+  const def = DIVE_ZONES[gate.zone];
+  const level = gate.dockLevel;
   const seed = layoutSeed(state, def.id);
   const rng = mulberry32(seed);
-  const maxDepth = def.maxDepth;
-  const oxygenMax = Math.max(60, 100 + (level - 1) * 12 + def.oxygenBonus);
+  const oxygenMax = Math.max(40, num(def.oxygen, 100) + rule("oxygenPerDockLevel", 12) * (level - 1));
 
   const nodes = [];
-  for (let i = 0; i < def.nodes; i += 1) {
-    const res = pickWeighted(rng, def.loot);
-    const y = round2(12 + rng() * (maxDepth - 16));
+  const count = rollCount(rng, def.nodeCount, 3);
+  const table = (def.nodes || []).map((e) => [e, num(e.w, 1)]);
+  for (let i = 0; i < count && table.length; i += 1) {
+    const entry = pickWeighted(rng, table);
+    const n = rollCount(rng, entry.n, 1);
+    const y = round2(12 + rng() * (MAX_DEPTH - 16));
     nodes.push({
       id: `n${i + 1}`,
       x: round2(8 + rng() * 84),
       y,
-      res,
-      n: 1 + Math.floor(rng() * (res === "blueprint" || res === "shard" ? 1 : 4)),
+      res: entry.res,
+      n,
       kind: "node",
-      depthBand: y < maxDepth * 0.4 ? "upper" : y < maxDepth * 0.75 ? "mid" : "deep",
+      rare: false,
+      depthBand: bandOf(y),
     });
   }
-  for (let i = 0; i < def.wrecks; i += 1) {
-    const res = pickWeighted(rng, def.wreckLoot);
-    const y = round2(maxDepth * 0.62 + rng() * (maxDepth * 0.3));
+  // 稀有点：整次下潜最多一个，按 rareChance 掷，坐标压在深水段（值钱的东西不摆在门口）。
+  const rares = (def.rares || []).map((e) => [e, num(e.w, 1)]);
+  if (rares.length && rng() < num(def.rareChance, 0)) {
+    const entry = pickWeighted(rng, rares);
+    const n = rollCount(rng, entry.n, 1);
     nodes.push({
-      id: `w${i + 1}`,
+      id: "r1",
       x: round2(10 + rng() * 80),
-      y,
-      res,
-      n: 1 + Math.floor(rng() * 2),
-      kind: "wreck",
-      label: "沉船舱室",
+      y: round2(MAX_DEPTH * 0.62 + rng() * (MAX_DEPTH * 0.3)),
+      res: entry.res,
+      n,
+      kind: "rare",
+      rare: true,
+      label: "稀有点",
       depthBand: "deep",
     });
   }
 
   const bubbles = [];
-  for (let i = 0; i < def.bubbles; i += 1) {
+  const bubbleCount = Math.max(2, Math.round(num(def.nodeCount?.[0], 3) * 0.75));
+  for (let i = 0; i < bubbleCount; i += 1) {
     bubbles.push({
       id: `b${i + 1}`,
       x: round2(6 + rng() * 88),
-      y: round2(14 + rng() * (maxDepth - 18)),
+      y: round2(14 + rng() * (MAX_DEPTH - 18)),
       amount: 16 + Math.floor(rng() * 14),
     });
   }
 
   const sharks = [];
-  for (let i = 0; i < def.sharks; i += 1) {
+  const sharkSpeed = num(def.sharks?.speed, 1);
+  for (let i = 0; i < num(def.sharks?.count, 0); i += 1) {
     sharks.push({
       id: `s${i + 1}`,
       x: round2(15 + rng() * 70),
-      y: round2(16 + rng() * (maxDepth - 20)),
+      y: round2(16 + rng() * (MAX_DEPTH - 20)),
       vx: round2((rng() < 0.5 ? -1 : 1) * (0.35 + rng() * 0.5)),
       vy: round2((rng() - 0.5) * 0.25),
-      speed: round2(0.8 + rng() * 0.5),
+      speed: round2((0.8 + rng() * 0.5) * sharkSpeed),
       aggro: false,
     });
   }
@@ -201,7 +190,7 @@ export function startDive(state, zone = "wreck") {
     oxygenMax,
     x: 50,
     depth: 0,
-    maxDepth,
+    maxDepth: MAX_DEPTH,
     loot: [],
     alive: true,
     done: false,
@@ -214,7 +203,12 @@ export function startDive(state, zone = "wreck") {
     warning: false,
     surfaced: false,
     dockLevel: level,
-    message: `${def.name}：氧气 ${oxygenMax}，下去别贪。`,
+    // 氧耗三件套跟着会话走：diveStep 是纯函数拿不到 state，advanceDive 每步再刷新倍率。
+    o2Base: num(def.o2DrainBase, 6),
+    o2PerDepth: num(def.o2DrainPerDepth, 0.04),
+    o2Mult: gate.diveO2,
+    weather: weatherLabel(state),
+    message: `${def.name}：氧气 ${oxygenMax}，${def.flavor || "下去别贪。"}`,
   };
 }
 
@@ -223,13 +217,9 @@ function currentAt(depth, time) {
   return Math.sin(depth * 0.05 + time * 0.8) * 2;
 }
 
-function num(v, fallback) {
-  return Number.isFinite(v) ? v : fallback;
-}
-
-/** 旧档里的会话缺 time/oxygenMax/bubbles 等新字段，先补默认值再步进，避免算出 NaN。 */
+/** 旧档里的会话缺 time/oxygenMax/bubbles/o2* 等新字段，先补默认值再步进，避免算出 NaN。 */
 function hydrate(session) {
-  const maxDepth = num(session.maxDepth, 90);
+  const maxDepth = num(session.maxDepth, MAX_DEPTH);
   return {
     ...session,
     x: num(session.x, 0),
@@ -240,6 +230,9 @@ function hydrate(session) {
     oxygen: num(session.oxygen, 100),
     oxygenMax: num(session.oxygenMax, Math.max(100, num(session.oxygen, 100))),
     danger: num(session.danger, 0),
+    o2Base: num(session.o2Base, 6),
+    o2PerDepth: num(session.o2PerDepth, 0.04),
+    o2Mult: num(session.o2Mult, 1),
     loot: Array.isArray(session.loot) ? session.loot : [],
     nodes: Array.isArray(session.nodes) ? session.nodes : [],
     bubbles: Array.isArray(session.bubbles) ? session.bubbles : [],
@@ -263,15 +256,17 @@ function substep(prev, input, dt) {
     loot: prev.loot.slice(),
   };
   const boost = !!input.boost;
-  const spd = SWIM_SPEED * (boost ? 1.35 : 1);
+  const spd = SWIM_SPEED * (boost ? BOOST_SPEED : 1);
   const ix = clamp(Number(input.x) || 0, -1, 1);
   const iy = clamp(Number(input.y) || 0, -1, 1);
 
   next.time = next.time + dt;
   next.x = clamp(next.x + (ix * spd + currentAt(next.depth, next.time)) * dt, 0, 100);
-  next.depth = clamp(next.depth + iy * spd * dt, 0, next.maxDepth ?? 90);
+  next.depth = clamp(next.depth + iy * spd * dt, 0, next.maxDepth ?? MAX_DEPTH);
   next.bestDepth = Math.max(next.bestDepth, next.depth);
-  next.oxygen -= dt * (6 + next.depth * 0.04) * (boost ? 1.6 : 1);
+  // 氧耗 = (海区基准 + 深度×每米加成) × 天气 diveO2 × 冲刺。
+  const drain = (next.o2Base + next.depth * next.o2PerDepth) * next.o2Mult;
+  next.oxygen -= dt * drain * (boost ? BOOST_O2 : 1);
   if (ix !== 0) next.facing = ix > 0 ? 1 : -1;
 
   let nearest = Infinity;
@@ -288,9 +283,9 @@ function substep(prev, input, dt) {
       s.y += s.vy * dt * 4;
     }
     if (s.x < 0 || s.x > 100) s.vx *= -1;
-    if (s.y < SHARK_MIN_Y || s.y > (next.maxDepth ?? 90)) s.vy *= -1;
+    if (s.y < SHARK_MIN_Y || s.y > (next.maxDepth ?? MAX_DEPTH)) s.vy *= -1;
     s.x = clamp(s.x, 0, 100);
-    s.y = clamp(s.y, SHARK_MIN_Y, next.maxDepth ?? 90);
+    s.y = clamp(s.y, SHARK_MIN_Y, next.maxDepth ?? MAX_DEPTH);
     const after = Math.hypot(s.x - next.x, s.y - next.depth);
     nearest = Math.min(nearest, after);
     if (after < SHARK_BITE_R) {
@@ -336,9 +331,10 @@ function substep(prev, input, dt) {
 
 /**
  * 纯步进。dt 大时内部按 0.05s 拆分，低帧率下不会穿过鲨鱼或资源点。
+ * opts.o2Mult 可覆盖会话里存的天气氧耗倍率（advanceDive 每步刷新用）。
  * 会话已结束或不是 ok 会话时返回原引用。
  */
-export function diveStep(session, input, dt) {
+export function diveStep(session, input, dt, opts = {}) {
   if (!session?.ok || session.done) return session;
   const total = clamp(Number(dt) || 0, 0, 2);
   if (total <= 0) return session;
@@ -346,6 +342,7 @@ export function diveStep(session, input, dt) {
   const steps = Math.max(1, Math.ceil(total / SUBSTEP));
   const slice = total / steps;
   let cur = hydrate(session);
+  if (Number.isFinite(opts?.o2Mult)) cur = { ...cur, o2Mult: opts.o2Mult };
   for (let i = 0; i < steps; i += 1) {
     cur = substep(cur, inp, slice);
     if (cur.done) break;
@@ -384,27 +381,28 @@ export function finishDive(state, session = state.explore?.dive ?? null) {
   if (session.alive) {
     for (const n of loot) resources[n.res] = (resources[n.res] || 0) + n.n;
   }
-  const rare = session.alive ? loot.filter((n) => n.kind === "wreck").length : 0;
+  // 旧会话把稀有点记成 kind:"wreck"，两种口径都认。
+  const rare = session.alive ? loot.filter((n) => n.rare || n.kind === "wreck" || n.kind === "rare").length : 0;
   return {
     ...state,
     resources,
     player: {
       ...state.player,
-      hp: session.alive ? state.player.hp : Math.max(8, state.player.hp - 18),
-      exp: state.player.exp + loot.length * 10,
+      hp: session.alive ? state.player.hp : Math.max(8, state.player.hp - rule("failHpLoss", 18)),
+      exp: state.player.exp + loot.length * rule("xpPerLoot", 10),
     },
     explore: { ...state.explore, dive: null, diveRecord: diveRecordOf(state, session, loot) },
     log: [
       session.alive
-        ? `上浮成功，捞到 ${loot.length} 件深海货${rare ? `（含沉船舱室 ${rare}）` : ""}。`
+        ? `上浮成功，捞到 ${loot.length} 件深海货${rare ? `（含稀有点 ${rare}）` : ""}。`
         : "差点喂鲨。老大，氧气管不是吸管。",
       ...state.log,
     ].slice(0, 24),
   };
 }
 
-/** 会话写进 state.explore.dive，刷新/存档不丢；缺潜水船坞返回原引用。 */
-export function beginDive(state, zone = "wreck") {
+/** 会话写进 state.explore.dive，刷新/存档不丢；缺船坞、等级不够或天气禁潜返回原引用。 */
+export function beginDive(state, zone = DEFAULT_ZONE) {
   const session = startDive(state, zone);
   if (!session.ok) return state;
   return {
@@ -414,11 +412,39 @@ export function beginDive(state, zone = "wreck") {
   };
 }
 
-/** 按 dt 推进 state 里的会话；没有在潜的会话就返回原引用。 */
+/** 天气翻脸（diveO2 = 0）时把人捞上来：会话直接结束，战利品照算。 */
+function forceSurface(state, session) {
+  return {
+    ...state,
+    explore: {
+      ...state.explore,
+      dive: {
+        ...session,
+        done: true,
+        surfaced: true,
+        forced: true,
+        message: `${weatherLabel(state)}：紧急上浮，别贪那点铁。`,
+      },
+    },
+    log: [`${weatherLabel(state)}：把老大从水里拽上来了。`, ...state.log].slice(0, 24),
+  };
+}
+
+/** 天气巡检：正在潜且当前天气 diveO2 = 0（海啸）就强制结束会话，否则原引用。 */
+export function syncDiveWeather(state) {
+  const cur = state.explore?.dive;
+  if (!cur?.ok || cur.done) return state;
+  if (diveO2Mul(state) > 0) return state;
+  return forceSurface(state, cur);
+}
+
+/** 按 dt 推进 state 里的会话（每步按当前天气刷新氧耗倍率）；没有在潜的会话就返回原引用。 */
 export function advanceDive(state, input, dt) {
   const cur = state.explore?.dive;
   if (!cur?.ok || cur.done) return state;
-  const next = diveStep(cur, input, dt);
+  const o2Mult = diveO2Mul(state);
+  if (!(o2Mult > 0)) return forceSurface(state, cur);
+  const next = diveStep(cur, input, dt, { o2Mult });
   if (next === cur) return state;
   return { ...state, explore: { ...state.explore, dive: next } };
 }
@@ -427,7 +453,18 @@ export function advanceDive(state, input, dt) {
 export function diveHud(state) {
   const s = state.explore?.dive;
   if (!s?.ok) {
-    return { active: false, zone: null, oxygen: 0, oxygenPct: 0, depth: 0, loot: 0, danger: 0, warning: false };
+    return {
+      active: false,
+      zone: null,
+      oxygen: 0,
+      oxygenPct: 0,
+      depth: 0,
+      loot: 0,
+      danger: 0,
+      warning: false,
+      diveO2: diveO2Mul(state),
+      weather: weatherLabel(state),
+    };
   }
   return {
     active: !s.done,
@@ -446,6 +483,13 @@ export function diveHud(state) {
     warning: !!s.warning,
     alive: !!s.alive,
     done: !!s.done,
+    forced: !!s.forced,
+    // diveO2 是当下天气的倍率，o2Mult 是这次下潜正在按的倍率（UI 的 diveStep 路径
+    // 只在开潜那一刻取值，两者不等就说明天气中途翻脸了）。
+    diveO2: diveO2Mul(state),
+    o2Mult: num(s.o2Mult, 1),
+    weather: weatherLabel(state),
+    startWeather: s.weather || "",
     message: s.message || "",
   };
 }

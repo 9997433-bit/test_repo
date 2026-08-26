@@ -1,5 +1,5 @@
-import { WEATHERS } from "../data/weather.js";
 import { RESOURCE_META } from "../data/resources.js";
+import { modOf, weatherLabel } from "./mods.js";
 
 /** 一个模拟量子的秒数；spawnFlotsam 的 dt 默认值，保持与 engine 的 0.1s 步长一致。 */
 const QUANTUM = 0.1;
@@ -69,9 +69,12 @@ export function salvageBonus(state) {
   };
 }
 
-/** 天气刷新倍率来自 WEATHERS 表，引擎侧不硬编码数值。 */
+/**
+ * 天气刷新倍率读世界侧落下的 state.world.mods.salvage 快照（缺席时回退天气表）：
+ * 拾荒与建筑产出吃的是同一个数，改天气表不用两处对齐。
+ */
 export function weatherSalvageMul(state) {
-  return (WEATHERS[state.world?.weather] || WEATHERS.clear).salvage;
+  return modOf(state, "salvage", 1);
 }
 
 export function flotsamRadius(f) {
@@ -223,6 +226,7 @@ export function salvageSummary(state) {
     boats: salv.boats,
     yieldMul: round2(salv.yieldMul),
     weatherMul: weatherSalvageMul(state),
+    weather: weatherLabel(state),
     picked: state.explore?.salvage?.picked || 0,
     rarePicked: state.explore?.salvage?.rarePicked || 0,
   };
