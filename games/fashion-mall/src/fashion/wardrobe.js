@@ -109,15 +109,16 @@ export function renderWardrobe(root, state) {
         <div class="fm-sparks" data-sparks></div>
       </div>
 
-      <div class="fm-stats">
-        <div class="fm-stat"><b data-traffic>+0%</b><span>全店客流</span></div>
-        <div class="fm-stat"><b data-rate>0/秒</b><span>当前收益</span></div>
-        <div class="fm-stat"><b data-offline>+0%</b><span>离线加成</span></div>
+      <div class="fm-controls">
+        <div class="fm-stats">
+          <div class="fm-stat"><b data-traffic>+0%</b><span>全店客流</span></div>
+          <div class="fm-stat"><b data-rate>0/秒</b><span>当前收益</span></div>
+          <div class="fm-stat"><b data-offline>+0%</b><span>离线加成</span></div>
+        </div>
+        <p class="fm-note" data-note></p>
+        <div class="fm-presets" data-presets></div>
+        <div data-slots></div>
       </div>
-      <p class="fm-note" data-note></p>
-
-      <div class="fm-presets" data-presets></div>
-      <div data-slots></div>
     </section>`;
 
   const panel = root.querySelector(".fm-look");

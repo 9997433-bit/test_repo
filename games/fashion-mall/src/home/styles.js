@@ -77,7 +77,11 @@ const CSS = `
 }
 
 @media (min-width: 960px) {
-  .fm-shop { grid-template-columns: repeat(4, 1fr); }
+  .fm-room { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); column-gap: 18px; align-items: start; }
+  .fm-room-head { grid-column: 1 / -1; }
+  .fm-shop { grid-template-columns: 1fr; margin-top: 0; }
+  .fm-room-side { padding-top: 2px; }
+  .fm-item { padding: 10px 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -114,8 +114,12 @@ const CSS = `
 .pill.fm-bump { display: inline-block; }
 
 @media (min-width: 960px) {
-  .fm-stage { max-width: 300px; }
-  .fm-cards { grid-template-columns: repeat(6, 1fr); }
+  .fm-look { display: grid; grid-template-columns: 320px minmax(0, 1fr); column-gap: 22px; align-items: start; }
+  .fm-look-head { grid-column: 1 / -1; }
+  .fm-stage { grid-column: 1; max-width: 320px; margin-top: 0; }
+  .fm-controls { grid-column: 2; }
+  .fm-stats { margin-top: 0; }
+  .fm-cards { grid-template-columns: repeat(3, minmax(0, 152px)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

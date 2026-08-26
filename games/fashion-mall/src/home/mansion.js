@@ -23,8 +23,8 @@ function ghostArt(f, owned) {
   return `
     <g class="fm-slotbox" data-buy="${f.id}" transform="translate(${pl.x},${pl.y}) scale(${pl.scale})">
       <rect class="fm-ghost-plate" x="${-pl.w / 2}" y="${-pl.h}" width="${pl.w}" height="${pl.h}" rx="11"
-        fill="rgba(255,255,255,.34)" stroke="#ffffff" stroke-width="2" stroke-dasharray="7 6" opacity=".72"/>
-      <g class="fm-ghost-art" opacity="${owned ? 0.34 : 0.18}">${furnitureArt(f.id)}</g>
+        fill="rgba(255,255,255,.4)" stroke="#ffffff" stroke-width="2.2" stroke-dasharray="7 6" opacity=".8"/>
+      <g class="fm-ghost-art" opacity="${owned ? 0.34 : 0.24}">${furnitureArt(f.id)}</g>
       <g transform="translate(0,${-pl.h / 2 - 6})">
         <circle r="13" fill="rgba(255,255,255,.88)"/>
         <path d="M-5.5,0 H5.5 M0,-5.5 V5.5" stroke="#c73b6f" stroke-width="2.6" stroke-linecap="round"/>
@@ -120,8 +120,10 @@ export function renderMansion(root, state) {
         <span class="fm-room-badge" data-badge></span>
       </div>
       <div class="fm-room-stage" data-stage></div>
-      <div class="fm-shop" data-shop></div>
-      <p class="fm-hint" data-hint></p>`;
+      <div class="fm-room-side">
+        <div class="fm-shop" data-shop></div>
+        <p class="fm-hint" data-hint></p>
+      </div>`;
 
     const stage = section.querySelector("[data-stage]");
     const shop = section.querySelector("[data-shop]");
