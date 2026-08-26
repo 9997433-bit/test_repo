@@ -15,8 +15,20 @@
 | 轮次 | 必须全绿 | 允许桩 / 豁免 |
 |---|---|---|
 | Round 1 | L0 全部；L1 全部；T-01 / T-02 / T-05 / T-07 / T-09 真实断言；红线 R-10～R-13 零命中 | 木棉外 7 掌技能与觉醒、碎地、觉醒条可为**可调用不抛错的接口桩**；T-03 / T-04 / T-06 / T-08 允许 `todo/skip` 占位但文件必须存在；R-01～R-09 不计 |
-| Round 2 | L2 全部（含 L0/L1 复验）；T-01～T-09 全部真实断言 | L3 可部分；R-01～R-09 记警告不否决，但警告清单必须写进验收报告 |
+| Round 2 | **退出门 G-01～G-07 全绿（见下小节，记分前置）**；L2 全部（含 L0/L1 复验）；T-01～T-09 全部真实断言 | L3 可部分；R-01～R-09 记警告不否决，但警告清单必须写进验收报告（重点按 §5.1 风险图排查） |
 | Round 3 | L3 全部 + M-01～M-07（真机）；R 全表零命中；全部测试与探针绿；性能实测报告 | 无 |
+
+### Round 2 退出门（Exit Gate · 全部二值，缺一不发 PASS）
+
+依据 Round 1 复核（§8）增设。Round 2 验收先过这道门再开 L2 记分；**门内任何一项红 → 直接 REJECT，不再往下记分**。静态面命令并入 ACCEPTANCE §2 第 2 步。
+
+- [ ] **G-01 测试全绿** — `npm test` 97/97 通过、退出码 0。现红 6 条必须转绿：`tests/glove-data`×2（schema、`isGloveUnlocked` 未导出）、`tests/match-lifecycle`×2（出台缘不判死、`isMatchOver` 不即时读 kills）、`tests/skills` magnet、`tests/slap-combat` 正前方命中（yaw 约定）。
+- [ ] **G-02 探针有击杀** — `npm run probe` 状态 `pass` 且 `kills ≥ 1`；**探针自带的零杀 `soft-pass` 从本轮起按 FAIL 计**。基线：Round 1 实测 2 kills，不得回退到 0。
+- [ ] **G-03 构建过** — `npm run build`（vite）退出码 0。
+- [ ] **G-04 人类 id 统一 `p0`** — `src/main.js` 不得再有 `SELF_ID = "p1"`；输入采样、相机 `followId`、HUD/结算的 self 判定全部指向 `p0`（与 `src/sim/state.js` 一致）。验证：`rg -n '"p1"' src/main.js` 零命中 + 手动开局能走能扇。
+- [ ] **G-05 八技能经 `step` 可达** — 裸 `createMatch/step`（不手动 `installData/installCombat`）即触发真实 `resolveSkill`：要么 sim 静态引入 data/combat（`src/sim/deps.js` 头注 TODO 路线），要么 main 启动时显式注入且测试口径与运行时一致。金丝雀：`tests/skills.test.js` 两条（spring/magnet）裸调必须绿；8 个 `skillId` 各至少 1 条经 `step` 的断言。
+- [ ] **G-06 触控 CSS 在场且生效** — `src/styles/touch.css` 被 `loadSiblingStyles` 注入并真实驱动触控层：`data-touch="1"` 下扇击钮 ≥72×72、其余钮 ≥48×48 CSS px、间距 ≥8px 可量测（touch.css 实做 88/76、48）。
+- [ ] **G-07 红线清零（R-13，Round 1 已命中）** — `src/styles/index.css` 的两条 Google Fonts `@import` 移除，字体自托管子集 woff2 或程序化字形（`fonts.css` 注释已写升级路径）；`rg -n "googleapis|gstatic" src dist` 零命中。
 
 ---
 
@@ -112,6 +124,19 @@
 
 **生效轮次**：红线组 **R-10～R-13 全轮即时否决**；美术组 **R-01～R-09** Round 1 不计（占位美术豁免）、Round 2 记警告并列入报告、Round 3 命中即否决。
 
+### 5.1 Round 2 廉价信号风险图（真 CSS + Three 落地后的实测排查点）
+
+Round 1 时美术组豁免；现在 `src/styles`（F2）与 `src/render`（Three）都是真实现，下表是 Fable-4 复核（§8）在代码里实际找到的风险点。Round 2 验收按表逐条留证据（截图 / rg 输出 / computed style），命中记 WARNING 入报告；Round 3 起按 R 表否决。
+
+| # | 风险 | 现状证据（复核实查） | 关联 R 项 | 检查方法 / 处置 |
+|---|---|---|---|---|
+| K-1 | **双 HUD 同名类打架** | `src/ui/shell.css`（291 处 `yz-*`）与 `src/styles/**` 定义同名类；styles 经 `loadSiblingStyles` 后注入、靠层叠序压住 shell.css，双源随时漂移反转 | R-04 / R-06 / R-08 的证据污染源 | devtools 逐关键类（计时、掌位、触控钮）核对生效样式来源；处置：shell.css 收缩为 critical fallback，视觉唯一真源归 `src/styles` |
+| K-2 | **字体 token 分叉 → 系统字体 HUD** | shell.css 自定义 `--yz-display/--yz-body/--yz-num`（系统字体栈：Songti SC / Georgia…），而 F2 `fonts.css` 定义的是 `--yz-font-display/--yz-font-text/--yz-font-num` —— 变量名对不上，shell 侧规则赢时 HUD 落系统字体 | **R-04** | devtools computed font 抽 HUD 计时 / 掌名 / 按钮三处；处置：统一 token 名（向 `--yz-font-*` 收敛） |
+| K-3 | **字体外链 CDN** | `src/styles/index.css` 两条 googleapis `@import` 原样进 `dist` 内联 CSS 串 | **R-13（已命中，见 §8）** | 退出门 G-07；零命中后复查 `rg -n "googleapis|gstatic" src dist` |
+| K-4 | **fallback Canvas2D 顶班 = 整场塑料/平光** | `createRenderer` 抛错即静默降级到 `src/core/fallback/render2d.js`（平光、无材质、无主光、自绘 2D 视图）；main 只发一条降级 toast 就继续开局 | R-01 / R-07（以整场形式命中） | 验收截图前必须先验渲染器身份：降级提示零条、走 Three 路径；若实机常态落 2D，按 R-01/R-07 记 WARNING 并指派修复 |
+| K-5 | **bloom 全档常开** | `src/render/config.js` 三档均带 `bloomStrength` 0.7–0.9；选择性 bloom 层（`bloomSelf` 标记）设计合规，但 low 档应可关（R-03 检查点原文） | R-03 | 截图评审强度（只许真实发射源发光）；low 档验证可关闭 |
+| K-6 | **UI 发光 / 光球边界** | 觉醒条 sweep 高光动画、手套 swatch 径向渐变光球式图标（shell.css / hud.css） | R-02 / R-05 边界 | 截图评审判读：当前判 UI 装饰可接受，但不得扩散到 3D 主体（无 OutlinePass、无选中光圈） |
+
 ---
 
 ## 6. T- · 必备测试与探针（MUST EXIST）
@@ -140,6 +165,42 @@ rg -l "T-0[1-9]" tests scripts   # 或按行为逐条核对
 
 ## 7. 快速索引：轮次 × 必查项
 
-- **Round 1**：L0-01…07；L1-01…12；T-01/02/05/07/09；R-10…13。
-- **Round 2**：复验 L0/L1；L2-01…12；T-01…09 全部；R-01…09 警告扫描；R-10…13。
+- **Round 1**：L0-01…07；L1-01…12；T-01/02/05/07/09；R-10…13。**实测判定见 §8：REJECT。**
+- **Round 2**：先过退出门 G-01…07（§0）；复验 L0/L1；L2-01…12；T-01…09 全部；R-01…09 警告扫描（按 §5.1 风险图）；R-10…13。
 - **Round 3**：复验 L0/L1/L2；L3-01…12；M-01…07（真机）；R-01…13 全表零命中；性能协议实测报告（ACCEPTANCE §8）。
+
+---
+
+## 8. Round 1 实测记分（Fable-4 复核 · Round 2 开工基线）
+
+复核对象：`cursor/yizhang-db8d` @ `863bd0d`（Round 1 十路合入后）。复核日期：2026-08-26。
+实测：`npm test` **91/97（6 红，退出码非 0）**；`npm run probe` **PASS**（3600 步 / **2 kills** / 4 人全移动 / p99 0.042ms / `ai:"think"`，单 seed `0x1a2b3c4d`）；`npm run build` 退出码 0（gzip 主 chunk ≈158KB，含 three）。
+
+### 判定：Round 1 = REJECT（L1 未达 + 红线 1 命中）
+
+**L0：6/7。** L0-03 FAIL：`src/styles/index.css` 顶部两条 `@import url("https://fonts.googleapis.com/…")` 原样进入 `dist`（`dist/assets/index-*.js` 内联 CSS 串可查），构建产物存在运行时外链 —— 同时命中红线 **R-13（零 CDN）**。其余 L0 项绿（T-09 静态检查零命中：sim/data/combat/ai 无 three、无 DOM）。
+
+**L1：未达 —— 12 项中 3 绿 / 1 部分 / 8 FAIL。** 判定原则：模块内绿 ≠ 整包绿，按整包记。
+
+| 项 | 判定 | 一句话证据 |
+|---|---|---|
+| L1-01 走位惯性 | FAIL | sim 模块绿，但 `src/main.js` `SELF_ID="p1"` 而 sim 人类是 `p0`（`src/sim/state.js`）——实机输入打到不存在的 id，玩家不动 |
+| L1-02 第三人称相机 | FAIL | `createRenderer({ followId: "p1" })` 跟随不存在的玩家 |
+| L1-03 木棉三段 | FAIL | `src/combat` 内测绿，但默认 `step` 走 `sim/fallback-combat`（无人调 `installData/installCombat`）；契约测 `tests/slap-combat` 正前方命中红（yaw 约定分裂） |
+| L1-04 击退冲量 | FAIL | 同上：模块绿、契约测红（正前方目标零加速） |
+| L1-05 掉岛-重生 | FAIL | 出台缘死法契约测红（护栏把人夹在 rim 上不判死）；`y<fallY` 路径绿 |
+| L1-06 能战 Bot | PASS | probe 2 kills、`ai:"think"`、4 人全移动 |
+| L1-07 触控壳 | FAIL | `src/styles/touch.css` 在场且尺寸达标（88/76、48、间距 8），但输入经 `SELF_ID="p1"` 落空 —— CSS 有、驱动断 |
+| L1-08 八掌数据表 | FAIL | `GLOVES` 8 条在，但 `tests/glove-data` 两红：字段 schema 不合 + `isGloveUnlocked` 未导出 |
+| L1-09 L2 接口桩 | PASS | `resolveSkill / applyAwaken / 碎地子块字段` 存在可调不抛错 |
+| L1-10 单测全绿 | FAIL | 91/97，退出码非 0 |
+| L1-11 固定步主循环 | 部分 | `core/loop.js` 固定 1/60 + 插值 + `hidden` 暂停 + 累积封顶（代码审读绿）；切后台 30s 手动复验未做 |
+| L1-12 视图纯净/可克隆 | PASS | sim 内测 + `tests/sim-determinism` 绿 |
+
+**L2 / L3：维持未验收，定义与条目不变**（Round 2/3 按原表执行）。L2 当前明知的硬阻塞：默认 `step` 用兜底棉掌 —— `installData/installCombat` 无人调、`src/sim/deps.js` 的 `autoWireOptionalDeps` 也无人调，8 技能进不了局；`tests/skills.test.js` 裸 `createMatch/step` 就是金丝雀（magnet 红）。修法进退出门 G-05。
+
+**T 表现状：** T-09 绿；T-07 部分（probe 单 seed，且允许零杀 `soft-pass`，距「3 固定 seed + 活性硬断言」规格有差）；T-01/02/05 契约测各有红；T-03 spring 绿、T-04 magnet 红；T-06 红（`isGloveUnlocked` 缺）；T-08 部分（vitest 侧 1 条确定性绿，probe 侧双跑逐字节对比未做）。
+
+**红线：** **R-13 命中**（Google Fonts CDN，上文）。R-10 / R-11 / R-12 零命中（关键词扫描只中检查命令自身；无 lock-on 功能命中）。
+
+**结转：** 全部 FAIL 项收敛为退出门 G-01～G-07（§0），廉价信号预扫收敛为 §5.1 风险图。

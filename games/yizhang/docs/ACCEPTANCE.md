@@ -34,6 +34,15 @@ rg -in "roblox|slap battle" .
 rg -in "outline" src/render src/styles   # R-02 排查（命中需人工判读）
 ```
 
+**Round 2 起增补（退出门 G-04/G-05/G-07 与 §5.1 风险图的静态面）**：
+
+```sh
+rg -n "SELF_ID" src/main.js                                      # G-04：必须指向 "p0"，出现 "p1" 即门红
+rg -n "installData|installCombat" src/main.js src/sim/index.js   # G-05：注入/静态引入证据（再以裸 step 技能测试为准）
+rg -n "googleapis|gstatic" src dist                              # G-07 / R-13：必须零命中（含构建产物）
+rg -c "\.yz-" src/ui/shell.css src/styles/*.css                  # K-1：双 CSS 同名类面积对照（人工判读漂移）
+```
+
 ### 第 3 步 · 自动化测试
 
 ```sh
@@ -53,13 +62,15 @@ npm run bench    # L3-11（Round 3）
 
 核对输出 JSON：3 个固定 seed 的 60s 1+3 Bot 运行零异常、无 NaN、活性达标、`avgStepMs` 达标（Round 3 ≤0.5ms）；Round 2 起确定性 hash 两跑一致；Round 2 起 Bot 三性格统计可分。
 
+**Round 2 起**：探针输出 `status:"soft-pass"`（零杀）按 FAIL 计 —— 退出门 G-02 要求 `kills ≥ 1` 硬门（Round 1 基线 2 kills，不得回退）；probe 当前单 seed（`0x1a2b3c4d`），本轮应硬化到 T-07 规格的 3 固定 seed，验收按实际 seed 数如实记录。
+
 ### 第 5 步 · 构建
 
 ```sh
 npm run build && du -sh dist && find dist -name '*.js' -exec gzip -k9 {} + && du -ch dist/**/*.js.gz | tail -1
 ```
 
-构建成功；Round 3 核对 L3-10 体积预算；产物内零外链（`rg -n "https?://" dist` 判读）。
+构建成功；Round 3 核对 L3-10 体积预算；产物内零外链（`rg -n "https?://" dist` 判读，**Round 2 起额外 `rg -n "googleapis|gstatic" dist` 必须零命中** —— Round 1 复核在 `dist/assets/index-*.js` 内联 CSS 串中实测命中两条 Google Fonts `@import`，即 R-13）。
 
 ### 第 6 步 · 手动可玩性脚本
 
@@ -87,6 +98,7 @@ M-01～M-07 逐条执行（Round 1–2 仿真即可并标注"仿真"；Round 3 �
 
 以 SOTA_CHECKLIST §0 Gate 表为准。补充裁量规则：
 
+- **Round 2 退出门前置**：SOTA_CHECKLIST §0 的 G-01～G-07 全绿是 L2 记分的前置条件；门内任何一项红 → 直接 REJECT，不再往下记分（修复清单照常出）。
 - **桩的标准**：接口存在、可调用、不抛错、有 `// 桩` 注释或 TODO 标记；假装实现（返回硬编码"正确值"骗过测试）按造假计，直接 REJECT。
 - **测试占位标准**：`it.todo(...)` 或带说明的 `skip`；空文件不算。
 - **复验**：每轮必须重跑上轮全部绿项，回退（regression）按该项 FAIL 计。
@@ -166,3 +178,24 @@ npm run bench          # L3-11 headless 预算
 npm run dev            # 4181 手动验收
 npm run build          # 构建 + 体积预算
 ```
+
+## 10. 判定记录
+
+### 异掌 Round 1 验收判定
+
+- 被验分支/commit：`cursor/yizhang-db8d` @ `863bd0d`（十路合入后）
+- 验收人/日期：Fable-4 / 2026-08-26（Round 2 开工复核，实测重跑）
+- 结论：**REJECT**（修复清单已收敛为 SOTA_CHECKLIST §0 退出门 G-01～G-07）
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| L0 | 6/7 | L0-03：`dist` 内联 CSS 携带两条 googleapis `@import`（构建产物运行时外链） |
+| L1 | 3/12（另 1 项部分） | L1-01/02/07：人类 id `p0`(sim) / `p1`(main) 分裂，实机输入、相机跟随、触控驱动全部落空；L1-03/04：默认 `step` 走兜底棉掌（无人注入）+ yaw 约定分裂致正前方扇空；L1-05：出台缘被护栏夹住不判死；L1-08：schema 红 + `isGloveUnlocked` 未导出；L1-10：`npm test` 91/97 |
+| L2 | 0/12 | 未开验；已知硬阻塞：`installData/installCombat` 无人调，8 技能进不了局（G-05） |
+| L3+M | 0/19 | 未开验（R3 事项） |
+| T | 全真绿 3/9 | 全真：T-09、T-03(spring)、T-08(vitest 侧 1 条)；部分：T-01/02/05（契约测各有红）、T-07（单 seed + 允许零杀 soft-pass）；红：T-04(magnet)、T-06(`isGloveUnlocked`) |
+| R 否决 | 1 命中 | **R-13**：Google Fonts CDN 外链进构建产物（`src/styles/index.css` → `dist`） |
+
+- WARNING 清单（R-01～R-09 预扫，R2 起正式记）：R-04 风险（shell.css 自持系统字体 token `--yz-display` 系与 F2 `--yz-font-*` 分叉）；R-01/R-07 风险（fallback Canvas2D 顶班路径存活，渲染器创建抛错即整场平光）；R-03 观察（bloom 三档常开 0.7–0.9，选择性层设计合规但 low 档应可关）。全表见 SOTA_CHECKLIST §5.1 风险图 K-1～K-6。
+- 修复指派（按 OWNERSHIP）：`p0` 统一 + 启动注入 → Opus-4（main）协同 Opus-1（sim 静态引入路线）；yaw 冻结（yaw=0 朝 -Z）与契约测 helpers → GPT-sol-1 + Opus-1；出台缘判死 → Opus-1；glove schema + `isGloveUnlocked` → Fable-3；magnet/技能接线进 `step` → Opus-3；字体自托管 + token 统一 + shell.css 收缩为 fallback → Fable-2 与 Opus-4；probe 3-seed + 禁零杀 soft-pass → GPT-sol-2。
+- 证据包：实测命令输出（`npm test` 91/97、probe JSON `{"kills":2,"p99StepMs":0.042,…,"ai":"think"}`、`npm run build` 退出码 0、`rg googleapis dist` 命中行）随本轮复核 PR 描述提交；数据同录 `.agent_workspace/yizhang/round1/BRIEF.md` 与 SOTA_CHECKLIST §8。
