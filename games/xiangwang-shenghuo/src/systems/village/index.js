@@ -1,8 +1,9 @@
 import { ITEM_NAMES, WISH_POOL } from "../../data/wishes.js";
 import { GUESTS, guestById } from "../../data/guests.js";
 import { BUILDINGS, buildingById } from "../../data/buildings.js";
-import { recipeById } from "../../data/recipes.js";
-import { dishByRecipe } from "../../data/dishes.js";
+import { recipeById, recipesByBuilding } from "../../data/recipes.js";
+import { dishById, dishByOutput, dishByRecipe } from "../../data/dishes.js";
+import { FURNITURE, furnitureById } from "../../data/furniture.js";
 import { priceOf, stallPrice, STALL_MARKUP } from "../../data/items.js";
 import { addInv, spendInv } from "../../core/store.js";
 import { pickWeighted, rollWith } from "./rng.js";
@@ -21,11 +22,18 @@ const DEFAULT_DISH_WARMTH = 6;
 const DEFAULT_DISH_HAPPINESS = 3;
 const FAVORITE_WARMTH = 8;
 const GUEST_BASE_STAY_DAYS = 2;
+const GUEST_MAX_STAY_DAYS = 4;
 const GUEST_STAY_PER_WARMTH = 20;
 const WISH_TOOL_CHANCE = 0.35;
 const WISH_PEARL_CHANCE = 0.04;
 const CAP_POP_PER_BUILDING = 4;
 const LOG_MAX = 40;
+// docs/GDD.md「家具与温馨」的两级阈值：一屋子暖气换一格心愿位、换一次加倍出菜。
+const COOK_CRIT_WARMTH = 60;
+const COOK_CRIT_CHANCE = 0.1;
+const WISH_BONUS_SLOT_WARMTH = 100;
+const MIN_BUFF_FACTOR = 0.5;
+const MAX_BUFF_FACTOR = 2;
 
 const TOOL_WEIGHTS = [
   ["shovel", 0.4],
@@ -82,12 +90,19 @@ export function guestCapacity(state) {
   return cap;
 }
 
-function guestBuffFactor(state, target) {
+/**
+ * 在座嘉宾里所有 buff.target 命中的系数连乘，钳在 [0.5, 2]。
+ * 契约 §8 只允许 4 个应用点，村落这边占两个：wish（灯哥 0.85 缩短刷新间隔）、
+ * stall（茶婆婆 1.1 抬售价）。kitchen（灶台叔叔 0.8）作用在 production.enqueueJob
+ * 的厨房工单上，cook 是瞬时动作、没有时长可缩，故不在此消费。
+ */
+export function guestBuffFactor(state, target) {
+  let factor = 1;
   for (const seat of state.guests || []) {
-    const def = guestById(seat.id);
-    if (def?.buff?.target === target) return def.buff.factor;
+    const def = guestById(seat?.id);
+    if (def?.buff?.target === target) factor *= def.buff.factor;
   }
-  return 1;
+  return Math.min(MAX_BUFF_FACTOR, Math.max(MIN_BUFF_FACTOR, factor));
 }
 
 function stayDays(state) {
@@ -97,6 +112,26 @@ function stayDays(state) {
 
 function guestUntil(seat, day) {
   return seat.untilDay || (seat.sinceDay || day) + GUEST_BASE_STAY_DAYS;
+}
+
+/* ---------------------------------------------------------------- 家具 */
+
+export function placedFurniture(state) {
+  return (state.furniture || []).filter(Boolean);
+}
+
+export function hasFurniture(state, furnitureId) {
+  return placedFurniture(state).some((f) => (typeof f === "string" ? f : f.id) === furnitureId);
+}
+
+/** 摆出来的家具是温馨度的保底盘：每日回落不会把屋子掏空到这条线以下。 */
+export function furnitureWarmth(state) {
+  let total = 0;
+  for (const item of placedFurniture(state)) {
+    const def = furnitureById(typeof item === "string" ? item : item.id);
+    if (def) total += def.warmth;
+  }
+  return total;
 }
 
 /* ---------------------------------------------------------------- 心愿 */
@@ -110,10 +145,22 @@ function findWish(state, wishId) {
   return (state.wishes || []).find((w) => w && (w.wishId === wishId || w.id === wishId)) || null;
 }
 
+/** 温馨度 ≥100 时心愿墙常驻第 4 格（GDD「家具与温馨」阈值）。 */
+export function wishSlots(state) {
+  const warmth = Math.max(0, state.resources?.warmth || 0);
+  return WISH_SLOTS + (warmth >= WISH_BONUS_SLOT_WARMTH ? 1 : 0);
+}
+
+/** 只留 minLevel ≤ 当前等级 ≤ maxLevel 的单子：Lv.1 不该抽到暖锅，满级也不该被引导单占位。 */
 export function wishCandidates(state) {
   const level = state.meta?.level || 1;
-  const pool = WISH_POOL.filter((w) => (w.maxLevel ?? 99) >= level);
-  return pool.length ? pool : WISH_POOL;
+  const inRange = WISH_POOL.filter(
+    (w) => (w.minLevel ?? 1) <= level && (w.maxLevel ?? 99) >= level,
+  );
+  if (inRange.length) return inRange;
+  // 数据表被改坏时的兜底：宁可给一张够得着的旧单，也不要空墙。
+  const unlocked = WISH_POOL.filter((w) => (w.minLevel ?? 1) <= level);
+  return unlocked.length ? unlocked : WISH_POOL;
 }
 
 /** 需求量与奖励随小镇等级抬一档，Lv.4 之前保持基线。 */
@@ -143,10 +190,14 @@ function wishIntervalMs(state) {
   return Math.max(1_000, Math.round(WISH_REFRESH_HOURS * hourMs * guestBuffFactor(state, "wish")));
 }
 
+function wrap(index, length) {
+  return ((index % length) + length) % length;
+}
+
 function fillWishes(state, maxAdd, nowMs) {
   const all = state.wishes || [];
   const open = all.filter(isActiveWish);
-  const add = Math.min(WISH_SLOTS - open.length, Math.max(0, maxAdd));
+  const add = Math.min(wishSlots(state) - open.length, Math.max(0, maxAdd));
   if (add <= 0) return open.length === all.length ? state : { ...state, wishes: open };
 
   const candidates = wishCandidates(state);
@@ -159,10 +210,12 @@ function fillWishes(state, maxAdd, nowMs) {
   for (let i = 0; i < add; i += 1) {
     seq += 1;
     // 按「日期 + 板位」轮转心愿池，遇到板上已有的同款就顺延一格，免得三格挂着同一件事。
+    // 池子现在按等级过滤，Lv.1 只剩 4 条（晒谷/白菜/泡豆子/两把麦子），
+    // 所以首屏是「白菜、泡豆子、两把麦子」，晒谷第 2 日轮上——四样都出自 Lv.1 作物。
     const start = day + wishes.length;
-    let base = candidates[start % candidates.length];
+    let base = candidates[wrap(start, candidates.length)];
     for (let step = 0; step < candidates.length; step += 1) {
-      const candidate = candidates[(start + step) % candidates.length];
+      const candidate = candidates[wrap(start + step, candidates.length)];
       if (!taken.has(candidate.id)) {
         base = candidate;
         break;
@@ -174,9 +227,9 @@ function fillWishes(state, maxAdd, nowMs) {
   return withVillage({ ...state, wishes }, { wishSeq: seq, nextWishAt: nowMs + wishIntervalMs(state) });
 }
 
-/** 把心愿屋补满 3 单。 */
+/** 把心愿屋补满（默认 3 单，温馨度够高时 4 单）。 */
 export function refreshWishes(state, nowMs = Date.now()) {
-  return fillWishes(state, WISH_SLOTS, nowMs);
+  return fillWishes(state, wishSlots(state), nowMs);
 }
 
 export function acceptWish(state, { wishId } = {}) {
@@ -252,38 +305,73 @@ export function inviteGuest(state, { guestId } = {}) {
 }
 
 function extendStay(guests, guestId, days) {
-  return (guests || []).map((g) => (g.id === guestId ? { ...g, untilDay: (g.untilDay || 0) + days } : g));
+  return (guests || []).map((g) => {
+    if (g.id !== guestId) return g;
+    // 最爱可以留客，但留不成常住户：封在进门后第 4 天。
+    const cap = (g.sinceDay || 0) + GUEST_MAX_STAY_DAYS;
+    const until = g.untilDay || 0;
+    return { ...g, untilDay: Math.max(until, Math.min(cap, until + days)) };
+  });
 }
 
-export function cook(state, { recipeId, guestId, rng } = {}) {
-  const recipe = recipeById(recipeId);
-  if (!recipe || recipe.buildingId !== "kitchen") return { ok: false, reason: "厨房不会做这个", state };
+/**
+ * 支持三种写法：配方 id（"dish_hotpot"）、菜品 id、产物 id（"hotpot"）。
+ * 只认厨房出品，别的作坊配方一律不接。
+ */
+export function kitchenRecipe(recipeId) {
+  if (!recipeId) return null;
+  const direct = recipeById(recipeId);
+  if (direct?.buildingId === "kitchen") return direct;
+  const dish = dishById(recipeId) || dishByOutput(recipeId);
+  const viaDish = dish ? recipeById(dish.recipeId) : null;
+  if (viaDish?.buildingId === "kitchen") return viaDish;
+  return recipesByBuilding("kitchen").find((r) => r.outputId === recipeId) || null;
+}
+
+/** 厨房能做的所有菜，带上呈现层数据，供 UI 直接铺菜单。 */
+export function kitchenMenu(state) {
+  const level = state.meta?.level || 1;
+  return recipesByBuilding("kitchen").map((recipe) => {
+    const dish = dishByRecipe(recipe.id);
+    return {
+      recipeId: recipe.id,
+      name: dish?.name || recipe.name,
+      outputId: recipe.outputId,
+      inputs: recipe.inputs,
+      warmth: dish ? dish.warmth : DEFAULT_DISH_WARMTH,
+      happiness: dish ? dish.happiness : DEFAULT_DISH_HAPPINESS,
+      desc: dish?.desc || "",
+      unlocked: level >= recipe.unlockLevel,
+      unlockLevel: recipe.unlockLevel,
+    };
+  });
+}
+
+export function cook(state, { recipeId, dishId, guestId, rng } = {}) {
+  const recipe = kitchenRecipe(recipeId || dishId);
+  if (!recipe) return { ok: false, reason: "厨房不会做这个", state };
   if (!state.buildings?.kitchen?.built) return { ok: false, reason: "厨房还没盖起来", state };
   if ((state.meta?.level || 1) < recipe.unlockLevel) return { ok: false, reason: "小镇等级不够", state };
   const spent = spendInv(state, recipe.inputs);
   if (!spent.ok) return { ok: false, reason: "食材不够，别让客人饿着", state };
 
   const meta = villageMeta(state);
+  const warmth = Math.max(0, state.resources?.warmth || 0);
   // 没有注入 rng 时，翻车与否由存档自身决定，同一状态永远得到同一锅菜。
-  const roll = rollWith(
-    rng,
-    "cook",
-    recipeId,
-    guestId || "-",
-    state.meta?.day || 1,
-    Math.floor(state.meta?.gameMinutes || 0),
-    meta.cooked,
-  );
-  const dark = roll < BASE_DARK_CHANCE;
+  const seed = [recipe.id, guestId || "-", state.meta?.day || 1, Math.floor(state.meta?.gameMinutes || 0), meta.cooked];
+  const dark = rollWith(rng, "cook", ...seed) < BASE_DARK_CHANCE;
+  const crit =
+    !dark && warmth >= COOK_CRIT_WARMTH && rollWith(rng, "cook-crit", ...seed) < COOK_CRIT_CHANCE;
   const guest = guestById(guestId);
   const favorite = !dark && Boolean(guest) && guest.favorite === recipe.outputId;
 
   // 上桌加成来自 data/dishes.js；没登记的菜按老口径 +6 / +3。
-  const dish = dishByRecipe(recipeId);
+  const dish = dishByRecipe(recipe.id);
   const servedWarmth = dish ? dish.warmth : DEFAULT_DISH_WARMTH;
   const servedHappiness = dish ? dish.happiness : DEFAULT_DISH_HAPPINESS;
 
-  const next = addInv(spent.state, recipe.outputId, recipe.outputQty);
+  const qty = recipe.outputQty * (crit ? 2 : 1);
+  const next = addInv(spent.state, recipe.outputId, qty);
   const resources = normalizeMood({
     ...next.resources,
     warmth: (next.resources?.warmth || 0) + (dark ? -1 : servedWarmth) + (favorite ? FAVORITE_WARMTH : 0),
@@ -294,12 +382,16 @@ export function cook(state, { recipeId, guestId, rng } = {}) {
     ? "锅里冒出一缕可疑的烟……黑暗料理诞生了。"
     : favorite
       ? `一盘${recipe.name}正对${guest.name}的胃口，说要多留一天。`
-      : `一盘${recipe.name}上桌，屋里更暖了。`;
+      : crit
+        ? `屋里暖和，手也稳，${recipe.name}一锅出了两份。`
+        : `一盘${recipe.name}上桌，屋里更暖了。`;
 
   return {
     ok: true,
     dark,
     favorite,
+    crit,
+    qty,
     state: withVillage(
       { ...next, resources, guests, log: pushLog(next, line) },
       { cooked: meta.cooked + 1, darkDishes: meta.darkDishes + (dark ? 1 : 0) },
@@ -361,6 +453,39 @@ export function build(state, { buildingId } = {}) {
   };
 }
 
+/** 买家具：钱货两清后直接摆进屋，永久抬温馨（data/furniture.js 即价目表）。 */
+export function place(state, { furnitureId } = {}) {
+  const def = furnitureById(furnitureId);
+  if (!def) return { ok: false, reason: "没有这件家具", state };
+  if (hasFurniture(state, furnitureId)) return { ok: false, reason: "这件已经摆上了", state };
+  if ((state.meta?.level || 1) < def.unlockLevel) return { ok: false, reason: "小镇等级不够", state };
+
+  const { resCost, invCost } = splitCost(state, def.cost);
+  for (const [k, v] of Object.entries(resCost)) {
+    if ((state.resources?.[k] || 0) < v) return { ok: false, reason: "金币或材料不够", state };
+  }
+  const spent = Object.keys(invCost).length ? spendInv(state, invCost) : { ok: true, state };
+  if (!spent.ok) return { ok: false, reason: "库存不够", state };
+
+  const resources = { ...spent.state.resources };
+  for (const [k, v] of Object.entries(resCost)) resources[k] -= v;
+  resources.warmth = (resources.warmth || 0) + def.warmth;
+
+  const day = state.meta?.day || 1;
+  return {
+    ok: true,
+    warmth: def.warmth,
+    state: {
+      ...spent.state,
+      resources: normalizeMood(resources),
+      furniture: [...placedFurniture(spent.state), { id: def.id, room: def.room, day }],
+      log: pushLog(spent.state, `${def.name}摆好了，${def.desc}`),
+    },
+  };
+}
+
+export { place as placeFurniture };
+
 /* ---------------------------------------------------------------- 萌宠 */
 
 export function petPlay(state, { petId, now = Date.now() } = {}) {
@@ -394,9 +519,9 @@ export function stallSell(state, { itemId, qty = 1 } = {}) {
   const n = Math.floor(Number(qty));
   if (!Number.isFinite(n) || n < 1) return { ok: false, reason: "至少也得摆一件出去", state };
   if ((state.inv?.[itemId] || 0) < n) return { ok: false, reason: "货不够", state };
-  if (!priceOf(itemId)) return { ok: false, reason: "这东西没人收", state };
+  if (!priceOf(itemId)) return { ok: false, reason: "这个卖不出价", state };
 
-  // 茶婆婆坐镇（buff.target === "stall"，factor > 1）时能多卖出一点。
+  // 茶婆婆坐镇（buff.target === "stall"，factor 1.1）时能多卖出一点。
   const coin = Math.round(stallPrice(itemId, n) * guestBuffFactor(state, "stall"));
   const next = addInv(state, itemId, -n);
   return {
@@ -427,11 +552,15 @@ function rolloverDays(state) {
   const kept = wishes.filter((w) => day - (w.createdDay || day) < WISH_EXPIRE_DAYS);
   const dropped = wishes.length - kept.length;
 
+  // 每日 −1 温馨，但摆出来的家具是保底盘，掉不到它以下。
+  const floor = furnitureWarmth(state);
+  const warmth = Math.max(floor, (state.resources?.warmth || 0) - elapsed);
+
   let next = {
     ...state,
     guests: staying,
     wishes: kept,
-    resources: normalizeMood({ ...state.resources, warmth: (state.resources?.warmth || 0) - elapsed }),
+    resources: normalizeMood({ ...state.resources, warmth }),
   };
   for (const seat of left) {
     const def = guestById(seat.id);
@@ -443,7 +572,7 @@ function rolloverDays(state) {
 
 function refillWishSlot(state, nowMs) {
   const open = (state.wishes || []).filter(isActiveWish);
-  if (open.length >= WISH_SLOTS) return state;
+  if (open.length >= wishSlots(state)) return state;
   if (!open.length) return refreshWishes(state, nowMs);
   const meta = villageMeta(state);
   if (!meta.nextWishAt) return withVillage(state, { nextWishAt: nowMs + wishIntervalMs(state) });
@@ -455,4 +584,4 @@ export function tickVillage(state, _dtMs, nowMs = Date.now()) {
   return refillWishSlot(rolloverDays(state), nowMs);
 }
 
-export { GUESTS, BUILDINGS, priceOf, stallPrice, STALL_MARKUP };
+export { GUESTS, BUILDINGS, FURNITURE, furnitureById, priceOf, stallPrice, STALL_MARKUP };
