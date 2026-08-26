@@ -12,21 +12,15 @@ export interface PlacedDecor {
   glyph: string;
   /** 陈列牌文案：已知者「灯 纱灯」，未知者原样 id */
   label: string;
-  mood: number;
   known: boolean;
 }
 
 export function resolvePlacedDecor(state: GameState): PlacedDecor[] {
   return state.placedDecor.map((id) => {
     const def = DECOR_MAP.get(id);
-    if (!def) return { id, name: id, glyph: id.slice(0, 1), label: id, mood: 0, known: false };
-    return { id, name: def.name, glyph: def.glyph, label: `${def.glyph} ${def.name}`, mood: def.mood, known: true };
+    if (!def) return { id, name: id, glyph: id.slice(0, 1), label: id, known: false };
+    return { id, name: def.name, glyph: def.glyph, label: `${def.glyph} ${def.name}`, known: true };
   });
-}
-
-/** 庭院雅致合计，仅计已知陈设。 */
-export function decorMood(state: GameState): number {
-  return resolvePlacedDecor(state).reduce((sum, d) => sum + d.mood, 0);
 }
 
 export function placeDecor(state: GameState, id: string): boolean {

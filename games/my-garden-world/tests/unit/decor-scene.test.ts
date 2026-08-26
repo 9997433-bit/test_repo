@@ -152,8 +152,8 @@ describe("resolvePlacedDecor", () => {
     state.placedDecor = ["pond", "legacy-statue"];
 
     expect(resolvePlacedDecor(state)).toEqual([
-      { id: "pond", name: "锦鲤池", glyph: "池", label: "池 锦鲤池", mood: 6, known: true },
-      { id: "legacy-statue", name: "legacy-statue", glyph: "l", label: "legacy-statue", mood: 0, known: false },
+      { id: "pond", name: "锦鲤池", glyph: "池", label: "池 锦鲤池", known: true },
+      { id: "legacy-statue", name: "legacy-statue", glyph: "l", label: "legacy-statue", known: false },
     ]);
   });
 });
