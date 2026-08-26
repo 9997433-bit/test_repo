@@ -81,7 +81,7 @@ describe("farm loop", () => {
     );
   });
 
-  it("applies a plot greenhouse locally and a built greenhouse globally", () => {
+  it("applies a plot greenhouse locally and does not immunize the whole farm", () => {
     const initial = createInitialState();
     const winter = {
       ...initial,
@@ -115,10 +115,10 @@ describe("farm loop", () => {
     expect(globalBoth.ok).toBe(true);
     expect(
       globalBoth.state.plots.map((plot) => plot.doneAt - plot.plantedAt),
-    ).toEqual([18_000, 18_000]);
+    ).toEqual([Math.round(18_000 / 0.55), Math.round(18_000 / 0.55)]);
   });
 
-  it.skip("rejects crops above the town level (pending farm unlockLevel gate)", () => {
+  it("rejects crops above the town level (pending farm unlockLevel gate)", () => {
     const initial = createInitialState();
     const result = plant(initial, { plotId: "p1", cropId: "corn" });
 
