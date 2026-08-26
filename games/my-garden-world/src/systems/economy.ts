@@ -102,15 +102,6 @@ function mergeDemands(demands: readonly StemDemand[]): Map<string, number> | nul
   return merged.size ? merged : null;
 }
 
-export function canTakeItems(state: GameState, demands: readonly StemDemand[]): boolean {
-  const merged = mergeDemands(demands);
-  if (!merged) return false;
-  for (const [flowerId, need] of merged) {
-    if (countItem(state, flowerId) < need) return false;
-  }
-  return true;
-}
-
 /** 全有或全无地扣料：先整单核对，避免扣到一半才发现缺料而白吃前几枝。 */
 export function takeItems(state: GameState, demands: readonly StemDemand[]): boolean {
   const merged = mergeDemands(demands);
