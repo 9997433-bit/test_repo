@@ -46,16 +46,22 @@ export const PALETTE = {
   skin: 0x8a5f47,
 };
 
-/** 8 只手套的识别色。渲染层不 import src/data，避免反向依赖，视图里带 color 时优先用视图的。 */
+/**
+ * 8 只手套的识别色，键是 src/data/gloves.js 的 GLOVES[].id，值与那里的 color 一字不差。
+ *
+ * 渲染层不 import src/data（避免反向依赖），所以这张表是那份数值表的镜像：
+ * 真实 view 里带 gloveColor 时以 view 为准，这张表只在 view 没给颜色时兜底。
+ * 改数据表的颜色时这里要一起改，glove-tint 的单测会盯着两边对齐。
+ */
 export const GLOVE_TINT = {
-  cotton: 0xa8875c,
-  granite: 0x8a8578,
-  gale: 0x7fc4b4,
-  frost: 0x9fc6e8,
-  spring: 0xd0a24a,
-  afterimage: 0x9a86c4,
-  magnet: 0xc06a5a,
-  meteor: 0xd2713a,
+  cotton: 0xe3c988,
+  granite: 0x7d8a99,
+  gale: 0x63c6b4,
+  frost: 0x9fd8ef,
+  spring: 0xc98f3f,
+  afterimage: 0xb48ade,
+  magnet: 0xc94f43,
+  meteor: 0xe07840,
 };
 
 export const FALLBACK_TINT = 0x9aa2ad;
