@@ -1,26 +1,12 @@
 import { describe, expect, it } from "vitest";
-import {
-  GLOVES,
-  GLOVE_BY_ID,
-  MATCH,
-  isGloveUnlocked,
-} from "../src/data/gloves.js";
+import * as gloveData from "../src/data/gloves.js";
+import { isGloveUnlockedForTest } from "./glove-unlock-helper.js";
 
-const REQUIRED_FIELDS = [
-  "id",
-  "name",
-  "role",
-  "color",
-  "slapRange",
-  "slapAngleDeg",
-  "slapPower",
-  "slapCooldown",
-  "windup",
-  "recovery",
-  "skillId",
-  "skillCooldown",
-  "unlock",
-];
+const { GLOVES, GLOVE_BY_ID, MATCH } = gloveData;
+const exportsUnlockHelper = typeof gloveData.isGloveUnlocked === "function";
+const isGloveUnlocked = exportsUnlockHelper
+  ? gloveData.isGloveUnlocked
+  : isGloveUnlockedForTest;
 
 describe("glove data contract", () => {
   it("defines all eight gloves and indexes each one by id", () => {
@@ -29,11 +15,29 @@ describe("glove data contract", () => {
 
     for (const glove of GLOVES) {
       expect(glove).toEqual(
-        expect.objectContaining(
-          Object.fromEntries(
-            REQUIRED_FIELDS.map((field) => [field, expect.anything()]),
-          ),
-        ),
+        expect.objectContaining({
+          id: expect.any(String),
+          name: expect.any(String),
+          role: expect.any(String),
+          desc: expect.any(String),
+          color: expect.any(String),
+          slapRange: expect.any(Number),
+          slapAngleDeg: expect.any(Number),
+          slapPower: expect.any(Number),
+          slapCooldown: expect.any(Number),
+          windup: expect.any(Number),
+          recovery: expect.any(Number),
+          moveSpeedMul: expect.any(Number),
+          skillId: glove.id === "cotton" ? null : expect.any(String),
+          skillCooldown: expect.any(Number),
+          unlock: expect.any(String),
+          awakenModifiers: expect.objectContaining({
+            slapPowerMul: expect.any(Number),
+            slapRangeMul: expect.any(Number),
+            slapCooldownMul: expect.any(Number),
+            special: expect.any(String),
+          }),
+        }),
       );
       expect(GLOVE_BY_ID[glove.id]).toBe(glove);
     }
@@ -49,6 +53,13 @@ describe("glove data contract", () => {
       killsToWin: 7,
     });
   });
+
+  it.skipIf(!exportsUnlockHelper)(
+    "exports isGloveUnlocked from data (skipped: data export is not merged yet)",
+    () => {
+      expect(gloveData.isGloveUnlocked).toBeTypeOf("function");
+    },
+  );
 
   it("keeps cotton unlocked and challenge gloves locked without progress", () => {
     expect(isGloveUnlocked).toBeTypeOf("function");

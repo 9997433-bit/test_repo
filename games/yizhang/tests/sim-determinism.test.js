@@ -16,11 +16,12 @@ describe("seeded match simulation", () => {
 
     expect(getView(first)).toEqual(getView(second));
 
-    const firstHuman = playersOf(first).find((player) => player.kind === "human");
-    const secondHuman = playersOf(second).find((player) => player.kind === "human");
+    const firstHuman = playersOf(first).find((player) => player.id === "p0");
+    const secondHuman = playersOf(second).find((player) => player.id === "p0");
     expect(firstHuman).toBeDefined();
     expect(secondHuman).toBeDefined();
-    expect(firstHuman?.id).toBe(secondHuman?.id);
+    expect(firstHuman?.kind).toBe("human");
+    expect(secondHuman?.kind).toBe("human");
 
     for (let frame = 0; frame < 180; frame += 1) {
       const controls = input({

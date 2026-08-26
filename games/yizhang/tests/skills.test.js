@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { GLOVE_BY_ID } from "../src/data/gloves.js";
-import { createMatch, step } from "../src/sim/index.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as combat from "../src/combat/index.js";
+import * as gloveData from "../src/data/gloves.js";
+import {
+  createMatch,
+  installCombat,
+  installData,
+  resetDeps,
+  step,
+} from "../src/sim/index.js";
 import {
   DT,
   advance,
@@ -11,6 +18,18 @@ import {
   placeDuel,
   speedAlong,
 } from "./helpers.js";
+
+const { GLOVE_BY_ID } = gloveData;
+
+beforeEach(() => {
+  resetDeps();
+  installData(gloveData);
+  installCombat(combat);
+});
+
+afterEach(() => {
+  resetDeps();
+});
 
 describe("glove skills", () => {
   it("spring parry reflects an incoming slap impulse toward the attacker", () => {
@@ -39,8 +58,9 @@ describe("glove skills", () => {
     );
     advance(step, state, Math.min(0.45, cotton.windup + 0.2));
 
-    // The attacker starts south of the defender, so reflected speed is -Z.
-    expect(speedAlong(attacker, 0, -1)).toBeGreaterThan(0.1);
+    // The defender is at -Z and faces the attacker; reflection sends the
+    // attacker away from the defender toward +Z.
+    expect(speedAlong(attacker, 0, 1)).toBeGreaterThan(0.1);
   });
 
   it("magnet pull reduces horizontal distance to a target in front", () => {

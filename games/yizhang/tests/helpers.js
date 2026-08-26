@@ -28,10 +28,11 @@ export function playersOf(state) {
 
 export function duelists(state) {
   const players = playersOf(state);
-  const attacker = players.find((player) => player.kind === "human") ?? players[0];
+  const attacker = players.find((player) => player.id === "p0");
   const target = players.find((player) => player.id !== attacker?.id);
 
-  expect(attacker, "createMatch should create the human player").toBeDefined();
+  expect(attacker, "createMatch should create human player p0").toBeDefined();
+  expect(attacker?.kind, "p0 should be the human player").toBe("human");
   expect(target, "these tests request one bot target").toBeDefined();
   return { attacker, target };
 }
@@ -51,10 +52,10 @@ export function placeDuel(attacker, target, { distance = 2, angle = 0 } = {}) {
   attacker.z = 0;
   attacker.yaw = 0;
 
-  // Contract convention: yaw 0 faces +Z; positive yaw rotates toward +X.
+  // Frozen contract: yaw 0 faces -Z.
   target.x = Math.sin(angle) * distance;
   target.y = 1;
-  target.z = Math.cos(angle) * distance;
+  target.z = -Math.cos(angle) * distance;
   target.yaw = Math.PI;
 }
 

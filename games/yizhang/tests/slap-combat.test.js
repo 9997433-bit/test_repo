@@ -47,7 +47,7 @@ describe("slap cone and impulse", () => {
     advance(step, state, glove.windup + glove.recovery + 0.1);
 
     expect(horizontalSpeed(target)).toBeGreaterThan(speedBefore + 0.1);
-    expect(speedAlong(target, 0, 1)).toBeGreaterThan(0);
+    expect(speedAlong(target, 0, -1)).toBeGreaterThan(0);
   });
 
   it("misses a target outside the slap cone even when it is in range", () => {
