@@ -6,12 +6,15 @@ import {
   stepWorld,
 } from "../src/physics/index.js";
 import {
+  ACTIVE_SCENARIO_WINDOW_STEPS,
   BENCHMARK_SCHEMA_VERSION,
   elapsedMs,
+  measureScenarioSteps,
   measureSteps,
   populateWorld,
   printStableJson,
   roundMetric,
+  warmScenario,
 } from "./benchmark-utils.mjs";
 
 const EMPTY_WORLD_STEPS = 10_000;
@@ -28,6 +31,10 @@ const TRAJECTORY_VELOCITY = Object.freeze({ x: 310, y: -520 });
 function warmStepWorld(factory) {
   const world = factory();
   for (let index = 0; index < STEP_WARMUP; index += 1) stepWorld(world);
+}
+
+function createMultiBodyWorld() {
+  return populateWorld(createWorld(), MULTI_BODY_EGGS, MULTI_BODY_STATICS);
 }
 
 function callTrajectory(world) {
@@ -85,24 +92,19 @@ function benchmarkTrajectories() {
 }
 
 warmStepWorld(() => createWorld());
-warmStepWorld(() =>
-  populateWorld(createWorld(), MULTI_BODY_EGGS, MULTI_BODY_STATICS),
-);
+warmScenario(createMultiBodyWorld, stepWorld, STEP_WARMUP);
 
 const emptyWorld = createWorld();
-const multiBodyWorld = populateWorld(
-  createWorld(),
-  MULTI_BODY_EGGS,
-  MULTI_BODY_STATICS,
-);
 
 const report = {
   schemaVersion: BENCHMARK_SCHEMA_VERSION,
   benchmark: "chao-neng-xia-dan-ya/headless-physics",
+  implementation: "src/physics/index.js",
   timingSource: "process.hrtime.bigint",
   config: {
     fixedDtSeconds: FIXED_DT,
     stepWarmup: STEP_WARMUP,
+    activeScenarioWindowSteps: ACTIVE_SCENARIO_WINDOW_STEPS,
     multiBodyEggs: MULTI_BODY_EGGS,
     multiBodyStatics: MULTI_BODY_STATICS,
     trajectoryWarmup: TRAJECTORY_WARMUP,
@@ -112,7 +114,11 @@ const report = {
     multiEggMultiBrick: {
       eggs: MULTI_BODY_EGGS,
       statics: MULTI_BODY_STATICS,
-      ...measureSteps(multiBodyWorld, stepWorld, MULTI_BODY_STEPS),
+      ...measureScenarioSteps(
+        createMultiBodyWorld,
+        stepWorld,
+        MULTI_BODY_STEPS,
+      ),
     },
     predictTrajectory: benchmarkTrajectories(),
   },

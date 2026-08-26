@@ -1,10 +1,16 @@
+import {
+  createEgg,
+  makeBrick as createBrick,
+} from "../src/physics/index.js";
+
 const DEFAULT_EGG_RADIUS = 12;
 const DEFAULT_BRICK_WIDTH = 38;
 const DEFAULT_BRICK_HEIGHT = 18;
 
-export const BENCHMARK_SCHEMA_VERSION = 1;
+export const BENCHMARK_SCHEMA_VERSION = 2;
 export const PHYSICS_FRAME_BUDGET_MS = 4;
 export const PHYSICS_STEP_BUDGET_MS = PHYSICS_FRAME_BUDGET_MS / 2;
+export const ACTIVE_SCENARIO_WINDOW_STEPS = 240;
 
 export function roundMetric(value, digits = 6) {
   if (!Number.isFinite(value)) return null;
@@ -24,22 +30,16 @@ export function makeEgg(index) {
   const vx = ((index % 5) - 2) * 72;
   const vy = 80 + (index % 4) * 35;
 
-  return {
+  return createEgg({
     id: `bench-egg-${index}`,
-    type: "egg",
-    shape: "circle",
     x,
     y,
     vx,
     vy,
-    radius: DEFAULT_EGG_RADIUS,
+    r: DEFAULT_EGG_RADIUS,
     restitution: 0.86,
     mass: 1,
-    active: true,
-    alive: true,
-    position: { x, y },
-    velocity: { x: vx, y: vy },
-  };
+  });
 }
 
 export function makeBrick(index) {
@@ -48,22 +48,17 @@ export function makeBrick(index) {
   const x = 34 + column * 46 + (row % 2) * 9;
   const y = 230 + row * 48;
 
-  return {
+  return createBrick({
     id: `bench-brick-${index}`,
-    type: "aabb",
     kind: "brick",
-    material: "brick",
     x,
     y,
-    width: DEFAULT_BRICK_WIDTH,
-    height: DEFAULT_BRICK_HEIGHT,
     w: DEFAULT_BRICK_WIDTH,
     h: DEFAULT_BRICK_HEIGHT,
     restitution: 0.82,
     hp: 1_000_000,
-    solid: true,
-    active: true,
-  };
+    breakable: false,
+  });
 }
 
 function addBodies(world, collectionName, methodName, bodies) {
@@ -110,6 +105,87 @@ export function measureSteps(world, stepWorld, stepCount) {
   };
 }
 
+function createScenarioWindows(factory, totalSteps, windowSteps) {
+  const windows = [];
+  let remainingSteps = totalSteps;
+
+  while (remainingSteps > 0) {
+    const steps = Math.min(windowSteps, remainingSteps);
+    const world = factory();
+    windows.push({
+      world,
+      steps,
+      startingEggs: world.eggs.length,
+      startingStatics: world.statics.length,
+    });
+    remainingSteps -= steps;
+  }
+
+  return windows;
+}
+
+function summarizeScenarioWindows(windows) {
+  const endingEggCounts = windows.map(({ world }) => world.eggs.length);
+  const stats = windows.reduce(
+    (total, { world }) => {
+      total.bounces += world.stats.bounces;
+      total.brickHits += world.stats.brickHits;
+      total.eggHits += world.stats.eggHits;
+      total.recycled += world.stats.recycled;
+      return total;
+    },
+    { bounces: 0, brickHits: 0, eggHits: 0, recycled: 0 },
+  );
+
+  return {
+    windows: windows.length,
+    maxStepsPerWindow: Math.max(...windows.map(({ steps }) => steps)),
+    startingEggsPerWindow: windows[0]?.startingEggs ?? 0,
+    staticsPerWindow: windows[0]?.startingStatics ?? 0,
+    minimumEndingEggsPerWindow: Math.min(...endingEggCounts),
+    endingEggsTotal: endingEggCounts.reduce((total, count) => total + count, 0),
+    physicsActivity: stats,
+  };
+}
+
+function runScenarioWindows(windows, stepWorld, onStep) {
+  for (const { world, steps } of windows) {
+    for (let index = 0; index < steps; index += 1) {
+      onStep(world, stepWorld);
+    }
+  }
+}
+
+export function warmScenario(
+  factory,
+  stepWorld,
+  stepCount,
+  windowSteps = ACTIVE_SCENARIO_WINDOW_STEPS,
+) {
+  const windows = createScenarioWindows(factory, stepCount, windowSteps);
+  runScenarioWindows(windows, stepWorld, (world, step) => step(world));
+}
+
+export function measureScenarioSteps(
+  factory,
+  stepWorld,
+  stepCount,
+  windowSteps = ACTIVE_SCENARIO_WINDOW_STEPS,
+) {
+  const windows = createScenarioWindows(factory, stepCount, windowSteps);
+  const start = process.hrtime.bigint();
+  runScenarioWindows(windows, stepWorld, (world, step) => step(world));
+  const totalMs = elapsedMs(start);
+
+  return {
+    steps: stepCount,
+    totalMs: roundMetric(totalMs, 3),
+    meanStepMs: roundMetric(totalMs / stepCount),
+    stepsPerSecond: roundMetric(stepCount / (totalMs / 1_000), 2),
+    workload: summarizeScenarioWindows(windows),
+  };
+}
+
 export function percentile(sortedSamples, percentileValue) {
   if (sortedSamples.length === 0) return null;
   const rank = Math.ceil((percentileValue / 100) * sortedSamples.length);
@@ -137,6 +213,38 @@ export function measureStepLatencies(world, stepWorld, sampleCount) {
     p99Ms: roundMetric(percentile(sorted, 99)),
     maxMs: roundMetric(sorted.at(-1)),
     finalWorldTimeSeconds: roundMetric(world.time),
+  };
+}
+
+export function measureScenarioStepLatencies(
+  factory,
+  stepWorld,
+  sampleCount,
+  windowSteps = ACTIVE_SCENARIO_WINDOW_STEPS,
+) {
+  const windows = createScenarioWindows(factory, sampleCount, windowSteps);
+  const samples = new Array(sampleCount);
+  let sampleIndex = 0;
+
+  runScenarioWindows(windows, stepWorld, (world, step) => {
+    const start = process.hrtime.bigint();
+    step(world);
+    samples[sampleIndex] = elapsedMs(start);
+    sampleIndex += 1;
+  });
+
+  const totalMs = samples.reduce((total, sample) => total + sample, 0);
+  const sorted = [...samples].sort((left, right) => left - right);
+
+  return {
+    samples: sampleCount,
+    totalMs: roundMetric(totalMs, 3),
+    meanMs: roundMetric(totalMs / sampleCount),
+    p50Ms: roundMetric(percentile(sorted, 50)),
+    p95Ms: roundMetric(percentile(sorted, 95)),
+    p99Ms: roundMetric(percentile(sorted, 99)),
+    maxMs: roundMetric(sorted.at(-1)),
+    workload: summarizeScenarioWindows(windows),
   };
 }
 
