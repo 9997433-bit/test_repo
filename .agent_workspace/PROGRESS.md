@@ -19,7 +19,7 @@
 
 | Round | 状态 | 结论简报 |
 |---|---|---|
-| 1 初始构建与基线探索 | 进行中 | 待汇总 |
+| 1 初始构建与基线探索 | 进行中（云端 VM 并发上限 3，分批派发） | 待汇总 |
 | 2 靶向重构与深度优化 | 未开始 | — |
 | 3 SOTA 打磨与最终验收 | 未开始 | — |
 
@@ -39,6 +39,19 @@
 | G2 | gpt-sol | 性能基准与边界压力 | `games/fashion-mall/scripts/**` |
 
 共享只读契约：`.agent_workspace/GAME_SPEC.md`、本文件。共享入口 `index.html` / `package.json` 由 O1 主导，其他人只追加 hook，不重写。
+
+## Round 1 云端批次
+
+硬限制：`Async new-VM subagent limit of 3`。本轮按 3+3+3+1 排队，不静默换成其他模型。
+
+| 批次 | Agent | 模型 | 状态 | bcId |
+|---|---|---|---|---|
+| A | F1 架构 | fable | 运行中 | `bc-7a4c47ba-4925-5ec4-acc5-8bc3d1ea0775` |
+| A | F2 视觉 | fable | 运行中 | `bc-624a1464-ae2e-5ace-8575-5a2832916e87` |
+| A | O3 换装家装 | opus-fast | 运行中 | `bc-80ba6611-a58b-54b0-8aaa-9cb8f1f6fdf0` |
+| B | F3 经济 / F4 叙事 / O1 引擎 | 排队 | 待空位 | — |
+| C | O2 小游戏 / O4 伙伴事件 / G1 测试 | 排队 | 待空位 | — |
+| D | G2 性能边界 | 排队 | 待空位 | — |
 
 ## 已实现基线（Parent 预置）
 
