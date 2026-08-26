@@ -18,7 +18,7 @@ describe("hero data", () => {
   });
 });
 
-describe.skip("Round 2 unlock: the complete 18-hero roster is landed", () => {
+describe("Round 2 unlock: the complete 18-hero roster is landed", () => {
   it("contains every hero promised by the GDD", () => {
     expect(HERO_LIST).toHaveLength(18);
   });

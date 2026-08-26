@@ -61,7 +61,7 @@ describe("physics stepping", () => {
   });
 });
 
-describe.skip(
+describe(
   "Round 2 unlock: predictTrajectory returns one sample per requested step",
   () => {
     it("honors the requested ballistic prediction length", () => {
@@ -77,7 +77,7 @@ describe.skip(
   },
 );
 
-describe.skip(
+describe(
   "Round 2 unlock: stepWorld integrates eggs and recycles y > 820",
   () => {
     it("removes an egg after it leaves the bottom boundary", () => {
