@@ -1,34 +1,46 @@
-// combat → sim 的一次性接线。
+// combat → sim 的接线适配器。
 //
-// `src/sim/deps.js` 默认跑自带的兜底解算，真实战斗要靠 installCombat 注入。
-// 谁 import 了 combat（main.js 的模块探测、跨模块测试），谁就应该拿到真实解算，
-// 不该再要求每个调用方记得手动注入一次——所以这里在模块求值时自己装上去。
+// `src/sim/deps.js` 现在**静态** import 本模块所在的 combat，`getDeps().combat` 默认就是
+// 真实解算，换算由 sim 自己的 `combat-bridge.js` 负责（朝向 ±π、命中结构、事件形状、
+// 碎地记账）。所以这里不再抢着 `installCombat`：抢了只会把那层换算换成一层没有换算的
+// 转发，还会把 `getDeps().usingRealCombat` 翻成 false，让启动自检误报「未接线」。
 //
-// 注意两点：
-//  * 传的是转发适配器而不是命名空间，circular import 时也不会读到半初始化的绑定；
-//  * sim 有朝一日改成静态 import combat，这段就会撞上初始化中的 deps 模块，
-//    try/catch 让它安静地退化成 no-op（那时 sim 已经自己装好了）。
+// 留下来的价值是 `SIM_ADAPTER`。凡是**必须**显式注入 combat 的宿主
+// （`src/core/modules.js` 的 `wireSimDeps`、`scripts/harness.mjs`、`src/render/smoke.js`），
+// 都应该注入它，而不是注入 combat 的模块命名空间：命名空间里的函数按 combat 自己的
+// 朝向约定读 `player.yaw`（yaw=0 面向 +Z），而 sim 冻结的是 yaw=0 面向 -Z，
+// 直接塞进 sim 会让全场扇击、拉扯、反击的方向整体反 180°。
 
-import { installCombat, installData } from "../sim/deps.js";
+import { installCombat, installData, getDeps } from "../sim/deps.js";
+import * as simCombatBridge from "../sim/combat-bridge.js";
 import * as data from "../data/index.js";
-import * as combat from "./index.js";
 
-const ADAPTER = {
-  resolveSlap: (state, attacker, glove, now) => combat.resolveSlap(state, attacker, glove, now),
-  resolveSkill: (state, attacker, glove, now) => combat.resolveSkill(state, attacker, glove, now),
-  tickStatuses: (state, dt) => combat.tickStatuses(state, dt),
-  applyAwaken: (attacker, glove) => combat.applyAwaken(attacker, glove),
+/**
+ * 可以直接 `sim.installCombat(SIM_ADAPTER)` 的适配器。
+ * 转发到 sim 自己的换算层，而不是另写一套：两条路径永远同一套朝向与命中语义。
+ * 用箭头转发（而不是直接引用绑定）是因为这里与 sim 是循环 import，
+ * 模块求值期取到的可能是半初始化的绑定。
+ */
+export const SIM_ADAPTER = {
+  resolveSlap: (state, attacker, glove, now) => simCombatBridge.resolveSlap(state, attacker, glove, now),
+  resolveSkill: (state, attacker, glove, now) => simCombatBridge.resolveSkill(state, attacker, glove, now),
+  tickStatuses: (state, dt) => simCombatBridge.tickStatuses(state, dt),
+  applyAwaken: (attacker, glove) => simCombatBridge.applyAwaken(attacker, glove),
 };
 
 /**
- * 把本模块装进 sim 的依赖表。返回是否装上（sim 缺席时为 false）。
- * 顺带把 `src/data` 的手套表也装上：解算按 data 的数值写的，sim 若还拿兜底数值
- * 发牌，攻击距离 / 冷却两边对不齐。data 缺席时 sim 自己会退回兜底。
+ * 把 combat 装进 sim 的依赖表，返回是否真的注入了 combat。
+ * sim 已经静态接好真实 data / combat 时什么都不做——重复注入只会绕开 sim 的换算层，
+ * 并把 `usingRealData` / `usingRealCombat` 翻成 false。
  */
-export function installIntoSim() {
+export function installIntoSim(force = false) {
   try {
-    if (Array.isArray(data.GLOVES) && data.GLOVES.length) installData(data);
-    installCombat(ADAPTER);
+    const deps = getDeps();
+    if ((force || deps.usingRealData !== true) && Array.isArray(data.GLOVES) && data.GLOVES.length) {
+      installData(data);
+    }
+    if (!force && deps.usingRealCombat === true) return false;
+    installCombat(SIM_ADAPTER);
     return true;
   } catch {
     return false;

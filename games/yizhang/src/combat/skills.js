@@ -78,12 +78,29 @@ export const SKILL_ALIASES = {
   sky_drop: "meteorSlam",
 };
 
-/** 任意来源的 skillId → combat 注册表的 key（认不出就当无主动技）。 */
+/** 折掉大小写与分隔符：`magnet-pull` / `magnet_pull` / `MagnetPull` 折成同一个 key。 */
+function foldSkillKey(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** 折叠后的别名索引，`SKILL_ALIASES` 里没逐条列出的写法也能命中。 */
+const FOLDED_ALIASES = (() => {
+  const map = new Map();
+  for (const [alias, canon] of Object.entries(SKILL_ALIASES)) map.set(foldSkillKey(alias), canon);
+  return map;
+})();
+
+/**
+ * 任意来源的 skillId → combat 注册表的 key（认不出就当无主动技）。
+ * data 的蛇形 id（`iron_pull`）、data 技能表的 `type`（`pull`）、combat 自己的驼峰
+ * handler id（`magnetPull`）三种写法都得认，装配层没对齐时也不能把技能吞掉。
+ */
 export function normalizeSkillId(skillId) {
   if (skillId == null) return "none";
   const key = String(skillId);
   if (SKILL_HANDLERS[key]) return key;
-  return SKILL_ALIASES[key] || SKILL_ALIASES[key.toLowerCase()] || "none";
+  if (SKILL_ALIASES[key]) return SKILL_ALIASES[key];
+  return FOLDED_ALIASES.get(foldSkillKey(key)) || "none";
 }
 
 /** 取技能数值；觉醒时用 awakened 段浅覆盖。 */

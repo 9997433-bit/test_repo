@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import "../combat/index.js"; // 副作用：把真实战斗解算装进 sim
 import { think, resetBots, configureBots, BOT_PERSONAS } from "./bots.js";
-import { createMatch, getView, step, ZERO_INPUT } from "../sim/index.js";
+import { createMatch, forwardX, forwardZ, getView, step, ZERO_INPUT } from "../sim/index.js";
 
 const DT = 1 / 60;
 
@@ -85,6 +85,42 @@ describe("think() 吃 getView 快照", () => {
     const inp = think(getView(state), bot.id, counter(2));
     expect(inp.moveX).toBeGreaterThan(0.7); // 目标在 +X
     expect(Math.abs(inp.moveZ)).toBeLessThan(0.7);
+  });
+
+  it("emit 的 yaw 按 sim 冻结约定（yaw=0 面向 -Z）对准目标", () => {
+    const state = match(9021, 1);
+    const bot = bots(state)[0];
+    const human = state.players[0];
+    bot.x = 0;
+    bot.z = 0;
+    bot.yaw = 0;
+
+    // 四个方位各测一次：朝向必须指向目标，而不是背对它。
+    for (const [tx, tz] of [
+      [4, 0],
+      [-4, 0],
+      [0, 4],
+      [0, -4],
+    ]) {
+      resetBots();
+      human.x = tx;
+      human.z = tz;
+      const { yaw } = think(getView(state), bot.id, counter(17));
+      const want = Math.hypot(tx, tz);
+      const dot = forwardX(yaw) * (tx / want) + forwardZ(yaw) * (tz / want);
+      expect(dot, `目标在 (${tx},${tz})`).toBeGreaterThan(0.9);
+    }
+  });
+
+  it("扇出去的掌真打得到人：命中率不能只是擦边", () => {
+    for (const seed of [900, 906, 9022]) {
+      resetBots();
+      const state = match(seed, 3);
+      runBots(state, { seconds: 10, rng: counter(7) });
+      expect(state.stats.slaps, `seed ${seed}`).toBeGreaterThan(10);
+      // 朝向反了的时候这个比值是 0.00~0.32，对着人扇稳定在 0.44 以上。
+      expect(state.stats.hits / state.stats.slaps, `seed ${seed}`).toBeGreaterThan(0.4);
+    }
   });
 
   it("读 getView 的 skillCd 判断技能好没好", () => {

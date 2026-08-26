@@ -14,7 +14,10 @@
 //  * 被击退者会拿到 `knockbackT`（秒）。sim 在这段时间内必须**大幅削弱地面摩擦与
 //    位移控制**，否则冲量当帧就被摩擦吃掉，谁也扇不出岛。tickStatuses 负责倒计时。
 //    `src/sim` 把同一个窗口记在 `kbT` 上，impact.js 两个字段都写。
-//  * import 本模块即完成 `sim.installCombat`（见 ./sim-bridge.js）。
+//  * **朝向**：本模块内部 yaw=0 面向 +Z；`src/sim` 冻结的是 yaw=0 面向 -Z。
+//    差的那 π 由适配层换算，`src/sim` 走它自己的 `combat-bridge.js`，
+//    必须显式注入 combat 的宿主请注入 `SIM_ADAPTER`（见 ./sim-bridge.js）——
+//    直接把本模块的命名空间塞进 `sim.installCombat` 会让全场方向反 180°。
 
 import { GLOVES as DATA_GLOVES } from "../data/index.js";
 import {
@@ -57,8 +60,8 @@ import {
   simDrivenPlayer,
   yawTo,
 } from "./util.js";
-// 副作用：把本模块装进 src/sim 的依赖表（sim 缺席时静默跳过）。
-import "./sim-bridge.js";
+// sim 的接线适配器。sim 已经静态接好真实 combat 时它什么都不做，只把 SIM_ADAPTER 备着。
+import { SIM_ADAPTER, installIntoSim } from "./sim-bridge.js";
 
 // ---------------------------------------------------------------- 手套数据源
 
@@ -543,6 +546,8 @@ export function respawn(state, player, now = clockOf(state), invulnTime = ARENA.
 }
 
 export {
+  SIM_ADAPTER,
+  installIntoSim,
   AWAKEN,
   METER,
   IMPACT,

@@ -13,6 +13,10 @@
 // view 的字段名以 `src/sim/view.js` 为准：时钟是 `time`、冷却是 `slapCd`/`skillCd`、
 // 状态是 `statuses[{id,t,mag}]`、台面在 `arena.tiles[{x,z,alive}]`。
 // combat 的 testkit state 用另一套名字（`t` / `cd.skillAt` / `moveScale`），两套都读。
+//
+// 朝向也是两套：`src/sim` 冻结 yaw=0 面向 **-Z**（`src/sim/math.js` 的 FACE），
+// combat 的 testkit 仍按 yaw=0 面向 +Z 记账。think() 每帧先认一次方言（见 faceOf），
+// 之后所有「朝向 / 背后 / 局部移动向量」都走同一组函数，emit 出去的 yaw 才是真的对着人。
 
 import { GLOVE_BY_ID as DATA_GLOVE_BY_ID } from "../data/gloves.js";
 import { BOT_PERSONA_BY_ID } from "../data/bots.js";
@@ -28,6 +32,7 @@ import {
   worldToLocal,
   yawTo,
 } from "../combat/util.js";
+import { FACE, forwardX, forwardZ, yawFromDir } from "../sim/math.js";
 
 export const BOT_PERSONAS = ["brute", "fox", "bully"];
 
@@ -135,6 +140,49 @@ function viewClock(view, fallback) {
   return Number.isFinite(t) ? t : fallback;
 }
 
+// ---------------------------------------------------------------- 朝向方言
+
+/** combat / testkit 的老约定：yaw=0 面向 +Z。 */
+const FACE_COMBAT = {
+  convention: "yaw0:+Z",
+  forward: forwardFromYaw,
+  yawTo,
+  toLocal: worldToLocal,
+  toWorld: localToWorld,
+};
+
+/** sim 冻结的约定：yaw=0 面向 -Z，局部系与 `src/sim/physics.js` 的 readMoveVector 同源。 */
+const FACE_SIM = {
+  convention: FACE.convention,
+  forward: (yaw) => ({ x: forwardX(yaw), z: forwardZ(yaw) }),
+  yawTo: yawFromDir,
+  toLocal(wx, wz, yaw) {
+    const fx = forwardX(yaw);
+    const fz = forwardZ(yaw);
+    return { x: wx * -fz + wz * fx, z: wx * fx + wz * fz };
+  },
+  toWorld(mx, mz, yaw) {
+    const fx = forwardX(yaw);
+    const fz = forwardZ(yaw);
+    return { x: -fz * mx + fx * mz, z: fx * mx + fz * mz };
+  },
+};
+
+/**
+ * 这份快照是 `src/sim/view.js` 出的吗。
+ * 显式声明优先（`view.face`），否则按 sim 独有的形状认：`tick` + `config.arenaRadius`。
+ */
+function isSimSnapshot(view) {
+  if (!view) return false;
+  const hint = view.face || view.faceConvention || (view.config && view.config.face);
+  if (hint) return String(hint) === FACE.convention;
+  return Number.isFinite(view.tick) && !!view.config && Number.isFinite(view.config.arenaRadius);
+}
+
+function faceOf(view) {
+  return isSimSnapshot(view) ? FACE_SIM : FACE_COMBAT;
+}
+
 function statusesOf(p) {
   return Array.isArray(p && p.statuses) ? p.statuses : [];
 }
@@ -232,7 +280,7 @@ function normalize(x, z) {
 
 // ---------------------------------------------------------------- 坐标系在线校准
 
-function calibrateMoveSpace(mem, me, dt) {
+function calibrateMoveSpace(mem, me, dt, face) {
   if (!CONFIG.autoDetectMoveSpace) return;
   if (!mem.lastPos || !mem.lastCmd || dt <= 0) return;
   const cmdLen = Math.hypot(mem.lastCmd.x, mem.lastCmd.z);
@@ -241,7 +289,7 @@ function calibrateMoveSpace(mem, me, dt) {
   if (moved.len < 0.01) return;
 
   const asWorld = normalize(mem.lastCmd.x, mem.lastCmd.z);
-  const rotated = localToWorld(mem.lastCmd.x, mem.lastCmd.z, mem.lastYaw);
+  const rotated = face.toWorld(mem.lastCmd.x, mem.lastCmd.z, mem.lastYaw);
   const asLocal = normalize(rotated.x, rotated.z);
   const sw = moved.x * asWorld.x + moved.z * asWorld.z;
   const sl = moved.x * asLocal.x + moved.z * asLocal.z;
@@ -252,10 +300,8 @@ function calibrateMoveSpace(mem, me, dt) {
 function moveSpaceFor(view, mem) {
   const hint = (view && (view.moveSpace || view.inputSpace)) || (view && view.config && view.config.moveSpace);
   if (hint === "world" || hint === "local") return hint;
-  // src/sim 的快照（有 config.arenaRadius + tick）：readMoveVector 默认按世界系解释。
-  if (view && view.config && Number.isFinite(view.config.arenaRadius) && Number.isFinite(view.tick)) {
-    return "world";
-  }
+  // src/sim 的快照：readMoveVector 默认按世界系解释。
+  if (isSimSnapshot(view)) return "world";
   if (mem.spaceScore > 1.5) return "world";
   if (mem.spaceScore < -1.5) return "local";
   return CONFIG.moveSpace;
@@ -264,10 +310,10 @@ function moveSpaceFor(view, mem) {
 // ---------------------------------------------------------------- 目标评估
 
 /** 越接近出局越「残血」：吃过的击退、离台缘的距离、是否背对我。 */
-function vulnerability(me, foe, R) {
+function vulnerability(me, foe, R, face) {
   const edge = clamp01(Math.hypot(num(foe.x), num(foe.z)) / Math.max(1, R));
   const impact = clamp01(impactOf(foe) / 1.6);
-  const ff = forwardFromYaw(num(foe.yaw));
+  const ff = face.forward(num(foe.yaw));
   const toMe = dirTo(foe, me);
   const facingAway = clamp01(-(ff.x * toMe.x + ff.z * toMe.z));
   const frozen = foe.frozen === true || moveScaleOf(foe) < 0.7 ? 0.5 : 0;
@@ -275,14 +321,14 @@ function vulnerability(me, foe, R) {
   return edge * 2 + impact * 1.5 + facingAway * 1.2 + frozen - awakePenalty;
 }
 
-function pickTarget(me, foes, persona, R) {
+function pickTarget(me, foes, persona, R, face) {
   if (!foes.length) return null;
   let best = null;
   let bestScore = -Infinity;
   for (const foe of foes) {
     const d = dist2d(me, foe);
     let score;
-    if (persona === "bully") score = vulnerability(me, foe, R) * 2.2 - d * 0.22;
+    if (persona === "bully") score = vulnerability(me, foe, R, face) * 2.2 - d * 0.22;
     else if (persona === "fox") score = -d * 0.5 - (num(foe.awakenedT) > 0 ? 3 : 0) + clamp01(impactOf(foe)) * 1.2;
     else score = -d;
     if (score > bestScore) {
@@ -386,8 +432,8 @@ function innerSidePoint(target, R, offset) {
   return { x: num(target.x) - (num(target.x) / r) * offset, z: num(target.z) - (num(target.z) / r) * offset };
 }
 
-function behindPoint(target, offset) {
-  const f = forwardFromYaw(num(target.yaw));
+function behindPoint(target, offset, face) {
+  const f = face.forward(num(target.yaw));
   return { x: num(target.x) - f.x * offset, z: num(target.z) - f.z * offset };
 }
 
@@ -454,11 +500,11 @@ function foxBrain(ctx) {
 }
 
 function bullyBrain(ctx) {
-  const { me, target, glove, mem, rng, dist, R } = ctx;
+  const { me, target, glove, mem, rng, dist, R, face } = ctx;
   const reach = glove.slapRange * 0.9;
   const targetEdge = Math.hypot(num(target.x), num(target.z)) / Math.max(1, R);
   // 目标已经在外圈就抢内侧（往外扇），否则抢背后。
-  const anchor = targetEdge > 0.55 ? innerSidePoint(target, R, reach * 0.75) : behindPoint(target, reach * 0.8);
+  const anchor = targetEdge > 0.55 ? innerSidePoint(target, R, reach * 0.75) : behindPoint(target, reach * 0.8, face);
   const toAnchor = dirTo(me, anchor);
   const seek = dirTo(me, target);
 
@@ -521,6 +567,7 @@ export function think(view, botId, rng) {
   const me = players.find((p) => p && p.id === botId);
   const mem = memoryOf(botId);
 
+  const face = faceOf(view);
   const now = viewClock(view, mem.lastT == null ? 0 : mem.lastT + 1 / 60);
   const dt = clamp(mem.lastT == null ? 1 / 60 : now - mem.lastT, 0, 0.25) || 1 / 60;
   mem.lastT = now;
@@ -532,7 +579,7 @@ export function think(view, botId, rng) {
     return out;
   }
   out.yaw = num(me.yaw);
-  calibrateMoveSpace(mem, me, dt);
+  calibrateMoveSpace(mem, me, dt, face);
   mem.lastPos = { x: num(me.x), z: num(me.z) };
   mem.lastCmd = null;
 
@@ -550,10 +597,10 @@ export function think(view, botId, rng) {
     const wander = mem.strafeSign;
     const wx = home.x * 0.6 - home.z * 0.4 * wander;
     const wz = home.z * 0.6 + home.x * 0.4 * wander;
-    return emit(out, mem, view, me, wx, wz, num(me.yaw), { slap: false, skill: false, dash: false, jump: false, switchGlove: false });
+    return emit(out, mem, view, face, wx, wz, num(me.yaw), { slap: false, skill: false, dash: false, jump: false, switchGlove: false });
   }
 
-  const target = pickTarget(me, foes, persona, R) || foes[0];
+  const target = pickTarget(me, foes, persona, R, face) || foes[0];
   mem.targetId = target.id;
   const dist = dist2d(me, target);
 
@@ -566,7 +613,8 @@ export function think(view, botId, rng) {
     mem.timers.aim = tuning.reactionSeconds * 0.75 + random() * 0.22;
   }
 
-  const aimYaw = wrapAngle(yawTo(num(target.x) - num(me.x), num(target.z) - num(me.z)) + mem.aimNoise);
+  // 朝向按 view 的方言算：sim 快照下 yaw=0 面向 -Z，算错就是每一掌都朝反方向扇。
+  const aimYaw = wrapAngle(face.yawTo(num(target.x) - num(me.x), num(target.z) - num(me.z)) + mem.aimNoise);
   const aimError = wrapAngle(aimYaw - num(me.yaw));
 
   const skillReady = glove.skillId !== "none" && skillReadyFor(me, mem, now) && canAct(me);
@@ -581,6 +629,7 @@ export function think(view, botId, rng) {
     aimError,
     R,
     now,
+    face,
     tuning,
     skillReady: skillReady && random() < 0.5 + tuning.skillEagerness * 0.5,
     canDash: dashReadyFor(me) && random() < 0.4 + tuning.dashEagerness * 0.6,
@@ -638,7 +687,7 @@ export function think(view, botId, rng) {
     }
   }
 
-  return emit(out, mem, view, me, wx, wz, aimYaw, {
+  return emit(out, mem, view, face, wx, wz, aimYaw, {
     slap: !!plan.slap,
     skill: !!plan.skill,
     dash,
@@ -647,9 +696,9 @@ export function think(view, botId, rng) {
   });
 }
 
-function emit(out, mem, view, me, wx, wz, yaw, flags) {
+function emit(out, mem, view, face, wx, wz, yaw, flags) {
   const space = moveSpaceFor(view, mem);
-  const vec = space === "local" ? worldToLocal(wx, wz, yaw) : { x: wx, z: wz };
+  const vec = space === "local" ? face.toLocal(wx, wz, yaw) : { x: wx, z: wz };
   out.moveX = clamp(vec.x, -1, 1);
   out.moveZ = clamp(vec.z, -1, 1);
   out.yaw = yaw;
