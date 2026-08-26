@@ -119,6 +119,7 @@ export function castLine(state) {
   const level = gate.chairLevel;
   const bite = gate.fishing;
   const { sea, seas, pool } = fishingPool(state);
+  if (!pool.length) return { ok: false, reason: "这片海空了，换个地方。", code: EXPLORE_REASON.NOT_FOUND };
   const rng = mulberry32((state.meta.seed + state.meta.tick * 17) >>> 0);
   const fish = pickWeighted(
     rng,
@@ -265,8 +266,8 @@ export function resolveHook(state, cast, timing01) {
     player: {
       ...state.player,
       exp: state.player.exp + exp,
-      coins: state.player.coins + num(bonus?.coins, 0),
-      diamonds: state.player.diamonds + num(bonus?.diamonds, 0),
+      coins: num(state.player.coins, 0) + num(bonus?.coins, 0),
+      diamonds: num(state.player.diamonds, 0) + num(bonus?.diamonds, 0),
     },
     explore: {
       ...state.explore,
