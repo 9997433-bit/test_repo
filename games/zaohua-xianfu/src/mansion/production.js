@@ -63,7 +63,7 @@ function homeLevel(buildings) {
 }
 
 /** 乘区与产出的兜底：坏档弟子（profession: NaN）不该把整张账污染成 NaN。 */
-function positive(value, fallback) {
+function nonNeg(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
@@ -96,12 +96,12 @@ function productionRows(state) {
     if (!def || !Object.keys(def.baseYield).length) continue;
     const level = effectiveLevel(b, home);
     const worker = disciples.find((d) => d?.buildingId === b.id) ?? null;
-    const workerMul = positive(yieldMultiplier(worker, b), 1);
+    const workerMul = nonNeg(yieldMultiplier(worker, b), 1);
     const levelMul = levelScale(level);
-    const adjacency = positive(adjacencyOnGrid(grid, b.x, b.y, b.type), 1);
+    const adjacency = nonNeg(adjacencyOnGrid(grid, b.x, b.y, b.type), 1);
     const bonus = workerMul * adjacency * aura;
     const perSec = {};
-    for (const [k, v] of Object.entries(yieldAt(b.type, level))) perSec[k] = positive(v * bonus, 0);
+    for (const [k, v] of Object.entries(yieldAt(b.type, level))) perSec[k] = nonNeg(v * bonus, 0);
     rows.push({
       id: b.id,
       type: b.type,
@@ -194,9 +194,9 @@ export function scriptureXpRows(state) {
   const home = homeLevel(state);
   return xpBuildings(state).map((b) => {
     const level = effectiveLevel(b, home);
-    const base = positive(xpAt(b.type, level), 0);
+    const base = nonNeg(xpAt(b.type, level), 0);
     const worker = disciples.find((d) => d?.buildingId === b.id) ?? null;
-    const workerMul = positive(yieldMultiplier(worker, b), 1);
+    const workerMul = nonNeg(yieldMultiplier(worker, b), 1);
     return {
       id: b.id,
       type: b.type,
@@ -207,7 +207,7 @@ export function scriptureXpRows(state) {
       workerId: typeof worker?.id === "string" && worker.id ? worker.id : null,
       worker: worker?.name ?? null,
       workerMul,
-      perSec: positive(worker ? base * workerMul : base, 0),
+      perSec: nonNeg(worker ? base * workerMul : base, 0),
     };
   });
 }
@@ -227,7 +227,7 @@ export function scriptureXpFor(state, disciple) {
   const hall = xpBuildings(state).find((b) => b.id === buildingId);
   if (!hall) return 0;
   const level = effectiveLevel(hall, homeLevel(state));
-  return positive(xpAt(hall.type, level) * positive(yieldMultiplier(disciple, hall), 1), 0);
+  return nonNeg(xpAt(hall.type, level) * nonNeg(yieldMultiplier(disciple, hall), 1), 0);
 }
 
 /**
@@ -246,7 +246,7 @@ export function scriptureXpAward(state, dtSec) {
   if (dt <= 0) return out;
   for (const row of scriptureXpRows(state)) {
     if (!row.workerId) continue;
-    const gain = positive(row.perSec * dt, 0);
+    const gain = nonNeg(row.perSec * dt, 0);
     if (gain <= 0) continue;
     out[row.workerId] = (out[row.workerId] ?? 0) + gain;
   }
@@ -335,7 +335,7 @@ export function combatBuildingBonus(buildings) {
     const bonus = buildingDef(b.type)?.combatBonus;
     if (!bonus) continue;
     const level = effectiveLevel(b, home);
-    for (const [k, v] of Object.entries(bonus)) total[k] = (total[k] ?? 0) + positive(v * level, 0);
+    for (const [k, v] of Object.entries(bonus)) total[k] = (total[k] ?? 0) + nonNeg(v * level, 0);
   }
   return total;
 }
@@ -350,7 +350,7 @@ export function combatBonusSources(buildings) {
     if (!def?.combatBonus) continue;
     const level = effectiveLevel(b, home);
     const gain = {};
-    for (const [k, v] of Object.entries(def.combatBonus)) gain[k] = positive(v * level, 0);
+    for (const [k, v] of Object.entries(def.combatBonus)) gain[k] = nonNeg(v * level, 0);
     rows.push({ id: b.id, type: b.type, name: def.name, level, gain });
   }
   return rows;
