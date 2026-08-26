@@ -356,6 +356,206 @@ input[type="range"]::-moz-range-thumb {
   background: linear-gradient(var(--buoy) 0 46%, #fff 46%);
 }
 
+/* ============================================================
+   玩法组件皮肤（Round 2 增量）
+   ------------------------------------------------------------
+   基础结构由 ui/skin.js 随模块注入，且其 <style> 排在打包 CSS
+   之后；本层所有覆盖都带祖先选择器（.cww-ghost / .panel /
+   .cww-dive）抬高一级优先级，颜色全部走 tokens。
+   ============================================================ */
+
+/* ---------- 建造预览：合法绿格 / 非法红格 / 拿起黄格 ----------
+   双通道口径：合法 = 实线描边 + 锚点 ✓；非法 = 虚线描边 + 斜纹
+   （a11y.css）+ 每格 ✕（skin.js）；拿起 = 点线描边。灰阶下三态可辨。 */
+.cww-ghost .cww-ghost-cell {
+  border-style: solid;
+  box-shadow:
+    0 2px 0 rgba(6, 53, 68, 0.28),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.4);
+}
+
+.cww-ghost .cww-ghost-cell.ok {
+  border-color: var(--kelp-ink);
+  background:
+    radial-gradient(closest-side, rgba(255, 255, 255, 0.32), transparent 72%),
+    rgba(61, 204, 138, 0.46);
+}
+
+/* 多格建筑只在锚点格盖 ✓，不糊满屏 */
+.cww-ghost .cww-ghost-cell.ok:first-child::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(6, 53, 68, 0.7);
+}
+
+.cww-ghost .cww-ghost-cell.bad {
+  border-style: dashed;
+  border-color: var(--coral-ink);
+  background-color: rgba(255, 107, 107, 0.28);
+}
+
+.cww-ghost .cww-ghost-cell.pick {
+  border-style: dotted;
+  border-color: var(--sun-deep);
+  background: rgba(255, 209, 102, 0.4);
+}
+
+/* 预览标签：贴纸小票，✓ / ✕ 前缀把结论写进文字通道 */
+.cww-ghost .cww-ghost-label {
+  border-width: 2px;
+  box-shadow: 0 2px 0 var(--ink);
+}
+
+.cww-ghost .cww-ghost-label::before {
+  content: "✓ ";
+  color: var(--kelp-ink);
+  font-weight: 900;
+}
+
+.cww-ghost .cww-ghost-label.bad {
+  background: #ffe3e3;
+  border-color: var(--coral-ink);
+  color: var(--coral-ink);
+}
+
+.cww-ghost .cww-ghost-label.bad::before {
+  content: "✕ ";
+}
+
+/* ---------- 潜水：氧气条 ----------
+   常态 = 水蓝 + 气泡点纹；低氧（<35）= 珊瑚 + 斜纹 + 呼吸警报
+   （图案见 a11y.css，警报见 motion.css）。含量文字一直写在条内。 */
+.panel .cww-meter {
+  border: var(--line) solid var(--ink);
+  background: linear-gradient(rgba(6, 53, 68, 0.34), rgba(6, 53, 68, 0.16));
+  box-shadow: inset 0 2px 3px rgba(6, 53, 68, 0.35);
+}
+
+.panel .cww-meter::before {
+  content: "🫧" / "";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  translate: 0 -52%;
+  z-index: 2;
+  font-size: 10px;
+  line-height: 1;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9));
+}
+
+.panel .cww-meter > i {
+  background-color: var(--info);
+}
+
+.panel .cww-meter.low > i {
+  background-color: var(--coral);
+}
+
+/* ---------- 钓鱼节奏条：绿窗 + 金核 + 鱼漂指针 ----------
+   窗口两端立白色界桩，核心区走竖纹金条（a11y.css）——
+   灰阶下「窗口边界 / 完美核 / 指针」三者仍然分明。 */
+.panel .cww-track {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.26), transparent 42%),
+    linear-gradient(90deg, var(--sea-glint), var(--sea) 55%, var(--sea-deep));
+}
+
+.panel .cww-zone {
+  background: rgba(61, 204, 138, 0.52);
+  border-left: 3px solid var(--sea-foam);
+  border-right: 3px solid var(--sea-foam);
+  box-shadow: inset 0 0 0 1.5px var(--kelp-ink);
+}
+
+.panel .cww-zone-core {
+  background-color: rgba(255, 209, 102, 0.92);
+}
+
+.panel .cww-needle {
+  width: 8px;
+  margin-left: -4px;
+  border-radius: 5px;
+}
+
+/* 上钩 / 空军的结算行：图标 + 颜色 + 文案三通道 */
+.panel .cww-catch.hit::before {
+  content: "🎣 " / "";
+}
+
+.panel .cww-catch.miss::before {
+  content: "💨 " / "";
+}
+
+/* ---------- 战报：结果横幅 + 手账纸 + 敌我血条 ---------- */
+.panel .cww-banner {
+  transform: rotate(-0.4deg); /* 贴纸军规：歪一点才对 */
+}
+
+.panel .cww-banner.win::before {
+  content: "🏆 " / "";
+}
+
+.panel .cww-banner.lose::before {
+  content: "🌊 " / "";
+}
+
+.panel .cww-banner.draw::before {
+  content: "🤝 " / "";
+}
+
+.panel .cww-report {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 21px, rgba(122, 74, 30, 0.14) 21px 22px),
+    var(--paper);
+  border: 1.5px solid rgba(122, 74, 30, 0.45);
+}
+
+.panel .cww-report div.skill {
+  padding-left: 7px;
+  border-left: 3px solid var(--sun-deep);
+  background: rgba(255, 209, 102, 0.18);
+  color: var(--wood-dark);
+}
+
+.panel .cww-hp span {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel .cww-hp i {
+  height: 9px;
+  background: rgba(22, 50, 60, 0.14);
+  border-color: rgba(22, 50, 60, 0.5);
+}
+
+.panel .cww-hp i b {
+  background-color: var(--kelp);
+}
+
+.panel .cww-hp.enemy i b {
+  background-color: var(--coral);
+}
+
+/* ---------- 英雄卡：稀有度描边（标签文字是主通道，描边只是氛围） ---------- */
+.panel .cww-card:has(.cww-tag.legend) {
+  border-color: var(--sun-deep);
+  box-shadow: 0 2px 0 rgba(244, 162, 94, 0.55);
+}
+
+.panel .cww-card:has(.cww-tag.epic) {
+  border-color: var(--buoy);
+}
+
+.panel .cww-card:has(.cww-tag.rare) {
+  border-color: #7c6ff0;
+}
+
 /* ---------- 滚动条 ---------- */
 .panel,
 .log,

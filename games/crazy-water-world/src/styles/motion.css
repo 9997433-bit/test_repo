@@ -71,6 +71,55 @@
   }
 }
 
+/* ---- Round 2：玩法反馈（预算见第 6 节「反馈循环」，全部 opacity/transform） ---- */
+
+/* 建造幽灵层呼吸：告诉老大“这是预览，还没花钱” */
+@keyframes ghost-breathe {
+  from {
+    opacity: 0.78;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 低氧警报：只闪填充不闪文字，0.625Hz 远低于 3Hz 红线 */
+@keyframes alarm-pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.55;
+  }
+}
+
+/* 鲨鱼贴脸的危险圈：轻微缩放，别整屏晃 */
+@keyframes danger-pulse {
+  from {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
+  to {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+/* 上钩 / 空军结算行的一次性弹跳 */
+@keyframes catch-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   /* 标题页环境循环（共 3 个 + 救生圈微摆，全部 transform/背景位移） */
   .title-screen::before {
@@ -113,6 +162,29 @@
 
   .sea-wrap::after {
     transition: opacity var(--dur-scene) ease;
+  }
+
+  /* ---- Round 2：玩法反馈循环（同屏 ≤2：建造屏 1 个，潜水屏最多 2 个） ---- */
+  .cww-ghost {
+    animation: ghost-breathe 1.6s ease-in-out infinite alternate;
+  }
+
+  .panel .cww-meter.low > i {
+    animation: alarm-pulse 0.8s ease-in-out infinite alternate;
+  }
+
+  .cww-dive .cww-danger {
+    animation: danger-pulse 0.8s ease-in-out infinite alternate;
+  }
+
+  /* 一次性反馈：战报横幅入场、上钩结算行弹跳 */
+  .panel .cww-banner {
+    animation: pop-in var(--dur-pop) var(--ease-spring);
+  }
+
+  .panel .cww-catch.hit,
+  .panel .cww-catch.miss {
+    animation: catch-pop var(--dur-pop) var(--ease-spring);
   }
 }
 
