@@ -16,8 +16,8 @@ const { CELL_COUNT, COLS, ROWS } = unitTable;
 const LANE = measurePath(pathPoints(COLS, ROWS, false));
 
 /**
- * range → 实际半径（格）。data 表不可改，缩放留在战斗层：
- * reach = range * scale + pad。默认值下近战覆盖约半条路，
+ * range → 实际半径（格）：reach = range * scale + pad。
+ * 缩放默认留在战斗层。默认值下近战覆盖约半条路，
  * 弓/赵云覆盖大半，黄忠(range 3)接近全场，射程档位因此拉得开。
  */
 const REACH_DEFAULTS = { scale: 1.2, pad: 0.55, graze: 1.6 };

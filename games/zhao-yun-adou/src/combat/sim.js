@@ -22,7 +22,7 @@ const CD_BANK = 0.5;
 /**
  * 覆盖补偿：射程改成「一格只守一段路」后，单位的有效输出时间约剩七成，
  * 不补的话整局会比旧版早三四波结束（实测 avgWave 9.1 → 5.8）。
- * data 表不归本轮改，补偿系数因此留在战斗层，并做成可调。
+ * 系数默认留在战斗层；波次表导出 `BALANCE` 时以表为准。
  */
 const BALANCE_TUNING = createTuning({
   defaults: { towerDamage: 1.35 },
