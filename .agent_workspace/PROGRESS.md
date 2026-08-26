@@ -29,8 +29,8 @@
 ## Round 状态
 
 - Round 1：已完成（见 `.agent_workspace/ROUND1_BRIEF.md`）
-- Round 2：进行中（靶向重构，简报已注入）
-- Round 3：未开始
+- Round 2：已完成（见 `.agent_workspace/ROUND2_BRIEF.md`）
+- Round 3：进行中（SOTA 打磨，简报已注入）
 
 ## 结论简报
 
@@ -38,3 +38,8 @@
 可玩基线 + 经营/战斗/核心/UI/美术/数值均已落地，24 测 + probe/bench 绿。
 P0 页签不重绘、建筑撞 id 已修。遗留：离线效率未进 BOOT、法器槽型、兽潮税口径、藏经楼白给专业、掉落表未接、魔族终盘、场外断言未入库。
 详见 `ROUND1_BRIEF.md`。
+
+### Round 2
+离线折算、1/1/2 槽型、未收取兽潮税、掉落表、applyTriggers、槽位 UI 已定案落地。
+仍开：藏经楼 TICK 未消费新口径、loseTax 死代码、魔族 F40、8s/60s 阈值、误删回归、塔 45 文案。
+详见 `ROUND2_BRIEF.md`。
