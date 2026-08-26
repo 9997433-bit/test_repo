@@ -1,17 +1,17 @@
 # 架构（Round 3 回签版）
 
-> 审计基线：commit `ade1d0a`（代码至 `9e152b4`；Round 2 十路工作 `998fdba..a7cc5bb` 已全部合入父分支，Round 3 的课程计数修复 `2364b9e`、孤儿对拍 `0c1afb4`、读档加固 `9e152b4` 等也已落地）。本版把 Round 2 落地的 **回放快照、每侧敌人号段、覆盖打分 AI、juice 演出、决胜段数值、课程计数修复、读档 NaN 卫生** 从「在途」回签为**已实现**，并重列仍缺项。
+> 审计基线：代码至 commit `b7f38bb`（Round 2 十路工作 `998fdba..a7cc5bb` 已全部合入父分支；Round 3 的课程计数修复 `2364b9e`、孤儿对拍 `0c1afb4`、读档 NaN 卫生 `9e152b4`+`ade1d0a`、juice 合流 fx.css 与首局教程 `b7f38bb` 均已落地）。本版把 Round 2 落地的 **回放快照、每侧敌人号段、覆盖打分 AI、juice 演出、决胜段数值** 与 Round 3 冲刺的 **课程计数入档、juice/fx.css 合流、强制教程、字体非阻塞** 一律回签为**已实现**，并重列仍缺项。
 > 标记约定：**【已实现】** 与合入代码逐行核对（无标记即已实现）；**【缺口】** 当前代码不存在，排期见 §10 与契约 §10。
-> Round 3 冲刺清单见 `/.agent_workspace/round2/BRIEF.md`。
+> Round 3 冲刺清单见 `/.agent_workspace/round2/BRIEF.md`：第 1–5 项（juice 合流、课程入档、强制教程、字体回退、全量核验）均已落地，本文件与契约的回签即第 6 项。
 
 ## 1. 技术栈与硬约束
 
 - Vite 6 + 原生 ES Module，零运行时依赖，无框架、无后端、无打包别名。
 - 单页挂载点 `index.html` 的 `<div id="app">`；`src/main.js` 是唯一组合根（composition root）。
 - 开发/预览端口 **4180**（`strictPort: true`），`base: './'`，产物可 file:// 直开。
-- 测试 Vitest（node 环境）；根 `vite.config.js` 的 `test.include` 同时收 `tests/**/*.test.js` 与 `src/**/*.test.js`，全量 18 文件一条 `npm test` 跑完（`src/combat/vitest.config.js` 是并行开发期遗留，可跑但非必需）。
+- 测试 Vitest（默认 node 环境；`juice.dom.test.js`/`tutorial.test.js` 用文件头 `@vitest-environment jsdom` 单独启用 DOM）；根 `vite.config.js` 的 `test.include` 同时收 `tests/**/*.test.js` 与 `src/**/*.test.js`，全量 20 文件一条 `npm test` 跑完（`src/combat/vitest.config.js` 是并行开发期遗留，可跑但非必需）。
 - 基准 `scripts/bench.mjs`（36 局，**内置胜率闸门 0.40–0.60**）、冒烟 `scripts/probe.mjs`、共享不变量 `scripts/invariants.mjs`、对局遥测 `scripts/metrics.mjs`（probe/bench 共用）。
-- 字体双保险：`index.html` 仍引 Google Fonts CDN（`Ma Shan Zheng` / `Noto Serif SC`，`display=swap`），但 `tokens.css` 的 `--font-body/--font-brush` 已带完整系统字栈（宋体系 / 楷体系）——离线、内网、微信内直开会**平滑回退**而非破相。自托管 woff2 仍未做（§10 R6）。
+- 字体双保险【已实现·R3 `b7f38bb` 补非阻塞】：`index.html` 的 Google Fonts 链（`Ma Shan Zheng` / `Noto Serif SC`）改按 `media="print"` 加载、`onload` 换轨 `all`——**不阻塞首屏**，CDN 成败只影响品牌字体；`tokens.css` 的 `--font-body/--font-brush` 带完整系统字栈（宋体系 / 楷体系），离线、内网、微信内直开平滑回退而非破相。自托管 woff2 仍未做（§10 R6，可选）。
 
 ## 2. 模块图（与实际 import 逐一核对）
 
@@ -25,6 +25,7 @@ graph TD
     render[ui/render.js]
     lane[ui/lane.js]
     juice[ui/juice.js]
+    tutorial[ui/tutorial.js]
     sfx[audio/sfx.js]
   end
   subgraph 编排层
@@ -55,7 +56,8 @@ graph TD
   end
 
   main --> game & engine & ai & render & lane & sfx
-  render --> units & heroes & waves & lane & juice
+  render --> units & heroes & waves & lane & juice & tutorial
+  tutorial --> sfx
   lane --> path & juice
   game --> rng & events & engine & grid & merge & awaken & sim & units & recruit
   sim --> units & heroes & waves & skills & damage & geometry & pressure & tuning
@@ -83,12 +85,13 @@ graph TD
 
 事实核查（相对 Round 2 审计的变化）：
 
-- **`ui/juice.js` 是新驱动层模块**：`render.js` 每帧幂等调 `attachJuice(api)` 挂总线，`lane.js` 消费 `noteEnemies/takeLaneEffects/fxProgress` 画泼墨。它不 import 任何 src 模块，自挂 `#zy-juice` 图层在 `document.body`（躲开 morphChildren 的 diff）。
+- **`ui/juice.js`（R2 新增，R3 `b7f38bb` 合流 fx.css）**：`render.js` 每帧幂等调 `attachJuice(api)` 挂总线，`lane.js` 消费 `noteEnemies/takeLaneEffects/fxProgress` 画泼墨。它不 import 任何 src 模块；DOM 演出挂 `index.html` 自带的 `#fx-layer`（与 `#app` 平级，躲开 morphChildren 的 diff；层缺失才自建、自建的才随 detach 摘除），样式**只用** `styles/fx.css` 契约类——自注入 `#zy-juice-css` 已删，双轨不复存在。
+- **`ui/tutorial.js` 是新驱动层模块（R3 `b7f38bb`）**：首局强制三步教程。`render.js` 每帧幂等调 `attachTutorial(api)`；面板自挂 `#tutor-layer`（body 下与 `#app` 平级，同样躲 diff），自带点击/键盘监听与 `#zy-tutor-css` 样式；首局标记写 localStorage `zy-adou.tutorial.v1`（不可用时退回会话内存标记）。它只 import `audio/sfx.js`（「出征」顺手解锁音频）。
 - **`combat/tuning.js` 是新调参基座**：`sim/geometry/pressure` 三处旋钮统一为「模块默认值 < data 表可选导出 < 运行时 `configureX`」三层；`resetX` 只丢运行时补丁、保留表覆盖。表侧覆盖键：`waves.BALANCE|COMBAT_BALANCE`、`waves.PRESSURE|PRESSURE_TUNING`、`units.REACH|REACH_TUNING|RANGE_TUNING`（当前表里都没写，走默认值）。
 - **`ai/opponent.js` 已改用真实覆盖**（P/R5 已修）：布阵主项是 `seatValue`（`coverageWindows` 按 48 段路线加权求和，末段权重 ×4），`cellDistToPath` 在 AI 里已无引用；新增「阵型换座」动作（乘法门槛 `MOVE_GAIN=1.3` 防来回蹦）。
 - `combat/path.js` 消费者仍是 `ui/lane.js` 与 `combat/geometry.js`；`nearestPathT` 仍无运行时调用方。
 - 孤儿现状（0c1afb4 已用 **对拍测试 + 接入清单** 钉住语义，但仍零运行时消费者）：`board/hand.js` 全模块（`hand.test.js` 16 例，文件头列出 game.js 三处 push/splice 的等价替换）；`merge.classifyDrop/canSwap`（`drop.test.js` 39 例与 game 的 place/merge 逐分支对拍，`classifyDrop` 增 `{from:"hand"}` 选项）；`board/placement.js` 全模块（21 例，AI 未接它——opponent 自带 seatValue）；`awaken.atkBonus` 恒 0。
-- 模块级可变单例（同进程跨 `createGame` 实例共享、均不入存档）：`sim.BALANCE`、`geometry.REACH`、`pressure.CONFIG`（均为 tuning.live，读写对 `configureX/xConfig/resetX` **只允许测试与调参脚本调用**）；`recruit.rollCounts`（WeakMap，已由 game 经 `resetRecruitRolls/setRecruitRolls` 托管，§7）；`opponent.boardMoveSupported` 与 `opponent.seatCache`；`render.stylesInjected`；`juice` 的 `laneFx/seen/floats/bound`（`detachJuice/resetJuice` 清场）。**`sim.enemySeq` 已不存在**——号段搬进了 side（§7）。
+- 模块级可变单例（同进程跨 `createGame` 实例共享、均不入存档）：`sim.BALANCE`、`geometry.REACH`、`pressure.CONFIG`（均为 tuning.live，读写对 `configureX/xConfig/resetX` **只允许测试与调参脚本调用**）；`recruit.rollCounts`（WeakMap，已由 game 经 `resetRecruitRolls/setRecruitRolls` 托管，§7）；`opponent.boardMoveSupported` 与 `opponent.seatCache`；`render.stylesInjected`；`juice` 的 `laneFx/seen/nodes/bound/layer`（`detachJuice/resetJuice` 清场；`#fx-layer` 是 index.html 自带的不摘、自建的才摘）；`tutorial` 的 `bound/layer/step/sessionSeen`（`detachTutorial` 清，localStorage 首局标记除外）。**`sim.enemySeq` 已不存在**——号段搬进了 side（§7）。
 
 ## 3. 运行时状态形状【已实现】
 
@@ -143,9 +146,11 @@ Enemy { id, t: 0..1, hp, maxHp, speed, reward, boss,
 
 **增量 DOM（P2 已修）**：`render()` 输出到离屏 `scratch` 容器，`morphChildren` 做同构 diff 回写真实 DOM——节点身份保持不变，拖拽/悬停/选中不再被 30Hz 重建打断。三条 diff 铁律：`style` 属性由运行时注入（拖拽 ghost、touch-action），diff 不删；`CANVAS` 整棵跳过；指针态 class（`drop/selected`）由 `decorate()` 在 diff 后补挂，渲染层不管理。
 
-**juice 双通道（R2 落地）**：① DOM 飘字/墨晕/半区震颤挂在 `document.body` 下的 `#zy-juice` fixed 图层（WAAPI 自播自清，`FLOAT_CAP=12`），躲开 diff；② 画布特效入 `laneFx` 队列（`LANE_CAP=24/侧`），由 `drawLane` 每帧取走。`attachJuice(api)` 幂等（render 每帧调也不重复订阅）；`start/reset/load` 自动清场；`prefers-reduced-motion` 下飘字缩短、震颤取消。
+**juice 双通道（R2 落地，R3 `b7f38bb` 合流 fx.css）**：① DOM 飘字/泼墨挂 `index.html` 自带的 `#fx-layer`（与 `#app` 平级，躲开 diff），只用 `styles/fx.css` 契约类——`.fx-float`（`.gold/.ink` 语气、`.brush` 楷书招式名）、`.fx-splash`（形状类与 `juice.shape` 一字不差）、`.fx-quake`（挂 `#app` 根与 `#fx-layer`，CSS 只抖 `.arena` 不晃 HUD）；定位/强度全写 `--fx-x/--fx-y/--fx-size/--fx-shake` 变量，时长读 `tokens.css` 的 `--dur-float/splash/quake` 令牌（读不到退兜底 820/620/420ms，brush ×1.4、aura ×1.9）；JS 一行样式不注入、不再用 WAAPI，`NODE_CAP=14` 先进先出回收（animationend 与定时器双保险）；② 画布特效入 `laneFx` 队列（`LANE_CAP=24/侧`），由 `drawLane` 每帧取走。`attachJuice(api)` 幂等（render 每帧调也不重复订阅）；`start/reset/load` 自动清场；`prefers-reduced-motion` 由 fx.css 整体取消动画（飘字静止全显，节点仍按时回收）。
 
-输入层：PointerEvent 拖放（`DRAG_SLOP=6px` 区分点选/拖拽、ghost 跟手、`elementFromPoint` 定落点）+ 无 PointerEvent 浏览器的点选-点落兜底；键盘 空格/P 暂停、Esc 取消、Enter/E 征兵、R 重开、1–5 选牌；`visibilitychange` 自动暂停/恢复。调试入口 `window.__zhaoyun = { api, ui, save, restore }`（`save()` = 回放档、`restore(snap)` = 不写 log 的读档，存-读-存逐字节一致）；`?seed=` URL 参数定种子。
+输入层：PointerEvent 拖放（`DRAG_SLOP=6px` 区分点选/拖拽、ghost 跟手、`elementFromPoint` 定落点）+ 无 PointerEvent 浏览器的点选-点落兜底；键盘 空格/P 暂停、Esc 取消、Enter/E 征兵、R 重开、1–5 选牌；`visibilitychange` 自动暂停/恢复。调试入口 `window.__zhaoyun = { api, ui, save, restore, tutorial }`（`save()` = 回放档、`restore(snap)` = 不写 log 的读档，存-读-存逐字节一致；`tutorial` 句柄由 `attachTutorial` 顺路挂上，`{open, close, seen, forget}`）；`?seed=` URL 参数定种子。
+
+**首局教程（R3 `b7f38bb` 落地）**：无 localStorage 标记且在菜单页时自动弹三步教程（征兵→布阵→合并觉醒）；面板 `role="dialog"` + 焦点管理，开着时 window 捕获阶段吃掉全部游戏热键（←→ 翻页、Esc 跳过，空格/E/R/1-5 不漏给棋局）；「出征」写标记、解锁音频并直接 `api.start()`；回看走菜单「看教程」按钮（`[data-tutor-open]`，教程层自己代理点击）。
 
 `tickSideCombat` 单侧顺序：haste/rally 衰减 → 出兵（间隔用减法防 dt 抖动，单帧追帧上限 8 只；小兵清完 0.6s 后出 Boss）→ 行军（`t += speed*dt/520`，眩晕冻结、减速取更狠的一档）→ 逐格攻击（§5）→ 死亡结算（赏金、split 分裂 2×卒、压力充能）→ 漏怪结算（心钳 0、`leaks+1`、补偿 `8+2w` 馒头）。
 
@@ -159,7 +164,7 @@ Enemy { id, t: 0..1, hp, maxHp, speed, reward, boss,
 
 **压力波（P13 已修）**：一侧每积 5 点斩获充能（普通兵 1、将 3）就向对岸 `spawnQueue` 塞一波弱化援兵（血 ×0.55、速 ×1.1、赏 ×0.5、字「援」、立即放出第一只）；承压方每波最多接 2 波；压力兵之死不再充能。对手发现走 `WeakMap`（`linkArena` 每帧幂等登记，不挂 `side.opponent` 防 serialize 循环引用；首帧击杀不产生压力，可忽略）。**压力充能与台账随快照迁移**——读档续跑攒到第 5 杀照常施压（`tests/round3-regressions.test.js` 锁定）。手动施压入口 `sendPressure(side, otherSide)` 留给道具/剧情。
 
-**大招 juice 契约（R2 已修·Round 2 落地）**：`castSkill` 返回 `{id, name, fx, hits, damage, kills, targets, cooldown, juice:{shake, color, sfx, duration, focusT, shape, text, …}}` 随 `skill` 事件整包发出，`ui/juice.js` 照单演出：招式名楷书飘字 + 按 `shape`（sweep/rain/ring/arc/aura/dash）画泼墨 + 按 `shake` 震半区；`kill` 落墨（斩将重笔 + 金字「斩」）、`leak` 终点破阵圈、`merge` 墨晕 + Lv 飘字。**遗留双轨**：`styles/fx.css` 的契约类（`#fx-layer/.fx-float/.fx-splash/.fx-quake`）零 JS 消费者，juice.js 走自注入 `#zy-juice-css`——合流是 Round 3 冲刺第 1 项（§10 R2）。`pressure` 事件仍零订阅。
+**大招 juice 契约（R2 已修·Round 2 落地）**：`castSkill` 返回 `{id, name, fx, hits, damage, kills, targets, cooldown, juice:{shake, color, sfx, duration, focusT, shape, text, …}}` 随 `skill` 事件整包发出，`ui/juice.js` 照单演出：招式名楷书飘字 + 按 `shape`（sweep/rain/ring/arc/aura/dash）画泼墨 + 按 `shake` 震半区；`kill` 落墨（斩将重笔 + 金字「斩」）、`leak` 终点破阵圈、`merge` 墨晕 + Lv 飘字。~~遗留双轨~~ **已合流（R3 `b7f38bb`）**：`styles/fx.css` 契约类（`#fx-layer/.fx-float/.fx-splash/.fx-quake`）现在就是演出层唯一事实源，`juice.dom.test.js` 11 例（jsdom）锁定「只说 fx.css 方言、零自注入样式」。`pressure` 事件仍零订阅（「援兵将至」提示仍欠，§10 R2 余项）。
 
 ## 6. 事件目录【已实现】
 
@@ -173,15 +178,15 @@ Enemy { id, t: 0..1, hp, maxHp, speed, reward, boss,
 | `load` | `{seed, phase}` | game.load | 清选中+清提示+标脏 | 清场 |
 | `recruit` | `{side, card, cost}` | game.recruit | sfx | — |
 | `place` | `{side, cellIndex, unit ⚠活引用}` | game.place | — | — |
-| `merge` | `{side, cellIndex, level}` | game.place(并入)/game.merge | sfx+toast | 墨晕+Lv 飘字+弹格 |
+| `merge` | `{side, cellIndex, level}` | game.place(并入)/game.merge | sfx+toast | 墨晕(ring)+Lv 飘字 |
 | `token` | `{side, cellIndex, level}` | game.place 与 game.merge 的符分支**均发** | — | — |
 | `move` / `swap` | `{side, from, to}` | game.merge | — | — |
 | `expand` | `{side, cellIndex}` | game.useShovel | toast | — |
 | `hero-awaken` | `{side, names: string[]}` | game.tryAwaken | sfx+toast | — |
 | `skill` | `{side, hero, skill, fx, hits, damage, kills, targets, cooldown, cellIndex, juice}` | sim→castSkill 后 | sfx+toast | 泼墨+招式名飘字+震屏 |
-| `kill` | `{side, reward, boss, pressure, id}` | sim 死亡结算 | — | 墨溅+赏金/「斩」飘字 |
+| `kill` | `{side, reward, boss, pressure, id}` | sim 死亡结算 | — | 画布墨溅（含赏金/「斩」字） |
 | `pressure` | `{from, to, count, wave, hp}` | sim←notePressureKill | — | —（⚠零订阅） |
-| `leak` | `{side, hearts, boss}` | sim 漏怪结算 | sfx+震屏+toast | 破阵圈+「阿斗−1心」 |
+| `leak` | `{side, hearts, boss}` | sim 漏怪结算 | sfx+震屏+toast | 破阵圈+「阿斗−1心」+对岸震颤 |
 | `wave` | `{wave}` | sim.maybeAdvanceWave | toast | — |
 | `game-over` | `{winner, tie, reason}` | sim.checkWinner/finishByHearts | sfx+清选中 | — |
 
@@ -211,39 +216,39 @@ Enemy { id, t: 0..1, hp, maxHp, speed, reward, boss,
 
 1. 本目录 `games/zhao-yun-adou/` 是独立游戏根：不 import 仓库根或其他 `games/*`；它们也不得写入此处（`OWNERSHIP.md`）。
 2. 端口独占 4180；`strictPort` 保证冲突即失败而非漂移。
-3. 一切资源相对路径（`base: './'`）；唯一外部网络依赖是 Google Fonts，且已具备系统字栈回退（§1、§10 R6）。
-4. 规则层（`board/*`、`combat/*`）保持 DOM-free、window-free，node 直接单测——现状达标（render/lane/juice/sfx 里的 document/window 均在驱动层，juice 在无 DOM 环境自动降级为纯队列）。
+3. 一切资源相对路径（`base: './'`）；唯一外部网络依赖是 Google Fonts，且已改非阻塞加载（`media="print"` 换轨）+ 系统字栈回退——CDN 成败不影响可玩性（§1、§10 R6）。
+4. 规则层（`board/*`、`combat/*`）保持 DOM-free、window-free，node 直接单测——现状达标（render/lane/juice/tutorial/sfx 里的 document/window 均在驱动层，juice 无 DOM 时自动降级为纯队列、tutorial 静默不挂）。
 5. 模块级调参单例（§2 末）只允许测试/调参脚本写；对局内平衡改动必须走 `data/*`（tuning 的表覆盖机制就是为此而设）。
 6. `node_modules`、`dist` 目录内自治；根 `test.js` 与本游戏无关，禁改。
 
 ## 10. 已知风险与仍缺项（Round 3 视角）
 
-Round 2 清单 R1–R13 处置结果：**已修** R1（胜率回拉）、R2 主体（juice 上屏）、R3（enemySeq + 课程计数）、R5（AI 接覆盖）。**部分修** R4/R6/R7/R9/R13。**未动** R8/R10/R11/R12。逐条如下：
+Round 2 清单 R1–R13 处置结果：**已修** R1（胜率回拉）、R2（juice 上屏 + fx.css 合流）、R3（enemySeq + 课程计数）、R5（AI 接覆盖）、R12（强制教程 + 首局标记）。**部分修** R4/R6/R7/R9/R13。**未动** R8/R10/R11。逐条如下：
 
 | # | 严重度 | 位置 | 问题 | 处置 |
 | --- | --- | --- | --- | --- |
 | R1 | ~~高·平衡~~ | `data/waves.js` | ~~headless 胜率 91.7%~~ | 【已实现】血量斜率 12→18、决胜段 lateRamp 12/波、终章加码（`a7cc5bb`）；本轮实测 **0.4722**（17/36），且 bench 自身现在把 0.40–0.60 当过线闸门 |
-| R2 | 高·演出 | `ui/juice.js`、`styles/fx.css` | ~~skill.juice/kill 无人消费~~ → 已上屏（`d140bd3`）。**遗留双轨**：fx.css 契约类零 JS 消费者，juice.js 自注入 `#zy-juice-css`；`pressure` 事件仍零订阅 | 【缺口】R3 冲刺第 1 项：juice.js 迁到 fx.css 契约类，顺带订阅 `pressure` |
+| R2 | ~~高·演出~~ | `ui/juice.js`、`styles/fx.css` | ~~skill.juice/kill 无人消费~~ 已上屏（`d140bd3`）；~~fx.css 契约类零消费者的双轨~~ 已合流（`b7f38bb`：自注入 `#zy-juice-css` 删除，`#fx-layer/.fx-float/.fx-splash/.fx-quake` 成唯一事实源，jsdom 11 例锁定） | 【已实现】余项降级为低：`pressure` 事件仍零订阅（「援兵将至」提示欠着） |
 | R3 | ~~中·确定性~~ | `sim.js`、`data/recruit.js` | ~~enemySeq 不复位；课程计数不重置/不恢复~~ | 【已实现】per-side 号段（`ddf99f8`）+ 课程计数随 start/load 对齐（`2364b9e`），replay/round3-regressions 测试锁定 |
 | R4 | 低·分层 | `ai/opponent.js` | `side._acc` 节流器仍挂状态树；默认快照已剔除、回放档特意带走 | 【缺口】节流器移出状态树（严重度降：快照已不受污染） |
 | R5 | ~~中·AI~~ | `ai/opponent.js` | ~~布阵按 cellDistToPath 老经验~~ | 【已实现】seatValue 直连 `coverageWindows`（`7d3429e`，opponent.test.js 8 例）；注意 AI 走自家 seatValue，`board/placement.js` 仍无运行时消费者（归 R9） |
-| R6 | 低·隔离 | `index.html`、`tokens.css` | Google Fonts CDN 仍引；系统字栈已回退（离线不破相） | 【缺口·可选】自托管 woff2；Round 3 冲刺定调「不再依赖 Google Fonts 成败」已达成底线 |
+| R6 | 低·隔离 | `index.html`、`tokens.css` | Google Fonts CDN 仍引，但已非阻塞（`media="print"` 换轨，`b7f38bb`）+ 系统字栈回退——冲刺定调「不再依赖 Google Fonts 成败」已达成 | 【缺口·可选】自托管 woff2（锦上添花） |
 | R7 | 低·存档 | `core/game.js` | `tie/reason/stepPending` 已入回放档；`SAVE_VERSION` 仍未导出、默认档不含 tie/reason | 【缺口】版本字段 |
 | R8 | 低·语义 | `combat/skills.js` | `castSkill` 收 `ctx.reach` 但六个 handler 全部忽略——大招按「全路线」结算仍是事实设计 | 【缺口】语义定稿（删参或接入） |
 | R9 | 低·卫生 | `board/*` | 孤儿：`hand.js` 全模块、`classifyDrop/canSwap`、`placement.js` 全模块、`nearestPathT`、`atkBonus`。`0c1afb4` 已补 55 例对拍测试 + 文件头接入清单（含两处已知不同调），语义不再会烂 | 【缺口】接入或删除（对拍已证明是等价替换） |
 | R10 | 低·正确性 | `core/game.js` | `place.unit` 事件 payload 持活引用；`useShovel` 不查 `canShovel` 连通性（可经 api 开孤岛格，AI 自身不会） | 【缺口】 |
 | R11 | 低·确定性 | `core/game.js` | 双方共用一条 rng 流（`rng.clone()` 已具备，未拆） | 【缺口】per-side 流 |
-| R12 | 低·UX | `ui/render.js`、`main.js` | 教程仍是静态面板（`zy-tutor` 三步）+ 开局 coach 条；无强制引导、无首局记忆（src 内 `localStorage` 零引用）；aria/焦点管理缺失 | 【缺口】R3 冲刺第 3 项 |
-| R13 | 低·测试 | `main.js`/`ui/*` | juice 层已有 13 例（node 环境，DOM 分支走降级路径）；morphChildren diff、拖拽手势、signature 跳帧仍零覆盖（jsdom 在 devDeps 未启用） | 【缺口】 |
+| R12 | ~~低·UX~~ | `ui/tutorial.js` | ~~无强制引导、无首局记忆、aria/焦点管理缺失~~ | 【已实现】`b7f38bb`：首局强制三步教程（localStorage `zy-adou.tutorial.v1`，无痕退会话标记）、菜单「看教程」回看、`role="dialog"`+焦点管理、捕获阶段吃热键；`tutorial.test.js` 15 例（jsdom） |
+| R13 | 低·测试 | `main.js`/`ui/*` | jsdom 已启用（文件头 pragma）：juice DOM 通道 11 例 + 教程 15 例 + juice node 侧 13 例；morphChildren diff、拖拽手势、signature 跳帧仍零覆盖 | 【缺口】（范围收窄） |
 | N1 | 低·文案 | `ui/render.js` | HUD 馒头悬浮说明写「10+4×已征次数」，实际 `recruitCost = 8+5n` | 【缺口】改文案 |
 | N2 | ~~—·在途~~ | `combat/*` | ~~读档 NaN 卫生加固未提交~~ | 【已实现】`9e152b4` 落地、`ade1d0a` 24 例钉住（§8）；课程修复的死代码 `drawRecruitCard` 也已随 `7da2994` 删除 |
 
 ## 11. 性能基线（Round 3 回签时实测，node 22）
 
-- `npm test`：18 文件 **218 用例全绿**，总时长 ~1.5s。
+- `npm test`：20 文件 **244 用例全绿**，总时长 ~4.3s（jsdom 环境起停占大头，纯跑 ~1.3s）。
 - `npm run probe`（seed 99）：八路径全通（recruit/place/merge/awaken/shovel/leak/gameOver/telemetry），遥测归因校验通过，不变量 0 违例，`passed: true`。
-- `npm run bench`：36/36 收敛，玩家胜率 **0.4722**（17/36，落在 45–55% 目标窗口内，闸门 0.40–0.60）；平均单局模拟 30.9ms（≈4141 tick），p95 74.0ms，max 95.6ms，阈值 2000ms 余量巨大，0 不变量违例。对局时长分布 171–242s（p50 203s），落在 GDD 的 2.8–4.1 分钟目标带；觉醒均值 玩家 0.083 / AI 0.139（决胜段收紧后觉醒变稀，是否回调归数值轮判断）。
-- 结论：逻辑层性能依旧不是瓶颈；渲染层签名不变整帧零 DOM 工作，变更帧只 morph 差异节点。juice 有硬上限（laneFx 24/侧、飘字 12）兜住清线爆发。「同屏 80+ 单位不掉 30fps」由 `MAX_ENEMIES = 120/侧` 与增量渲染共同兜底。
+- `npm run bench`：36/36 收敛，玩家胜率 **0.4722**（17/36，落在 45–55% 目标窗口内，闸门 0.40–0.60）；平均单局模拟 47.4ms（≈4141 tick），p95 151.3ms，max 165.7ms（本机负载有波动，阈值 2000ms 余量依旧巨大），0 不变量违例。对局时长分布 171–242s（p50 203s），落在 GDD 的 2.8–4.1 分钟目标带；觉醒均值 玩家 0.083 / AI 0.139（决胜段收紧后觉醒变稀，是否回调归数值轮判断）。
+- 结论：逻辑层性能依旧不是瓶颈；渲染层签名不变整帧零 DOM 工作，变更帧只 morph 差异节点。juice 有硬上限（laneFx 24/侧、DOM 演出节点 14）兜住清线爆发。「同屏 80+ 单位不掉 30fps」由 `MAX_ENEMIES = 120/侧` 与增量渲染共同兜底。
 
 ## 12. 测试与工具地图
 
@@ -267,9 +272,11 @@ Round 2 清单 R1–R13 处置结果：**已修** R1（胜率回拉）、R2 主�
 | `src/combat/skills.test.js` | 六式技能语义、护盾结算、juice 契约 | 8 |
 | `src/combat/tuning.test.js` | 三层调参：表覆盖/类型过滤/收敛/复位 | 10 |
 | `src/ui/juice.test.js` | 事件→特效接线、寿命/上限/清场/幂等 attach（node 环境注入时钟） | 13 |
+| `src/ui/juice.dom.test.js` | fx.css 契约接线：#fx-layer 挂载、--fx-\* 变量、形状/语气类、quake 挂 #app、零自注入样式（jsdom） | 11 |
+| `src/ui/tutorial.test.js` | 首局自动弹、翻页/跳过/出征、localStorage 标记与无痕兜底、回看入口、吃热键（jsdom） | 15 |
 | `scripts/probe.mjs` | 单局八路径冒烟 + 遥测归因 + 不变量（退出码即结论） | — |
 | `scripts/bench.mjs` | 36 局收敛率/**胜率闸门 0.40–0.60**/漏怪分布/时长分布/耗时分布 | — |
 | `scripts/metrics.mjs` | 对局遥测（逐波漏怪、觉醒计数、时长直方图），probe/bench 共用 | — |
 | `scripts/invariants.mjs` | 心≤3、馒头≥0、手牌≤5、无 NaN/Infinity（probe/bench 共用） | — |
 
-缺口：`main.js` 交互层（morphChildren/拖拽/签名）零测试（§10 R13）；`ui/render.js`、`ui/lane.js` 的 DOM/画布输出无断言。
+缺口：`main.js` 交互层（morphChildren/拖拽/签名）零测试（§10 R13）；`ui/render.js`、`ui/lane.js` 的 DOM/画布输出无断言（jsdom 机制已就位，补测是机械活）。

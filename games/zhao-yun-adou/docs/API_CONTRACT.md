@@ -1,6 +1,6 @@
 # API 契约（模块边界 · Round 3 回签版）
 
-> 与代码逐行核对的精确签名。基线 commit `ade1d0a`（代码至 `9e152b4`）：Round 2 十路工作全部合入，原【在途·R2】标记一律回签为现行契约（无标记即已实现）；Round 3 已落地的课程计数修复、孤儿对拍测试与读档 NaN 卫生一并回签。
+> 与代码逐行核对的精确签名。基线：代码至 commit `b7f38bb`。Round 2 十路工作全部合入，原【在途·R2】标记一律回签为现行契约（无标记即已实现）；Round 3 已落地的课程计数修复、孤儿对拍测试、读档 NaN 卫生、juice/fx.css 合流与首局教程一并回签。
 > 标记：**【缺口】** 声明的后续变更，当前不存在。
 > 类型标注为 TS 风格伪码，实际全部是无类型 ESM JS。
 
@@ -448,33 +448,58 @@ seatValue(index, range): number   // 【已实现·R2】座位价值 0~1：cover
 ## 8. `ui/*`、`audio/*` 与 `main.js` 运行时（驱动层，只读 state）
 
 ```ts
-// ui/juice.js ——【已实现·R2 落地】事件 → 看得见的反馈。零 src 依赖，无 DOM 时自动降级。
+// ui/juice.js ——【已实现·R2 落地，R3 b7f38bb 合流 fx.css】事件 → 看得见的反馈。
+//   零 src 依赖，无 DOM 时自动降级为纯队列。
 attachJuice(api, opts?: {clock?: () => seconds}): Binding | null
   // 挂总线（kill/leak/merge/skill + start/reset/load 清场）。同一 api 重复调用
   // 是空操作——render() 每帧调它也不会重复订阅。测试可注入时钟。
-detachJuice(): void               // 退订+清场+复位时钟+摘除图层
+detachJuice(): void               // 退订+清场+复位时钟；#fx-layer 自建的才摘，
+                                  //   index.html 自带的那个不动
 resetJuice(): void                // 换局清场（特效不跨局残留）
 takeLaneEffects(sideId): Fx[]     // 取走该侧存活画布特效（顺带淘汰过期项）；
                                   // 返回内部数组本身，调用方只读、只在本帧内使用
 fxProgress(fx, at?): 0..1         // 播放进度，绘制层换算关键帧
 noteEnemies(sideId, enemies): void  // 每帧记 id→路线进度（kill 只带 id，落墨靠上一帧位置；
                                     // 没见过的 id 宁可不落墨也不乱落）
-juiceStats(): { attached, lane: {player, ai}, floats }   // 调试与单测
-// 两条通道：DOM 飘字/墨晕/半区震颤挂 document.body 的 #zy-juice fixed 图层
-//   （WAAPI 自播自清，FLOAT_CAP=12，样式自注入 #zy-juice-css ——
-//    ⚠与 styles/fx.css 的契约类双轨，合流见 §10 第 1 条）；
+juiceStats(): { attached, lane: {player, ai}, nodes }   // 调试与单测
+// DOM 通道只说 fx.css 的方言（本模块零自注入样式、不用 WAAPI）：
+//   飘字 .fx-float（.gold/.ink 语气修饰、.brush 楷书招式名）、
+//   泼墨 .fx-splash（形状类 sweep|rain|ring|arc|aura|dash 与 juice.shape 一字不差）、
+//   震屏 .fx-quake（挂 #app 根与 #fx-layer，CSS 只抖 .arena）；
+//   定位/强度写 --fx-x/--fx-y/--fx-size/--fx-shake 变量，时长读 tokens.css 的
+//   --dur-* 令牌（兜底 820/620/420ms，brush ×1.4、aura ×1.9）；
+//   演出节点 NODE_CAP=14 先进先出回收（animationend 与定时器双保险）。
 // 画布特效入 laneFx 队列（LANE_CAP=24/侧），由 drawLane 每帧取走。
-// prefers-reduced-motion：飘字缩短上飘、墨晕缩时、弹格与震颤取消。
+// prefers-reduced-motion：fx.css 侧整体取消动画（飘字静止全显），节点仍按时回收。
+// juice.dom.test.js（jsdom，11 例）锁定「只用契约类、零自注入」。
+
+// ui/tutorial.js ——【已实现·R3 b7f38bb】首局强制三步教程（征兵→布阵→合并觉醒）。
+attachTutorial(api, opts?: {auto?: boolean /*默认 true*/}): Binding | null
+  // 幂等（render 每帧调）。auto 且无首局标记且 phase==="menu" 时自动弹；
+  // 顺路往 window.__zhaoyun.tutorial 挂 {open, close, seen, forget}（e2e 用）。
+detachTutorial(): void            // 摘监听+关面板（不写首局标记）
+openTutorial(at = 0): boolean     // 首局自动弹与菜单回看都走这里；
+                                  //   面板挂 #tutor-layer（body 下与 #app 平级，躲 diff）
+closeTutorial(o?: {remember?: boolean /*默认 true*/}): void
+                                  // remember 时写 localStorage "zy-adou.tutorial.v1"
+tutorialSeen(): boolean           // localStorage 不可用（无痕/被禁）退回会话内存标记
+tutorialOpen(): boolean
+forgetTutorial(): void            // 调试/e2e：抹掉首局标记，下次进场重新弹
+// 面板 role="dialog" aria-modal，步进按钮自动聚焦、关闭还焦；开着时 window
+//   捕获阶段吃掉全部按键（←→ 翻页、Esc 跳过，空格/E/R/1-5 不漏给棋局）；
+//   「出征」= 写标记 + sfx.unlock() + api.start()。菜单回看入口是渲染层输出的
+//   [data-tutor-open]（本模块代理点击）。样式自注入 #zy-tutor-css（教程层不归 fx.css 管）。
 
 // ui/render.js
 render(root: HTMLElement, api, ui: {selected, selectedCell, hover, toast, shake}): void
   // 把整个界面写进传入容器（main 传离屏 scratch，diff 后回写真实 DOM，见下）；
-  // 每帧幂等调 attachJuice(api)；data-cell 仅玩家棋盘、data-hand 手牌；
-  // 首调注入 #zy-ui-ext 补充样式（模块级一次）；canvas 仅在 isConnected 且有宽度时直画。
+  // 每帧幂等调 attachJuice(api) 与 attachTutorial(api)；data-cell 仅玩家棋盘、
+  // data-hand 手牌；首调注入 #zy-ui-ext 补充样式（模块级一次）；
+  // canvas 仅在 isConnected 且有宽度时直画。
   // HUD 含波次/馒头/战力/来敌/斩获/心（⚠馒头悬浮文案「10+4×已征次数」与
-  // recruitCost=8+5n 不符，待改）；每格 title 悬浮说明；menu 面板含三步教程
-  // （静态 zy-tutor 列表 + 开局 coach 条，无强制引导、无 localStorage 首局标记，
-  //  见 §10 第 2 条）；over 面板含战报。
+  // recruitCost=8+5n 不符，待改，§10 第 9 条）；每格 title 悬浮说明；
+  // menu 面板含三步速览 + 「看教程」回看按钮（[data-tutor-open]，教程层代理点击）；
+  // over 面板含战报。
 
 // ui/lane.js
 drawLane(canvas, enemies: Enemy[], flipY): void
@@ -492,6 +517,7 @@ window.__zhaoyun = {
   api, ui,
   save(): Snapshot,        // = api.serialize({replay:true})，可精确续跑的档
   restore(snap): boolean,  // = api.load(snap, {log:false})，存-读-存逐字节一致
+  tutorial: { open, close, seen, forget },  // attachTutorial 顺路挂上（e2e 开关教程）
 }
 // ?seed=<number> URL 参数定种子；UI_INTERVAL=1/30s、DRAG_SLOP=6px
 // 增量渲染：signature()（phase/资源/棋面/手牌/指针态拼接）不变则跳帧；
@@ -549,15 +575,15 @@ leakCompensation(w): number = 8 + 2w   // 卖血换经济
 
 ## 10. Round 3 回签结果与后续变更清单（先改文档、后改代码，改前回签本文件）
 
-Round 2 清单处置：~~胜率窗口~~（0.4722，bench 自带 0.40–0.60 闸门）、~~juice 上屏~~（skill/kill/leak/merge 全接线）、~~回放确定性·enemySeq~~（per-side 号段+全局对拍）、~~课程计数器修复~~（start/reset 清零、load 按 recruitCount 对齐）、~~AI 接覆盖~~（seatValue 直连 coverageWindows）全部**已实现并回签**（§3–§8）。仍缺项如下：
+Round 2 清单处置：~~胜率窗口~~（0.4722，bench 自带 0.40–0.60 闸门）、~~juice 上屏~~（skill/kill/leak/merge 全接线）、~~回放确定性·enemySeq~~（per-side 号段+全局对拍）、~~课程计数器修复~~（start/reset 清零、load 按 recruitCount 对齐）、~~AI 接覆盖~~（seatValue 直连 coverageWindows）、~~juice/fx.css 双轨~~（`b7f38bb` 合流）、~~强制教程~~（tutorial.js + localStorage）全部**已实现并回签**（§3–§8）。Round 3 冲刺六项中 1–5 落地、第 6 项即本次回签。仍缺项如下：
 
-1. **juice 双轨合流**（R3 冲刺第 1 项，未动）：`ui/juice.js` 迁到 `styles/fx.css` 契约类（`#fx-layer/.fx-float/.fx-splash/.fx-quake`，形状类名与 `juice.shape` 一字不差、CSS 侧已就绪零消费者），弃用自注入 `#zy-juice-css`；顺带订阅 `pressure` 事件补「援兵将至」提示。
-2. **强制三步教程 + localStorage 首局标记**（R3 冲刺第 3 项，未动）：现状是静态 menu 面板 + coach 条，src 内 `localStorage` 零引用；无障碍（aria/焦点管理）一并欠着。
+1. ~~juice 双轨合流~~（R3 冲刺第 1 项）**已随 `b7f38bb` 落地**：`ui/juice.js` 只用 `styles/fx.css` 契约类，自注入 `#zy-juice-css` 已删（§8，jsdom 11 例锁定）。**余项**：`pressure` 事件仍零订阅——「援兵将至」提示还欠着。
+2. ~~强制三步教程 + localStorage 首局标记~~（R3 冲刺第 3 项）**已随 `b7f38bb` 落地**：`ui/tutorial.js` 首局自动弹、`zy-adou.tutorial.v1` 标记（无痕退会话内存）、菜单回看、`role="dialog"`+焦点管理、捕获阶段吃热键（§8，15 例锁定）。
 3. **存档版本**：导出 `SAVE_VERSION` 并写入两种快照；默认档补 `tie/reason`。
 4. **孤儿接入或删除**（对拍已证明等价替换，改起来是低风险机械活）：`board/hand.js` 按文件头清单换掉 game.js 三处 push/splice；`classifyDrop` 接进 `game.place/merge` 与 `main.js refuseReason`（顺带删不可达的棋盘符分支）；`board/placement.js` 接 UI 落点热力（`placementHeat`）或删；`nearestPathT`、`atkBonus` 定生死。
 5. **per-side rng** 流拆分（`rng.clone()` 已具备）；`_acc` 节流器移出状态树。
 6. **place.unit 事件活引用改快照**；`useShovel` 接 `canShovel` 连通性。
 7. **`castSkill` 的 `ctx.reach` 语义定稿**：删参或让大招吃射程。
-8. **UI 层测试**：启用 jsdom（devDeps 已装），覆盖 morphChildren diff、拖拽手势、signature 跳帧。
-9. **小卫生**：HUD 馒头文案改成 `8+5n`；字体自托管 woff2（可选，系统字栈兜底已达标）。~~删 `drawRecruitCard` 死代码~~ 已随 `7da2994` 完成。
+8. **UI 层测试**：jsdom 机制已就位（文件头 `@vitest-environment jsdom`，juice.dom/tutorial 两文件 26 例）；morphChildren diff、拖拽手势、signature 跳帧仍缺覆盖。
+9. **小卫生**：HUD 馒头文案改成 `8+5n`（仍欠）；字体自托管 woff2（可选——CDN 已非阻塞加载 + 系统字栈兜底，`b7f38bb`）。~~删 `drawRecruitCard` 死代码~~ 已随 `7da2994` 完成。
 10. ~~战斗层读档 NaN 卫生~~ **已落地并回签**（`9e152b4` + `robustness.test.js` 24 例，见 §3/§6），本条销项。
