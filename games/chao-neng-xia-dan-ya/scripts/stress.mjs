@@ -208,3 +208,4 @@ const report = {
 };
 
 printStableJson(report);
+if (!report.pass) process.exitCode = 1;
