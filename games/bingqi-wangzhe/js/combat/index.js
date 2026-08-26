@@ -9,6 +9,7 @@ export * from './skills.js';
 export * from './lineup.js';
 export {
   AI_PROFILES,
+  ENGINE_VERSION,
   EVENT_DURATION,
   EVENT_TYPES,
   MAX_ROUNDS,

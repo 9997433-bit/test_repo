@@ -48,10 +48,19 @@ import {
   tickCooldowns,
 } from './skills.js';
 
+/**
+ * 引擎版本。任何改变 rng 消耗次序的改动都必须 +1，
+ * 否则历史种子的回放（golden 测试 / 战报重播）会静默漂移。
+ */
+export const ENGINE_VERSION = 1;
+
 /** 安全回合上限：超过即判定并强制结束。 */
 export const MAX_ROUNDS = 50;
 /** 行动次数硬保险（回合上限 × 满员双方 × 冗余）。 */
 const MAX_ACTIONS = MAX_ROUNDS * 12;
+/** 磨战衰减：第 30 回合后治疗与护盾逐步失效，双奶阵容必然分出胜负。 */
+const FATIGUE_START = 30;
+const FATIGUE_STEP = 0.1;
 /** 伤害浮动区间。 */
 const VARIANCE_MIN = 0.94;
 const VARIANCE_SPAN = 0.12;
@@ -459,10 +468,17 @@ export function simulateBattle(input = {}) {
     return false;
   }
 
+  /** 磨战衰减系数：回合越长，回复越无力。 */
+  function fatigueMod() {
+    if (battle.round <= FATIGUE_START) return 1;
+    return Math.max(0, 1 - (battle.round - FATIGUE_START) * FATIGUE_STEP);
+  }
+
   function heal(unit, amount, label = '回复') {
-    if (!unit.alive || amount <= 0) return 0;
+    const effective = Math.round(amount * fatigueMod());
+    if (!unit.alive || effective <= 0) return 0;
     const before = unit.hp;
-    unit.hp = Math.min(unit.maxHp, unit.hp + Math.round(amount));
+    unit.hp = Math.min(unit.maxHp, unit.hp + effective);
     const gained = unit.hp - before;
     if (gained <= 0) return 0;
     emit('heal', {
@@ -481,8 +497,9 @@ export function simulateBattle(input = {}) {
   }
 
   function addShield(unit, amount, label = '护盾') {
-    if (!unit.alive || amount <= 0) return 0;
-    unit.shield += Math.round(amount);
+    const effective = Math.round(amount * fatigueMod());
+    if (!unit.alive || effective <= 0) return 0;
+    unit.shield += effective;
     emit('shield', {
       actorUid: unit.uid,
       actor: unit.name,
@@ -490,9 +507,9 @@ export function simulateBattle(input = {}) {
       target: unit.name,
       side: unit.side,
       label,
-      amount: Math.round(amount),
+      amount: effective,
       shield: unit.shield,
-      text: `${label} · ${unit.name} 获得 ${Math.round(amount)} 点护盾`,
+      text: `${label} · ${unit.name} 获得 ${effective} 点护盾`,
     });
     return unit.shield;
   }
@@ -650,6 +667,7 @@ export function simulateBattle(input = {}) {
 
   /* --- 开战 --- */
   emit('start', {
+    engineVersion: ENGINE_VERSION,
     mode,
     speed: playbackSpeed,
     seed: rng.seed,
@@ -816,6 +834,7 @@ function finalize({ battle, waves, winner, rounds, timeout, clearedWaves, player
     grade,
     stars,
     score: Math.round(score * 100) / 100,
+    engineVersion: ENGINE_VERSION,
     seed: rng.seed,
     speed: playbackSpeed,
     mode,
@@ -1085,4 +1104,31 @@ export function formatBattleReport(result, opts = {}) {
   return lines.join('\n');
 }
 
-export { lineupSummary };
+/**
+ * 便利再导出：engine.js 是战斗层的门面，测试与 UI 常只 import 这一个文件，
+ * 因此把元素表与阵容 API 一并透出，避免调用方去记内部文件划分。
+ */
+export {
+  ELEMENT_CYCLE,
+  ELEMENTS,
+  NEUTRAL_MULTIPLIER,
+  STRONG_MULTIPLIER,
+  WEAK_MULTIPLIER,
+  counterOf,
+  counteredBy,
+  elementLabel,
+  elementMultiplier,
+  elementRelation,
+  normalizeElement,
+} from './elements.js';
+export {
+  MAX_LINEUP,
+  MIN_LINEUP,
+  aggregateBondEffects,
+  applyBonds,
+  computeBonds,
+  computeLineupPower,
+  lineupCapacity,
+  lineupSummary,
+  validateLineup,
+} from './lineup.js';
