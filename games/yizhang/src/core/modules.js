@@ -2,6 +2,10 @@
 // 它们可能还是空目录，所以这里用 import.meta.glob 做「存在才加载」。
 // glob 在 Vite 编译期展开：文件不存在时 map 为空，既不会 404 也不会让 build 失败。
 
+// 接线真值判定单独放 core/wiring.js（不依赖 Vite），这里转出去，
+// 装配层调用方不用关心它住在哪；scripts/ 里的纯 Node 脚本可直接 import 那份。
+export { wiringStatus } from "./wiring.js";
+
 const SIM_GLOB = import.meta.glob("../sim/index.js");
 const RENDER_GLOB = import.meta.glob("../render/index.js");
 const AI_GLOB = import.meta.glob("../ai/bots.js");
@@ -143,6 +147,8 @@ export function alignSkillIds(dataModule, combatModule) {
   const remapped = [];
   const GLOVES = dataModule.GLOVES.map((g) => {
     const id = g.skillId;
+    // `"none"` 是 data 侧「这只掌没有主动技」的正式写法（木棉就是它），
+    // 不是缺字段，也不是假值：原样放行，别去别名表里找。
     if (!id || id === "none" || registry.has(id)) return g;
     const canon = ALIAS_TO_CANON.get(id);
     if (!canon || !registry.has(canon)) return g;
