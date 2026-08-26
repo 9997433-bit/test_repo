@@ -16,7 +16,7 @@
 |---|---|---|
 | Round 1 | L0 全部；L1 全部；T-01 / T-02 / T-05 / T-07 / T-09 真实断言；红线 R-10～R-13 零命中 | 木棉外 7 掌技能与觉醒、碎地、觉醒条可为**可调用不抛错的接口桩**；T-03 / T-04 / T-06 / T-08 允许 `todo/skip` 占位但文件必须存在；R-01～R-09 不计 |
 | Round 2 | **退出门 G-01～G-07 全绿（见下小节，记分前置）**；L2 全部（含 L0/L1 复验）；T-01～T-09 全部真实断言 | L3 可部分；R-01～R-09 记警告不否决，但警告清单必须写进验收报告（重点按 §5.1 风险图排查） |
-| Round 3 | L3 全部 + M-01～M-07（真机）；R 全表零命中；全部测试与探针绿；性能实测报告 | 无 |
+| Round 3 | **终局门 RG-01～RG-06 全绿（§9，重定标）**；红线 R-10～R-13 零命中 | L2/L3/M 全表转 stretch（§9.0：命中记分不否决，本轮不发 L3 签字）；R-01～R-09 维持记警告 |
 
 ### Round 2 退出门（Exit Gate · 全部二值，缺一不发 PASS）
 
@@ -204,3 +204,73 @@ rg -l "T-0[1-9]" tests scripts   # 或按行为逐条核对
 **红线：** **R-13 命中**（Google Fonts CDN，上文）。R-10 / R-11 / R-12 零命中（关键词扫描只中检查命令自身；无 lock-on 功能命中）。
 
 **结转：** 全部 FAIL 项收敛为退出门 G-01～G-07（§0），廉价信号预扫收敛为 §5.1 风险图。
+
+---
+
+## 9. Round 3 终局门（Final Gate · 重定标）与实测记分
+
+### 9.0 重定标声明
+
+Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛为六项**终局门 RG-01～RG-06**；原 §0 Round 3 行的「L3 全部 + M-01～07（真机）+ 性能实测报告」**转为 stretch**：命中即记分入报告，不齐不单独否决。理由：Round 2 合入后 L1 主链已通、L2 代码在但测试未全绿（见 `.agent_workspace/yizhang/round2/BRIEF.md`），单轮内 L3 精品面与真机矩阵无法与测试全绿并行压实；**本轮不发 L3 签字**，L3/M 条目定义原样保留供后续补验。红线 R-10～R-13 不受重定标影响，全轮即时否决。
+
+### 9.1 终局门定义（全部二值，缺一不发 PASS）
+
+- [ ] **RG-01 测试全绿** — `npm test` 退出码 0、零红、**零文件加载失败**。分母注意：`src/combat/sim-integration.test.js` **整文件加载失败**（import 已删除的 `sim/fallback-combat.js`）时其 8 条用例根本不进分母——首验口径 152（145 绿）、复验口径 158（156 绿）、修复加载后全绿目标 ≈ **166/166**。「152/152」只是下达指令时点的速记，验收以**退出码 0** 为准。
+- [ ] **RG-02 探针击杀 + 真实战斗** — `npm run probe` `status:"pass"` 且 `kills ≥ 1`，且真实战斗接线为真：字段现名 **`wiredCombat`**（由 `usingRealCombat` 更名，读数仍取自 sim；语义与更名经过见 §9.2），probe 已内建 `wiredCombat !== true` 即抛错的硬断言。
+- [ ] **RG-03 构建过** — `npm run build`（vite）退出码 0。
+- [ ] **RG-04 零 googleapis/gstatic** — `rg -n "googleapis|gstatic" src dist index.html` 零命中（R-13 静态面；注意 `index.html` 不在 `src` 下，必须单列）。
+- [ ] **RG-05 人类 id 唯一 `p0`** — `rg -n '"p1"' src/main.js` 零命中；probe roster 校验 human=`p0`。
+- [ ] **RG-06 八掌经裸 `step` 可达** — 不做任何 `install*`，裸 `createMatch/step` 下 8 个 glove 各有 ≥1 条可观测行为断言（7 个主动技行为互异生效 + cotton `"none"` 安全 no-op），且全程 `getDeps().usingRealData && usingRealCombat`。
+
+### 9.2 `usingRealCombat` 标志语义（勘定 · Round 2 简报风险 #1 落档）
+
+**代码事实**（`src/sim/deps.js`）：sim **静态 import** 真实 `../data/gloves.js` 与 `./combat-bridge.js`（桥内接真实 `src/combat`）；`installData/installCombat` 仅供测试装替身；`usingRealCombat = !combatMod` —— **true = 没装替身 = 正在用静态引入的真实战斗桥**。生产（浏览器 main、裸 `createMatch/step`）无人调 `install*`，恒为 true（实测：裸路径 `usingRealData=true usingRealCombat=true`）。语义没有写反，**是探针的读法反了**。
+
+**探针为何读到 false**：`scripts/harness.mjs` 的 `installSimulationDependencies` 只要看到 `installCombat` 钩子存在，就把原生 `src/combat/index.js` 装进去——标志按定义翻成 false，probe 再打印「real combat not wired」。这是**自伤误报**：装进去的模块本身就是真实 combat，但它讲 combat 原生方言（yaw 朝 +Z、自带 `cd/busyUntil`、返回形状不同），**绕过了 combat-bridge 的适配**——探针实际压的是一条「混合方言」路径：技能在这条路径上会哑（`tests/skills.test.js` 两条金丝雀红的根因即此），扇击恰好方言兼容所以仍能出 kills。
+
+**修法（GPT-sol-2）**：harness 删除 `installSimulationDependencies` 自装（ADR-19 后静态接线是默认）；探针即自然回报真值并真正压测生产路径。
+**判读规则（验收侧）**：harness 修复前，probe 的 `usingRealCombat:false` **不按未接线记**，以裸路径 `getDeps()` 读数与 RG-06 矩阵为准；修复后按字面判读，false 即门红。
+
+**勘定后续（@ `8dff71e` 已落地，复验确认）**：harness 自装已删除；probe 改为**硬断言**接线（`wiredCombat !== true` 直接抛「production combat is not statically wired」），输出字段由 `usingRealCombat` **更名为 `wiredCombat`**（读数仍取自 sim 的 `usingRealCombat`）；`deps.js` 增加**真身识别**——把真实模块（或其等价翻译版）装回去折算为静态路径、不再当替身，`installCombat(真实 combat)` 不再翻假标志。自此按字面判读。
+
+### 9.3 Round 3 实测记分（首验基线 @ `160122a` → 复验 @ `8dff71e`）
+
+复核对象：`cursor/yizhang-db8d`。复核日期 2026-08-26，全部命令实测重跑两轮：**首验**在 Round 2 合入态 `160122a`（R3 执行代理工作未落地时的诚实基线）；**复验**在合入 R3 修复（probe 静态接线、字体摘除、出盘判死、技能 id 定稿、测试对齐）后的 `8dff71e`。
+
+| 门 | 首验 @ `160122a` | 复验 @ `8dff71e` | 复验证据 |
+|---|---|---|---|
+| RG-01 测试全绿 | FAIL：145/152（7 红）+ 1 文件加载失败 | **FAIL（收窄）**：156/158（2 红）+ 同一文件仍加载失败 | 余红分解见 §9.4：`sim-integration.test.js` 仍 import 已删除的 `fallback-combat.js`（8 条不进分母，修复后全绿目标 ≈166）；`glove-data` awakenModifiers schema；`wiring` data 装表期望值变化 |
+| RG-02 探针 | PASS（按 §9.2 判读：kills=3 但标志误报 false） | **PASS（字面）** | `status:"pass"`、`kills=1`（≥1 达标；由 3 降 1 系探针改压真实桥路径，未回退到 0）、`wiredCombat:true`、探针打印「real combat wired」、p99StepMs=0.111、`ai:"think"`、botSlapAttempts=4884 |
+| RG-03 构建 | PASS | PASS | vite 退出码 0；主 chunk 590kB / gzip ≈160kB（含 three），总 gzip 远低于 1.2MB 预算 |
+| RG-04 零 googleapis | FAIL：CSS `@import` ×2 + preconnect ×2，全进 dist | **FAIL（收窄）** | `src/styles/index.css` 两条 `@import` 已拔除（src 与 dist 的 CSS 零命中，字体改系统精品栈）；**残留 `index.html` 17–18 行两条 preconnect**，原样拷进 `dist/index.html`——已无实际字体请求跟随，但按 R-13「零 CDN/零外链」字面仍命中，删两行即绿（Opus-4） |
+| RG-05 p0 | PASS | PASS | `SELF_ID="p0"`（`src/core/view.js`）；`rg '"p1"' src/main.js` 零命中；probe roster 校验 human=p0 通过 |
+| RG-06 八掌经裸 step | PASS | PASS | 裸矩阵 8/8（无任何 `install*`）：granite 目标位移、gale 冲刺 8.16m、frost 挂 `slow`、spring 反弹 vz=10.81、afterimage 换位 3.00m、magnet 拉近 4.00→1.40m、meteor 腾空 4.65 + 目标冲量 2.47、cotton（`skillId:null`）安全 no-op；全程 `usingRealData/usingRealCombat=true` |
+
+**判定（@ `8dff71e`）：REJECT——但只差两口气。** 4/6 门绿；RG-01 余 2 红 + 1 加载失败（全是测试侧，见 §9.4），RG-04 余 `index.html` 两行死 preconnect（同时是 R-13 红线字面命中，按规则仍即时否决）。两项修复合计约 3 个文件的小改；修完复跑本表即可签发 R3 PASS。绿项终验时只需复跑防回退。
+
+**补记（三验 @ `af10784`，全套命令重跑）**：木棉 `skillId` 定稿为空串（同时满足字符串契约与 falsy 契约，`2807a9f`）连带 `glove-data` schema 转绿——测试 **157/158（1 红）** + 同一文件加载失败；probe PASS（kills=1、`wiredCombat:true`）、build 过、裸矩阵 8/8、p0 零命中均复跑无回退。**R3 签发 PASS 只剩三处**：① `sim-integration.test.js` 死 import（§9.4 #0）；② `wiring` data 装表期望（§9.4 #5）；③ `index.html` 17–18 两行 preconnect（RG-04）。判定维持 REJECT。
+
+### 9.4 RG-01 红项分解（首验七红一载 → 复验二红一载 → 三验一红一载）
+
+首验 7 红中 **6 条是测试陈旧**（ADR-19 静态接线 / schema 冻结 / 技能哨兵之后没跟上），**1 条疑似实现 bug**；另有 1 个文件加载失败。修测试或修实现均可，**禁止空 expect**（§4 造假条款照常适用）。复验（@ `8dff71e`）后状态如下：
+
+| # | 红项 | 根因 | 复验状态 | 指派 |
+|---|---|---|---|---|
+| 0 | `src/combat/sim-integration.test.js`（整文件加载失败） | import 已删除的 `sim/fallback-combat.js` | **仍红** —— 文件第 11 行原样，8 条用例仍不进分母 | GPT-sol-1（改写对照组） |
+| 1 | `tests/glove-data` schema | 测试期望 `awakenModifiers:{slapRangeMul,…,special}` 形状，F3 实表已是 `{params:{…}}` 形状 | **已绿（三验 @ `af10784`）** —— F3 数据侧定稿（含木棉 `skillId:""`，`2807a9f`） | 已结（Fable-3） |
+| 2 | `tests/match-lifecycle` 出台缘 | 摆位后第 1 步 `alive` 即 false——判死时机与测试口径分裂 | **已绿** —— sim 出盘判死跟随新口径（`173ab5d`/`0148af8`） | 已结（Opus-1） |
+| 3–4 | `tests/skills` spring/magnet | `beforeEach` `installCombat(原生 combat)` 压掉静态桥 → 混合方言技能哑（§9.2）；裸路径 8/8 绿 | **已绿** —— 测试删掉 `install*` 改走裸路径 | 已结（GPT-sol-1） |
+| 5 | `wiring` data 装表 | 期望 install 后掌表数值变化；ADR-19 后静态默认就是真表（1.15 = 1.15，无从「变」） | **仍红** —— 期望未更新 | GPT-sol-1 |
+| 6 | `wiring` usingRealCombat | 期望 install 后为 true；旧语义 install ⇒ false | **已绿** —— deps.js 真身识别落地（§9.2 勘定后续） | 已结（Opus-1/GPT-sol-2） |
+| 7 | `wiring` alignSkillIds | 期望 `cotton.skillId` 为假值；与当时的 `"none"` 哨兵冲突 | **已绿** —— F3 定稿 `skillId:null`（`97cf017`），假值成立 | 已结（Fable-3） |
+
+**剩余清单（RG-01 转绿的全部工作，三验后）**：#0 改写 sim-integration 对照组、#5 更新 wiring 装表期望——两处全在测试侧，无实现改动。
+
+### 9.5 Stretch 与遗留（不否决，入报告 · 复验后更新）
+
+- **L2/L3/M 全表 stretch**：本轮无 L3 签字；L2 代码在（双掌/觉醒/碎地/技能矩阵）但以 RG-01 全绿 + 手感盲测（ACCEPTANCE §7）为签字前提。
+- **技能 id「一张表」部分收敛**（R3 冲刺第 4 条）：data 侧 id 已定稿（8 掌 `skillId` 冻结、木棉 `null` 哨兵，`97cf017`），但四处别名表仍并存——`data/skills.js` `SKILL_COMBAT_ALIASES`、`sim/combat-bridge.js` `SKILL_ALIAS`、`core/modules.js` `SKILL_ALIASES`、`combat/skills.js` `SKILL_ALIASES`；运行时靠桥收敛结果正确，但四表随时漂移，记 WARNING。
+- **bloom 三档常开**（strength 0.9/0.8/0.7，`src/render/config.js`，复验无变化）：low 档可关未做（R-03 检查点原文），记 WARNING。
+- **probe 单 seed**（对局 seed `0x1a2b3c4d`、bot rng `0x5eed1234`，复验无变化）：距 T-07 规格「3 固定 seed」有差，记 WARNING（GPT-sol-2）。
+- **注释级 fallback-combat 残留**：`sim/deps.js` 头注仍引旧文件名（`data/tiles.js` 已清）；`sim-integration.test.js` 的**活引用**归 §9.4 #0，不在本条。不否决，顺手清。
+- **probe kills 基线漂移**：改压真实桥路径后 kills 3→1（单 seed 下的合法波动，≥1 硬门达标、未回退到 0）；终验如需更稳读数，3-seed 硬化后取分布。
