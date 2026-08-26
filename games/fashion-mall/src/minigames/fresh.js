@@ -224,7 +224,7 @@ export function renderFresh(root, state, back, ctx) {
     resultBox.innerHTML = `
       <div class="mg-prize ${good > 0 ? "tier-sr" : ""}">
         <span class="name">${reason}</span>
-        <strong style="display:block;font-size:var(--text-2xl);color:var(--text-gold)">+${pay.gold} 金</strong>
+        <strong class="total">+${pay.gold} 金</strong>
         <span class="gain">接到 ${good} 件 · 最长连接 ${bestCombo}（收货价 ×${pay.bonus.toFixed(2)}）· 变质 ${rotten} · 漏接 ${missed} · 阅历 +${pay.xp}</span>
         <div class="mg-actions">
           <button class="btn" type="button" data-again>再抢一轮</button>

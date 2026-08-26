@@ -65,6 +65,7 @@ const CSS = `
 .mg-box.rolling { animation: fm-shake 420ms var(--ease-in-out) 2; }
 .mg-prize { margin-top: 10px; padding: 12px; border-radius: var(--radius-md); border: 2px solid var(--line-strong); background: var(--surface-solid); text-align: center; animation: var(--anim-pop-in); }
 .mg-prize .name { display: block; margin: 6px 0 2px; font-weight: var(--weight-bold); }
+.mg-prize .total { display: block; margin: 2px 0; font-size: var(--text-2xl); color: var(--text-gold); font-variant-numeric: tabular-nums; }
 .mg-prize .gain { color: var(--text-soft); font-size: var(--text-sm); }
 .mg-prize.tier-sr { border-color: var(--mint-400); background: var(--mint-100); }
 .mg-prize.tier-ssr { border-color: var(--lilac-400); background: var(--lilac-100); }
