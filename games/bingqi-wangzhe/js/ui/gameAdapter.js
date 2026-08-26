@@ -27,7 +27,6 @@
 import { createMockGame } from './mock/mockGame.js';
 
 const isFn = (v) => typeof v === 'function';
-const pick = (game, name) => game?.[name] || game?.modules?.[name] || null;
 
 /** 各子系统的点名单：少一个就算没就位。 */
 const REQUIRED = {
@@ -64,12 +63,33 @@ function moduleReady(api, keys) {
   return Boolean(api) && keys.every((k) => isFn(api[k]));
 }
 
-/** 从注入对象里取出逻辑层模块（顶层字段或 `modules.*`）。 */
-export function resolveModules(injected) {
+/**
+ * 从注入对象里取出逻辑层模块。
+ *
+ * 候选按 顶层字段 → `modules.*` → `raw.*` 的顺序**点名择优**，而不是取第一个非空的：
+ * `core/api.js` 的 `game.forge / game.combat` 是给界面用的**门面**，只挑了
+ * 五六个动词（previewForge / forgeWeapon / …），点名单上的
+ * `computeWeaponStats`、`arenaOpponentToWaves` 这些并不在其中。
+ * 只看「有没有这个字段」的话，门面会顶掉 `game.raw.*` 里那份完整的逻辑层
+ * 命名空间，四项永远绿不齐，界面就一直在 mock 上跑——
+ * 界面看起来好好的，数字却全是假的，这种失败最难被发现。
+ */
+export function resolveModules(injected, probe) {
+  const best = (name, ready) => {
+    const candidates = [
+      injected?.[name],
+      injected?.modules?.[name],
+      injected?.raw?.[name],
+      probe?.[name]
+    ];
+    return candidates.find((c) => c && ready(c)) || candidates.find(Boolean) || null;
+  };
   return {
-    data: pick(injected, 'data'),
-    forge: pick(injected, 'forge'),
-    combat: pick(injected, 'combat')
+    // data 另外要一份章节表：`liveGame` 的试炼页按章分组，
+    // 只有 weapons/stages 两个数组的门面会让 40 关一关也列不出来。
+    data: best('data', (m) => dataReady(m) && Boolean(m.chapters ?? m.CHAPTER_LIST)),
+    forge: best('forge', (m) => moduleReady(m, REQUIRED.forge)),
+    combat: best('combat', (m) => moduleReady(m, REQUIRED.combat))
   };
 }
 
@@ -129,13 +149,8 @@ function describe(caps) {
  *        `probeLogicModules()` 的结果；注入对象自带模块时可省略
  */
 export function createUiGame(injected, mockOptions = {}, probe) {
-  const injectedMods = resolveModules(injected);
-  const resolved = {
-    // 注入优先：core `register()` 过的模块永远盖过仓库里的默认实现。
-    data: injectedMods.data || probe?.data || null,
-    forge: injectedMods.forge || probe?.forge || null,
-    combat: injectedMods.combat || probe?.combat || null
-  };
+  // 注入优先、点名择优：注入对象里凑不齐点名单时，才退到仓库探测来的那份。
+  const resolved = resolveModules(injected, probe);
 
   const caps = inspectCapabilities(injected, resolved);
   const capabilities = describe(caps);
