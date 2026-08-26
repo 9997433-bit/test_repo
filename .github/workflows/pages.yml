@@ -26,6 +26,11 @@ jobs:
           cache-dependency-path: |
             games/linghuashi/package-lock.json
             games/zhao-yun-adou/package-lock.json
+      - name: Overlay existing Pages games
+        run: |
+          git fetch origin gh-pages || true
+          mkdir -p site
+          git archive origin/gh-pages | tar -x -C site || true
       - name: Build isolated game sites
         run: bash scripts/build-pages.sh
       - uses: actions/upload-pages-artifact@v3

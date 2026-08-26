@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SITE="$ROOT/site"
-rm -rf "$SITE"
+# 只重建本脚本负责的游戏目录，保留 site/ 里其他已发布游戏（如 gh-pages 预置的一级目录）。
 mkdir -p "$SITE"
 cp "$ROOT/pages/index.html" "$SITE/index.html"
 cp "$ROOT/pages/.nojekyll" "$SITE/.nojekyll" 2>/dev/null || printf '' > "$SITE/.nojekyll"
