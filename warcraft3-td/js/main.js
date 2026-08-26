@@ -333,7 +333,14 @@
       }
       if (app.game.buildId) {
         const ok = app.game.tryBuild(app.game.buildId, w.x, w.y);
-        if (!ok) app.audio.click();
+        if (!ok) {
+          app.audio.click();
+        } else if (!e.shiftKey) {
+          // One order per click (shift keeps placing), otherwise build mode
+          // would swallow every later click and nothing could be selected.
+          app.game.buildId = null;
+          app.game.buildGhost = null;
+        }
         return;
       }
       app.game.selected = app.game.pickAt(w.x, w.y);
