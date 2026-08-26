@@ -269,6 +269,11 @@ export const UI_CSS = `
 .bag div span { font-variant-numeric: tabular-nums; }
 .cww-empty { font-size: var(--fs-small); color: var(--ink-soft); }
 
+/* 宽屏时左面板压着海面，海底舞台让开它的宽度，别让老大被自己的 HUD 挡住 */
+@media (min-width: 761px) {
+  .cww-arena { inset: 0 0 0 min(46vw, 448px); }
+}
+
 @media (max-width: 760px) {
   .cww-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
   .cww-arena { width: 96%; }

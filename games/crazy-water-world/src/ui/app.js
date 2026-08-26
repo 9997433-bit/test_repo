@@ -30,7 +30,7 @@ let app = null;
 // ---------------------------------------------------------------- 主线指引
 function nextGoal(state) {
   const has = (type) => state.buildings.some((b) => b.type === type);
-  if (!has("hq")) return { text: "第一件事：把指挥中心放到木筏上。", screen: "build" };
+  if (!has("hq")) return { text: "把指挥中心放到木筏上，那是老大的办公桌。", screen: "build" };
   if (!has("fish_chair")) return { text: "搭一把钓鱼椅，摸鱼才有工位。", screen: "build" };
   if (state.player.hunger < 35) return { text: "肚子快空了，先吃点东西。", screen: "raft" };
   if (!state.heroes.length) return { text: "去呼救名单招第一位英雄，免费的。", screen: "heroes" };
@@ -434,7 +434,10 @@ function createApp(root, store) {
     held: new Set(),
     now: 0,
     dt: 0,
-    state: store.get(),
+    // 永远读当前 store，不留快照：点击发生在两帧之间时，别拿上一帧的 state 覆盖模拟。
+    get state() {
+      return store.get();
+    },
     ui: {
       screen: null,
       muted: null,
@@ -471,7 +474,6 @@ export function render(root, store) {
   ctx.dt = app.last ? Math.min(0.1, (now - app.last) / 1000) : 0;
   app.last = now;
   ctx.now = now;
-  ctx.state = state;
 
   const phase = syncHooks(ctx, state);
   setHidden(ctx.refs.title, state.meta.started);

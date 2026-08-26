@@ -2,7 +2,7 @@
 import { recruit, assignHero, starUp } from "../../heroes/index.js";
 import { HEROES } from "../../data/heroes.js";
 import { BUILDINGS } from "../../data/buildings.js";
-import { h, setText, setClass, setDisabled, rebuildIf } from "../dom.js";
+import { h, setText, rebuildIf } from "../dom.js";
 import { RARITY_LABEL, ROLE_LABEL, failLine, quip } from "../copy.js";
 
 function stars(n) {
