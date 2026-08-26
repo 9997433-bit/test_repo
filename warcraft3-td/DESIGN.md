@@ -177,3 +177,42 @@ warcraft3-td/
 - Multiplayer / netcode
 - Actual WC3 map file (.w3x)
 - Copyrighted models, icons, music
+
+## Architecture Addendum — Round 1 Audit (R1-FABLE-1)
+
+Audit snapshot: commit `35a732c` (+ in-flight `js/hud.js` edits). Full findings,
+evidence and the prioritized Round 2 fix list live in
+`.agent_workspace/notes-r1-fable-1.md`; engine internals in `js/engine-notes.md`.
+
+### Canonical rulings (do not "fix" these back)
+
+1. **File layout.** The shipped layout intentionally deviates from the deeper
+   `js/engine|entities|data|ui` tree sketched above. Per the stated preference
+   ("single index.html + deferred classic scripts, file:// works"), the game
+   uses seven classic scripts. Mapping: `sim-core.js` = engine math
+   (damageTable/path/spatial/economy, Node-requirable), `data.js` = data layer
+   (races/towers/waves/strings), `game.js` = sim (`sim/game.js`), `render.js` =
+   camera+fx+entities rendering, `hud.js` = ui/*, `main.js` = boot+input,
+   `audio.js` = audio. Keep this layout; do not migrate to ES modules.
+2. **Damage table errata.** The main table above says `magic × heavy = 1.50`;
+   that cell is a typo. TFT 1.30+ uses **2.00**, `sim-core.js` implements 2.00,
+   and tests assert 2.00. The code is canonical.
+3. **Hotkey source of truth.** Keyboard input resolves through the visible
+   command card (`hud.resolveHotkey`), never through a parallel key→index map.
+   This fixed a Round 1 label/键位 drift bug; keep the invariant.
+4. **Determinism.** Headless sims must stay reproducible: all randomness flows
+   through `mulberry32(seed)`; renderer-local flair may use `Math.random()`
+   freely but must never feed back into `game.js` state.
+5. **file:// compatibility is a release gate.** No fetch/XHR, no modules,
+   localStorage always wrapped in try/catch, AudioContext created inside a
+   user gesture.
+
+### SOTA bar status at audit time
+
+Pass: 3, 4, 9. Good/partial: 1, 2, 6, 7, 8, 10 (renderer repaint unreviewed
+in-browser). **Fail: 5 (balance)** — bot playthroughs show Easy winnable only
+via a narrow T3-rush and Normal collapsing at waves 6–10; bounty grows
+linearly (`4 + ⌊i/2⌋`) while wave EHP grows super-linearly (`28 + 18i` × count
+× difficulty). Economy/wave rebalance is the top Round 2 priority, alongside a
+UI entry point for the (currently unreachable) lumber upgrade shop and honoring
+per-tower `slow/poison/root` data instead of hard-coded magnitudes.
