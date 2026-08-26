@@ -151,10 +151,10 @@
   color: var(--paper-dim);
 }
 
-/* 沙盘摘要:每秒产量鎏金;风水评签 .fengshui 视觉已齐,只候 DOM——
-   UI 依 0-100 分落 data-tier(建议 ≥70 上吉 / ≥35 中平 / 其余 下乘),
-   把「风水 s/100」包进 <span class="fengshui" data-tier="…"> 即得完整评签。
-   评语(上吉/中平/下乘)由 ::before 依档楷体自书,UI 只落分数;
+/* 沙盘摘要:每秒产量鎏金;风水评签 .fengshui 已接线——
+   UI 依 0-100 分落 data-tier(≥70 上吉 / ≥35 中平 / 其余 下乘),徽章文本只落分数。
+   评语(上吉/中平/下乘)由 ::before 依档楷体自书,免得同一句话写两遍;
+   读屏取不到 ::before,档位由 UI 层抄进 aria-label。
    评语 + 分数 + 档色三信号并用,不靠单一颜色。未落 data-tier 退为素签;
    老浏览器不识 color-mix 时描边/淡染声明失效,回落素签描边,文字色仍分档。 */
 .panel-summary .rate-line b {
@@ -241,9 +241,9 @@
   box-shadow: inset 3px 0 0 var(--gold);
 }
 
-/* 法器槽位三色(attack 朱 / defend 石青 / util 青莲):视觉已齐,只候 DOM。
-   AD-8 改造由 UI 层给已佩卡片、槽签 chip、分组题、槽位盘行落 data-slot,
-   落上即自动转槽色;未落时以下规则不命中,观感与现版一致。
+/* 法器槽位三色(attack 朱 / defend 石青 / util 青莲):已接线。
+   UI 层(AD-8 改造)给法器卡、槽签 chip、分组题、槽位盘行/名/格落了 data-slot;
+   未佩卡也带 data-slot,但整卡转色只认 .in——素笺卡上槽色仅经槽签 chip 露面。
    退化口径:老浏览器不识 color-mix 的声明整条失效,回落 .art-card.in 与
    .slot-cell.filled 的既有金底——退化仍是完整视觉,故不设字面量回落。
    品阶 chip(金品/红品)沿用金/朱文字,与槽色不混用。 */
