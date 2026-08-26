@@ -4,3 +4,6 @@ export * from "./recipes.js";
 export * from "./buildings.js";
 export * from "./guests.js";
 export * from "./wishes.js";
+export * from "./items.js";
+export * from "./dishes.js";
+export * from "./furniture.js";

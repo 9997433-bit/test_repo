@@ -1,20 +1,52 @@
-/** 心愿池：按玩家等级过滤 maxLevel */
+/**
+ * 心愿池。奖励口径见 docs/GDD.md「心愿屋」：
+ * coin ≈ 需求基准价合计 × 1.0–1.4（多物品 1.6–1.8，w_veg 为开局引导特例）；xp ≈ coin × 0.4–0.45。
+ * minLevel：数据契约，refreshWishes 在 Round 2 按 minLevel ≤ 等级 ≤ maxLevel 过滤；
+ * 前 9 条为既有条目，顺序与 id 不可变（refreshWishes 按下标取单）。
+ */
 export const WISH_POOL = [
-  { id: "w_paddy", name: "晒谷", needs: { paddy: 2 }, coin: 18, xp: 10, maxLevel: 99 },
-  { id: "w_veg", name: "一棵白菜", needs: { cabbage: 1 }, coin: 14, xp: 8, maxLevel: 99 },
-  { id: "w_rice", name: "黄米饭", needs: { rice: 2 }, coin: 28, xp: 12, maxLevel: 99 },
-  { id: "w_egg", name: "荷包蛋", needs: { egg: 2 }, coin: 36, xp: 16, maxLevel: 99 },
-  { id: "w_tofu", name: "嫩豆腐", needs: { tofu: 1 }, coin: 32, xp: 14, maxLevel: 99 },
-  { id: "w_bread", name: "早饭面包", needs: { bread: 1 }, coin: 48, xp: 20, maxLevel: 99 },
-  { id: "w_milk", name: "热牛奶", needs: { milk: 1 }, coin: 44, xp: 18, maxLevel: 99 },
-  { id: "w_cloth", name: "新围巾", needs: { cloth: 1 }, coin: 80, xp: 30, maxLevel: 99 },
-  { id: "w_combo", name: "一桌家常", needs: { rice: 1, tofu: 1, egg: 1 }, coin: 90, xp: 36, maxLevel: 99 },
+  { id: "w_paddy", name: "晒谷", needs: { paddy: 2 }, coin: 18, xp: 10, minLevel: 1, maxLevel: 99 },
+  { id: "w_veg", name: "一棵白菜", needs: { cabbage: 1 }, coin: 14, xp: 8, minLevel: 1, maxLevel: 99 },
+  { id: "w_rice", name: "黄米饭", needs: { rice: 2 }, coin: 28, xp: 12, minLevel: 2, maxLevel: 99 },
+  { id: "w_egg", name: "荷包蛋", needs: { egg: 2 }, coin: 36, xp: 16, minLevel: 3, maxLevel: 99 },
+  { id: "w_tofu", name: "嫩豆腐", needs: { tofu: 1 }, coin: 32, xp: 14, minLevel: 2, maxLevel: 99 },
+  { id: "w_bread", name: "早饭面包", needs: { bread: 1 }, coin: 48, xp: 20, minLevel: 4, maxLevel: 99 },
+  { id: "w_milk", name: "热牛奶", needs: { milk: 1 }, coin: 44, xp: 18, minLevel: 6, maxLevel: 99 },
+  { id: "w_cloth", name: "新围巾", needs: { cloth: 1 }, coin: 80, xp: 30, minLevel: 7, maxLevel: 99 },
+  { id: "w_combo", name: "一桌家常", needs: { rice: 1, tofu: 1, egg: 1 }, coin: 90, xp: 36, minLevel: 3, maxLevel: 99 },
+  // ——— 以下为 Round 1 扩充，只允许追加，不得插入或重排 ———
+  { id: "w_soy", name: "泡豆子", needs: { soybean: 2 }, coin: 21, xp: 9, minLevel: 1, maxLevel: 99 },
+  { id: "w_wheat", name: "两把麦子", needs: { wheat: 2 }, coin: 16, xp: 7, minLevel: 1, maxLevel: 99 },
+  { id: "w_corn", name: "掰玉米", needs: { corn: 3 }, coin: 24, xp: 10, minLevel: 3, maxLevel: 99 },
+  { id: "w_tomato", name: "熟透的番茄", needs: { tomato: 3 }, coin: 20, xp: 8, minLevel: 2, maxLevel: 99 },
+  { id: "w_berry", name: "草莓一捧", needs: { strawberry: 3 }, coin: 36, xp: 15, minLevel: 3, maxLevel: 99 },
+  { id: "w_chili", name: "晒辣椒", needs: { chili: 2 }, coin: 19, xp: 8, minLevel: 2, maxLevel: 99 },
+  { id: "w_tea", name: "明前茶", needs: { tea_leaf: 2 }, coin: 32, xp: 13, minLevel: 5, maxLevel: 99 },
+  { id: "w_flour", name: "两袋面粉", needs: { flour: 2 }, coin: 38, xp: 16, minLevel: 3, maxLevel: 99 },
+  { id: "w_sugar", name: "一罐红糖", needs: { sugar: 1 }, coin: 27, xp: 11, minLevel: 5, maxLevel: 99 },
+  { id: "w_sauce", name: "打酱", needs: { sauce: 1 }, coin: 40, xp: 17, minLevel: 6, maxLevel: 99 },
+  { id: "w_wool", name: "剪羊毛", needs: { wool: 2 }, coin: 68, xp: 28, minLevel: 5, maxLevel: 99 },
+  { id: "w_soymilk", name: "一壶豆奶", needs: { soymilk: 1 }, coin: 88, xp: 36, minLevel: 8, maxLevel: 99 },
+  { id: "w_tomato_egg", name: "下饭番茄炒蛋", needs: { tomato_egg: 1 }, coin: 42, xp: 17, minLevel: 4, maxLevel: 99 },
+  { id: "w_fried_rice", name: "一碗蛋炒饭", needs: { egg_fried_rice: 1 }, coin: 46, xp: 19, minLevel: 4, maxLevel: 99 },
+  { id: "w_cabbage_tofu", name: "热汤暖胃", needs: { cabbage_tofu: 1 }, coin: 54, xp: 22, minLevel: 4, maxLevel: 99 },
+  { id: "w_chili_tofu", name: "开胃麻辣豆腐", needs: { chili_tofu: 1 }, coin: 47, xp: 19, minLevel: 5, maxLevel: 99 },
+  { id: "w_cake", name: "生日蛋糕", needs: { strawberry_cake: 1 }, coin: 106, xp: 42, minLevel: 5, maxLevel: 99 },
+  { id: "w_milk_tea", name: "赶集前的奶茶", needs: { milk_tea: 1 }, coin: 100, xp: 40, minLevel: 6, maxLevel: 99 },
+  { id: "w_noodles", name: "长寿酱拌面", needs: { sauce_noodles: 1 }, coin: 96, xp: 38, minLevel: 6, maxLevel: 99 },
+  { id: "w_hotpot", name: "全村的暖锅", needs: { hotpot: 1 }, coin: 118, xp: 47, minLevel: 8, maxLevel: 99 },
+  { id: "w_feast", name: "招待远客", needs: { bread: 1, milk: 1, tomato_egg: 1 }, coin: 162, xp: 65, minLevel: 6, maxLevel: 99 },
 ];
 
+/** 覆盖所有可进背包/心愿需求/资源栏的 id；家具名在 furniture.js 内。 */
 export const ITEM_NAMES = {
   coin: "金币",
   xp: "经验",
   pearl: "珍珠",
+  happiness: "幸福",
+  warmth: "温馨",
+  pop: "人口",
+  popCap: "人口上限",
   shovel: "铁锹",
   axe: "斧子",
   saw: "锯子",
@@ -43,4 +75,12 @@ export const ITEM_NAMES = {
   cloth: "布",
   soymilk: "豆奶",
   bread: "面包",
+  tomato_egg: "番茄炒蛋",
+  egg_fried_rice: "蛋炒饭",
+  cabbage_tofu: "白菜炖豆腐",
+  chili_tofu: "麻辣豆腐",
+  strawberry_cake: "草莓蛋糕",
+  milk_tea: "暖手奶茶",
+  sauce_noodles: "酱拌面",
+  hotpot: "蘑菇屋暖锅",
 };
