@@ -62,16 +62,20 @@ export function gloveTint(gloveId, color) {
 }
 
 /**
- * 本地玩家。显式指定 > view 自报 > 名单里的人类 > 默认 p0 > 名单第一个。
- * followId 可能是别的模块留下的陈旧值，只有确实在名单里才认。
+ * 本地玩家。显式指定 > view 自报 > followId > 名单里的人类 > 默认 p0 > 名单第一个。
+ *
+ * 每一档都要先在名单里查得到才认。壳层给的 id 未必跟 sim 对得上
+ * （src/main.js 的 SELF_ID 写的是 p1，而 sim 的名单是 p0 + b0..bN），
+ * 硬认下去镜头会跟一个不存在的人，直接掉回环绕机位 —— 那还不如落回 p0。
  */
 export function pickLocalId(view, opts = {}) {
   const players = Array.isArray(view?.players) ? view.players.filter(Boolean) : [];
   const has = (id) => id != null && players.some((p) => p.id === id);
 
-  if (opts.localId != null) return opts.localId;
-  const declared = view?.localId ?? view?.selfId ?? view?.playerId;
-  if (declared != null) return declared;
+  if (has(opts.localId)) return opts.localId;
+  if (has(view?.localId)) return view.localId;
+  if (has(view?.selfId)) return view.selfId;
+  if (has(view?.playerId)) return view.playerId;
   if (has(opts.followId)) return opts.followId;
 
   const human = players.find((p) => p.kind === 'human' || p.isLocal === true);

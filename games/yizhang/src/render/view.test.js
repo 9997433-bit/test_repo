@@ -77,11 +77,14 @@ describe('本地玩家', () => {
     expect(readView({}).localId).toBe('p0');
   });
 
-  it('显式 localId 最优先，陈旧的 followId 不认', () => {
+  it('显式 localId 最优先，名单里没有的 id 一律不认', () => {
     expect(pickLocalId(view, { localId: 'b0' })).toBe('b0');
-    // main.js 里曾经写死过 p1，这个 id 在 sim 里根本不存在
+    // main.js 的 SELF_ID 写的是 p1，sim 的名单里根本没有这个人：
+    // 无论它从 setFollow 还是构造参数进来，都得落回 p0，否则镜头会跟丢
+    expect(pickLocalId(view, { localId: 'p1' })).toBe('p0');
     expect(pickLocalId(view, { followId: 'p1' })).toBe('p0');
     expect(pickLocalId(view, { followId: 'b0' })).toBe('b0');
+    expect(pickLocalId({ ...view, localId: 'p1' })).toBe('p0');
   });
 });
 
