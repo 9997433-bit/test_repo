@@ -5,8 +5,12 @@ import { addRes, emptyYield, hasGain, mergeYield, nonNeg } from "./state.js";
 
 /** 离线最多结算 8 小时。 */
 export const OFFLINE_CAP_SEC = 8 * 3600;
-/** 不超过 8 秒的空窗视为「没离开」，直接入账，不打扰玩家。 */
-export const OFFLINE_DIRECT_SEC = 8;
+/**
+ * 直入账阈值：不超过这么长的空窗视为「没离开」，满效率直接进资源，不弹挂机匣。
+ * 取 60 秒（AD-16 拍板值，验收 G6.3 的「≥60s」口径）——刷新页面、切个标签页、
+ * 卡一帧都不该被当成一次离线；真正离开才走折算 + 待领取。阈值只此一处，改这里即生效。
+ */
+export const OFFLINE_DIRECT_SEC = 60;
 
 export const OFFLINE_MODE = { idle: "idle", direct: "direct", banked: "banked" };
 
@@ -45,8 +49,8 @@ export function offlineGain(state, seconds) {
 /**
  * 结算一次离线：
  * - 未开府或窗口为 0 → 什么都不动（mode=idle）
- * - 窗口 ≤ 8s → 满效率直接进资源（mode=direct，视为「没离开」）
- * - 窗口 > 8s → 按聚灵阵折算后进挂机匣，并与上一笔未领取的产出合并（mode=banked）
+ * - 窗口 ≤ `OFFLINE_DIRECT_SEC` → 满效率直接进资源（mode=direct，视为「没离开」）
+ * - 窗口更长 → 按聚灵阵折算后进挂机匣，并与上一笔未领取的产出合并（mode=banked）
  */
 export function settleOffline(state, now) {
   const window = offlineWindow(state?.meta?.lastTick, now);
