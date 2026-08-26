@@ -4,6 +4,7 @@ import { SPIRITS } from "../data/spirits";
 import type { GameState, ActiveOrder } from "../engine/state";
 import { seasonLabel } from "../engine/time";
 import { orderParts, orderReady, qualifyingArrangements } from "../systems/orders";
+import { SPIRIT_VISUALS, spiritPortrait } from "../systems/spirits";
 import { scoreArrangement, VASES } from "../systems/workshop";
 import { totalInventory } from "../systems/economy";
 
@@ -261,17 +262,36 @@ function renderDecor(sheet: HTMLElement, state: GameState, h: PanelHandlers): vo
   sheet.append(grid, themes);
 }
 
+const SPIRIT_ROW = "display:flex;align-items:center;gap:10px;text-align:left";
+
 function renderSpirit(sheet: HTMLElement, state: GameState, h: PanelHandlers): void {
+  // 顶部一栏：谁在随行，以及它此刻说的话
+  const active = SPIRITS.find((s) => s.id === state.activeSpirit);
+  const banner = document.createElement("div");
+  banner.className = "spirit-banner";
+  banner.style.cssText = `${SPIRIT_ROW};margin:2px 0 10px`;
+  banner.innerHTML =
+    `<span class="spirit-figure" aria-hidden="true" style="flex:0 0 auto">${spiritPortrait(active?.id ?? null, { size: 56 })}</span>` +
+    `<span><strong>${active ? `${active.name} 随行` : "尚未请灵"}</strong>` +
+    `<div class="muted">${active ? active.line : "择一花灵相伴，园中自有微光。"}</div></span>`;
+  sheet.append(banner);
+
   const grid = document.createElement("div");
   grid.className = "grid";
   const off = document.createElement("button");
   off.type = "button";
-  off.className = `card${state.activeSpirit === null ? " is-on" : ""}`;
-  off.textContent = "暂不请灵";
+  off.className = `card spirit-card${state.activeSpirit === null ? " is-on" : ""}`;
+  off.style.cssText = SPIRIT_ROW;
+  off.setAttribute("aria-pressed", String(state.activeSpirit === null));
+  off.setAttribute("aria-label", "暂不请灵，园中无花灵随行");
+  off.innerHTML =
+    `<span class="spirit-figure" aria-hidden="true" style="flex:0 0 auto">${spiritPortrait(null, { size: 40 })}</span>` +
+    `<span><h4>暂不请灵</h4><div class="muted">独自侍弄花草</div></span>`;
   off.addEventListener("click", () => h.spirit(null));
   grid.append(off);
   for (const s of SPIRITS) {
     const unlocked = state.unlockedSpirits.includes(s.id);
+    const motif = SPIRIT_VISUALS[s.id]?.motif ?? "";
     const effects = [
       s.growMul !== 1 ? `生长×${s.growMul}` : "",
       s.autoWater ? "自动浇水" : "",
@@ -282,11 +302,16 @@ function renderSpirit(sheet: HTMLElement, state: GameState, h: PanelHandlers): v
       .join(" · ");
     const b = document.createElement("button");
     b.type = "button";
-    b.className = `card${state.activeSpirit === s.id ? " is-on" : ""}`;
+    b.className = `card spirit-card${state.activeSpirit === s.id ? " is-on" : ""}${unlocked ? "" : " is-sealed"}`;
+    b.style.cssText = SPIRIT_ROW;
     b.disabled = !unlocked;
     b.setAttribute("aria-pressed", String(state.activeSpirit === s.id));
-    b.setAttribute("aria-label", unlocked ? `请花灵${s.name}，${effects}` : `${s.name}，${s.unlockLevel} 阶苏醒`);
-    b.innerHTML = `<h4>${s.name}</h4><div class="muted">${unlocked ? effects : `${s.unlockLevel} 阶苏醒`}</div><div class="muted">${s.line}</div>`;
+    b.setAttribute("aria-label", unlocked ? `请花灵${s.name}，${motif}，${effects}` : `${s.name}，${motif}，${s.unlockLevel} 阶苏醒`);
+    b.innerHTML =
+      `<span class="spirit-figure" aria-hidden="true" style="flex:0 0 auto">${spiritPortrait(s.id, { size: 44, locked: !unlocked })}</span>` +
+      `<span><h4>${s.name} <small>${motif}</small></h4>` +
+      `<div class="muted">${unlocked ? effects : `${s.unlockLevel} 阶苏醒`}</div>` +
+      `<div class="muted">${s.line}</div></span>`;
     b.addEventListener("click", () => h.spirit(s.id));
     grid.append(b);
   }
