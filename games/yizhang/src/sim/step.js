@@ -317,13 +317,13 @@ function updateMatch(state) {
 }
 
 /**
- * 出盘：水平半径超过 arenaRadius + 0.2、脚下没台、并且已经往下掉了 offDiskDrop。
- * 越过台缘的那一帧不判死——人得先看得见地掉下去，才轮到重生计时；
- * 掉够深度就不必再等 y < fallY，出盘一样在有限步内出局。
+ * 出盘：水平半径超过 arenaRadius + 0.2 且脚下没台，就是掉出去了。
+ * 一掉到台面高度以下就判，不等 y < fallY——`tests/match-lifecycle` 要的是
+ * 「越缘即开始重生计时」，掉到 -8 再判会让重生晚整整 0.8s。
  */
 function isOffDisk(state, p) {
   if (p.grounded) return false;
-  if (p.y > state.arena.floorY - PHYSICS.offDiskDrop) return false;
+  if (p.y > state.arena.floorY) return false;
   if (len2(p.x, p.z) <= state.arena.radius + 0.2) return false;
   return !isSupported(state.arena, p.x, p.z);
 }

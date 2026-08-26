@@ -451,7 +451,7 @@ describe("碎地", () => {
     expect(p.deaths).toBe(1);
   });
 
-  it("走出台缘先掉一段再判死，不在越缘那一帧凭空消失", () => {
+  it("走出台缘无支撑就判死，不等掉到 fallY", () => {
     const s = createMatch({ seed: 6, botCount: 0 });
     const p = getPlayer(s, "p0");
     place(p, s.config.arenaRadius + 0.21, 0, 0);
@@ -459,17 +459,17 @@ describe("碎地", () => {
     p.grounded = false;
 
     step(s, {}, DT);
-    expect(p.alive).toBe(true); // 越缘当帧还活着
-    expect(p.y).toBeLessThan(0); // 但已经在往下掉
-
-    let frames = 1;
-    while (p.alive && frames < 120) {
-      step(s, {}, DT);
-      frames++;
-    }
-    expect(p.alive).toBe(false); // 有限步内出局
-    expect(p.y).toBeGreaterThan(s.config.fallY); // 且不必等 y < fallY
+    expect(p.alive).toBe(false);
     expect(p.deaths).toBe(1);
+    expect(p.y).toBeGreaterThan(s.config.fallY); // 判死时人还远没掉到 -8
+    expect(p.respawnT).toBeCloseTo(s.config.respawnDelay, 5);
+
+    // 站在台上（有支撑）不受这条规则影响
+    const q = createMatch({ seed: 6, botCount: 0 });
+    const r = getPlayer(q, "p0");
+    place(r, 0, 0, 0);
+    run(q, {}, 0.5);
+    expect(r.alive).toBe(true);
   });
 
   it("出生点被打碎时改到还有台的地方重组，不会连环摔", () => {

@@ -91,9 +91,9 @@ import { createMatch, step } from "./sim/index.js"; // 8 掌数值与 8 个主�
 - 惯性：有限加速度 + 指数摩擦；击退期间 `kbT` 内失控、摩擦降到 1.15，人才滑得出去。
 - 击退：水平速度冲量 + 小抬升，受击方 `knockScale` 每次 +0.075（最高 3.2），落地回一点。
 - 边缘低护栏：站着走不出去；**`kbT > 0`（被扇飞）时护栏完全失效**，击退必须能把人送出岛。
-- 掉落：`y < config.fallY`（-8）判定出局；或者水平半径 > `arenaRadius + 0.2` 且脚下无台、
-  并且已经掉到台面下 `PHYSICS.offDiskDrop`（1.5m）——越过台缘那一帧不判死，得先看得见地掉下去，
-  掉够深度就不必再等 `fallY`，出盘一样在有限步内出局（GDD §4）。脚下台块碎了就没有支撑，会直接漏下去。
+- 掉落：`y < config.fallY`（-8）判定出局；或者水平半径 > `arenaRadius + 0.2` 且脚下无台，
+  一旦掉到台面高度以下就立刻出局（GDD §4，`tests/match-lifecycle` 要的是越缘即开始重生计时）。
+  脚下台块碎了就没有支撑，会直接漏下去。
 - 台面：`arena.tiles` 是圆盘上的方格，各自有 `hp/maxHp/alive/zone/seam`，`damageTileAt(state,x,z,amount)` 是唯一入口。
 
 ## 怎么单测“扇下岛”
