@@ -1,6 +1,6 @@
 // 对局状态构造。state 必须是纯数据：可 structuredClone、可 JSON 序列化，不放函数/类。
 
-import { createArena } from "./arena.js";
+import { createArena, isSupported } from "./arena.js";
 import { PHYSICS, SIM_VERSION } from "./constants.js";
 import { getDeps, resolveGlove } from "./deps.js";
 import { TAU } from "./math.js";
@@ -80,13 +80,46 @@ export function spawnPointFor(state, player) {
   return { x, z, yaw };
 }
 
+/**
+ * 出生点脚下可能已经被打碎，得找个还有台的落点，否则重组就是原地再摔一次。
+ * 按“同角度先往里收，再绕角度找”的顺序扫，保证同 seed 稳定。
+ */
+export function findSpawnSpot(state, x, z, angle) {
+  if (isSupported(state.arena, x, z)) return { x, z };
+
+  const R = state.config.arenaRadius;
+  for (const rf of [0.55, 0.42, 0.68, 0.3, 0.78, 0.18]) {
+    for (const da of [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI]) {
+      const a = angle + da;
+      const cx = Math.cos(a) * R * rf;
+      const cz = Math.sin(a) * R * rf;
+      if (isSupported(state.arena, cx, cz)) return { x: cx, z: cz };
+    }
+  }
+
+  // 台面碎得差不多了：退到离理想点最近的活台块
+  let best = null;
+  let bd = Infinity;
+  for (const t of state.arena.tiles) {
+    if (!t.alive) continue;
+    const d = (t.x - x) * (t.x - x) + (t.z - z) * (t.z - z);
+    if (d < bd) {
+      bd = d;
+      best = t;
+    }
+  }
+  return best ? { x: best.x, z: best.z } : { x: 0, z: 0 };
+}
+
 export function placeAtSpawn(state, player, airborne = false) {
   const p = spawnPointFor(state, player);
   const jitter = nextRange(state.rng, -0.6, 0.6);
-  player.x = p.x + jitter;
-  player.z = p.z + jitter * 0.5;
+  const spot = findSpawnSpot(state, p.x + jitter, p.z + jitter * 0.5, player.spawnAngle);
+  player.x = spot.x;
+  player.z = spot.z;
   player.y = airborne ? 2.2 : 0;
-  player.yaw = p.yaw;
+  player.yaw = Math.atan2(player.x, player.z) + Math.PI; // 朝台心
+
   player.vx = 0;
   player.vy = 0;
   player.vz = 0;

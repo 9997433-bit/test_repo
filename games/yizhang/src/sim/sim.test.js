@@ -431,6 +431,26 @@ describe("碎地", () => {
     expect(p.deaths).toBe(1);
   });
 
+  it("出生点被打碎时改到还有台的地方重组，不会连环摔", () => {
+    const s = createMatch({ seed: 6, botCount: 1 });
+    const p = getPlayer(s, "p0");
+    // 把出生点周围整片掏空
+    for (const t of s.arena.tiles) {
+      if (Math.hypot(t.x - p.x, t.z - p.z) < 6) damageTileAt(s, t.x, t.z, 1e4);
+    }
+    p.y = -20;
+    run(s, {}, 0.1);
+    expect(p.alive).toBe(false);
+
+    run(s, {}, s.config.respawnDelay + 0.1);
+    expect(p.alive).toBe(true);
+    expect(hasFloorUnder(s, p.x, p.z)).toBe(true);
+
+    run(s, {}, 2);
+    expect(p.alive).toBe(true);
+    expect(p.deaths).toBe(1); // 没有二次摔死
+  });
+
   it("重击手套能砸出裂纹", () => {
     const s = createMatch({ seed: 6, botCount: 1, gloveId: "granite" });
     const a = getPlayer(s, "p0");
