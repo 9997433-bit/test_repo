@@ -46,8 +46,8 @@
 | Opus-2 探索三线 | `claude-opus-5-thinking-high-fast` | 已完成 · 已合并 `cursor/explore-trio-feel-be73` | `bc-dd4b6069-cc81-5cfe-9a9a-ef5553e2be73` |
 | Opus-3 英雄战斗 | `claude-opus-5-thinking-high-fast` | 运行中 | `bc-ffd6ff3f-b4e7-59c3-a910-2050fe40d192` |
 | Opus-4 UI 主循环 | `claude-opus-5-thinking-high-fast` | 运行中 | `bc-f3529b54-7b9b-5f88-a649-4421dac2a21e` |
-| GPT-sol-1 单测探针 | `gpt-5.6-sol-xhigh-fast` | 运行中 | `bc-fd8d5866-1c41-5a9a-9845-967ece4a8ee1` |
-| GPT-sol-2 基准压力 | `gpt-5.6-sol-xhigh-fast` | 排队待派 | — |
+| GPT-sol-1 单测探针 | `gpt-5.6-sol-xhigh-fast` | 已完成 · 已合入 `e366255`（17 测全绿） | `bc-fd8d5866-1c41-5a9a-9845-967ece4a8ee1` |
+| GPT-sol-2 基准压力 | `gpt-5.6-sol-xhigh-fast` | 运行中 | `bc-c8091a37-6eac-5776-8cbf-29d773d6c440` |
 
 草稿 PR：https://github.com/9997433-bit/test_repo/pull/8
 
