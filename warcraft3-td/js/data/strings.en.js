@@ -4,12 +4,12 @@
   global.WC3.Strings = global.WC3.Strings || {};
   global.WC3.Strings.en = {
     lang: 'English',
-    title: 'Azeroth Keep TD',
-    subtitle: 'A tribute to classic Warcraft III custom tower defense (no Blizzard assets)',
+    title: 'Ironoath Keep TD',
+    subtitle: 'A tribute to classic RTS custom tower defense — all art and audio original',
 
     difficulty: 'Difficulty',
     easy: 'Easy', normal: 'Normal', hard: 'Hard', insane: 'Insane',
-    pickRace: 'Starting race (command card page)',
+    pickRace: 'Starting faction (command card page)',
     pickHero: 'Hero',
     startGame: 'Begin Campaign',
     howto: 'How to play',
@@ -67,11 +67,11 @@
     setDamageText: 'Damage numbers', setRange: 'Always show range', setColorblind: 'Colorblind friendly',
     setFps: 'Show FPS', on: 'On', off: 'Off',
 
-    hero: 'Hero', heroPaladin: 'Paladin', heroBlademaster: 'Blademaster',
-    heroDemonHunter: 'Demon Hunter', heroDeathKnight: 'Death Knight',
-    mana: 'Mana', abilityQ: 'War Stomp', abilityW: 'Windwalk',
+    hero: 'Hero', heroTemplar: 'Templar', heroSwordmaster: 'Swordmaster',
+    heroNightblade: 'Nightblade', heroDreadKnight: 'Dread Knight',
+    mana: 'Mana', abilityQ: 'Shockwave Nova', abilityW: 'Swift Stride',
     heroMove: 'Right-click to move the hero', heroDesc: 'The hero roams and attacks nearby enemies.',
-    holyLight: 'Holy Light', bladestorm: 'Bladestorm', immolation: 'Immolation', deathCoil: 'Death Coil',
+    radiance: 'Radiance', whirlwind: 'Whirlwind', emberAura: 'Ember Aura', soulbolt: 'Soul Bolt',
 
     fps: 'FPS', creeps: 'Creeps', towersBuilt: 'Towers'
   };

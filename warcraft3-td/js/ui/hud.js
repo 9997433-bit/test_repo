@@ -1,5 +1,5 @@
 /*
- * The Warcraft III console: resource bar, wave preview, quest log strip,
+ * The RTS console: resource bar, wave preview, quest log strip,
  * portrait frame and the unit statistics panel.
  */
 (function (global) {

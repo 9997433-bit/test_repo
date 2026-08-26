@@ -8,27 +8,27 @@
   var Damage = global.WC3.Damage;
 
   var RACES = [
-    { id: 'human',    nameZh: '人族',   nameEn: 'Human',      color: '#7fb4ff', accent: '#e6d7a8' },
-    { id: 'orc',      nameZh: '兽族',   nameEn: 'Orc',        color: '#c96a3d', accent: '#f0c27a' },
-    { id: 'nightelf', nameZh: '暗夜',   nameEn: 'Night Elf',  color: '#8fe3c0', accent: '#cfa6ff' },
-    { id: 'undead',   nameZh: '亡灵',   nameEn: 'Undead',     color: '#a98fd6', accent: '#8ce6d8' }
+    { id: 'kingdom', nameZh: '王国',   nameEn: 'Kingdom', color: '#7fb4ff', accent: '#e6d7a8' },
+    { id: 'warband', nameZh: '蛮族',   nameEn: 'Warband', color: '#c96a3d', accent: '#f0c27a' },
+    { id: 'grove',   nameZh: '林语',   nameEn: 'Grove',   color: '#8fe3c0', accent: '#cfa6ff' },
+    { id: 'blight',  nameZh: '枯萎',   nameEn: 'Blight',  color: '#a98fd6', accent: '#8ce6d8' }
   ];
 
   // Shared shape of a line: [tierName, gold, lumber, dmgMin, dmgMax, range, cooldown]
   var LINES = [
     {
-      id: 'human_guard', race: 'human', attackType: 'pierce', icon: 'arrow',
+      id: 'kingdom_arrow', race: 'kingdom', attackType: 'pierce', icon: 'arrow',
       projectile: { kind: 'arrow', speed: 720 },
       descZh: '快速的穿刺箭塔，克制轻甲与无甲。',
       descEn: 'Fast pierce tower; shreds light and unarmored.',
       tiers: [
-        { nameZh: '守卫箭塔', nameEn: 'Guard Tower',   gold: 60,  lumber: 0, dmg: [11, 15], range: 212, cd: 0.85 },
+        { nameZh: '哨戒箭塔', nameEn: 'Sentry Tower',   gold: 60,  lumber: 0, dmg: [11, 15], range: 212, cd: 0.85 },
         { nameZh: '长弓箭塔', nameEn: 'Longbow Tower', gold: 160, lumber: 0, dmg: [25, 33], range: 232, cd: 0.75 },
         { nameZh: '皇家弩台', nameEn: 'Royal Ballista', gold: 380, lumber: 1, dmg: [58, 74], range: 266, cd: 0.66 }
       ]
     },
     {
-      id: 'human_cannon', race: 'human', attackType: 'siege', icon: 'cannon',
+      id: 'kingdom_cannon', race: 'kingdom', attackType: 'siege', icon: 'cannon',
       projectile: { kind: 'shell', speed: 480, arc: 46 },
       splash: [62, 76, 92],
       descZh: '攻城溅射，对护甲建筑与重甲高效，无法攻击空中。',
@@ -40,7 +40,7 @@
       ]
     },
     {
-      id: 'human_arcane', race: 'human', attackType: 'magic', icon: 'orb',
+      id: 'kingdom_arcane', race: 'kingdom', attackType: 'magic', icon: 'orb',
       projectile: { kind: 'orb', speed: 560 },
       effects: [
         { kind: 'slow', factor: 0.70, duration: 2.0 },
@@ -57,7 +57,7 @@
     },
 
     {
-      id: 'orc_watch', race: 'orc', attackType: 'normal', icon: 'spear',
+      id: 'warband_watch', race: 'warband', attackType: 'normal', icon: 'spear',
       projectile: { kind: 'spear', speed: 640 },
       descZh: '普通攻击，对中甲成群小怪效率极高。',
       descEn: 'Normal attack — excellent against medium armor swarms.',
@@ -68,7 +68,7 @@
       ]
     },
     {
-      id: 'orc_troll', race: 'orc', attackType: 'pierce', icon: 'poison',
+      id: 'warband_venom', race: 'warband', attackType: 'pierce', icon: 'poison',
       projectile: { kind: 'dart', speed: 700 },
       effects: [
         { kind: 'poison', dps: 7,  duration: 3.0 },
@@ -78,13 +78,13 @@
       descZh: '毒飞镖，持续伤害可叠加刷新。',
       descEn: 'Poison darts apply stacking damage over time.',
       tiers: [
-        { nameZh: '巨魔地洞',   nameEn: 'Troll Burrow',    gold: 82,  lumber: 0, dmg: [9, 13],  range: 216, cd: 0.70 },
-        { nameZh: '猎头者哨塔', nameEn: 'Headhunter Post', gold: 215, lumber: 0, dmg: [20, 26], range: 236, cd: 0.62 },
-        { nameZh: '蝙蝠骑士巢', nameEn: 'Batrider Nest',   gold: 470, lumber: 1, dmg: [46, 58], range: 260, cd: 0.56 }
+        { nameZh: '毒刺土屋',   nameEn: 'Venom Hut',    gold: 82,  lumber: 0, dmg: [9, 13],  range: 216, cd: 0.70 },
+        { nameZh: '掷矛者哨塔', nameEn: 'Javelin Post', gold: 215, lumber: 0, dmg: [20, 26], range: 236, cd: 0.62 },
+        { nameZh: '毒翼巢穴',   nameEn: 'Venomwing Nest',   gold: 470, lumber: 1, dmg: [46, 58], range: 260, cd: 0.56 }
       ]
     },
     {
-      id: 'orc_spirit', race: 'orc', attackType: 'magic', icon: 'chain',
+      id: 'warband_storm', race: 'warband', attackType: 'magic', icon: 'chain',
       projectile: { kind: 'bolt', speed: 900 },
       effects: [
         { kind: 'chain', jumps: 2, falloff: 0.62, radius: 130 },
@@ -94,14 +94,14 @@
       descZh: '闪电链在附近敌人之间弹跳。',
       descEn: 'Chain lightning bounces between nearby enemies.',
       tiers: [
-        { nameZh: '灵魂小屋',   nameEn: 'Spirit Lodge',       gold: 116, lumber: 0, dmg: [20, 26],  range: 210, cd: 1.15 },
-        { nameZh: '巫医祭坛',   nameEn: 'Witch Doctor Altar', gold: 290, lumber: 0, dmg: [44, 56],  range: 230, cd: 1.10 },
-        { nameZh: '先知图腾',   nameEn: 'Farseer Totem',      gold: 610, lumber: 2, dmg: [96, 118], range: 256, cd: 1.05 }
+        { nameZh: '雷灵石屋',   nameEn: 'Storm Lodge',       gold: 116, lumber: 0, dmg: [20, 26],  range: 210, cd: 1.15 },
+        { nameZh: '唤雷祭坛',   nameEn: 'Stormcaller Altar', gold: 290, lumber: 0, dmg: [44, 56],  range: 230, cd: 1.10 },
+        { nameZh: '雷霆图腾',   nameEn: 'Thunder Totem',      gold: 610, lumber: 2, dmg: [96, 118], range: 256, cd: 1.05 }
       ]
     },
 
     {
-      id: 'ne_protector', race: 'nightelf', attackType: 'normal', icon: 'root',
+      id: 'grove_thorn', race: 'grove', attackType: 'normal', icon: 'root',
       projectile: { kind: 'thorn', speed: 680 },
       effects: [
         { kind: 'root', chance: 0.12, duration: 0.6 },
@@ -111,13 +111,13 @@
       descZh: '古树之刺，有几率缠绕定身目标。',
       descEn: 'Thorns with a chance to entangle the target.',
       tiers: [
-        { nameZh: '远古守护者', nameEn: 'Ancient Protector', gold: 70,  lumber: 0, dmg: [16, 22],  range: 200, cd: 0.95 },
-        { nameZh: '战争古树',   nameEn: 'Ancient of War',    gold: 175, lumber: 0, dmg: [36, 46],  range: 220, cd: 0.88 },
-        { nameZh: '世界树苗',   nameEn: 'Worldtree Sapling', gold: 400, lumber: 1, dmg: [82, 102], range: 250, cd: 0.80 }
+        { nameZh: '荆棘守卫',   nameEn: 'Thornguard', gold: 70,  lumber: 0, dmg: [16, 22],  range: 200, cd: 0.95 },
+        { nameZh: '战争古木',   nameEn: 'Warwood',    gold: 175, lumber: 0, dmg: [36, 46],  range: 220, cd: 0.88 },
+        { nameZh: '长青巨木',   nameEn: 'Evergreen Colossus', gold: 400, lumber: 1, dmg: [82, 102], range: 250, cd: 0.80 }
       ]
     },
     {
-      id: 'ne_roost', race: 'nightelf', attackType: 'siege', icon: 'acid',
+      id: 'grove_acid', race: 'grove', attackType: 'siege', icon: 'acid',
       projectile: { kind: 'acid', speed: 500, arc: 40 },
       splash: [66, 80, 96],
       effects: [
@@ -128,38 +128,38 @@
       descZh: '腐蚀液溅射并留下酸性腐蚀，无法攻击空中。',
       descEn: 'Corrosive splash that leaves acid burn. Ground only.',
       tiers: [
-        { nameZh: '奇美拉栖木', nameEn: 'Chimaera Roost', gold: 100, lumber: 0, dmg: [30, 38],   range: 204, cd: 1.60 },
-        { nameZh: '酸液栖木',   nameEn: 'Acid Roost',     gold: 250, lumber: 0, dmg: [66, 82],   range: 224, cd: 1.55 },
-        { nameZh: '双头巨龙巢', nameEn: 'Twinhead Aerie', gold: 540, lumber: 1, dmg: [140, 176], range: 250, cd: 1.50 }
+        { nameZh: '酸雨栖木',   nameEn: 'Acidfall Roost', gold: 100, lumber: 0, dmg: [30, 38],   range: 204, cd: 1.60 },
+        { nameZh: '腐蚀巢穴',   nameEn: 'Corrosion Nest',     gold: 250, lumber: 0, dmg: [66, 82],   range: 224, cd: 1.55 },
+        { nameZh: '双首龙巢',   nameEn: 'Twinhead Aerie', gold: 540, lumber: 1, dmg: [140, 176], range: 250, cd: 1.50 }
       ]
     },
     {
-      id: 'ne_moonwell', race: 'nightelf', attackType: 'magic', icon: 'star',
+      id: 'grove_star', race: 'grove', attackType: 'magic', icon: 'star',
       projectile: { kind: 'star', speed: 620 },
       splash: [40, 48, 58],
       descZh: '坠星魔法，小范围溅射，克制重甲空军。',
       descEn: 'Starfall magic with a small splash. Great vs heavy air.',
       tiers: [
-        { nameZh: '月亮井',     nameEn: 'Moon Well',      gold: 108, lumber: 0, dmg: [22, 28],   range: 226, cd: 1.05 },
-        { nameZh: '星辰法阵',   nameEn: 'Starfall Circle', gold: 275, lumber: 0, dmg: [48, 60],  range: 246, cd: 1.00 },
-        { nameZh: '精灵龙庭院', nameEn: 'Faerie Court',   gold: 590, lumber: 2, dmg: [104, 128], range: 276, cd: 0.95 }
+        { nameZh: '星辉之泉',   nameEn: 'Starlight Spring',      gold: 108, lumber: 0, dmg: [22, 28],   range: 226, cd: 1.05 },
+        { nameZh: '陨星法阵',   nameEn: 'Meteor Circle', gold: 275, lumber: 0, dmg: [48, 60],  range: 246, cd: 1.00 },
+        { nameZh: '星辉庭院',   nameEn: 'Starlit Court',   gold: 590, lumber: 2, dmg: [104, 128], range: 276, cd: 0.95 }
       ]
     },
 
     {
-      id: 'ud_spirit', race: 'undead', attackType: 'pierce', icon: 'skull',
+      id: 'blight_wraith', race: 'blight', attackType: 'pierce', icon: 'skull',
       projectile: { kind: 'shard', speed: 760 },
       attackTypeByTier: ['pierce', 'pierce', 'chaos'],
       descZh: '幽魂穿刺；三级升华为混沌攻击，无视一切护甲类型。',
       descEn: 'Spirit pierce; tier 3 becomes chaos and ignores armor types.',
       tiers: [
-        { nameZh: '幽魂塔',     nameEn: 'Spirit Tower',   gold: 56,  lumber: 0, dmg: [12, 16], range: 206, cd: 0.80 },
+        { nameZh: '亡魂塔',     nameEn: 'Wraith Tower',   gold: 56,  lumber: 0, dmg: [12, 16], range: 206, cd: 0.80 },
         { nameZh: '骸骨尖塔',   nameEn: 'Bone Spire',     gold: 155, lumber: 0, dmg: [28, 36], range: 226, cd: 0.72 },
         { nameZh: '诅咒方尖碑', nameEn: 'Damned Obelisk', gold: 430, lumber: 2, dmg: [70, 86], range: 254, cd: 0.66 }
       ]
     },
     {
-      id: 'ud_zigg', race: 'undead', attackType: 'magic', icon: 'web',
+      id: 'blight_web', race: 'blight', attackType: 'magic', icon: 'web',
       projectile: { kind: 'web', speed: 540 },
       effects: [
         { kind: 'slow', factor: 0.65, duration: 2.5 },
@@ -169,22 +169,22 @@
       descZh: '蛛网魔法大幅减速，同样可命中空中单位。',
       descEn: 'Webs heavily slow the target; also hits air.',
       tiers: [
-        { nameZh: '蛛魔金字塔', nameEn: 'Nerubian Ziggurat', gold: 95,  lumber: 0, dmg: [16, 22],  range: 218, cd: 1.00 },
-        { nameZh: '冰霜金字塔', nameEn: 'Frost Ziggurat',    gold: 245, lumber: 0, dmg: [36, 46],  range: 238, cd: 0.95 },
-        { nameZh: '天灾之井',   nameEn: 'Well of Blight',    gold: 530, lumber: 1, dmg: [84, 104], range: 266, cd: 0.90 }
+        { nameZh: '织网石冢',   nameEn: 'Weaver Cairn', gold: 95,  lumber: 0, dmg: [16, 22],  range: 218, cd: 1.00 },
+        { nameZh: '霜网石冢',   nameEn: 'Frostweb Cairn',    gold: 245, lumber: 0, dmg: [36, 46],  range: 238, cd: 0.95 },
+        { nameZh: '枯萎之井',   nameEn: 'Withering Well',    gold: 530, lumber: 1, dmg: [84, 104], range: 266, cd: 0.90 }
       ]
     },
     {
-      id: 'ud_slaughter', race: 'undead', attackType: 'siege', icon: 'meat',
+      id: 'blight_lob', race: 'blight', attackType: 'siege', icon: 'meat',
       projectile: { kind: 'corpse', speed: 430, arc: 54 },
       splash: [70, 84, 100],
       bonus: { heavy: 1.20, fortified: 1.25 },
       descZh: '腐尸投掷，巨额溅射并额外克制重甲/护甲，无法攻击空中。',
       descEn: 'Corpse lobs: huge splash with bonus vs heavy/fortified. Ground only.',
       tiers: [
-        { nameZh: '屠宰场',     nameEn: 'Slaughterhouse',    gold: 112, lumber: 0, dmg: [34, 42],   range: 194, cd: 1.70 },
-        { nameZh: '瘟疫车',     nameEn: 'Plague Wagon',      gold: 285, lumber: 0, dmg: [74, 92],   range: 214, cd: 1.65 },
-        { nameZh: '天灾投石车', nameEn: 'Scourge Trebuchet', gold: 620, lumber: 2, dmg: [158, 196], range: 244, cd: 1.60 }
+        { nameZh: '腐尸坑',     nameEn: 'Carrion Pit',    gold: 112, lumber: 0, dmg: [34, 42],   range: 194, cd: 1.70 },
+        { nameZh: '瘟疫抛车',   nameEn: 'Plague Lobber',      gold: 285, lumber: 0, dmg: [74, 92],   range: 214, cd: 1.65 },
+        { nameZh: '枯骨投石机', nameEn: 'Bonewrack Trebuchet', gold: 620, lumber: 2, dmg: [158, 196], range: 244, cd: 1.60 }
       ]
     }
   ];

@@ -9,9 +9,9 @@ module.exports = function (t, WC3) {
   // Towers the bot rotates through: pierce and magic for air coverage,
   // siege for fortified, plus slow support.
   var ORDER = [
-    'human_guard_t1', 'orc_troll_t1', 'ud_zigg_t1', 'human_cannon_t1',
-    'ne_moonwell_t1', 'orc_spirit_t1', 'ud_slaughter_t1', 'human_arcane_t1',
-    'ne_protector_t1', 'orc_watch_t1', 'ud_spirit_t1', 'ne_roost_t1'
+    'kingdom_arrow_t1', 'warband_venom_t1', 'blight_web_t1', 'kingdom_cannon_t1',
+    'grove_star_t1', 'warband_storm_t1', 'blight_lob_t1', 'kingdom_arcane_t1',
+    'grove_thorn_t1', 'warband_watch_t1', 'blight_wraith_t1', 'grove_acid_t1'
   ];
 
   /** Rank every legal tile by how much of the road it covers. */
@@ -43,7 +43,7 @@ module.exports = function (t, WC3) {
   }
 
   function autoPlay(difficulty, seed, maxTicks) {
-    var g = new WC3.Game({ difficulty: difficulty, seed: seed, hero: 'paladin' });
+    var g = new WC3.Game({ difficulty: difficulty, seed: seed, hero: 'warden' });
     var spots = rankSpots(g);
     var spotIdx = 0;
     var orderIdx = 0;

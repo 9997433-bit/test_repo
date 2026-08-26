@@ -4,12 +4,12 @@
   global.WC3.Strings = global.WC3.Strings || {};
   global.WC3.Strings.zh = {
     lang: '中文',
-    title: '洛丹伦要塞 · 塔防',
-    subtitle: '致敬《魔兽争霸 III》经典自定义塔防（无暴雪素材）',
+    title: '铁誓要塞 · 塔防',
+    subtitle: '致敬经典即时战略自定义塔防 —— 美术与音效全部原创',
 
     difficulty: '难度',
     easy: '简单', normal: '普通', hard: '困难', insane: '疯狂',
-    pickRace: '起始种族（命令卡默认页）',
+    pickRace: '起始阵营（命令卡默认页）',
     pickHero: '英雄',
     startGame: '开始战役',
     howto: '玩法',
@@ -42,7 +42,7 @@
 
     effSlow: '减速', effPoison: '剧毒', effRoot: '缠绕', effChain: '闪电链',
 
-    logWaveIn: '第 {n} 波：{name} 已从黑暗之门涌出！',
+    logWaveIn: '第 {n} 波：{name} 已从裂隙之门涌出！',
     logBoss: '⚔ 首领来袭 —— 第 {n} 波：{name}！',
     logLeak: '{name} 冲破了防线！剩余生命 {lives}。',
     logVictory: '任务完成：30 波全部击退，要塞屹立不倒！',
@@ -59,7 +59,7 @@
 
     victory: '胜利', defeat: '战败',
     victoryBody: '要塞守住了。全部 30 波敌人被击退。',
-    defeatBody: '黑暗之门吞没了要塞。',
+    defeatBody: '裂隙之门吞没了要塞。',
     statsWaves: '通过波次', statsKills: '总击杀', statsGold: '累计黄金',
     statsLeaks: '漏怪', statsBest: '最佳记录', playAgain: '再来一局',
 
@@ -67,11 +67,11 @@
     setDamageText: '伤害数字', setRange: '始终显示射程', setColorblind: '色盲友好',
     setFps: '显示帧率', on: '开', off: '关',
 
-    hero: '英雄', heroPaladin: '圣骑士', heroBlademaster: '剑圣',
-    heroDemonHunter: '恶魔猎手', heroDeathKnight: '死亡骑士',
-    mana: '魔法', abilityQ: '战争践踏', abilityW: '疾风步',
+    hero: '英雄', heroTemplar: '圣殿守护', heroSwordmaster: '剑豪',
+    heroNightblade: '夜刃', heroDreadKnight: '恐惧骑士',
+    mana: '魔法', abilityQ: '震荡新星', abilityW: '疾行',
     heroMove: '右键移动英雄', heroDesc: '英雄可移动，攻击范围内的敌人。',
-    holyLight: '神圣之光', bladestorm: '剑刃风暴', immolation: '献祭', deathCoil: '死亡缠绕',
+    radiance: '光辉', whirlwind: '旋风斩', emberAura: '余烬光环', soulbolt: '灵魂弹',
 
     fps: '帧率', creeps: '敌人', towersBuilt: '防御塔'
   };

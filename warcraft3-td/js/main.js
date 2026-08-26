@@ -58,7 +58,7 @@
 
   App.prototype.loadSettings = function () {
     var d = {
-      lang: 'zh', difficulty: 'normal', hero: 'paladin',
+      lang: 'zh', difficulty: 'normal', hero: 'warden',
       master: 0.6, sfx: 0.8, damageText: true, showRanges: false, showFps: false
     };
     try {

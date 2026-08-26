@@ -149,7 +149,7 @@
     var dy = 0;
     if (input) {
       // Arrow keys only: the letter keys belong to the command card, exactly
-      // like Warcraft III.
+      // like a classic RTS.
       if (input.isDown('ArrowLeft')) dx -= 1;
       if (input.isDown('ArrowRight')) dx += 1;
       if (input.isDown('ArrowUp')) dy -= 1;

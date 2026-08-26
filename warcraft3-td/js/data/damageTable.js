@@ -1,5 +1,5 @@
 /*
- * Warcraft III attack-type x armor-type damage factors (TFT 1.30-ish),
+ * Classic RTS attack-type x armor-type damage factors,
  * plus the classic armor damage-reduction formula.
  */
 (function (global) {

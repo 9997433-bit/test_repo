@@ -102,16 +102,16 @@
     if (!this._afford()) return;
 
     switch (name) {
-      case 'shoot_human':
+      case 'shoot_kingdom':
         this.tone({ type: 'triangle', from: 820, to: 330, dur: 0.1, gain: 0.1 });
         break;
-      case 'shoot_orc':
+      case 'shoot_warband':
         this.noise({ freq: 1400, freqTo: 400, dur: 0.09, gain: 0.09 });
         break;
-      case 'shoot_nightelf':
+      case 'shoot_grove':
         this.tone({ type: 'sine', from: 1250, to: 700, dur: 0.14, gain: 0.08 });
         break;
-      case 'shoot_undead':
+      case 'shoot_blight':
         this.tone({ type: 'sawtooth', from: 460, to: 200, dur: 0.12, gain: 0.07 });
         break;
       case 'die':

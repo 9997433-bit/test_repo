@@ -19,9 +19,9 @@ module.exports = function (t, WC3) {
   }
 
   var PLAN = [
-    'human_guard_t1', 'orc_troll_t1', 'ud_zigg_t1',
-    'ne_roost_t1', 'human_cannon_t1', 'orc_spirit_t1',
-    'ud_slaughter_t1', 'ne_moonwell_t1'
+    'kingdom_arrow_t1', 'warband_venom_t1', 'blight_web_t1',
+    'grove_acid_t1', 'kingdom_cannon_t1', 'warband_storm_t1',
+    'blight_lob_t1', 'grove_star_t1'
   ];
 
   /** Deterministic scripted run; returns a checksum trace. */
@@ -115,8 +115,8 @@ module.exports = function (t, WC3) {
   t.test('TICK DETERMINISM: holds with a hero in the run', function () {
     // No towers: the hero is the only source of damage, so its contribution
     // is unambiguous.
-    var a = run(555, 2400, { hero: 'blademaster', noTowers: true });
-    var b = run(555, 2400, { hero: 'blademaster', noTowers: true });
+    var a = run(555, 2400, { hero: 'swordmaster', noTowers: true });
+    var b = run(555, 2400, { hero: 'swordmaster', noTowers: true });
     for (var i = 0; i < a.trace.length; i++) t.eq(a.trace[i], b.trace[i], 'hero checksum ' + i);
     t.gt(a.game.hero.damageDealt, 0, 'hero contributed damage');
     t.eq(a.game.hero.level, b.game.hero.level, 'hero level');
@@ -139,7 +139,7 @@ module.exports = function (t, WC3) {
     var used = 0;
     Math.random = function () { used++; return real(); };
     try {
-      var g = new WC3.Game({ seed: 3, difficulty: 'hard', hero: 'paladin' });
+      var g = new WC3.Game({ seed: 3, difficulty: 'hard', hero: 'warden' });
       g.gold = 5000;
       var spots = buildSpots(g, 3);
       spots.forEach(function (s, i) { g.build(PLAN[i], s[0], s[1]); });

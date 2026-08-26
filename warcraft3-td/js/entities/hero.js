@@ -8,25 +8,25 @@
   'use strict';
 
   var HEROES = {
-    paladin: {
-      id: 'paladin', nameZh: '圣骑士', nameEn: 'Paladin', color: '#ffe6a3',
+    warden: {
+      id: 'warden', nameZh: '圣殿守护', nameEn: 'Templar', color: '#ffe6a3',
       attackType: 'hero', dmgMin: 22, dmgMax: 30, range: 190, cooldown: 1.1, speed: 205,
-      qKey: 'holyLight', wKey: 'abilityQ'
+      qKey: 'radiance', wKey: 'abilityQ'
     },
-    blademaster: {
-      id: 'blademaster', nameZh: '剑圣', nameEn: 'Blademaster', color: '#ff9f6b',
+    swordmaster: {
+      id: 'swordmaster', nameZh: '剑豪', nameEn: 'Swordmaster', color: '#ff9f6b',
       attackType: 'hero', dmgMin: 28, dmgMax: 34, range: 150, cooldown: 0.8, speed: 235,
-      qKey: 'bladestorm', wKey: 'abilityW'
+      qKey: 'whirlwind', wKey: 'abilityW'
     },
-    demonhunter: {
-      id: 'demonhunter', nameZh: '恶魔猎手', nameEn: 'Demon Hunter', color: '#c69bff',
+    nightblade: {
+      id: 'nightblade', nameZh: '夜刃', nameEn: 'Nightblade', color: '#c69bff',
       attackType: 'hero', dmgMin: 24, dmgMax: 32, range: 165, cooldown: 0.9, speed: 250,
-      qKey: 'immolation', wKey: 'abilityW'
+      qKey: 'emberAura', wKey: 'abilityW'
     },
-    deathknight: {
-      id: 'deathknight', nameZh: '死亡骑士', nameEn: 'Death Knight', color: '#9fe3ff',
+    dreadknight: {
+      id: 'dreadknight', nameZh: '恐惧骑士', nameEn: 'Dread Knight', color: '#9fe3ff',
       attackType: 'hero', dmgMin: 26, dmgMax: 36, range: 200, cooldown: 1.15, speed: 210,
-      qKey: 'deathCoil', wKey: 'abilityW'
+      qKey: 'soulbolt', wKey: 'abilityW'
     }
   };
 
@@ -63,7 +63,7 @@
 
   Hero.prototype.init = function (id, defId, x, y) {
     this.id = id;
-    this.def = HEROES[defId] || HEROES.paladin;
+    this.def = HEROES[defId] || HEROES.warden;
     this.alive = true;
     this.x = this.px = this.homeX = this.orderX = x;
     this.y = this.py = this.homeY = this.orderY = y;
@@ -180,7 +180,7 @@
         { kind: 'heroshot', speed: 700 }
       );
       this.cooldownTimer = st.cooldown;
-      game.playSfx('shoot_human');
+      game.playSfx('shoot_kingdom');
     }
   };
 

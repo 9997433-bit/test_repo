@@ -1,5 +1,5 @@
 /*
- * Azeroth Keep TD — global configuration & balance constants.
+ * Ironoath Keep TD — global configuration & balance constants.
  * Classic script (file:// safe) + CommonJS export for the node test runner.
  */
 (function (global) {
@@ -44,7 +44,7 @@
     MAX_STEPS_PER_FRAME: 5,
     MAX_FRAME_MS: 250,
     SPEEDS: [1, 1.5, 2],
-    seed: 20030703, // Warcraft III release date, used as the default sim seed
+    seed: 20030703, // arbitrary fixed value: the default deterministic sim seed
 
     // ---- spatial hash ------------------------------------------------
     HASH_CELL: TILE * 2,
@@ -87,7 +87,7 @@
     // ---- presentation ------------------------------------------------
     DAY_NIGHT_WAVES: 4,
     FLOAT_TEXT_TTL: 0.95,
-    STORAGE_KEY: 'azeroth-keep-td.v1'
+    STORAGE_KEY: 'ironoath-keep-td.v1'
   };
 
   global.WC3 = global.WC3 || {};

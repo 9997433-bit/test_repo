@@ -50,10 +50,10 @@
     var self = this;
     var best = Storage.load().best;
     var diffs = ['easy', 'normal', 'hard', 'insane'];
-    var heroes = ['paladin', 'blademaster', 'demonhunter', 'deathknight'];
+    var heroes = ['warden', 'swordmaster', 'nightblade', 'dreadknight'];
     var heroKey = {
-      paladin: 'heroPaladin', blademaster: 'heroBlademaster',
-      demonhunter: 'heroDemonHunter', deathknight: 'heroDeathKnight'
+      warden: 'heroTemplar', swordmaster: 'heroSwordmaster',
+      nightblade: 'heroNightblade', dreadknight: 'heroDreadKnight'
     };
 
     var html = '<h1>' + t('title') + '</h1><p class="sub">' + t('subtitle') + '</p>';

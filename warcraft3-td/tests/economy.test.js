@@ -37,9 +37,9 @@ module.exports = function (t, WC3) {
   t.test('building deducts gold and occupies the tile', function () {
     var g = newGame();
     var s = firstSpot(g);
-    var def = TowerData.get('human_guard_t1');
+    var def = TowerData.get('kingdom_arrow_t1');
     var gold0 = g.gold;
-    var tower = g.build('human_guard_t1', s[0], s[1]);
+    var tower = g.build('kingdom_arrow_t1', s[0], s[1]);
     t.ok(typeof tower === 'object', 'tower created');
     t.eq(g.gold, gold0 - def.gold, 'gold deducted');
     t.eq(g.canBuildAt(s[0], s[1]), false, 'tile now occupied');
@@ -51,13 +51,13 @@ module.exports = function (t, WC3) {
     var g = newGame();
     g.gold = 10;
     var s = firstSpot(g);
-    t.eq(g.build('human_guard_t1', s[0], s[1]), 'errGold', 'gold error code');
+    t.eq(g.build('kingdom_arrow_t1', s[0], s[1]), 'errGold', 'gold error code');
     t.eq(g.gold, 10, 'gold untouched');
     t.eq(g.towers.length, 0, 'nothing built');
 
     g.gold = 5000;
     g.lumber = 0;
-    t.eq(g.build('human_guard_t1', -5, 2), 'errSpot', 'off-map rejected');
+    t.eq(g.build('kingdom_arrow_t1', -5, 2), 'errSpot', 'off-map rejected');
     t.eq(g.towers.length, 0, 'still nothing built');
   });
 
@@ -66,8 +66,8 @@ module.exports = function (t, WC3) {
     g.gold = 99999;
     g.lumber = 20;
     var s = firstSpot(g);
-    t.eq(g.build('human_guard_t2', s[0], s[1]), 'errSpot', 't2 direct build blocked');
-    t.eq(g.build('human_guard_t3', s[0], s[1]), 'errSpot', 't3 direct build blocked');
+    t.eq(g.build('kingdom_arrow_t2', s[0], s[1]), 'errSpot', 't2 direct build blocked');
+    t.eq(g.build('kingdom_arrow_t3', s[0], s[1]), 'errSpot', 't3 direct build blocked');
   });
 
   t.test('upgrading charges the next tier and accumulates investment', function () {
@@ -75,20 +75,20 @@ module.exports = function (t, WC3) {
     g.gold = 2000;
     g.lumber = 5;
     var s = firstSpot(g);
-    var tw = g.build('human_guard_t1', s[0], s[1]);
-    var t1 = TowerData.get('human_guard_t1');
-    var t2 = TowerData.get('human_guard_t2');
-    var t3 = TowerData.get('human_guard_t3');
+    var tw = g.build('kingdom_arrow_t1', s[0], s[1]);
+    var t1 = TowerData.get('kingdom_arrow_t1');
+    var t2 = TowerData.get('kingdom_arrow_t2');
+    var t3 = TowerData.get('kingdom_arrow_t3');
     var gold0 = g.gold;
 
     g.upgrade(tw);
-    t.eq(tw.def.id, 'human_guard_t2', 'promoted to tier 2');
+    t.eq(tw.def.id, 'kingdom_arrow_t2', 'promoted to tier 2');
     t.eq(g.gold, gold0 - t2.gold, 'tier 2 cost');
     t.eq(tw.investedGold, t1.gold + t2.gold, 'investment tracked');
 
     var lumber0 = g.lumber;
     g.upgrade(tw);
-    t.eq(tw.def.id, 'human_guard_t3', 'promoted to tier 3');
+    t.eq(tw.def.id, 'kingdom_arrow_t3', 'promoted to tier 3');
     t.eq(g.lumber, lumber0 - t3.lumber, 'lumber spent');
     t.eq(g.upgrade(tw), 'errSpot', 'tier 3 is the cap');
     t.gt(tw.def.dps, t1.dps, 'tier 3 out-damages tier 1');
@@ -99,7 +99,7 @@ module.exports = function (t, WC3) {
     g.gold = 3000;
     g.lumber = 5;
     var s = firstSpot(g);
-    var tw = g.build('human_guard_t1', s[0], s[1]);
+    var tw = g.build('kingdom_arrow_t1', s[0], s[1]);
     g.upgrade(tw);
     var invested = tw.investedGold;
     var goldBefore = g.gold;
@@ -169,7 +169,7 @@ module.exports = function (t, WC3) {
     var g = newGame();
     g.gold = 6000;
     var s = spotOnRoad(g);
-    g.build('orc_watch_t1', s[0], s[1]);
+    g.build('warband_watch_t1', s[0], s[1]);
     var prevEarned = 0;
     var prevKills = 0;
     for (var i = 0; i < 4000; i++) {

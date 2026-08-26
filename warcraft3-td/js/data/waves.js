@@ -12,23 +12,23 @@
 
   var CREEPS = {
     skeleton:  { nameZh: '骷髅战士', nameEn: 'Skeleton',    armor: 'unarmored', armorValue: 0, hp: 0.85, speed: 1.00, radius: 13, bounty: 1.00, color: '#d8d2c0', shape: 'skeleton' },
-    footman:   { nameZh: '步兵',     nameEn: 'Footman',     armor: 'medium',    armorValue: 2, hp: 1.00, speed: 0.95, radius: 15, bounty: 1.05, color: '#9fc0ee', shape: 'soldier' },
+    footman:   { nameZh: '军团兵',   nameEn: 'Legionary',     armor: 'medium',    armorValue: 2, hp: 1.00, speed: 0.95, radius: 15, bounty: 1.05, color: '#9fc0ee', shape: 'soldier' },
     ghoul:     { nameZh: '食尸鬼',   nameEn: 'Ghoul',       armor: 'unarmored', armorValue: 0, hp: 0.78, speed: 1.38, radius: 13, bounty: 0.95, color: '#b9d48e', shape: 'beast' },
-    grunt:     { nameZh: '兽人步兵', nameEn: 'Grunt',       armor: 'heavy',     armorValue: 3, hp: 1.28, speed: 0.90, radius: 16, bounty: 1.15, color: '#d38455', shape: 'brute' },
-    huntress:  { nameZh: '弓箭手',   nameEn: 'Huntress',    armor: 'light',     armorValue: 1, hp: 0.92, speed: 1.16, radius: 15, bounty: 1.00, color: '#93e4c4', shape: 'soldier' },
+    grunt:     { nameZh: '掠夺者',   nameEn: 'Marauder',       armor: 'heavy',     armorValue: 3, hp: 1.28, speed: 0.90, radius: 16, bounty: 1.15, color: '#d38455', shape: 'brute' },
+    huntress:  { nameZh: '游侠',     nameEn: 'Ranger',    armor: 'light',     armorValue: 1, hp: 0.92, speed: 1.16, radius: 15, bounty: 1.00, color: '#93e4c4', shape: 'soldier' },
     knight:    { nameZh: '骑士',     nameEn: 'Knight',      armor: 'heavy',     armorValue: 5, hp: 1.55, speed: 1.02, radius: 17, bounty: 1.25, color: '#c8cddd', shape: 'rider' },
     catapult:  { nameZh: '攻城车',   nameEn: 'Siege Engine', armor: 'fortified', armorValue: 4, hp: 2.00, speed: 0.62, radius: 19, bounty: 1.45, color: '#a98b5f', shape: 'engine' },
-    ancient:   { nameZh: '远古树人', nameEn: 'Ancient',     armor: 'heavy',     armorValue: 4, hp: 1.75, speed: 0.74, radius: 20, bounty: 1.40, color: '#7fae6a', shape: 'treant', spellImmune: true },
+    ancient:   { nameZh: '古树人',   nameEn: 'Treant',     armor: 'heavy',     armorValue: 4, hp: 1.75, speed: 0.74, radius: 20, bounty: 1.40, color: '#7fae6a', shape: 'treant', spellImmune: true },
     demon:     { nameZh: '混沌魔',   nameEn: 'Chaos Fiend', armor: 'unarmored', armorValue: 2, hp: 1.18, speed: 1.28, radius: 16, bounty: 1.20, color: '#e2705f', shape: 'demon' },
     wyvern:    { nameZh: '双足飞龙', nameEn: 'Wyvern',      armor: 'light',     armorValue: 1, hp: 0.98, speed: 1.00, radius: 15, bounty: 1.20, color: '#e0b96a', shape: 'wing', flying: true },
     gargoyle:  { nameZh: '石像鬼',   nameEn: 'Gargoyle',    armor: 'heavy',     armorValue: 4, hp: 1.22, speed: 0.94, radius: 15, bounty: 1.30, color: '#9b96b8', shape: 'wing', flying: true },
 
     boss_ogre:      { nameZh: '食人魔领主', nameEn: 'Ogre Lord',    armor: 'hero',      armorValue: 5,  hp: 8.5,  speed: 0.72, radius: 27, bounty: 8,  color: '#e0a35c', shape: 'brute',  boss: true },
-    boss_abom:      { nameZh: '憎恶',       nameEn: 'Abomination',  armor: 'fortified', armorValue: 7,  hp: 11.0, speed: 0.62, radius: 29, bounty: 9,  color: '#c9c07e', shape: 'brute',  boss: true },
+    boss_abom:      { nameZh: '血肉恐魔',   nameEn: 'Flesh Horror',  armor: 'fortified', armorValue: 7,  hp: 11.0, speed: 0.62, radius: 29, bounty: 9,  color: '#c9c07e', shape: 'brute',  boss: true },
     boss_forest:    { nameZh: '森林之王',   nameEn: 'Forest Lord',  armor: 'hero',      armorValue: 8,  hp: 13.0, speed: 0.70, radius: 30, bounty: 10, color: '#8fd08a', shape: 'treant', boss: true },
     boss_dragon:    { nameZh: '青铜巨龙',   nameEn: 'Bronze Dragon', armor: 'hero',     armorValue: 8,  hp: 12.0, speed: 0.80, radius: 30, bounty: 11, color: '#e3c072', shape: 'wing',   boss: true, flying: true },
-    boss_lich:      { nameZh: '巫妖',       nameEn: 'Lich King',    armor: 'hero',      armorValue: 9,  hp: 14.5, speed: 0.74, radius: 30, bounty: 12, color: '#8fd8f0', shape: 'demon',  boss: true, spellImmune: true },
-    boss_archdemon: { nameZh: '深渊领主',   nameEn: 'Pit Lord',     armor: 'hero',      armorValue: 10, hp: 20.0, speed: 0.66, radius: 34, bounty: 16, color: '#ef6a4a', shape: 'demon',  boss: true }
+    boss_lich:      { nameZh: '霜寒巫妖',   nameEn: 'Frost Lich',    armor: 'hero',      armorValue: 9,  hp: 14.5, speed: 0.74, radius: 30, bounty: 12, color: '#8fd8f0', shape: 'demon',  boss: true, spellImmune: true },
+    boss_archdemon: { nameZh: '深渊领主',   nameEn: 'Abyss Lord',     armor: 'hero',      armorValue: 10, hp: 20.0, speed: 0.66, radius: 34, bounty: 16, color: '#ef6a4a', shape: 'demon',  boss: true }
   };
 
   // [ [type, count, interval] ... ] per wave.

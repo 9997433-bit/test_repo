@@ -16,6 +16,7 @@
   var TAU = Math.PI * 2;
 
   function lerp(a, b, t) { return a + (b - a) * t; }
+  function byDepth(a, b) { return a.y - b.y; }
 
   function Renderer(canvas, camera) {
     this.canvas = canvas;
@@ -25,6 +26,7 @@
     this.dpr = 1;
     this.time = 0;
     this._entries = [];
+    this._sorted = [];
     this._count = 0;
     this.showAllRanges = false;
     this.showDamageText = true;
@@ -58,6 +60,39 @@
     return e;
   };
 
+  /**
+   * When the map does not fill the viewport the leftover space is painted as a
+   * deliberate stone frame instead of raw black.
+   * @param {boolean} top false paints the backdrop + drop shadow, true the rim.
+   */
+  Renderer.prototype.drawWorldFrame = function (game, top) {
+    var ctx = this.ctx;
+    var cam = this.camera;
+    var x0 = cam.toScreenX(0);
+    var y0 = cam.toScreenY(0);
+    var w = game.worldW * cam.zoom;
+    var h = game.worldH * cam.zoom * cam.tilt;
+    if (x0 <= 0 && y0 <= 0 && x0 + w >= cam.vw && y0 + h >= cam.vh) return;
+
+    if (top) {
+      ctx.strokeStyle = 'rgba(24,20,14,0.9)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x0 - 1.5, y0 - 1.5, w + 3, h + 3);
+      ctx.strokeStyle = 'rgba(150,124,74,0.45)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x0 - 3.5, y0 - 3.5, w + 7, h + 7);
+      return;
+    }
+    ctx.fillStyle = '#16150f';
+    ctx.fillRect(0, 0, cam.vw, cam.vh);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.75)';
+    ctx.shadowBlur = 26;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(x0, y0, w, h);
+    ctx.restore();
+  };
+
   /** @param {number} alpha 0..1 interpolation factor from the fixed loop */
   Renderer.prototype.render = function (game, alpha, dtReal, ui) {
     var ctx = this.ctx;
@@ -68,6 +103,7 @@
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = '#0a0d08';
     ctx.fillRect(0, 0, cam.vw, cam.vh);
+    this.drawWorldFrame(game, false);
 
     // ---- terrain -------------------------------------------------------
     ctx.save();
@@ -77,6 +113,7 @@
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.terrain.canvas, 0, 0);
     ctx.restore();
+    this.drawWorldFrame(game, true);
 
     var b = cam.bounds(180);
     var s = cam.zoom;
@@ -115,10 +152,14 @@
       e = this._entry(); e.y = game.hero.y; e.kind = 7; e.ref = game.hero;
     }
 
-    var list = this._entries.slice(0, this._count);
-    list.sort(function (a, z) { return a.y - z.y; });
+    // Depth order into a reused array: slicing the pool here would allocate a
+    // fresh array every single frame.
+    var list = this._sorted;
+    list.length = this._count;
+    for (i = 0; i < this._count; i++) list[i] = this._entries[i];
+    list.sort(byDepth);
 
-    for (i = 0; i < list.length; i++) {
+    for (i = 0; i < this._count; i++) {
       var it = list[i];
       switch (it.kind) {
         case 1:

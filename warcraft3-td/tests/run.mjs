@@ -25,6 +25,9 @@ const SOURCES = [
   'js/engine/spatial.js',
   'js/engine/loop.js',
   'js/engine/camera.js',
+  'js/data/strings.zh.js',
+  'js/data/strings.en.js',
+  'js/data/i18n.js',
   'js/data/damageTable.js',
   'js/data/towers.js',
   'js/data/waves.js',
@@ -49,7 +52,9 @@ const SUITES = [
   'economy.test.js',
   'combat.test.js',
   'waves.test.js',
-  'balance.test.js'
+  'balance.test.js',
+  'strings.test.js',
+  'assets.test.js'
 ];
 
 const filter = process.argv[2] || '';

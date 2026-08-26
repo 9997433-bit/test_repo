@@ -1,5 +1,5 @@
 /*
- * The 4x3 Warcraft III command card: race pages, tower build pages, the
+ * The 4x3 RTS-style command card: faction pages, tower build pages, the
  * selected-tower page (upgrade / targeting / sell) and hero abilities.
  * Hotkeys follow the QWER / ASDF / ZXCV grid.
  */

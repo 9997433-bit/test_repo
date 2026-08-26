@@ -42,7 +42,7 @@ module.exports = function (t, WC3) {
     var mid = g.path.length * 0.5;
     var p = g.path.pointAt(mid);
     var s = spotNear(g, p.x, p.y);
-    var tw = g.build('human_guard_t1', s[0], s[1]);
+    var tw = g.build('kingdom_arrow_t1', s[0], s[1]);
 
     var far = placeCreep(g, 'skeleton', 0);
     g.hash.rebuild(g.creeps);
@@ -60,7 +60,7 @@ module.exports = function (t, WC3) {
     var mid = g.path.length * 0.5;
     var p = g.path.pointAt(mid);
     var s = spotNear(g, p.x, p.y);
-    var tw = g.build('human_guard_t1', s[0], s[1]);
+    var tw = g.build('kingdom_arrow_t1', s[0], s[1]);
     var range = tw.def.range;
 
     var behind = placeCreep(g, 'skeleton', mid - range * 0.5);
@@ -88,9 +88,9 @@ module.exports = function (t, WC3) {
     g.gold = 9000;
     var wy = placeCreep(g, 'wyvern', g.airPath.length * 0.5);
     var s = spotNear(g, wy.x, wy.y);
-    var cannon = g.build('human_cannon_t1', s[0], s[1]);
+    var cannon = g.build('kingdom_cannon_t1', s[0], s[1]);
     var s2 = spotNear(g, wy.x + 40, wy.y + 40);
-    var guard = g.build('human_guard_t1', s2[0], s2[1]);
+    var guard = g.build('kingdom_arrow_t1', s2[0], s2[1]);
     g.hash.rebuild(g.creeps);
 
     t.eq(cannon.def.targetsAir, false, 'siege cannot hit air');
@@ -174,7 +174,7 @@ module.exports = function (t, WC3) {
     var c = placeCreep(g, 'skeleton', d0 + 110);
     [a, b, c].forEach(function (x) { x.hpMax = x.hp = 100000; });
     var s = spotNear(g, a.x, a.y);
-    var tw = g.build('orc_spirit_t1', s[0], s[1]);
+    var tw = g.build('warband_storm_t1', s[0], s[1]);
     g.hash.rebuild(g.creeps);
 
     var payload = {
@@ -195,7 +195,7 @@ module.exports = function (t, WC3) {
 
   t.test('the meat-wagon line gets its bonus versus heavy and fortified', function () {
     var g = newGame();
-    var def = WC3.TowerData.get('ud_slaughter_t1');
+    var def = WC3.TowerData.get('blight_lob_t1');
     t.ok(def.bonus, 'bonus table present');
     var heavy = placeCreep(g, 'grunt', 200);
     heavy.hpMax = heavy.hp = 1e6;
@@ -221,7 +221,7 @@ module.exports = function (t, WC3) {
     var victim = placeCreep(g, 'skeleton', d0);
     victim.hpMax = victim.hp = 1e6;
     var s = spotNear(g, victim.x, victim.y);
-    var tw = g.build('human_cannon_t1', s[0], s[1]);
+    var tw = g.build('kingdom_cannon_t1', s[0], s[1]);
     g.hash.rebuild(g.creeps);
     tw.cooldownTimer = 0;
     tw.update(DT, g);
@@ -242,7 +242,7 @@ module.exports = function (t, WC3) {
     dummy.hpMax = dummy.hp = 1e9;
     dummy.baseSpeed = 0;
     var s = spotNear(g, dummy.x, dummy.y);
-    var tw = g.build('human_guard_t1', s[0], s[1]);
+    var tw = g.build('kingdom_arrow_t1', s[0], s[1]);
     var seconds = 10;
     for (var i = 0; i < 60 * seconds; i++) g.tick(DT);
     var expected = seconds / tw.def.cooldown;
@@ -251,7 +251,7 @@ module.exports = function (t, WC3) {
   });
 
   t.test('the hero nova damages and roots everything around it', function () {
-    var g = new WC3.Game({ difficulty: 'normal', seed: 4, hero: 'paladin' });
+    var g = new WC3.Game({ difficulty: 'normal', seed: 4, hero: 'warden' });
     var near = placeCreep(g, 'skeleton', 100);
     near.hpMax = near.hp = 1e6;
     near.x = g.hero.x + 20;

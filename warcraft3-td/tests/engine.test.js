@@ -163,7 +163,7 @@ module.exports = function (t, WC3) {
       for (var tx = 0; tx < g.gridW && placed < 12; tx++) {
         if (!g.canBuildAt(tx, ty)) continue;
         if (g.path.distanceTo((tx + 0.5) * g.tile, (ty + 0.5) * g.tile) > 140) continue;
-        g.build(placed % 2 ? 'orc_troll_t1' : 'human_guard_t1', tx, ty);
+        g.build(placed % 2 ? 'warband_venom_t1' : 'kingdom_arrow_t1', tx, ty);
         placed++;
       }
     }
