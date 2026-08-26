@@ -1,5 +1,5 @@
 import { FLOWERS, FLOWER_MAP, HUE_NAMES, ROLE_NAMES, type FlowerDef } from "../data/flowers";
-import { DECORATIONS, THEMES } from "../data/decorations";
+import { DECORATIONS, THEMES, anchorName } from "../data/decorations";
 import { SPIRITS } from "../data/spirits";
 import type { GameState, ActiveOrder } from "../engine/state";
 import { seasonLabel } from "../engine/time";
@@ -26,6 +26,8 @@ export interface PanelHandlers {
   pickArt: (uid: string, artId: string) => void;
   place: (decorId: string) => void;
   theme: (t: string) => void;
+  /** 手持某件陈设（或空手 null）进入摆放模式。 */
+  arrange: (decorId: string | null) => void;
   spirit: (id: string | null) => void;
   close: () => void;
 }
@@ -240,6 +242,7 @@ function renderWorkshop(sheet: HTMLElement, state: GameState, sel: PanelSelectio
 }
 
 function renderDecor(sheet: HTMLElement, state: GameState, h: PanelHandlers): void {
+  // —— 购置栏 ——
   const grid = document.createElement("div");
   grid.className = "grid";
   for (const d of DECORATIONS) {
@@ -251,9 +254,9 @@ function renderDecor(sheet: HTMLElement, state: GameState, h: PanelHandlers): vo
     b.disabled = owned || locked;
     b.setAttribute(
       "aria-label",
-      owned ? `${d.name}，已安置` : locked ? `${d.name}，${d.unlockLevel} 阶解锁` : `安置${d.name}，需 ${d.cost} 金或 ${d.fragmentCost} 碎片`,
+      owned ? `${d.name}，已购置` : locked ? `${d.name}，${d.unlockLevel} 阶解锁` : `购置${d.name}，需 ${d.cost} 金或 ${d.fragmentCost} 碎片`,
     );
-    b.innerHTML = `<h4>${d.glyph} ${d.name}</h4><div class="muted">${owned ? "已安置" : locked ? `${d.unlockLevel} 阶解锁` : `${d.cost}金 / ${d.fragmentCost}碎片 · 雅致+${d.mood}`}</div>`;
+    b.innerHTML = `<h4>${d.glyph} ${d.name}</h4><div class="muted">${owned ? "已购置" : locked ? `${d.unlockLevel} 阶解锁` : `${d.cost}金 / ${d.fragmentCost}碎片 · 雅致+${d.mood}`}</div>`;
     b.addEventListener("click", () => h.place(d.id));
     grid.append(b);
   }
@@ -262,12 +265,53 @@ function renderDecor(sheet: HTMLElement, state: GameState, h: PanelHandlers): vo
   for (const t of THEMES) {
     const b = document.createElement("button");
     b.type = "button";
+    b.className = state.decorTheme === t.id ? "is-on" : "";
     b.textContent = `套用${t.name}`;
-    b.setAttribute("aria-label", `套用${t.name}主题`);
+    b.setAttribute("aria-label", `套用${t.name}主题${state.decorTheme === t.id ? "（当前主题）" : ""}`);
     b.addEventListener("click", () => h.theme(t.id));
     themes.append(b);
   }
   sheet.append(grid, themes);
+
+  // —— 布置栏：已购陈设的落位与挪动（锚位制，见 UX.md 七） ——
+  const owned = DECORATIONS.filter((d) => state.placedDecor.includes(d.id));
+  const arrange = document.createElement("div");
+  arrange.className = "arrange";
+  const headRow = document.createElement("div");
+  headRow.className = "arrange-head";
+  headRow.innerHTML = `<span class="muted">布置 · 檐下径旁各有讲究</span>`;
+  const adjust = document.createElement("button");
+  adjust.type = "button";
+  adjust.textContent = "调整布局";
+  adjust.disabled = owned.length === 0;
+  adjust.setAttribute("aria-label", "空手进入摆放模式，自由拿起与挪动已摆陈设");
+  adjust.addEventListener("click", () => h.arrange(null));
+  headRow.append(adjust);
+  arrange.append(headRow);
+  if (!owned.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "匣中无一物，先在上方购置一件。";
+    arrange.append(empty);
+  } else {
+    const list = document.createElement("div");
+    list.className = "arrange-list";
+    for (const d of owned) {
+      const anchor = state.decorAnchors[d.id] ?? null;
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = `chip${anchor ? "" : " boxed"}`;
+      chip.setAttribute(
+        "aria-label",
+        anchor ? `${d.name}，已摆于${anchorName(anchor)}，点按挪动` : `${d.name}，在匣，点按摆放`,
+      );
+      chip.innerHTML = `${d.glyph} ${d.name} <small>${anchor ? `已摆 · ${anchorName(anchor)}` : "在匣"}</small>`;
+      chip.addEventListener("click", () => h.arrange(d.id));
+      list.append(chip);
+    }
+    arrange.append(list);
+  }
+  sheet.append(arrange);
 }
 
 const SPIRIT_ROW = "display:flex;align-items:center;gap:10px;text-align:left";

@@ -18,8 +18,9 @@ import { mountAmbient, burst, splash } from "./scene/particles";
 import { mountSky } from "./scene/ambience";
 import { createHud } from "./ui/hud";
 import { renderPanel, updatePanelTimers, type PanelHandlers, type PanelId, type PanelSelection } from "./ui/panels";
+import { createPlaceMode } from "./ui/place-mode";
 import { mountToasts } from "./ui/toast";
-import { renderTutorial, advanceTutorial, tutorialEventAdvances, coachTargetId } from "./ui/tutorial";
+import { renderTutorial, advanceTutorial, tutorialEventAdvances, coachTargetId, renderSideStory } from "./ui/tutorial";
 import { resumeAudio, toggleMute, isMuted, chime } from "./audio/soundscape";
 
 type Tool = "none" | "water" | "fert" | "harvest";
@@ -79,6 +80,7 @@ export function boot(root: HTMLElement): void {
   };
 
   const garden = createGardenView(stage, onPick);
+  const placeMode = createPlaceMode(stage, root, state, invalidate);
 
   // 拖拽浇水：按住洒水壶扫过花圃
   let dragging = false;
@@ -159,6 +161,13 @@ export function boot(root: HTMLElement): void {
       applyTheme(state, t as DecorTheme);
       invalidate();
     },
+    arrange: (id) => {
+      // 收起面板露出全园，锚位标记浮现；首次进入弹「一物得其所」番外折
+      panel = null;
+      placeMode.enter(id);
+      renderSideStory(root, state, "settle");
+      invalidate();
+    },
     spirit: (id) => {
       setSpirit(state, id);
       invalidate();
@@ -230,6 +239,14 @@ export function boot(root: HTMLElement): void {
     el.innerHTML = `<span class="seal" aria-hidden="true">${s.glyph}</span><span class="lbl">${s.label}</span>`;
     el.addEventListener("click", () => {
       resumeAudio();
+      // 摆放模式下点任意 dock（含再点「装扮」）先收摆放，布置立即生效
+      if (placeMode.isOpen()) {
+        placeMode.exit();
+        if (s.id === "decor") {
+          invalidate();
+          return;
+        }
+      }
       s.run();
       invalidate();
     });
@@ -295,7 +312,7 @@ export function boot(root: HTMLElement): void {
       case "workshop":
         return `w|${invSig()}|${state.arrangements.map((a) => a.id).join(",")}|${sel.workshopPick.join(",")}|${state.season}`;
       case "decor":
-        return `d|${state.placedDecor.join(",")}|${state.fragments}|${state.level}`;
+        return `d|${state.placedDecor.join(",")}|${Object.entries(state.decorAnchors).join(",")}|${state.decorTheme ?? ""}|${state.fragments}|${state.level}`;
       case "spirit":
         return `p|${state.unlockedSpirits.join(",")}|${state.activeSpirit ?? ""}`;
       case "bag":
@@ -313,6 +330,9 @@ export function boot(root: HTMLElement): void {
       root.classList.toggle("is-night", night);
     }
     if (root.dataset.tool !== tool) root.dataset.tool = tool;
+    // 全局主题层（VISUAL.md 五）：玩家最后套用的主题染遍花笺与挂牌
+    const theme = state.decorTheme ?? "";
+    if (root.dataset.theme !== theme) root.dataset.theme = theme;
     sky.update(root, state);
     ambient.set(state.season, night);
     hud.update(state);
@@ -331,6 +351,15 @@ export function boot(root: HTMLElement): void {
       renderTutorial(root, state, () => advanceTutorial(state));
     }
   };
+
+  // Esc 分场景收起最上层临时物（UX.md 五）：番外折自带监听收自己；这里管摆放模式
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || document.querySelector(".modal.side-story")) return;
+    if (placeMode.isOpen()) {
+      placeMode.exit();
+      invalidate();
+    }
+  });
 
   // 先出一帧铺好花圃，再补算离园收益，绽放特效才有落点
   frame();

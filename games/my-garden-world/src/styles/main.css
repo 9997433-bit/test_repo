@@ -608,6 +608,19 @@ button { font-family: var(--font-body); }
 .vase-btn small { color: var(--ink-soft); font-size: 11px; }
 .art-list { margin-top: 10px; }
 .themes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.themes button.is-on { background: var(--vermilion); color: #fff8e8; border-color: var(--vermilion); }
+
+/* 配色/章法小签（花种卡与作坊选材：「粉 · 配花」） */
+.craft-tag { color: var(--ink-soft); font-size: 11px; margin-left: 3px; }
+
+/* 装扮面板 · 布置栏（锚位制摆放的入口） */
+.arrange { margin-top: 12px; border-top: 1px dashed color-mix(in srgb, var(--ink) 25%, transparent); padding-top: 8px; }
+.arrange-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.arrange-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.arrange-list .chip small { color: var(--ink-soft); font-size: 11px; margin-left: 4px; }
+.arrange-list .chip.is-on small,
+.arrange-list .chip:hover small { color: inherit; }
+.arrange-list .chip.boxed { border-style: dashed !important; color: var(--ink-soft); }
 
 /* ---------- 教程 ---------- */
 .modal {
@@ -693,6 +706,57 @@ button { font-family: var(--font-body); }
 .toast.rare { background: var(--plum); }
 .toast.warn { background: #6b3a1f; }
 
+/* ---------- 摆放模式（锚位制，UX.md 七）----------
+   舞台罩暗幕拦下花圃点击；锚位标记空位泛玉色呼吸邀请光（=可放），
+   占位金描边显印字。全部操作可逆、无确认框。 */
+.place-layer {
+  position: absolute; inset: 0; z-index: var(--z-coach);
+  background: color-mix(in srgb, var(--backdrop-dim) 60%, transparent);
+}
+.place-hint {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  border: 1px solid var(--gold); border-radius: 999px;
+  padding: 5px 8px 5px 14px;
+  box-shadow: 0 8px 22px var(--shadow);
+  white-space: nowrap; max-width: calc(100% - 16px);
+  z-index: 1;
+}
+.place-holding { font-size: 12px; color: var(--ink); }
+.place-stash, .place-done {
+  border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--ink));
+  background: var(--paper); color: var(--ink);
+  border-radius: 999px; padding: 4px 12px; min-height: 30px; cursor: pointer;
+  box-shadow: 0 2px 0 var(--shadow); font-size: 12px;
+}
+.place-done { background: var(--vermilion); color: #fff8e8; border-color: var(--vermilion); }
+.anchor-spot {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 58px; height: 58px; border-radius: 50%;
+  display: grid; place-items: center; row-gap: 0;
+  cursor: pointer;
+  border: 2px dashed color-mix(in srgb, var(--jade) 80%, var(--ink));
+  background: color-mix(in srgb, var(--paper) 62%, transparent);
+  color: var(--ink);
+  padding: 0;
+}
+.anchor-spot.is-empty {
+  animation: invite 1.6s ease-in-out infinite;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--jade) 32%, transparent);
+}
+.anchor-spot.is-occupied {
+  border-style: solid; border-color: var(--gold);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 28%, transparent);
+}
+.anchor-glyph { font-family: var(--font-display); font-size: 19px; line-height: 1.1; min-height: 21px; }
+.anchor-name { font-size: 10px; color: var(--ink-soft); line-height: 1; }
+.is-night .anchor-spot { color: #f0e6d2; }
+.is-night .anchor-name { color: #cdbfa4; }
+
+/* 读屏播报（进出摆放/邻家等模式） */
+.sr-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
 /* ---------- 环境粒子 ---------- */
 .petals { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: var(--z-petals); }
 .particle { position: absolute; top: -4%; display: block; }
@@ -748,6 +812,8 @@ button { font-family: var(--font-body); }
   .modal { padding: 14px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
   .grid.orders { grid-template-columns: 1fr; }
+  .anchor-spot { width: 48px; height: 48px; }
+  .anchor-glyph { font-size: 16px; min-height: 18px; }
 }
 
 /* ---------- 减少动态 ----------
@@ -763,11 +829,12 @@ button { font-family: var(--font-body); }
   }
   /* 花瓣层双保险：particles.ts 不再挂粒子，这里同时隐藏整层 */
   .petals { display: none; }
-  /* 循环装饰关停：挂牌摆动、灵玉起伏、教程气泡浮动、花枝摇曳 */
+  /* 循环装饰关停：挂牌摆动、灵玉起伏、教程气泡浮动、花枝摇曳、锚位邀请光 */
   .decor-chip,
   .stage::before,
   .stage::after,
   .coach,
+  .anchor-spot.is-empty,
   .plot-art svg .sway,
   .plot-art svg .glow { animation: none !important; }
   /* 静态替身：盛放提示（breathe）→ 常亮金环 + 光晕 */
