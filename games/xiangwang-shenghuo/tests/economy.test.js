@@ -234,7 +234,7 @@ describe("wishes", () => {
     });
   });
 
-  it.skip("filters the deterministic first board by minLevel (pending village gate)", () => {
+  it("filters the deterministic first board by minLevel", () => {
     const initial = createInitialState();
     const candidates = wishCandidates(initial);
     const refreshed = refreshWishes(initial);

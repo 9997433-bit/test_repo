@@ -3,7 +3,7 @@ import { createInitialState } from "../src/core/engine.js";
 import { feedAnimal } from "../src/systems/production/index.js";
 
 describe("livestock economy", () => {
-  it.skip("charges 20% extra winter feed with deterministic carry (pending surcharge)", () => {
+  it("charges 20% extra winter feed with deterministic carry", () => {
     const initial = createInitialState();
     let state = {
       ...initial,
@@ -28,7 +28,7 @@ describe("livestock economy", () => {
     });
   });
 
-  it.skip("keeps fractional livestock yield carry per species (pending isolation)", () => {
+  it("keeps fractional livestock yield carry per species", () => {
     const initial = createInitialState();
     let state = {
       ...initial,
