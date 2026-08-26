@@ -45,14 +45,60 @@ export function resetBalance() {
   return BALANCE_TUNING.reset();
 }
 
-let enemySeq = 1;
+/**
+ * 敌人编号计数器住在 side 上（`side.enemySeq` = 下一个要发的号）。
+ *
+ * 它以前是模块级变量：重开一局、或从快照续跑，编号都会接着上一局往下数，
+ * 同一串输入跑两遍拿到的 id 不同，严格回放与快照比对全都对不上。放进 side 后
+ * serialize() 顺手把它带走，load() 原样还回来，回放就稳定了。
+ *
+ * 编号只在本侧内唯一：两条战线各数各的，事件里一律带着 side 一起用
+ * （kill / skill 事件都有 side 字段）。
+ *
+ * 字段是「首次出兵时才写」而不是建 side 时就写：core/game.js 的 createSide()
+ * 不归战斗层改，而 tests/state.test.js 会对刚开局的 side 键序列做快照断言，
+ * 提前写字段会把那份契约打破。缺字段时按下面的 resumeSeq() 推。
+ */
+const SEQ_FIELD = "enemySeq";
+
+/** 兼容没有该字段的旧快照：从现存敌人的最大编号往后续，避免撞号。 */
+function resumeSeq(side) {
+  let max = 0;
+  const list = Array.isArray(side?.enemies) ? side.enemies : [];
+  for (const e of list) {
+    if (Number.isInteger(e?.id) && e.id > max) max = e.id;
+  }
+  return max + 1;
+}
+
+/** 下一个会发出去的敌人编号（不消耗）。 */
+export function enemySeqOf(side) {
+  if (!side) return 1;
+  const seq = side[SEQ_FIELD];
+  return Number.isInteger(seq) && seq >= 1 ? seq : resumeSeq(side);
+}
+
+/** 把编号指针挪到 next（重开一局或测试用）。 */
+export function resetEnemySeq(side, next = 1) {
+  if (!side) return 1;
+  const value = Number.isInteger(next) && next >= 1 ? next : 1;
+  side[SEQ_FIELD] = value;
+  return value;
+}
+
+function nextEnemyId(side) {
+  const id = enemySeqOf(side);
+  side[SEQ_FIELD] = id + 1;
+  return id;
+}
 
 export function spawnEnemy(side, spec, isBoss, extra = {}) {
+  // 先挡上限再取号：被拒的这一只不该白吃一个编号，否则回放里会出现空号。
   if (!side || side.enemies.length >= MAX_ENEMIES) return null;
   const baseHp = isBoss ? spec.boss.hp : spec.hp;
   const hp = Math.max(1, Math.round(baseHp * (extra.hpMul || 1)));
   const enemy = {
-    id: enemySeq++,
+    id: nextEnemyId(side),
     t: 0,
     hp,
     maxHp: hp,
