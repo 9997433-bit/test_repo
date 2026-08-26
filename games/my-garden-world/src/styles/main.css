@@ -14,6 +14,8 @@ button { font-family: var(--font-body); }
 
 /* ---------- 舞台布局（天色由 tokens 的四季/昼夜变量驱动） ---------- */
 .app {
+  /* 夜色令牌挂在 #app 上：文字色必须在这里重取，否则子树继承 body 的白日墨色（夜里黑字压黑纸） */
+  color: var(--ink);
   height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
