@@ -16,8 +16,9 @@ store.events.on(EVENTS.saveCorrupt, ({ status, reason }) => {
 store.events.on(EVENTS.saveFailed, ({ error, bytes }) => {
   console.warn(`[造化仙府] 存档写入失败（${error}，${bytes} 字节），稍后自动重试。`);
 });
-store.events.on(EVENTS.offlineBanked, ({ seconds }) => {
-  console.info(`[造化仙府] 离线 ${offlineSummary({ seconds })} 的产出已入挂机匣。`);
+store.events.on(EVENTS.offlineBanked, ({ seconds, efficiency }) => {
+  const pct = Math.round((Number.isFinite(efficiency) ? efficiency : 1) * 100);
+  console.info(`[造化仙府] 离线 ${offlineSummary({ seconds })} 的产出已按 ${pct}% 折算入挂机匣。`);
 });
 
 store.dispatch({ type: "BOOT", now: Date.now() });

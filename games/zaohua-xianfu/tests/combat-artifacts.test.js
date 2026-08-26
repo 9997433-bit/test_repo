@@ -15,10 +15,11 @@ function fired(result, id) {
 }
 
 describe("combat artifacts", () => {
-  it("revives once per battle, not once per ally", () => {
+  it("revives every fallen ally once and never twice", () => {
+    const party = ["mc-demon", "wukong", "bajie", "shen", "yumian", "niumo"];
     const result = simulate({
       seed: 991,
-      heroIds: ["mc-demon", "wukong", "bajie", "shen", "yumian", "niumo"],
+      heroIds: party,
       foes: towerEnemy(24).foes,
       state: WEAK,
       equipped: ["wanhun"],
@@ -26,16 +27,25 @@ describe("combat artifacts", () => {
     });
 
     const last = result.frames.at(-1).units;
-    const dead = last.filter((u) => u.side === "a" && !u.alive);
+    const revives = logEntries(result, "revive");
+    const targets = revives.map((entry) => entry.target);
 
     expect(result.winner).toBe("b");
-    expect(dead.length).toBeGreaterThan(1);
-    expect(last.filter((u) => u.revived).map((u) => u.id)).toEqual(["wukong"]);
-    expect(logEntries(result, "revive")).toEqual([{ t: "revive", target: "wukong", by: "wanhun" }]);
-    expect(fired(result, "wanhun")).toEqual({ id: "wanhun", name: "万魂灯", kind: "revive", count: 1 });
+    expect(last.filter((u) => u.side === "a" && !u.alive).length).toBeGreaterThan(1);
+    expect(revives.length).toBeGreaterThan(1);
+    expect(new Set(targets).size).toBe(targets.length);
+    expect(targets.every((id) => party.includes(id))).toBe(true);
+    expect(revives.every((entry) => entry.by === "wanhun")).toBe(true);
+    expect(last.filter((u) => u.revived).map((u) => u.id).sort()).toEqual([...targets].sort());
+    expect(fired(result, "wanhun")).toEqual({
+      id: "wanhun",
+      name: "万魂灯",
+      kind: "revive",
+      count: revives.length,
+    });
   });
 
-  it("honours an explicit reviveCharges field over the single-charge default", () => {
+  it("takes the per-ally revive charge count from the artifact effect", () => {
     expect(artifactLoadout(["wanhun"]).revive).toMatchObject({ id: "wanhun", hpPct: 0.33, charges: 1 });
     expect(artifactLoadout([]).revive).toBeNull();
   });
@@ -98,7 +108,7 @@ describe("combat artifacts", () => {
       "wanhun:revive",
     ]);
     expect(casualties.length).toBeGreaterThan(1);
-    expect(fired(first, "wanhun").count).toBe(1);
+    expect(fired(first, "wanhun").count).toBe(first.frames.at(-1).units.filter((u) => u.revived).length);
     expect(fired(first, "qixing").count).toBeGreaterThan(1);
   });
 });

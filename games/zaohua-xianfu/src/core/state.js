@@ -6,7 +6,9 @@ import { SCHEMA } from "./save.js";
 
 export const RESOURCE_KEYS = ["qi", "herb", "wood", "ore", "stone", "pills", "jade"];
 export const PARTY_SIZE = 6;
-export const ARTIFACT_SLOTS = 4;
+/** 四槽不是先来后到的队列：1 攻 + 1 防 + 2 通用，槽型取自 data/artifacts.js 的 slot。 */
+export const ARTIFACT_SLOT_CAPS = { attack: 1, defend: 1, util: 2 };
+export const ARTIFACT_SLOTS = Object.values(ARTIFACT_SLOT_CAPS).reduce((sum, n) => sum + n, 0);
 export const MAX_LOG = 40;
 export const MANSION_MAX_LEVEL = 12;
 export const MAX_PLOTS = GRID_SIZE * GRID_SIZE;
@@ -135,6 +137,55 @@ export function normalizeParty(raw, unlockedHeroes, faction) {
     return [mc, ...rest].slice(0, PARTY_SIZE);
   }
   return ids.slice(0, PARTY_SIZE);
+}
+
+/** 未知或缺失槽型的法器归入通用槽，避免装不上也卸不掉。 */
+export function artifactSlot(id) {
+  const slot = artifactById(id)?.slot;
+  return slot && ARTIFACT_SLOT_CAPS[slot] ? slot : "util";
+}
+
+export function slotCapacity(slot) {
+  return ARTIFACT_SLOT_CAPS[slot] ?? 0;
+}
+
+/** 按槽型统计已佩戴数量，UI 与校验共用。 */
+export function slotUsage(equipped) {
+  const used = {};
+  for (const slot of Object.keys(ARTIFACT_SLOT_CAPS)) used[slot] = 0;
+  for (const id of equipped ?? []) used[artifactSlot(id)] += 1;
+  return used;
+}
+
+/**
+ * 装备/卸下一件法器：已佩戴则卸下；否则挤掉同槽最早的一件（只在本槽内 FIFO），
+ * 不会因为装了第二件攻击法器就把防御位挤没。
+ */
+export function equipArtifact(equipped, id) {
+  const list = Array.isArray(equipped) ? equipped : [];
+  if (list.includes(id)) return list.filter((x) => x !== id);
+  if (!artifactById(id)) return list;
+  const slot = artifactSlot(id);
+  const cap = slotCapacity(slot);
+  if (cap <= 0) return list;
+  const sameSlot = list.filter((x) => artifactSlot(x) === slot);
+  const evicted = new Set(sameSlot.slice(0, Math.max(0, sameSlot.length - cap + 1)));
+  return [...list.filter((x) => !evicted.has(x)), id];
+}
+
+/** 读档收敛：只留拥有的法器，且每槽不超过容量，超出的按出现顺序丢弃。 */
+export function normalizeEquipped(raw, ownedArtifacts) {
+  const owned = new Set(ownedArtifacts ?? []);
+  const used = {};
+  const out = [];
+  for (const id of uniq(Array.isArray(raw) ? raw : [])) {
+    if (!owned.has(id) || !artifactById(id)) continue;
+    const slot = artifactSlot(id);
+    if ((used[slot] ?? 0) >= slotCapacity(slot)) continue;
+    used[slot] = (used[slot] ?? 0) + 1;
+    out.push(id);
+  }
+  return out;
 }
 
 function normalizeResources(raw, fallback) {
@@ -276,10 +327,7 @@ export function normalizeState(raw) {
     unlockedHeroes,
     party: normalizeParty(raw.party, unlockedHeroes, faction),
     ownedArtifacts,
-    equipped: uniq((Array.isArray(raw.equipped) ? raw.equipped : []).filter((id) => ownedArtifacts.includes(id))).slice(
-      0,
-      ARTIFACT_SLOTS,
-    ),
+    equipped: normalizeEquipped(raw.equipped, ownedArtifacts),
     realm: normalizeRealm(raw.realm),
     tower: { floor: Math.max(1, int(raw.tower?.floor, 1)), best: Math.max(0, int(raw.tower?.best, 0)) },
     wave: { wave: Math.max(1, int(raw.wave?.wave, 1)), best: Math.max(0, int(raw.wave?.best, 0)) },

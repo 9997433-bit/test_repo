@@ -71,6 +71,7 @@ function makeUnit(spec) {
     lastAttacker: null,
     alive: true,
     revived: false,
+    revivesLeft: 0,
   };
 }
 
@@ -174,6 +175,7 @@ function applyOpenings(ctx) {
     if (u.kit.openingShieldPct) u.shield += u.maxHp * u.kit.openingShieldPct;
     u.ultTicks = ticksFor(u.ultSeconds / (1 + ultHaste));
     u.ultTimer = u.ultTicks;
+    u.revivesLeft = loadout.revive?.charges ?? 0;
   }
   if (allies.length) {
     fire(ctx, "passive");
@@ -230,10 +232,10 @@ function applyDamage(ctx, source, target, raw, opts = {}) {
   if (source && source.side !== target.side) target.lastAttacker = source.id;
 
   if (target.hp <= 0) {
-    // 万魂灯口径：整场共用 charges 次复活（data 未给 reviveCharges 时为 1 次），
-    // 与「阵亡时复活一次」的文案一致，不是每个我方单位各复活一次。
-    if (loadout.revive && target.side === "a" && ctx.revivesLeft > 0) {
-      ctx.revivesLeft -= 1;
+    // 万魂灯口径：每名上阵者各有 charges 次复活（data 未给 reviveCharges 时为 1 次），
+    // 与「我方上阵者阵亡时各复活一次（每人每场一次）」的文案一致。
+    if (loadout.revive && target.side === "a" && target.revivesLeft > 0) {
+      target.revivesLeft -= 1;
       target.revived = true;
       target.hp = target.maxHp * loadout.revive.hpPct;
       const note = fire(ctx, "revive", { target: target.id });
@@ -416,7 +418,6 @@ export function simulate(input) {
     rng,
     log: [],
     rescued: false,
-    revivesLeft: loadout.revive?.charges ?? 0,
     fired: new Map(),
   };
   applyOpenings(ctx);

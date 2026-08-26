@@ -1,6 +1,6 @@
 import { BUILDING_TYPES, GRID_SIZE, upgradeCost, buildCost, mansionCap } from "../data/buildings.js";
 import { STARTER, heroById } from "../data/heroes.js";
-import { ARTIFACTS } from "../data/artifacts.js";
+import { ARTIFACTS, ARTIFACT_DROPS, artifactById } from "../data/artifacts.js";
 import { canPlace, countType } from "../mansion/layout.js";
 import { produce } from "../mansion/production.js";
 import { makeDisciple, trainCost, canTrain, applyTrain } from "../disciples/roster.js";
@@ -10,22 +10,24 @@ import { challengeTower, towerReward } from "../combat/tower.js";
 import { challengeWave, waveReward } from "../combat/wave.js";
 import { backupCorrupt, clearSave, readSave, writeSaveDetailed, SAVE_STATUS } from "./save.js";
 import { createBus, EVENTS } from "./events.js";
-import { OFFLINE_MODE, offlineSummary, settleOffline } from "./offline.js";
+import { OFFLINE_MODE, offlineEfficiency, offlineSummary, settleOffline } from "./offline.js";
 import {
-  ARTIFACT_SLOTS,
   MANSION_MAX_LEVEL,
   MAX_LOG,
+  RESOURCE_KEYS,
   addRes,
   clamp,
   defaultState,
+  equipArtifact,
   int,
+  mergeYield,
   nextBuildingId,
   normalizeParty,
   normalizeState,
+  normalizeYield,
   num,
   pay,
   snapshotForSave,
-  spendRes,
 } from "./state.js";
 
 export { defaultState };
@@ -35,16 +37,29 @@ export const MAX_TICK_SEC = 2;
 export const PERSIST_INTERVAL_MS = 4000;
 
 const FACTION_NAME = { mortal: "人族", divine: "神族", demon: "魔族" };
+const RESOURCE_NAME = {
+  qi: "灵气",
+  herb: "灵草",
+  wood: "灵木",
+  ore: "灵矿",
+  stone: "灵石",
+  pills: "丹药",
+  jade: "仙玉",
+};
 
-const TOWER_ARTIFACTS = [
-  [5, "zhumo"],
-  [10, "wanhun"],
-  [15, "zhuque"],
-];
-const WAVE_ARTIFACTS = [
-  [5, "canyang"],
-  [8, "yaoguang"],
-];
+/**
+ * 掉落节点全部读 data/artifacts.js 的 ARTIFACT_DROPS，图鉴写什么就掉什么，
+ * store 这边不再各留一份「塔 5/10/15、潮 5/8」的硬编码。
+ */
+function dropTable(via) {
+  return (Array.isArray(ARTIFACT_DROPS) ? ARTIFACT_DROPS : [])
+    .filter((d) => d?.via === via && artifactById(d.id) && Number.isFinite(Number(d.at)))
+    .map((d) => [Math.max(1, Math.trunc(Number(d.at))), d.id])
+    .sort((a, b) => a[0] - b[0]);
+}
+
+const TOWER_ARTIFACTS = dropTable("tower");
+const WAVE_ARTIFACTS = dropTable("wave");
 
 function pushLog(state, text, at) {
   const stamp = num(at, Date.now());
@@ -79,7 +94,36 @@ function applySettlement(state, settled, now) {
     meta: { ...state.meta, lastTick: now },
   };
   if (settled.mode !== OFFLINE_MODE.banked) return next;
-  return pushLog(next, `离世 ${offlineSummary(settled.offline)}，挂机匣已收妥产出。`, now);
+  const pct = Math.round(num(settled.efficiency, 1) * 100);
+  return pushLog(next, `离世 ${offlineSummary(settled.offline)}，挂机匣按聚灵阵折算 ${pct}% 收妥产出。`, now);
+}
+
+/** 「灵草 12.4、灵木 6」这样的可读清单，只列真正有量的资源。 */
+function describeYield(add) {
+  const parts = [];
+  for (const key of RESOURCE_KEYS) {
+    const v = num(add?.[key], 0);
+    if (v <= 0) continue;
+    parts.push(`${RESOURCE_NAME[key]} ${v >= 10 ? Math.round(v) : Math.round(v * 10) / 10}`);
+  }
+  return parts.join("、");
+}
+
+/**
+ * 兽潮败仗的代价是「未收取的产出」（GDD/AD-12），不是无差别抄家：
+ * - 挂机匣里还没领的那一笔全数散失；
+ * - 上一次入账到此刻之间、尚未进库的这一小段府产一并作废（把 lastTick 推到当下）。
+ * 已入库的资源分毫不动——想少赔就先把挂机匣收了再推潮。
+ * 一场兽潮在一次 dispatch 内结算完，「当波产出」除了挂机匣就只剩这不足一个 TICK 的尾巴，
+ * 所以税基取「挂机匣 + 未入账尾巴」，日志逐项列清散失了什么。
+ */
+export function waveLossTax(state, now = Date.now()) {
+  const pending = normalizeYield(state?.offline?.pending);
+  const lastTick = num(state?.meta?.lastTick, 0);
+  const at = num(now, 0);
+  const unbankedSec = lastTick > 0 ? clamp((at - lastTick) / 1000, 0, MAX_TICK_SEC) : 0;
+  const unbanked = unbankedSec > 0 ? normalizeYield(produce(state, unbankedSec)) : null;
+  return { pending, unbanked, unbankedSec, total: mergeYield(pending, unbanked) };
 }
 
 export function reduce(state, action) {
@@ -242,11 +286,9 @@ export function reduce(state, action) {
     case "EQUIP_ARTIFACT": {
       const id = action.artifactId;
       if (!state.ownedArtifacts.includes(id)) return state;
-      if (state.equipped.includes(id)) {
-        return { ...state, equipped: state.equipped.filter((x) => x !== id) };
-      }
-      const kept = state.equipped.slice(Math.max(0, state.equipped.length - (ARTIFACT_SLOTS - 1)));
-      return { ...state, equipped: [...kept, id] };
+      const equipped = equipArtifact(state.equipped, id);
+      if (equipped === state.equipped) return state;
+      return { ...state, equipped };
     }
     case "START_TOWER": {
       if (!state.meta.faction || !state.party.length) return state;
@@ -278,13 +320,12 @@ export function reduce(state, action) {
         );
       }
       const waveNo = Math.max(1, int(c.result.wave, state.wave.wave));
-      const reward = waveReward(waveNo, win, state.resources);
       if (win) {
         const wave = { wave: state.wave.wave + 1, best: Math.max(state.wave.best, state.wave.wave) };
         return pushLog(
           {
             ...state,
-            resources: addRes(state.resources, reward),
+            resources: addRes(state.resources, waveReward(waveNo, true, state.resources)),
             wave,
             ownedArtifacts: grantArtifacts(state.ownedArtifacts, WAVE_ARTIFACTS, wave.best),
             combat: null,
@@ -293,10 +334,20 @@ export function reduce(state, action) {
           action.now,
         );
       }
+      const now = num(action.now, Date.now());
+      const tax = waveLossTax(state, now);
+      const lost = {
+        ...state,
+        offline: tax.pending ? { pending: null, seconds: 0, at: now } : state.offline,
+        meta: { ...state.meta, lastTick: Math.max(num(state.meta.lastTick, 0), now) },
+        combat: null,
+      };
       return pushLog(
-        { ...state, resources: spendRes(state.resources, reward.loseTax), combat: null },
-        "兽潮破门，散失三成未入库资源。",
-        action.now,
+        lost,
+        tax.total
+          ? `兽潮破门，未收取的产出尽数散失：${describeYield(tax.total)}；库存分毫未动。`
+          : "兽潮破门，所幸产出都已入库，此败只失一波所得。",
+        now,
       );
     }
     case "COLLECT_OFFLINE": {
@@ -374,7 +425,11 @@ export function createStore(options = {}) {
     }
     if (action.type !== "BOOT" && action.type !== "RESUME") return;
     if (next.offline?.pending && next.offline.pending !== prev.offline?.pending) {
-      events.emit(EVENTS.offlineBanked, { pending: next.offline.pending, seconds: next.offline.seconds ?? 0 });
+      events.emit(EVENTS.offlineBanked, {
+        pending: next.offline.pending,
+        seconds: next.offline.seconds ?? 0,
+        efficiency: offlineEfficiency(next),
+      });
     } else if (next.resources !== prev.resources) {
       events.emit(EVENTS.offlineApplied, { at: next.meta.lastTick });
     }

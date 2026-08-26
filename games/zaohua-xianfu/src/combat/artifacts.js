@@ -34,8 +34,9 @@ export function collectPassives(equippedIds) {
  *
  * 每个效果槽都是 `resolved()` 注记，`sources` 汇总全部生效项，
  * `applyTriggers` 只按 kind 过滤这一张表，触发条件不会在两处各写一份。
- * 复活次数按 `effect.reviveCharges` 取，缺省 1：与万魂灯「阵亡时复活一次」
- * 的文案同口径——整场一次，而不是每个我方单位各一次。
+ * 复活次数按 `effect.reviveCharges` 取，缺省 1，口径是**每名上阵者各一次**，
+ * 与万魂灯「我方上阵者阵亡时各复活一次（每人每场一次）」的文案同口径；
+ * 自救（rescue）则是全队合计一场一次，两者不要混。
  */
 export function artifactLoadout(equippedIds) {
   const ids = (equippedIds ?? []).filter((id) => artifactById(id));
