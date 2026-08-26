@@ -23,6 +23,10 @@ import {
   IDLE_RESOURCE_IDS,
   LINEUP_SLOTS,
   LINEUP_UNLOCK_STAGES,
+  FORGE_STAGE_IDS,
+  ARENA_DAILY_ATTACKS,
+  ARENA_BASE_RANK,
+  ARENA_LOG_LIMIT,
   STAMINA_REGEN_MS,
   createInitialState,
   hydrate,
@@ -36,7 +40,10 @@ import {
   unlockedLineupSlots,
   resetDaily,
   idleRatesPerHour,
+  defaultForgeState,
+  syncCodexMirror,
 } from './state.js';
+import { installGameApi, ORCHESTRATION_VERBS } from './api.js';
 
 export {
   // rng
@@ -71,6 +78,10 @@ export {
   IDLE_RESOURCE_IDS,
   LINEUP_SLOTS,
   LINEUP_UNLOCK_STAGES,
+  FORGE_STAGE_IDS,
+  ARENA_DAILY_ATTACKS,
+  ARENA_BASE_RANK,
+  ARENA_LOG_LIMIT,
   STAMINA_REGEN_MS,
   createInitialState,
   hydrate,
@@ -84,6 +95,11 @@ export {
   unlockedLineupSlots,
   resetDaily,
   idleRatesPerHour,
+  defaultForgeState,
+  syncCodexMirror,
+  // 编排层
+  installGameApi,
+  ORCHESTRATION_VERBS,
 };
 
 /** 事件名常量：跨模块统一，避免拼写漂移。 */
@@ -99,6 +115,14 @@ export const EVENTS = Object.freeze({
   SAVE_FAILED: 'save:failed',
   SAVE_CORRUPT: 'save:corrupt',
   RESET: 'save:reset',
+  // 编排层（core/api.js）
+  FORGED: 'forge:done',
+  ENHANCED: 'forge:enhanced',
+  DISMANTLED: 'forge:dismantled',
+  LINEUP_CHANGED: 'lineup:changed',
+  BATTLE_END: 'battle:end',
+  STAGE_CLEARED: 'campaign:cleared',
+  ARENA_END: 'arena:end',
 });
 
 /** 自动存档最小间隔。 */
@@ -125,6 +149,8 @@ const AUTOSAVE_INTERVAL_MS = 10 * SECOND;
  * @param {boolean} [options.autoLoad=true]   构造时尝试读档
  * @param {boolean} [options.autoSave=true]   tick 时按间隔自动存档
  * @param {number} [options.tzOffsetMinutes]  每日刷新用的时区偏移（UI 注入）
+ * @param {boolean} [options.idleResources=true] tick 时是否由 core 记账资源挂机；
+ *        组合根接入 forge/idle.js 后传 false，避免两套挂机账本各发一份收益
  * @returns {Game & Record<string, any>}
  */
 export function createGame(options = {}) {
@@ -139,6 +165,7 @@ export function createGame(options = {}) {
 
   const autoSave = options.autoSave !== false;
   const explicitSeed = options.seed !== undefined && options.seed !== null;
+  const idleOpts = { resources: options.idleResources !== false };
 
   let state = createInitialState({
     seed: explicitSeed ? options.seed : normalizeSeed(clock.nowMs()),
@@ -218,7 +245,7 @@ export function createGame(options = {}) {
     const at = Number.isFinite(atMs) ? atMs : nowMs();
     const rolled = resetDaily(state, at);
     if (rolled) bus.emit(EVENTS.DAILY_RESET, { at, state });
-    const report = tickIdle(state, at);
+    const report = tickIdle(state, at, idleOpts);
     if (report.elapsedMs > 0) bus.emit(EVENTS.IDLE_TICK, report);
     if (autoSave && at - lastAutoSaveMs >= AUTOSAVE_INTERVAL_MS) save();
     return report;
@@ -227,7 +254,7 @@ export function createGame(options = {}) {
   /** 领取挂机仓库中的整数产出。 */
   function collectIdle(atMs) {
     const at = Number.isFinite(atMs) ? atMs : nowMs();
-    tickIdle(state, at);
+    tickIdle(state, at, idleOpts);
     const collected = takeIdlePending(state, at);
     bus.emit(EVENTS.IDLE_COLLECTED, { collected, at });
     bus.emit(EVENTS.STATE_CHANGED, { reason: 'idle:collect', state });
@@ -315,7 +342,7 @@ export function createGame(options = {}) {
     spend: spendTracked,
     canAfford: (costMap) => canAfford(state, costMap),
     getResource: (id) => getResource(state, id),
-    idleRates: () => idleRatesPerHour(state.campaign.highestStage),
+    idleRates: () => idleRatesPerHour(state.campaign.cleared),
     unlockedLineupSlots: () => unlockedLineupSlots(state),
     // 扩展
     register,
@@ -330,7 +357,7 @@ export function createGame(options = {}) {
   else applyTimezone();
 
   // 首次进入即结算一次离线收益，UI 可以直接读 idle:tick 报告。
-  const bootReport = tickIdle(state, nowMs());
+  const bootReport = tickIdle(state, nowMs(), idleOpts);
   resetDaily(state, nowMs());
   bus.emit(EVENTS.READY, { state, boot: bootReport });
 

@@ -8,7 +8,7 @@
 import { HOUR, MINUTE, OFFLINE_CAP_HOURS, elapsedSince, gameDayIndex } from './clock.js';
 
 /** 存档结构版本，字段不兼容变更时 +1 并在 MIGRATIONS 里补迁移。 */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 /** 资源 ID 全集（GDD 3.1）。 */
 export const RESOURCE_IDS = Object.freeze([
@@ -33,8 +33,20 @@ export const STAMINA_REGEN_MS = 6 * MINUTE;
 /** 阵容总栏位。 */
 export const LINEUP_SLOTS = 5;
 
-/** 阵容解锁门槛：第 N 栏需要通关到第 [N-1] 关。 */
-export const LINEUP_UNLOCK_STAGES = Object.freeze([0, 3, 8, 15, 25]);
+/** 阵容解锁门槛：第 N 栏需要通关到第 [N-1] 关（与 data/balance.js 同表）。 */
+export const LINEUP_UNLOCK_STAGES = Object.freeze([0, 3, 8, 16, 28]);
+
+/** 三座炉的 id（与 data/balance.js 的 FORGE_STAGES 同表；core 不 import data）。 */
+export const FORGE_STAGE_IDS = Object.freeze(['iron', 'silver', 'gold']);
+
+/** 竞技场每日挑战次数。 */
+export const ARENA_DAILY_ATTACKS = 5;
+
+/** 竞技场初始名次：镜像榜共 20 人，新号从榜外第 21 位起。 */
+export const ARENA_BASE_RANK = 21;
+
+/** 竞技战绩最多保留多少条。 */
+export const ARENA_LOG_LIMIT = 12;
 
 /** 挂机产出的资源集合（体力单独按时间回复，不进 pending）。 */
 export const IDLE_RESOURCE_IDS = Object.freeze([
@@ -84,29 +96,14 @@ export function createInitialState(options = {}) {
     resources: defaultResources(),
     weapons: [],
     lineup: new Array(LINEUP_SLOTS).fill(null),
-    campaign: {
-      highestStage: 0,
-      cleared: {},
-      attempts: 0,
-      lastPlayedAt: 0,
-      daily: { day: -1, normal: 0, elite: 0, sweep: 0 },
-    },
-    arena: {
-      rating: 1000,
-      best: 1000,
-      rank: 0,
-      wins: 0,
-      losses: 0,
-      defense: [],
-      opponents: [],
-      lastRefreshAt: 0,
-      daily: { day: -1, attacks: 0 },
-    },
+    campaign: defaultCampaign(),
+    arena: defaultArena(),
     codex: {
       discovered: {},
       forgedCount: 0,
       bestQuality: {},
     },
+    forge: defaultForgeState(),
     flags: {
       tutorialDone: false,
       firstForgeDone: false,
@@ -127,6 +124,11 @@ export function createInitialState(options = {}) {
       staminaCarryMs: 0,
       wastedMs: 0,
       lastOfflineMs: 0,
+      // 以下三项由 forge/idle.js 读写；必须随档保存，否则读档后离线收益会被重复发放。
+      lastCollectAt: nowMs,
+      lastAt: nowMs,
+      staminaAt: nowMs,
+      totalCollected: 0,
     },
   };
 }
@@ -179,8 +181,15 @@ export function hydrate(raw, options = {}) {
 
   // 关卡
   const campaign = isPlainObject(source.campaign) ? source.campaign : {};
-  state.campaign.highestStage = Math.max(0, Math.floor(toFinite(campaign.highestStage, 0)));
-  state.campaign.cleared = isPlainObject(campaign.cleared) ? { ...campaign.cleared } : {};
+  state.campaign.stars = normalizeStars(campaign.stars);
+  state.campaign.cleared = Math.max(
+    0,
+    Math.floor(toFinite(campaign.cleared, toFinite(campaign.highestStage, 0))),
+  );
+  state.campaign.highestStage = Math.max(
+    state.campaign.cleared,
+    Math.floor(Math.max(0, toFinite(campaign.highestStage, 0))),
+  );
   state.campaign.attempts = Math.max(0, Math.floor(toFinite(campaign.attempts, 0)));
   state.campaign.lastPlayedAt = toFinite(campaign.lastPlayedAt, 0);
   state.campaign.daily = mergeDaily(base.campaign.daily, campaign.daily);
@@ -188,20 +197,26 @@ export function hydrate(raw, options = {}) {
   // 竞技场
   const arena = isPlainObject(source.arena) ? source.arena : {};
   state.arena.rating = toFinite(arena.rating, base.arena.rating);
-  state.arena.best = toFinite(arena.best, state.arena.rating);
-  state.arena.rank = Math.max(0, Math.floor(toFinite(arena.rank, 0)));
+  state.arena.score = state.arena.rating;
+  state.arena.best = Math.max(state.arena.rating, toFinite(arena.best, state.arena.rating));
+  state.arena.rank = Math.max(1, Math.floor(toFinite(arena.rank, base.arena.rank)));
   state.arena.wins = Math.max(0, Math.floor(toFinite(arena.wins, 0)));
   state.arena.losses = Math.max(0, Math.floor(toFinite(arena.losses, 0)));
   state.arena.defense = Array.isArray(arena.defense) ? arena.defense.slice(0, LINEUP_SLOTS) : [];
   state.arena.opponents = Array.isArray(arena.opponents) ? arena.opponents.slice(0, 32) : [];
+  state.arena.log = normalizeArenaLog(arena.log);
   state.arena.lastRefreshAt = toFinite(arena.lastRefreshAt, 0);
   state.arena.daily = mergeDaily(base.arena.daily, arena.daily);
 
-  // 图鉴
+  // 图鉴：discovered 是权威记录，顶层的 protoId → 次数只是给 UI 读的镜像。
   const codex = isPlainObject(source.codex) ? source.codex : {};
-  state.codex.discovered = isPlainObject(codex.discovered) ? { ...codex.discovered } : {};
+  state.codex.discovered = isPlainObject(codex.discovered) ? cloneJson(codex.discovered) ?? {} : {};
   state.codex.forgedCount = Math.max(0, Math.floor(toFinite(codex.forgedCount, 0)));
   state.codex.bestQuality = isPlainObject(codex.bestQuality) ? { ...codex.bestQuality } : {};
+  syncCodexMirror(state);
+
+  // 锻造：保底计数 / 大师熔炉 / uid 序号
+  state.forge = normalizeForgeState(source.forge, state.weapons);
 
   // 开关
   const flags = isPlainObject(source.flags) ? source.flags : {};
@@ -221,6 +236,11 @@ export function hydrate(raw, options = {}) {
   for (const id of IDLE_RESOURCE_IDS) {
     state.idle.pending[id] = Math.max(0, toFinite(pending[id], 0));
   }
+  // forge/idle.js 的计时锚点：缺失时退回本次 tick 时间，宁可少发也不能重复发。
+  state.idle.lastCollectAt = toFinite(idle.lastCollectAt, state.idle.lastCollectMs);
+  state.idle.lastAt = toFinite(idle.lastAt, state.idle.lastCollectAt);
+  state.idle.staminaAt = toFinite(idle.staminaAt, state.idle.lastTickMs);
+  state.idle.totalCollected = Math.max(0, Math.floor(toFinite(idle.totalCollected, 0)));
 
   return state;
 }
@@ -256,6 +276,7 @@ export function serialize(state) {
     campaign: cloneJson(s.campaign) || {},
     arena: cloneJson(s.arena) || {},
     codex: cloneJson(s.codex) || {},
+    forge: cloneJson(normalizeForgeState(s.forge, s.weapons)),
     flags: cloneJson(s.flags) || {},
     idle: {
       lastTickMs: toFinite(s.idle?.lastTickMs, 0),
@@ -265,6 +286,10 @@ export function serialize(state) {
       staminaCarryMs: round(toFinite(s.idle?.staminaCarryMs, 0), 0),
       wastedMs: round(toFinite(s.idle?.wastedMs, 0), 0),
       lastOfflineMs: round(toFinite(s.idle?.lastOfflineMs, 0), 0),
+      lastCollectAt: toFinite(s.idle?.lastCollectAt, toFinite(s.idle?.lastCollectMs, 0)),
+      lastAt: toFinite(s.idle?.lastAt, toFinite(s.idle?.lastCollectMs, 0)),
+      staminaAt: toFinite(s.idle?.staminaAt, toFinite(s.idle?.lastTickMs, 0)),
+      totalCollected: Math.max(0, Math.floor(toFinite(s.idle?.totalCollected, 0))),
     },
   };
 }
@@ -279,19 +304,22 @@ export function serialize(state) {
  *
  * @param {object} state
  * @param {number} nowMs 注入的当前时间
+ * @param {{ resources?: boolean }} [opts] `resources:false` 时只回体力：
+ *        组合根接入 forge/idle.js 之后，资源挂机由 forge 记账，core 不能再记一遍。
  * @returns {{ elapsedMs: number, cappedMs: number, wastedMs: number, capped: boolean,
  *   gained: Record<string, number>, stamina: number, pending: Record<string, number>,
  *   rates: Record<string, number>, offline: boolean }}
  */
-export function tickIdle(state, nowMs) {
+export function tickIdle(state, nowMs, opts = {}) {
   const s = state;
+  const accrueResources = opts.resources !== false;
   if (!isPlainObject(s) || !isPlainObject(s.idle)) {
     return emptyTickReport(idleRatesPerHour(0));
   }
   const now = toFinite(nowMs, 0);
   const capMs = clampNumber(toFinite(s.idle.capHours, OFFLINE_CAP_HOURS), 0, 24) * HOUR;
   const span = elapsedSince(s.idle.lastTickMs, now, capMs);
-  const rates = idleRatesPerHour(s.campaign?.highestStage ?? 0);
+  const rates = idleRatesPerHour(s.campaign?.cleared ?? s.campaign?.highestStage ?? 0);
   const gained = {};
 
   if (span.elapsedMs <= 0) {
@@ -301,7 +329,7 @@ export function tickIdle(state, nowMs) {
 
   const hours = span.cappedMs / HOUR;
   for (const id of IDLE_RESOURCE_IDS) {
-    const rate = rates[id] || 0;
+    const rate = accrueResources ? rates[id] || 0 : 0;
     if (rate <= 0) {
       gained[id] = 0;
       continue;
@@ -324,6 +352,8 @@ export function tickIdle(state, nowMs) {
     s.resources.stamina = after;
   }
   s.idle.staminaCarryMs = staminaMs % STAMINA_REGEN_MS;
+  // forge/idle.js 的 regenStamina() 按 staminaAt 计时；对齐后两边不会重复回体力。
+  s.idle.staminaAt = now - s.idle.staminaCarryMs;
 
   s.idle.wastedMs = Math.max(0, toFinite(s.idle.wastedMs, 0)) + span.wastedMs;
   s.idle.lastOfflineMs = span.elapsedMs;
@@ -436,7 +466,12 @@ export function getResource(state, id) {
  * @returns {number}
  */
 export function unlockedLineupSlots(state) {
-  const stage = Math.max(0, toFinite(state?.campaign?.highestStage, 0));
+  const campaign = state?.campaign;
+  const stage = Math.max(
+    0,
+    toFinite(campaign?.cleared, 0),
+    toFinite(campaign?.highestStage, 0),
+  );
   let slots = 1;
   for (let i = 1; i < LINEUP_UNLOCK_STAGES.length; i += 1) {
     if (stage >= LINEUP_UNLOCK_STAGES[i]) slots = i + 1;
@@ -462,9 +497,136 @@ export function resetDaily(state, nowMs) {
   return true;
 }
 
+/**
+ * 全新的锻造子树：保底计数 / 大师熔炉 / uid 序号。
+ * 形状与 forge/forge.js 的 `ensureForgeState()` 完全一致，避免两边各写一份。
+ * @returns {object}
+ */
+export function defaultForgeState() {
+  const pity = {};
+  for (const stage of FORGE_STAGE_IDS) pity[stage] = { epic: 0, legendary: 0 };
+  return {
+    pity,
+    masterForge: { dayKey: -1, used: 0 },
+    totalForged: 0,
+    serial: 0,
+  };
+}
+
+/**
+ * 把 `codex.discovered` 的收录次数镜像成 `codex[protoId] = count`。
+ *
+ * 图鉴的权威记录是 `discovered`（含首次/最佳品质），但 UI 适配层按
+ * `state.codex[protoId]` 读次数，因此每次写图鉴后都要同步一次镜像。
+ * @param {object} state
+ * @returns {object} state.codex
+ */
+export function syncCodexMirror(state) {
+  if (!isPlainObject(state)) return {};
+  if (!isPlainObject(state.codex)) state.codex = { discovered: {}, forgedCount: 0, bestQuality: {} };
+  const codex = state.codex;
+  const discovered = isPlainObject(codex.discovered) ? codex.discovered : {};
+  for (const key of Object.keys(codex)) {
+    if (RESERVED_CODEX_KEYS.has(key)) continue;
+    if (!(key in discovered)) delete codex[key];
+  }
+  for (const [protoId, entry] of Object.entries(discovered)) {
+    const count = isPlainObject(entry) ? Math.max(1, Math.floor(toFinite(entry.count, 1))) : 1;
+    codex[protoId] = count;
+  }
+  return codex;
+}
+
 /* ------------------------------------------------------------------ */
 /* 内部工具                                                             */
 /* ------------------------------------------------------------------ */
+
+const RESERVED_CODEX_KEYS = new Set(['discovered', 'forgedCount', 'bestQuality']);
+
+function defaultCampaign() {
+  return {
+    /** 已通关的最高关卡序号；forge/idle 与 combat/lineup 都按数字读这个字段。 */
+    cleared: 0,
+    highestStage: 0,
+    /** stageId → 0..3 星 */
+    stars: {},
+    attempts: 0,
+    lastPlayedAt: 0,
+    daily: { day: -1, normal: 0, elite: 0, sweep: 0 },
+  };
+}
+
+function defaultArena() {
+  return {
+    rating: 1000,
+    /** combat/engine.js 读 `arena.score`，与 rating 同值。 */
+    score: 1000,
+    best: 1000,
+    rank: ARENA_BASE_RANK,
+    wins: 0,
+    losses: 0,
+    defense: [],
+    opponents: [],
+    log: [],
+    lastRefreshAt: 0,
+    daily: { day: -1, attacks: 0 },
+  };
+}
+
+function normalizeForgeState(raw, weapons) {
+  const forge = defaultForgeState();
+  const source = isPlainObject(raw) ? raw : {};
+  const pity = isPlainObject(source.pity) ? source.pity : {};
+  for (const stage of FORGE_STAGE_IDS) {
+    const entry = isPlainObject(pity[stage]) ? pity[stage] : {};
+    forge.pity[stage].epic = Math.max(0, Math.floor(toFinite(entry.epic, 0)));
+    forge.pity[stage].legendary = Math.max(0, Math.floor(toFinite(entry.legendary, 0)));
+  }
+  const mf = isPlainObject(source.masterForge) ? source.masterForge : {};
+  forge.masterForge.dayKey = Math.floor(toFinite(mf.dayKey, -1));
+  forge.masterForge.used = Math.max(0, Math.floor(toFinite(mf.used, 0)));
+  forge.totalForged = Math.max(0, Math.floor(toFinite(source.totalForged, 0)));
+  forge.serial = Math.max(
+    0,
+    Math.floor(toFinite(source.serial, 0)),
+    highestWeaponSerial(weapons),
+  );
+  return forge;
+}
+
+/** uid 形如 `w17ab`；序号必须单调递增，否则读档后会锻出重复 uid。 */
+function highestWeaponSerial(weapons) {
+  if (!Array.isArray(weapons)) return 0;
+  let max = 0;
+  for (const weapon of weapons) {
+    const match = /^w(\d+)/.exec(String(weapon?.uid ?? ''));
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return max;
+}
+
+function normalizeStars(raw) {
+  const out = {};
+  if (!isPlainObject(raw)) return out;
+  for (const [stageId, value] of Object.entries(raw)) {
+    const stars = Math.floor(toFinite(value, 0));
+    if (stars > 0) out[stageId] = clampNumber(stars, 0, 3);
+  }
+  return out;
+}
+
+function normalizeArenaLog(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(isPlainObject)
+    .slice(0, ARENA_LOG_LIMIT)
+    .map((entry) => ({
+      at: toFinite(entry.at, 0),
+      foe: String(entry.foe ?? ''),
+      win: Boolean(entry.win),
+      rankChange: Math.floor(toFinite(entry.rankChange, 0)),
+    }));
+}
 
 function defaultResources() {
   return {
@@ -503,7 +665,7 @@ function emptyTickReport(rates) {
   };
 }
 
-/** 版本迁移入口；当前只有 v1。 */
+/** 版本迁移入口。 */
 function migrate(source) {
   let data = source;
   const version = Math.floor(toFinite(data.version, 0));
@@ -512,8 +674,38 @@ function migrate(source) {
     return data;
   }
   // v0 -> v1：早期原型没有 idle 段，交给 hydrate 的缺省合并即可。
+  // v1 -> v2：campaign.cleared 从「已通关关卡字典」改成「已通关最高关序号」，
+  //           原字典里的值即星数，迁到 campaign.stars。
+  if (version <= 1 && isPlainObject(data.campaign) && isPlainObject(data.campaign.cleared)) {
+    const legacy = data.campaign.cleared;
+    const stars = { ...normalizeStars(legacy), ...normalizeStars(data.campaign.stars) };
+    for (const stageId of Object.keys(legacy)) {
+      if (legacy[stageId] && !(stageId in stars)) stars[stageId] = 1;
+    }
+    data = {
+      ...data,
+      campaign: {
+        ...data.campaign,
+        stars,
+        cleared: Math.max(
+          Math.floor(toFinite(data.campaign.highestStage, 0)),
+          highestStageIndexOf(Object.keys(legacy)),
+        ),
+      },
+    };
+  }
   data = { ...data, version: SAVE_VERSION };
   return data;
+}
+
+/** `stage_07` → 7；用于把旧存档的关卡字典折算成最高关序号。 */
+function highestStageIndexOf(stageIds) {
+  let max = 0;
+  for (const id of stageIds) {
+    const match = /(\d+)\s*$/.exec(String(id));
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return max;
 }
 
 function normalizeWeapon(weapon) {
