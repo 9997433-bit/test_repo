@@ -1,7 +1,7 @@
 # API 契约（模块边界 · Round 3 回签版）
 
-> 与代码逐行核对的精确签名。基线 commit `60c85e7`：Round 2 十路工作全部合入，原【在途·R2】标记一律回签为现行契约（无标记即已实现）；Round 3 已落地的课程计数修复与孤儿对拍测试一并回签。
-> 标记：**【在途·R3】** Round 3 并行 agent 工作区已有、未提交，提交后须回签；**【缺口】** 声明的后续变更，当前不存在。
+> 与代码逐行核对的精确签名。基线 commit `ade1d0a`（代码至 `9e152b4`）：Round 2 十路工作全部合入，原【在途·R2】标记一律回签为现行契约（无标记即已实现）；Round 3 已落地的课程计数修复、孤儿对拍测试与读档 NaN 卫生一并回签。
+> 标记：**【缺口】** 声明的后续变更，当前不存在。
 > 类型标注为 TS 风格伪码，实际全部是无类型 ESM JS。
 
 ## 1. 总则
@@ -129,7 +129,6 @@ interface GameAPI {
     | null;                            // phase !== "playing" 或 sideId 非法
     // 课程阶段判据 = recruitRolls()（双侧 recruitCount 之和，天然入档），
     // 以 rollRecruit(state.rng, recruitRolls()) 显式传序号——WeakMap 不再参与判相。
-    // ⚠ 死代码：内部还留着一枚无人调用的 drawRecruitCard 辅助（合流残留，待删）。
 
   place(sideId: SideId, handIndex: number, cell: CellRef): boolean;
     // 目标格必须 unlocked。shovel → false（必须走 useShovel）
@@ -174,7 +173,7 @@ interface GameAPI {
 ```
 
 - sideId 经 `hasOwnProperty` 白名单校验，原型链键（`__proto__` 等）一律拒绝。
-- 【在途·R3】战斗层快照 NaN 卫生（坏血量/坏进度当「已出局/回默认」处理）在工作区未提交，提交后回签 §6。
+- `load()` 只保证 enemies/cells/spawnQueue 是数组，内容原样入战斗层——脏内容的容错在战斗层（§6 各模块的 NaN 卫生，`robustness.test.js` 24 例锁定）。
 
 ## 4. `core/*` 基础设施
 
@@ -354,7 +353,8 @@ execute(enemy, hpRatio): boolean                   // 血线以下直接斩杀
 applyStun(enemy, seconds): number                  // 取更长
 applySlow(enemy, mul /*0.1..1*/, seconds): void    // 倍率取更狠、时长取更长
 knockback(enemy, deltaT): number                   // 返回实际退距，最多退回起点
-// 【在途·R3】读档 NaN 卫生（非有限血量/进度按「已出局/回默认」处理）未提交，提交后回签
+// 【已实现·R3 9e152b4】NaN 卫生：全部入口按 hp > 0 放行（NaN 血量不再免死）、
+//   slow 倍率与击退起点夹到有限值——手工改坏的档读进来也照常结算
 
 // combat/geometry.js —— 真实射程几何（棋盘与「几」字路线同坐标系，单位=格）
 LANE_LENGTH: number

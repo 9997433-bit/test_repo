@@ -1,15 +1,15 @@
 # 架构（Round 3 回签版）
 
-> 审计基线：commit `60c85e7`（Round 2 十路工作 `998fdba..a7cc5bb` 已全部合入父分支，Round 3 前四笔 `f960b2c`/`2364b9e`/`0c1afb4`/`0103233` 也已落地）。本版把 Round 2 落地的 **回放快照、每侧敌人号段、覆盖打分 AI、juice 演出、决胜段数值、课程计数修复** 从「在途」回签为**已实现**，并重列仍缺项。
-> 标记约定：**【已实现】** 与合入代码逐行核对（无标记即已实现）；**【在途·R3】** Round 3 并行 agent 工作区已有、未提交，签名可能还会变；**【缺口】** 当前代码不存在，排期见 §10 与契约 §10。
-> Round 3 冲刺清单见 `/.agent_workspace/round2/BRIEF.md`；写稿时工作区仍有未提交的战斗层快照加固（damage/geometry/path/pressure/sim/skills 的 NaN 卫生），提交后由文档负责人回签。
+> 审计基线：commit `ade1d0a`（代码至 `9e152b4`；Round 2 十路工作 `998fdba..a7cc5bb` 已全部合入父分支，Round 3 的课程计数修复 `2364b9e`、孤儿对拍 `0c1afb4`、读档加固 `9e152b4` 等也已落地）。本版把 Round 2 落地的 **回放快照、每侧敌人号段、覆盖打分 AI、juice 演出、决胜段数值、课程计数修复、读档 NaN 卫生** 从「在途」回签为**已实现**，并重列仍缺项。
+> 标记约定：**【已实现】** 与合入代码逐行核对（无标记即已实现）；**【缺口】** 当前代码不存在，排期见 §10 与契约 §10。
+> Round 3 冲刺清单见 `/.agent_workspace/round2/BRIEF.md`。
 
 ## 1. 技术栈与硬约束
 
 - Vite 6 + 原生 ES Module，零运行时依赖，无框架、无后端、无打包别名。
 - 单页挂载点 `index.html` 的 `<div id="app">`；`src/main.js` 是唯一组合根（composition root）。
 - 开发/预览端口 **4180**（`strictPort: true`），`base: './'`，产物可 file:// 直开。
-- 测试 Vitest（node 环境）；根 `vite.config.js` 的 `test.include` 同时收 `tests/**/*.test.js` 与 `src/**/*.test.js`，全量 17 文件一条 `npm test` 跑完（`src/combat/vitest.config.js` 是并行开发期遗留，可跑但非必需）。
+- 测试 Vitest（node 环境）；根 `vite.config.js` 的 `test.include` 同时收 `tests/**/*.test.js` 与 `src/**/*.test.js`，全量 18 文件一条 `npm test` 跑完（`src/combat/vitest.config.js` 是并行开发期遗留，可跑但非必需）。
 - 基准 `scripts/bench.mjs`（36 局，**内置胜率闸门 0.40–0.60**）、冒烟 `scripts/probe.mjs`、共享不变量 `scripts/invariants.mjs`、对局遥测 `scripts/metrics.mjs`（probe/bench 共用）。
 - 字体双保险：`index.html` 仍引 Google Fonts CDN（`Ma Shan Zheng` / `Noto Serif SC`，`display=swap`），但 `tokens.css` 的 `--font-body/--font-brush` 已带完整系统字栈（宋体系 / 楷体系）——离线、内网、微信内直开会**平滑回退**而非破相。自托管 woff2 仍未做（§10 R6）。
 
@@ -87,7 +87,7 @@ graph TD
 - **`combat/tuning.js` 是新调参基座**：`sim/geometry/pressure` 三处旋钮统一为「模块默认值 < data 表可选导出 < 运行时 `configureX`」三层；`resetX` 只丢运行时补丁、保留表覆盖。表侧覆盖键：`waves.BALANCE|COMBAT_BALANCE`、`waves.PRESSURE|PRESSURE_TUNING`、`units.REACH|REACH_TUNING|RANGE_TUNING`（当前表里都没写，走默认值）。
 - **`ai/opponent.js` 已改用真实覆盖**（P/R5 已修）：布阵主项是 `seatValue`（`coverageWindows` 按 48 段路线加权求和，末段权重 ×4），`cellDistToPath` 在 AI 里已无引用；新增「阵型换座」动作（乘法门槛 `MOVE_GAIN=1.3` 防来回蹦）。
 - `combat/path.js` 消费者仍是 `ui/lane.js` 与 `combat/geometry.js`；`nearestPathT` 仍无运行时调用方。
-- 孤儿现状（0c1afb4 已用 **对拍测试 + 接入清单** 钉住语义，但仍零运行时消费者）：`board/hand.js` 全模块（`hand.test.js` 16 例，文件头列出 game.js 三处 push/splice 的等价替换）；`merge.classifyDrop/canSwap`（`drop.test.js` 48 例与 game 的 place/merge 逐分支对拍，`classifyDrop` 增 `{from:"hand"}` 选项）；`board/placement.js` 全模块（21 例，AI 未接它——opponent 自带 seatValue）；`awaken.atkBonus` 恒 0。
+- 孤儿现状（0c1afb4 已用 **对拍测试 + 接入清单** 钉住语义，但仍零运行时消费者）：`board/hand.js` 全模块（`hand.test.js` 16 例，文件头列出 game.js 三处 push/splice 的等价替换）；`merge.classifyDrop/canSwap`（`drop.test.js` 39 例与 game 的 place/merge 逐分支对拍，`classifyDrop` 增 `{from:"hand"}` 选项）；`board/placement.js` 全模块（21 例，AI 未接它——opponent 自带 seatValue）；`awaken.atkBonus` 恒 0。
 - 模块级可变单例（同进程跨 `createGame` 实例共享、均不入存档）：`sim.BALANCE`、`geometry.REACH`、`pressure.CONFIG`（均为 tuning.live，读写对 `configureX/xConfig/resetX` **只允许测试与调参脚本调用**）；`recruit.rollCounts`（WeakMap，已由 game 经 `resetRecruitRolls/setRecruitRolls` 托管，§7）；`opponent.boardMoveSupported` 与 `opponent.seatCache`；`render.stylesInjected`；`juice` 的 `laneFx/seen/floats/bound`（`detachJuice/resetJuice` 清场）。**`sim.enemySeq` 已不存在**——号段搬进了 side（§7）。
 
 ## 3. 运行时状态形状【已实现】
@@ -204,7 +204,8 @@ Enemy { id, t: 0..1, hp, maxHp, speed, reward, boss,
   - **回放档** `{replay: true}`（兼容旧名 `{rng: true}`）：额外带 `rngState` 游标、`tie/reason` 结算标记、`stepPending`（固定步长余量），且 sides **连 `_acc` 一起带走**——这份档才能逐帧续跑出同一局。`main.js` 的 `window.__zhaoyun.save()` 用的就是它。
 - `load(snapshot, opts?)`：逐侧校验回填（缺侧补空侧、hand 截到上限、cells 长度不符则弃用）、`rng.reseed(seed)` + 可选 `setState(rngState)`、`setRecruitRolls` 对齐课程计数、stepper 复位 + 可选 `setPending`。事件开关：默认 emit `load`（写 log）；`{log: false}` 只派发总线不写 log（存-读-存逐字节一致）；`{silent: true}` 总线与 log 都不动。`tests/game-contract.test.js` 验证「JSON 存档 → 读档 → 随机续跑逐张一致」，`replay.test.js` 验证全局逐帧对拍。
 - 暂停闭环：`pause/resume/setPaused/togglePause` + `get paused`，phase 含 `"paused"`；暂停期 `tick` 返回 0 且 stepper 清积累，恢复无时间跳变；标签页隐藏自动暂停。
-- **仍缺项**：`SAVE_VERSION` 未导出（快照无版本字段，跨版本迁移无判据）；默认快照仍不含 `tie/reason`（UI 现未消费，影响低）。【在途·R3】战斗层正在给读档数据补 NaN 卫生（坏血量/坏进度会让敌人变成打不死的钉子户），提交后回签。
+- **读档 NaN 卫生【已实现·R3 `9e152b4`】**：`load()` 只保证 enemies/cells/spawnQueue 是数组，内容原样来自快照——战斗层现在整体容忍脏档：坏敌人/坏格子/缺 spec 的出兵条目被跳过或丢弃（战线不再永远「busy」）、非有限血量当已出局（NaN 不再成为打不死的钉子户）、非有限路线进度归 0、兵种 id 只认自有键、折线坏点在 `measurePath` 就剔除。`robustness.test.js` 24 例全部先红后绿验证。
+- **仍缺项**：`SAVE_VERSION` 未导出（快照无版本字段，跨版本迁移无判据）；默认快照仍不含 `tie/reason`（UI 现未消费，影响低）。
 
 ## 9. 隔离规则
 
@@ -229,17 +230,17 @@ Round 2 清单 R1–R13 处置结果：**已修** R1（胜率回拉）、R2 主�
 | R6 | 低·隔离 | `index.html`、`tokens.css` | Google Fonts CDN 仍引；系统字栈已回退（离线不破相） | 【缺口·可选】自托管 woff2；Round 3 冲刺定调「不再依赖 Google Fonts 成败」已达成底线 |
 | R7 | 低·存档 | `core/game.js` | `tie/reason/stepPending` 已入回放档；`SAVE_VERSION` 仍未导出、默认档不含 tie/reason | 【缺口】版本字段 |
 | R8 | 低·语义 | `combat/skills.js` | `castSkill` 收 `ctx.reach` 但六个 handler 全部忽略——大招按「全路线」结算仍是事实设计 | 【缺口】语义定稿（删参或接入） |
-| R9 | 低·卫生 | `board/*` | 孤儿：`hand.js` 全模块、`classifyDrop/canSwap`、`placement.js` 全模块、`nearestPathT`、`atkBonus`。`0c1afb4` 已补 64 例对拍测试 + 文件头接入清单（含两处已知不同调），语义不再会烂 | 【缺口】接入或删除（对拍已证明是等价替换） |
-| R10 | 低·正确性 | `core/game.js` | `place.unit` 事件 payload 持活引用；`useShovel` 不查 `canShovel` 连通性（可经 api 开孤岛格，AI 自身不会）；另：`recruit()` 里 `drawRecruitCard` 死代码一枚（合流残留，无人调用） | 【缺口】 |
+| R9 | 低·卫生 | `board/*` | 孤儿：`hand.js` 全模块、`classifyDrop/canSwap`、`placement.js` 全模块、`nearestPathT`、`atkBonus`。`0c1afb4` 已补 55 例对拍测试 + 文件头接入清单（含两处已知不同调），语义不再会烂 | 【缺口】接入或删除（对拍已证明是等价替换） |
+| R10 | 低·正确性 | `core/game.js` | `place.unit` 事件 payload 持活引用；`useShovel` 不查 `canShovel` 连通性（可经 api 开孤岛格，AI 自身不会） | 【缺口】 |
 | R11 | 低·确定性 | `core/game.js` | 双方共用一条 rng 流（`rng.clone()` 已具备，未拆） | 【缺口】per-side 流 |
 | R12 | 低·UX | `ui/render.js`、`main.js` | 教程仍是静态面板（`zy-tutor` 三步）+ 开局 coach 条；无强制引导、无首局记忆（src 内 `localStorage` 零引用）；aria/焦点管理缺失 | 【缺口】R3 冲刺第 3 项 |
 | R13 | 低·测试 | `main.js`/`ui/*` | juice 层已有 13 例（node 环境，DOM 分支走降级路径）；morphChildren diff、拖拽手势、signature 跳帧仍零覆盖（jsdom 在 devDeps 未启用） | 【缺口】 |
 | N1 | 低·文案 | `ui/render.js` | HUD 馒头悬浮说明写「10+4×已征次数」，实际 `recruitCost = 8+5n` | 【缺口】改文案 |
-| N2 | —·在途 | `combat/*` | 读档 NaN 卫生加固（damage/geometry/path/pressure/sim/skills）在工作区未提交 | 【在途·R3】提交后回签 |
+| N2 | ~~—·在途~~ | `combat/*` | ~~读档 NaN 卫生加固未提交~~ | 【已实现】`9e152b4` 落地、`ade1d0a` 24 例钉住（§8）；课程修复的死代码 `drawRecruitCard` 也已随 `7da2994` 删除 |
 
 ## 11. 性能基线（Round 3 回签时实测，node 22）
 
-- `npm test`：17 文件 **203 用例全绿**，总时长 ~1.5s。
+- `npm test`：18 文件 **218 用例全绿**，总时长 ~1.5s。
 - `npm run probe`（seed 99）：八路径全通（recruit/place/merge/awaken/shovel/leak/gameOver/telemetry），遥测归因校验通过，不变量 0 违例，`passed: true`。
 - `npm run bench`：36/36 收敛，玩家胜率 **0.4722**（17/36，落在 45–55% 目标窗口内，闸门 0.40–0.60）；平均单局模拟 30.9ms（≈4141 tick），p95 74.0ms，max 95.6ms，阈值 2000ms 余量巨大，0 不变量违例。对局时长分布 171–242s（p50 203s），落在 GDD 的 2.8–4.1 分钟目标带；觉醒均值 玩家 0.083 / AI 0.139（决胜段收紧后觉醒变稀，是否回调归数值轮判断）。
 - 结论：逻辑层性能依旧不是瓶颈；渲染层签名不变整帧零 DOM 工作，变更帧只 morph 差异节点。juice 有硬上限（laneFx 24/侧、飘字 12）兜住清线爆发。「同屏 80+ 单位不掉 30fps」由 `MAX_ENEMIES = 120/侧` 与增量渲染共同兜底。
@@ -257,10 +258,11 @@ Round 2 清单 R1–R13 处置结果：**已修** R1（胜率回拉）、R2 主�
 | `src/ai/opponent.test.js` | seatValue 归一化/末段权重、布阵选覆盖格、残卷寄存、铲位、换座不来回蹦 | 8 |
 | `src/board/placement.test.js` | 覆盖桥接、近战/远程分工、确定性、零突变、格子退化模式 | 21 |
 | `src/board/hand.test.js` | 手牌谓词 + 与 game.js recruit/place 对拍（接入清单的证据） | 16 |
-| `src/board/drop.test.js` | classifyDrop 全矩阵 + 与 game.place/merge 逐分支对拍、`{from:"hand"}` | 48 |
+| `src/board/drop.test.js` | classifyDrop 具名用例矩阵 + 与 game.place/merge 逐分支对拍、`{from:"hand"}` | 39 |
 | `src/combat/geometry.test.js` | 覆盖窗口/衰减/锚点/REACH 调参 | 6 |
 | `src/combat/pressure.test.js` | 施压/封顶/充能/禁用/对手发现 | 11 |
 | `src/combat/replay.test.js` | per-side 号段全套语义 + 同种子对拍 + 读档续跑对拍 | 11 |
+| `src/combat/robustness.test.js` | 脏档卫生：null 敌人/格子、NaN 血量/进度、缺 spec 队列、原型链兵种 id、手工改坏的档能读能打 | 24 |
 | `src/combat/sim.test.js` | 出兵/行军/索敌/衰减命中/波次/胜负链/BALANCE | 22 |
 | `src/combat/skills.test.js` | 六式技能语义、护盾结算、juice 契约 | 8 |
 | `src/combat/tuning.test.js` | 三层调参：表覆盖/类型过滤/收敛/复位 | 10 |
