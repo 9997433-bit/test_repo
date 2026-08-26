@@ -88,8 +88,34 @@ export function adjacentBuildingIds(state, building) {
   return [...ids];
 }
 
-export function adjacentWalls(state, building) {
-  const ids = new Set(adjacentBuildingIds(state, building));
+// 全岛邻接一次算完：Σ(每座建筑的周长) 次查格，再加一遍 id→type 建表。
+// 总量对建筑数是线性的——每座建筑再去 buildings 里 filter 一次就退化成 O(B²) 了，别那么写。
+// 返回 Map<建筑id, { ids:Set<string>, types:Map<type, 数量> }>。
+export function adjacencyIndex(state) {
+  const typeById = new Map();
+  for (const b of state.buildings) typeById.set(b.id, b.type);
+
+  const index = new Map();
+  for (const b of state.buildings) {
+    const ids = new Set();
+    const types = new Map();
+    for (const [x, y] of ringCells(footprintOf(b))) {
+      const id = state.raft.tiles[y]?.[x]?.buildingId;
+      if (!id || id === b.id || ids.has(id)) continue;
+      const type = typeById.get(id);
+      if (type === undefined) continue;
+      ids.add(id);
+      types.set(type, (types.get(type) || 0) + 1);
+    }
+    index.set(b.id, { ids, types });
+  }
+  return index;
+}
+
+// index 可选：一个 tick 里要问很多次时先建索引传进来，只问一次就别建。
+export function adjacentWalls(state, building, index = null) {
+  const near = index?.get(building.id);
+  const ids = near ? near.ids : new Set(adjacentBuildingIds(state, building));
   return state.buildings.filter((b) => b.type === "wall" && ids.has(b.id));
 }
 

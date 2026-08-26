@@ -1,4 +1,6 @@
 import { emptyResources, RESOURCE_KEYS } from "../data/resources.js";
+import { RAFT_RULES } from "../data/buildings.js";
+import { weatherMods } from "../world/mods.js";
 import { hashSeed } from "./rng.js";
 
 const SAVE_KEY = "cww.save.v1";
@@ -149,6 +151,7 @@ function normalize(state, base) {
 }
 
 export function defaultState(seed = {}) {
+  const [startW, startH] = RAFT_RULES.startSize;
   const base = {
     meta: {
       title: "疯狂水世界",
@@ -179,9 +182,9 @@ export function defaultState(seed = {}) {
       seed: 1,
     }),
     raft: {
-      width: 6,
-      height: 5,
-      tiles: blankTiles(6, 5),
+      width: startW,
+      height: startH,
+      tiles: blankTiles(startW, startH),
     },
     buildings: [],
     residents: [
@@ -213,7 +216,10 @@ export function defaultState(seed = {}) {
     settings: { muted: false, reduceMotion: false },
     log: ["潮水上涨。老大，这叶破木筏就靠你了。"],
   };
-  return structuredClone(normalize(deepMerge(base, isPlainObject(seed) ? seed : {}), base));
+  const state = normalize(deepMerge(base, isPlainObject(seed) ? seed : {}), base);
+  // 派生倍率总是现算：存档里带来的 world.mods 一律作废，免得手改档把倍率带进模拟。
+  state.world.mods = weatherMods(state);
+  return structuredClone(state);
 }
 
 export function createStore(seed) {

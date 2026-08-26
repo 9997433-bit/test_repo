@@ -1,11 +1,15 @@
-import { BUILDINGS, UNLOCK_LEVEL } from "../data/buildings.js";
+import { BUILDINGS, UNLOCK_LEVEL, UNLOCK_HQ, RAFT_RULES } from "../data/buildings.js";
+import { RESOURCE_META } from "../data/resources.js";
 import { REASON, allow, deny } from "../core/reasons.js";
 import { canPlace, occupy, clearOccupy, footprint, footprintOf } from "./grid.js";
+import { hqLevel } from "./mods.js";
 
 export const MAX_BUILDING_LEVEL = 8;
 export const MAX_RAFT_SIDE = 32;
 export const DIRS = ["left", "right", "up", "down"];
 const REFUND_RATE = 0.5;
+// 稀缺件（蓝图/沙漏/种子这类）升级时每级固定一份，不跟着 upgradeGrowth 翻倍。
+const FIXED_COST_TIER = "rare";
 
 function affords(res, cost) {
   return Object.entries(cost || {}).every(([k, v]) => (res[k] || 0) >= v);
@@ -43,17 +47,54 @@ function pushLog(log, line) {
   return [line, ...log].slice(0, 24);
 }
 
+// 扩建成本读 RAFT_RULES：底价 + 每格加价 × 当前格数，木筏越大越难扩。
 function expandCost(state) {
-  return { wood: 10 + state.raft.width + state.raft.height, plastic: 4 };
+  const tiles = state.raft.width * state.raft.height;
+  return {
+    wood: Math.ceil(RAFT_RULES.baseWood + RAFT_RULES.perTileWood * tiles),
+    plastic: RAFT_RULES.plastic,
+  };
+}
+
+// 解锁双口径：玩家等级（UNLOCK_LEVEL，兼容旧存档）或指挥中心等级（UNLOCK_HQ，GDD 目标口径）
+// 任一达标即解锁——升 HQ 能提前拿到图纸，老档也不会一夜之间全锁死。
+export function unlockCheck(state, type) {
+  if (!BUILDINGS[type]) return deny(REASON.UNKNOWN_TYPE);
+  const need = UNLOCK_LEVEL[type] ?? 1;
+  const needHq = UNLOCK_HQ[type] ?? 0;
+  const hq = hqLevel(state);
+  const info = { need, needHq, hq };
+  if (state.player.level >= need || hq >= needHq) return allow(info);
+  return deny(REASON.LOCKED, info);
+}
+
+// 升级报价：L→L+1 = ceil(upgrade × upgradeGrowth^(L-1))，稀缺件每级固定；
+// 等级到了 upgradeExtra.fromLevel 再叠加附加消耗（工具的主要去向）。
+export function upgradeCost(type, level) {
+  const def = BUILDINGS[type];
+  if (!def) return null;
+  const growth = Number.isFinite(def.upgradeGrowth) ? def.upgradeGrowth : 1;
+  // 逐次相乘而不是 Math.pow：IEEE 乘法各引擎结果一致，pow 不保证。
+  let factor = 1;
+  for (let i = 1; i < Math.max(1, level); i += 1) factor *= growth;
+
+  const cost = {};
+  for (const [k, v] of Object.entries(def.upgrade || {})) {
+    cost[k] = RESOURCE_META[k]?.tier === FIXED_COST_TIER ? v : Math.ceil(v * factor);
+  }
+  const extra = def.upgradeExtra;
+  if (extra && Number.isFinite(extra.fromLevel) && level >= extra.fromLevel) {
+    for (const [k, v] of Object.entries(extra.add || {})) cost[k] = (cost[k] || 0) + v;
+  }
+  return cost;
 }
 
 // 建造完整前置：与 placeBuilding 的检查顺序一致（表 → 解锁 → 落位 → 付款）。
 export function canBuild(state, type, x, y, rot = 0) {
   const def = BUILDINGS[type];
   if (!def) return deny(REASON.UNKNOWN_TYPE);
-  if ((UNLOCK_LEVEL[type] || 1) > state.player.level) {
-    return deny(REASON.LOCKED, { need: UNLOCK_LEVEL[type] || 1 });
-  }
+  const unlocked = unlockCheck(state, type);
+  if (!unlocked.ok) return unlocked;
   const spot = canPlace(state, type, x, y, rot);
   if (!spot.ok) return spot;
   if (!affords(state.resources, def.cost)) return deny(REASON.COST, { cost: def.cost });
@@ -74,8 +115,9 @@ export function canUpgrade(state, id) {
   if (!def) return deny(REASON.UNKNOWN_TYPE);
   const cap = def.maxLevel || MAX_BUILDING_LEVEL;
   if (b.level >= cap) return deny(REASON.MAX_LEVEL, { cap });
-  if (!affords(state.resources, def.upgrade)) return deny(REASON.COST, { cost: def.upgrade });
-  return allow({ cost: def.upgrade, level: b.level + 1 });
+  const cost = upgradeCost(b.type, b.level);
+  if (!affords(state.resources, cost)) return deny(REASON.COST, { cost });
+  return allow({ cost, level: b.level + 1, cap });
 }
 
 export function canExpand(state, dir) {
@@ -128,8 +170,7 @@ export function upgradeBuilding(state, id) {
   const check = canUpgrade(state, id);
   if (!check.ok) return state;
   const b = state.buildings.find((it) => it.id === id);
-  const def = BUILDINGS[b.type];
-  const paid = pay(state.resources, def.upgrade);
+  const paid = pay(state.resources, check.cost);
   if (!paid) return state;
   const cells = footprintOf(b);
   return {

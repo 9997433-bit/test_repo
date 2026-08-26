@@ -5,6 +5,8 @@ export {
   canUpgrade,
   canExpand,
   canDemolish,
+  unlockCheck,
+  upgradeCost,
   placeBuilding,
   moveBuilding,
   upgradeBuilding,
@@ -22,8 +24,10 @@ export {
   ringCells,
   adjacentBuildingIds,
   adjacentWalls,
+  adjacencyIndex,
   ROTATIONS,
 } from "./grid.js";
 export { tickWorld, settleOffline, stormShelter, OFFLINE_MAX_SECONDS, OFFLINE_MIN_SECONDS } from "./sim.js";
+export { weatherMods, weatherOf, hqLevel } from "./mods.js";
 export { paintSea, canvasToCell, pickFlotsam, seaLayout, flotsamPoint, FLOTSAM_RADIUS } from "./canvas.js";
 export { REASON, REASON_MESSAGE } from "../core/reasons.js";

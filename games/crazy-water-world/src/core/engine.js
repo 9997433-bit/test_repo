@@ -24,19 +24,12 @@ export function stepSim(state) {
   };
 }
 
-// options.render 由壳层注入（main.js）。没注入时退化为延迟加载 ui 层，
-// 只是为了不让旧壳层黑屏；core 不再静态依赖 ui。
+// options.render 由壳层注入（main.js: boot(root, store, { render })）。
+// core 对 ui 零依赖——静态和动态 import 都不许有，不然打包器会把整个 ui 拖进 core 的图里。
+// 没给 render 就只跑模拟不画画面（headless 驱动/测试用）。
 export function boot(root, store, options = {}) {
   const opts = typeof options === "function" ? { render: options } : options || {};
-  let render = typeof opts.render === "function" ? opts.render : null;
-  if (!render) {
-    import("../ui/app.js")
-      .then((mod) => {
-        render = mod.render;
-        render(root, store);
-      })
-      .catch(() => {});
-  }
+  const render = typeof opts.render === "function" ? opts.render : null;
 
   const paint = () => {
     if (render) render(root, store);
