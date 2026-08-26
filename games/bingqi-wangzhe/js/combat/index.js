@@ -7,11 +7,14 @@ export * from './elements.js';
 export * from './units.js';
 export * from './skills.js';
 export * from './lineup.js';
+// engine.js 的出口在这里显式点名（它也再导出了 elements / lineup / skills 的一部分，
+// 点名可以避开 `export *` 的重名冲突）。
 export {
   AI_PROFILES,
   ENGINE_VERSION,
   EVENT_ALIASES,
   EVENT_DURATION,
+  EVENT_RICH_FIELDS,
   EVENT_SUBTYPES,
   EVENT_TYPE_OF,
   EVENT_TYPES,
