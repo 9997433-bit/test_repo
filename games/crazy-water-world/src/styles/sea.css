@@ -7,9 +7,13 @@
    ============================================================ */
 
 /* ---------- 天空与夜幕 ----------
-   画布自己会绘制海面；这层渐变兜底画布重排的缝隙，
-   ::after 是 CSS 夜幕（默认透明，data-phase 钩子驱动）。
-   后轮接管 data-phase 后，canvas.js 应停掉自己的夜幕填充避免双重变暗。 */
+   画布自己会绘制海面；这层渐变兜底画布重排的缝隙。
+   ::after 是全站唯一的夜幕（夜幕单源，ART_DIRECTION 第 4 节）：
+   色 = --night-ink、浓度 = --night-alpha（data-phase 钩子驱动），
+   z-index:1 盖在画布之上，所以画布内容天然被同一层压暗。
+   canvas 不得再画任何整幅变暗填充（drawWeatherOverlay 尾部那笔
+   day<-0.05 的夜色属于双重变暗，归 world 轮删除）；风暴 / 海啸的
+   天气罩色是天气不是夜，留在画布，但夜色只此一层。 */
 .sea-wrap {
   background: linear-gradient(180deg, var(--sky-hi), var(--sky-lo));
 }
@@ -20,7 +24,7 @@
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background: #06151b;
+  background: var(--night-ink);
   opacity: var(--night-alpha);
 }
 
