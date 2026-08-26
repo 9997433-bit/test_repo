@@ -20,7 +20,7 @@
 
 改动下列签名/形状 = 破坏性变更，需先修订本节并评估存档迁移（ARCHITECTURE §5.2）：
 
-- **存档信封**：`{ v:int, savedAt:ms, data:state }`，localStorage 键 `fashion-mall-save-v1` 永不更换。
+- **存档信封**：`{ v:int, savedAt:ms, data:state }`，当前 `v: 2`；localStorage 键 `fashion-mall-save-v1` 永不更换。写档只存 id，读档按注册表深回填。`state.goal` 含 `tier/reward`；toast 等瞬态不出档。
 - **state 形状**：以 `core/state.js#defaultState()` 为准；变更必须同步 `CURRENT_VERSION+1`、新增 `MIGRATIONS[n]`、固化旧档字符串的迁移测试。
 - **视图契约**：`render(root: HTMLElement, state, ctx) => dispose | undefined`；`ctx` 至少含 `{ back(), openShop(id), repaint() }`。视图内部计时器/监听器必须经 dispose 释放。
 - **动作契约**：`actions.*(state, ...args) => { ok: boolean, reason?: string, toast?: string }`；动作是唯一写 state 的入口（`tick/settle` 内部除外）；动作不触 DOM、不播音效——音效与重绘由调用方视图负责。

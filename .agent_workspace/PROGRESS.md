@@ -49,9 +49,9 @@
 | A | F1 架构 | fable | 已完成，文档已合入父分支 | `bc-7a4c47ba-4925-5ec4-acc5-8bc3d1ea0775` |
 | A | F2 视觉 | fable | 已完成，tokens/motion 已合入 | `bc-624a1464-ae2e-5ace-8575-5a2832916e87` |
 | A | O3 换装家装 | opus-fast | 运行中 | `bc-80ba6611-a58b-54b0-8aaa-9cb8f1f6fdf0` |
-| B | O1 引擎 | opus-fast | 运行中 | `bc-297ab17d-7197-5747-bdb6-0e0d697eb554` |
+| B | O1 引擎 | opus-fast | 已完成，core/mall/app/save 测试已合入 | `bc-297ab17d-7197-5747-bdb6-0e0d697eb554` |
 | B | F3 经济 | fable | 运行中 | `bc-bc009e97-1eff-52c1-8457-1354d0e0f597` |
-| B | F4 叙事 | 排队 | 待空位 | — |
+| B | F4 叙事 | fable | 运行中 | `bc-d59a71a3-ccdc-577d-acf8-1c77b7bb4350` |
 | C | O2 小游戏 / O4 伙伴事件 / G1 测试 | 排队 | 待空位 | — |
 | D | G2 性能边界 | 排队 | 待空位 | — |
 

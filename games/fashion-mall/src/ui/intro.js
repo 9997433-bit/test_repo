@@ -1,6 +1,7 @@
 import { INTRO } from "../data/copy.js";
 import { persist } from "../core/state.js";
 import { sfx } from "../core/audio.js";
+import { esc } from "./dom.js";
 import { OUTFITS } from "../data/balance.js";
 
 export function renderIntro(root, state, onDone) {
@@ -30,7 +31,7 @@ export function renderIntro(root, state, onDone) {
           <h2>中奖了</h2>
           ${INTRO.lines.slice(1).map((l) => `<p>${l}</p>`).join("")}
           <label>你的名字
-            <input id="name" value="${state.name === "未命名老板" ? "林小姐" : state.name}" maxlength="8" style="width:100%;margin:8px 0;padding:10px;border-radius:12px;border:1px solid #f0d4de" />
+            <input id="name" value="${esc(state.name === "未命名老板" ? "林小姐" : state.name)}" maxlength="8" style="width:100%;margin:8px 0;padding:10px;border-radius:12px;border:1px solid #f0d4de" />
           </label>
           <button class="btn" id="next">收下这座城</button>
         </section>`;
