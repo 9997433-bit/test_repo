@@ -92,12 +92,14 @@
 
 | 层 | 栈 | 用途 |
 | --- | --- | --- |
-| 展示 `--yz-font-display` | Rajdhani → ZCOOL XiaoWei → Noto Serif SC → Songti SC → serif | 标题、按钮、掌名、中央短讯 |
+| 展示 `--yz-font-display` | Rajdhani → Noto Serif SC → Source Han Serif SC → Songti SC → serif | 标题、按钮、掌名、中央短讯 |
 | 正文 `--yz-font-text` | PingFang SC → Hiragino Sans GB → Source Han Sans SC → Noto Sans SC → Microsoft YaHei → sans-serif | 说明、挑战文案、弹窗正文 |
 | 数字 `--yz-font-num` | Rajdhani →（中文回退） | 计时、杀数、冷却；一律 `tabular-nums` 不跳宽 |
 
-加载：Rajdhani 与站酷小薇均为 OFL 开源授权，经 `index.css` 顶部
-`@import ... display=swap` **非阻塞**载入；断网 / 未达时按回退栈渲染，无 FOIT。
+加载：Rajdhani 与 Noto Serif SC 均为 OFL 开源授权，经 `index.css` 顶部
+`@import ... display=swap` **非阻塞**载入（CJK 按 unicode-range 分片，只下用到的片）；
+断网 / 未达时按回退栈渲染，无 FOIT。全局 `font-synthesis: none` 禁伪粗体。
+选型记录：站酷小薇经实测「回」等常用字形退化为墨块，已否决。
 建议 Opus-4 在 `index.html` 加 `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>`。
 Round 2 升级路径：自托管子集化 woff2（仅收录 UI 实际用字），移除外链。
 
@@ -264,6 +266,7 @@ games/yizhang/src/styles/
 | 类 | 说明 |
 | --- | --- |
 | `.yz-screen--deep / --frost` | 主菜单 / 暂停·结算全屏容器 |
+| `.yz-home` | 主菜单内容列（标题 + 按钮栈，无板） |
 | `.yz-panel (--wide)` | 磨砂主板（`.yz-plate.yz-panel` 组合） |
 | `.yz-title` `.yz-subtitle` `.yz-heading` | 标题族（金衬线在 `.yz-title::after`） |
 | `.yz-menu > .yz-btn (--primary / --ghost)` | 按钮栈；一屏只放一个 primary |

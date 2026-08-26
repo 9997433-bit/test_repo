@@ -1,18 +1,20 @@
 /* ============================================================
    异掌 · 字体系统
    铁律：HUD 不落默认系统字体。
-   - 展示层：Rajdhani（拉丁/数字，OFL）+ 站酷小薇（中文标题，OFL）。
+   - 展示层：Rajdhani（拉丁/数字，OFL）+ 思源宋体 Noto Serif SC
+     （中文标题/按钮，OFL，真 500/600 字重、全覆盖）。
      外链 @import 在 index.css 顶部，display=swap 非阻塞：
      字体未到时按下方回退栈渲染，到达后换入，不阻塞首帧。
+     注：曾试站酷小薇，其「回」等字形退化为墨块，弃用。
    - 正文层：审慎中文栈（按渲染质量排序），非「不设置」的默认。
    - 数字一律 tabular-nums，计时器不跳宽。
-   Round 2 升级路径：自托管子集化 woff2（见 ART_DIRECTION.md §6）。
+   Round 2 升级路径：自托管子集化 woff2（见 ART_DIRECTION.md §4）。
    ============================================================ */
 
 :root {
-  /* 展示：标题 / 按钮大字 / 掌名。拉丁与数字先落 Rajdhani，中文落小薇 */
-  --yz-font-display: "Rajdhani", "ZCOOL XiaoWei", "Noto Serif SC",
-    "Source Han Serif SC", "Songti SC", serif;
+  /* 展示：标题 / 按钮大字 / 掌名。拉丁与数字先落 Rajdhani，中文落宋 */
+  --yz-font-display: "Rajdhani", "Noto Serif SC", "Source Han Serif SC",
+    "Songti SC", serif;
 
   /* 正文：状态说明 / 挑战文案 / 弹窗正文 */
   --yz-font-text: "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC",

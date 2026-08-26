@@ -51,8 +51,6 @@
      切换手套时由 JS 设置容器 data-glove，或直接改写 --yz-accent */
   --yz-accent: #e2604a;
   --yz-accent-ink: #140d0b; /* 识别色上的深色文字 */
-  --yz-accent-dim: color-mix(in oklab, var(--yz-accent) 46%, var(--yz-ink-800));
-  --yz-accent-soft: color-mix(in oklab, var(--yz-accent) 22%, var(--yz-ink-800));
 
   /* ---- 间距 · 8px 网格（4px 为半步） ---- */
   --yz-s-h: 4px;
@@ -100,6 +98,13 @@
   --yz-inset-r: max(var(--yz-s2), env(safe-area-inset-right, 0px));
   --yz-inset-b: max(var(--yz-s1), env(safe-area-inset-bottom, 0px));
   --yz-inset-l: max(var(--yz-s2), env(safe-area-inset-left, 0px));
+}
+
+/* 派生识别色调：必须在每个元素上重解析（自定义属性的 var() 在定义处求值，
+   若只写在 :root，data-glove 换色后派生色不会跟随） */
+* {
+  --yz-accent-dim: color-mix(in oklab, var(--yz-accent) 46%, var(--yz-ink-800));
+  --yz-accent-soft: color-mix(in oklab, var(--yz-accent) 22%, var(--yz-ink-800));
 }
 
 /* ---- 8 掌识别色：在任意容器（html / #hud / .yz-screen）设 data-glove 即生效

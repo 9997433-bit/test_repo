@@ -64,6 +64,15 @@
   padding: 0 var(--yz-s1);
 }
 
+/* 主菜单内容列（无板，直接立在深背景上） */
+.yz-home {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--yz-s4);
+  animation: yz-settle var(--yz-t-slow) var(--yz-ease) both;
+}
+
 /* ---- 标题：展示字 + 旧金磨损衬线 ---- */
 .yz-title {
   margin: 0;

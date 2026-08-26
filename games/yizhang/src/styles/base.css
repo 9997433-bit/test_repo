@@ -27,6 +27,9 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* 禁伪粗体：小薇仅 400，合成加粗会把小字号汉字糊成墨块；
+     Rajdhani 有真 500/600 不受影响 */
+  font-synthesis: none;
 }
 
 /* [hidden] 永远生效，JS 用它开关屏幕/浮层 */
