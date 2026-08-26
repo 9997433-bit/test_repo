@@ -108,7 +108,7 @@
 
 .talisman-legend {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
   margin: 8px 0;
 }
@@ -132,7 +132,7 @@
   box-shadow: 0 1px 0 rgba(26, 18, 11, 0.25);
 }
 .talisman-key .glyph { grid-area: glyph; font-size: 1.05rem; }
-.talisman-key .tname { grid-area: name; font-weight: 600; }
+.talisman-key .tname { grid-area: name; font-weight: 600; white-space: nowrap; }
 .talisman-key .small { grid-area: cost; }
 .talisman-key.pressed { background: rgba(122, 24, 24, 0.14); border-color: var(--seal); }
 
