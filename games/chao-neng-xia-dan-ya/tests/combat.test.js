@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveHit } from "../src/combat/index.js";
-import { baseHit, CAPS } from "../src/core/adapters.js";
+import { resolveStrike, CAPS } from "../src/core/adapters.js";
 
 function expectNonDecreasing(values) {
   values.slice(1).forEach((value, index) => {
@@ -82,10 +82,9 @@ describe("active combat adapter", () => {
     const direct = resolveHit(egg, target, ctx);
 
     expect(CAPS.combat).toBe(true);
-    expect(baseHit(egg, target, ctx)).toEqual({
-      damage: direct.damage,
-      effects: direct.effects,
-      comboDelta: direct.comboDelta,
-    });
+    const adapted = resolveStrike(egg, target, ctx);
+    expect(adapted.damage).toBe(direct.damage);
+    expect(adapted.effects).toEqual(direct.effects);
+    expect(adapted.comboDelta).toBe(direct.comboDelta);
   });
 });
