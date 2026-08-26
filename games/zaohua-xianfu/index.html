@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b140f" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="造化仙府：洞府经营与修仙放置的网页复刻，建洞府、派弟子、御兽潮、登天塔。" />
+    <title>造化仙府 · 洞天</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /*
+       * UI 层附加样式（归属：index.html）。
+       * 只补 src/ui 新增组件与窄屏适配，不覆写 src/styles/** 的既有观感；
+       * 窄屏规则统一加 body 前缀提高优先级，免受样式表注入顺序影响。
+       */
+
+      /* —— 新组件 —— */
+      .side-stack { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+      .offline-box { margin: 0.6rem clamp(0.8rem, 3vw, 1.2rem) 0; }
+      .panel-summary p { margin: 0.2rem 0; }
+      .rate-line { font-variant-numeric: tabular-nums; }
+      .res-bar .rate { font-style: normal; font-size: 0.72rem; color: var(--wash); margin-left: 0.25rem; }
+
+      .d-chip {
+        display: inline-block;
+        padding: 0.05rem 0.4rem;
+        margin-left: 0.3rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 0.7rem;
+        line-height: 1.5;
+        color: var(--paper-dim);
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+      .d-chip.gold { border-color: rgba(212, 160, 23, 0.5); color: var(--gold); }
+      .d-chip.cin { border-color: rgba(194, 59, 34, 0.55); color: #f0a090; }
+
+      .disciple-card, .recruit-card { align-items: flex-start; }
+      .d-main { min-width: 0; flex: 1 1 auto; }
+      .d-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem; }
+      .d-flavor, .d-skill { font-size: 0.78rem; margin-top: 0.15rem; }
+      .d-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.15rem 0.7rem;
+        margin-top: 0.25rem;
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .d-stats b { color: var(--gold); font-weight: 600; }
+      .d-post { margin-top: 0.35rem; font-size: 0.82rem; }
+      .d-post.idle { color: var(--paper-dim); }
+      .d-xp { margin-top: 0.35rem; font-size: 0.75rem; }
+      .d-xp .hpbar.thin { height: 5px; margin-bottom: 0.15rem; }
+      .d-xp .ready { color: var(--gold-bright); font-weight: 600; }
+      .d-acts { display: flex; flex-direction: column; align-items: stretch; gap: 0.3rem; flex: 0 0 auto; }
+      .d-acts .cost { font-size: 0.72rem; opacity: 0.85; }
+      .d-acts .lack { font-size: 0.7rem; text-align: center; }
+      .assign-panel { margin: -0.2rem 0 0.5rem; background: rgba(27, 20, 15, 0.55); }
+      .assign-panel p { margin: 0 0 0.2rem; font-size: 0.78rem; }
+      .tip-list { margin: 0.2rem 0 0; padding-left: 1.1rem; font-size: 0.82rem; color: var(--paper-dim); }
+      .tip-list li { margin: 0.2rem 0; }
+      h4.sub { margin: 0.7rem 0 0; font-size: 0.85rem; letter-spacing: 0.08em; color: var(--wash); }
+
+      /* 驻守标记：不额外插 span，免与沙盘既有的「舍名留字」选择器打架 */
+      .plot.staffed::after {
+        content: "";
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--spirit);
+        box-shadow: 0 0 6px var(--spirit);
+      }
+
+      .gate-hint { font-size: 0.76rem; color: var(--wash); margin: 0.5rem auto 0; }
+
+      /* —— 法器槽位盘 —— */
+      .slot-board { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.5rem 0 0.6rem; }
+      .slot-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+      .slot-name {
+        flex: 0 0 5.2rem;
+        font-size: 0.8rem;
+        letter-spacing: 0.06em;
+        color: var(--paper-dim);
+      }
+      .slot-name b { color: var(--gold); font-weight: 600; }
+      .slot-cells { display: flex; flex-wrap: wrap; gap: 0.3rem; min-width: 0; flex: 1 1 auto; }
+      .slot-cell {
+        padding: 0.12rem 0.5rem;
+        border: 1px dashed var(--line-strong);
+        border-radius: var(--r-sm, 4px);
+        font-size: 0.76rem;
+        color: var(--wash);
+        white-space: nowrap;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .slot-cell.filled {
+        border-style: solid;
+        border-color: rgba(212, 160, 23, 0.45);
+        background: rgba(212, 160, 23, 0.09);
+        color: var(--paper);
+      }
+      /* 槽色三味归 src/styles/mansion.css：DOM 落上 data-slot 即生效，此处不复写 */
+      .slot-cell.none { border-style: solid; border-color: var(--line); }
+      .art-card.in {
+        border-color: rgba(212, 160, 23, 0.5);
+        background: linear-gradient(90deg, rgba(212, 160, 23, 0.1), transparent 55%);
+        box-shadow: inset 3px 0 0 var(--gold);
+      }
+      .art-src { font-size: 0.74rem; margin-top: 0.15rem; color: var(--wash); }
+
+      /* —— 窄屏补充：src/styles 已处理顶栏/导航/沙盘，这里只补新组件 —— */
+      @media (max-width: 700px) {
+        body .res-bar .rate { display: none; }
+        body .hero-card, body .art-card { flex-direction: column; align-items: stretch; }
+        body .d-acts { flex-direction: row; flex-wrap: wrap; }
+        body .d-acts button { flex: 1 1 8rem; min-height: 2.4rem; }
+        body .d-acts .lack { flex: 1 1 100%; text-align: left; }
+        body .build-list button { min-height: 2.3rem; }
+      }
+
+      @media (max-width: 420px) {
+        body .d-stats { font-size: 0.76rem; gap: 0.1rem 0.55rem; }
+        body .build-list button { flex: 1 1 100%; text-align: left; }
+        body .slot-row { flex-wrap: wrap; gap: 0.2rem 0.5rem; }
+        body .slot-name { flex: 1 1 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <noscript>
+      <p style="padding: 2rem; text-align: center">造化仙府需要启用 JavaScript 才能开府。</p>
+    </noscript>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

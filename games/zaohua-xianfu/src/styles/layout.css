@@ -1,0 +1,579 @@
+/* ============================================================
+   造化仙府 · 骨架与通用组件
+   远山雾霭作底,纸本卡片承内容;朱砂引首章、泥金签条导航。
+   ============================================================ */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  scrollbar-color: var(--ink-3) var(--ink-0);
+}
+body {
+  font-family: var(--font-body);
+  color: var(--paper);
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  /* 山水底:金霞、朱霭、灵息、三重远山,压在渐暗的墨底上 */
+  background:
+    radial-gradient(1100px 520px at 18% -8%, rgba(212, 160, 23, 0.13), transparent 55%),
+    radial-gradient(900px 480px at 108% 6%, rgba(194, 59, 34, 0.1), transparent 52%),
+    radial-gradient(60% 40% at 50% 116%, rgba(110, 200, 192, 0.05), transparent 70%),
+    radial-gradient(54% 32% at 10% 105%, rgba(147, 163, 177, 0.13), transparent 62%),
+    radial-gradient(60% 36% at 82% 108%, rgba(147, 163, 177, 0.09), transparent 64%),
+    radial-gradient(44% 26% at 46% 102%, rgba(47, 107, 79, 0.11), transparent 60%),
+    linear-gradient(180deg, #261a10 0%, var(--ink) 42%, var(--ink-0) 100%);
+  background-color: var(--ink);
+  min-height: 100%;
+}
+#app {
+  min-height: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ink-3);
+  border-radius: 8px;
+  border: 2px solid var(--ink-0);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ------------------------------------------------------------
+   按钮:默认素笺;primary 朱漆;gold 泥金。皆有起落与焦点环。
+   ------------------------------------------------------------ */
+button,
+select {
+  font-family: inherit;
+  font-size: 0.88rem;
+  color: var(--paper);
+  background: linear-gradient(180deg, rgba(243, 230, 201, 0.055), rgba(243, 230, 201, 0.015));
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 0.42rem 0.75rem;
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease-brush),
+    color var(--t-fast) var(--ease-brush),
+    background-color var(--t-fast) var(--ease-brush),
+    box-shadow var(--t-fast) var(--ease-brush),
+    transform var(--t-fast) var(--ease-brush);
+}
+button:hover:not(:disabled) {
+  border-color: var(--line-gold);
+  color: var(--paper-bright);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button.primary {
+  color: var(--paper-bright);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  background: linear-gradient(180deg, #a93520, var(--cinnabar-deep) 60%, #77231a);
+  border-color: rgba(232, 118, 92, 0.5);
+  box-shadow: inset 0 1px 0 rgba(243, 230, 201, 0.18), 0 2px 10px rgba(194, 59, 34, 0.22);
+}
+button.primary:hover:not(:disabled) {
+  border-color: rgba(232, 118, 92, 0.85);
+  box-shadow: inset 0 1px 0 rgba(243, 230, 201, 0.22), 0 4px 14px rgba(194, 59, 34, 0.32);
+}
+button.gold {
+  color: var(--ink);
+  font-weight: 600;
+  background: linear-gradient(180deg, var(--gold-bright), #c8961a 62%, #a87d12);
+  border: 1px solid rgba(122, 88, 10, 0.85);
+  box-shadow: inset 0 1px 0 rgba(255, 241, 205, 0.55), 0 2px 10px rgba(212, 160, 23, 0.2);
+}
+button.gold:hover:not(:disabled) {
+  color: var(--ink-0);
+  border-color: rgba(122, 88, 10, 1);
+  box-shadow: inset 0 1px 0 rgba(255, 241, 205, 0.65), 0 4px 14px rgba(212, 160, 23, 0.32);
+}
+button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+input {
+  font: inherit;
+  color: var(--paper-bright);
+  background: rgba(18, 13, 9, 0.55);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 0.42rem 0.7rem;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+input::placeholder {
+  color: rgba(243, 230, 201, 0.34);
+}
+input:focus-visible {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(212, 160, 23, 0.18);
+}
+
+/* ------------------------------------------------------------
+   壳:顶栏(引首章 + 资源筹码) / 签条导航 / 舞台
+   ------------------------------------------------------------ */
+.app-shell {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 100vh;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem 1rem;
+  padding: 0.7rem clamp(0.8rem, 3vw, 1.2rem);
+  background:
+    var(--grain),
+    linear-gradient(180deg, rgba(43, 32, 21, 0.94), rgba(27, 20, 15, 0.88));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line-gold-dim);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+.brand {
+  font-family: var(--font-title);
+  font-size: 1.7rem;
+  line-height: 1.15;
+  letter-spacing: 0.14em;
+  color: var(--paper-bright);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+/* 引首章:朱砂竖排小印,置于题字之前 */
+.brand::before {
+  content: "洞天";
+  display: inline-block;
+  writing-mode: vertical-rl;
+  font-size: 0.38em;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  padding: 0.28em 0.2em;
+  margin-right: 0.5em;
+  color: var(--paper-bright);
+  background: linear-gradient(180deg, #cf4429, var(--cinnabar-deep));
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(243, 230, 201, 0.38), 0 1px 4px rgba(0, 0, 0, 0.45);
+  transform: rotate(-3deg) translateY(-0.12em);
+  vertical-align: middle;
+}
+.brand small {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  letter-spacing: 0.24em;
+  color: var(--wash);
+  margin-top: 0.15rem;
+}
+
+/* 资源筹码:墨底圆签,数字泥金、等宽对齐 */
+.res-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+}
+.res-bar span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.32rem;
+  padding: 0.16rem 0.55rem;
+  color: var(--paper-dim);
+  background: rgba(18, 13, 9, 0.5);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.res-bar b {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+/* 重置:退为素描边小字,免与正事争辉 */
+[data-act="reset"] {
+  font-size: 0.76rem;
+  color: var(--wash);
+  border-color: var(--line);
+  background: transparent;
+}
+[data-act="reset"]:hover:not(:disabled) {
+  color: var(--cinnabar-bright);
+  border-color: var(--line-cinnabar);
+}
+
+/* 签条导航:横滚不折行,现签金字、朱金笔锋压底 */
+.nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.1rem;
+  padding: 0.5rem clamp(0.8rem, 3vw, 1.2rem) 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav::-webkit-scrollbar {
+  display: none;
+}
+.nav button {
+  position: relative;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: transparent;
+  padding: 0.5rem 0.8rem 0.6rem;
+  font-size: 0.92rem;
+  letter-spacing: 0.1em;
+  color: var(--paper-faint);
+  white-space: nowrap;
+}
+.nav button::after {
+  content: "";
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  bottom: 0;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: transparent;
+  transition: background var(--t-fast) var(--ease-brush), box-shadow var(--t-fast) var(--ease-brush);
+}
+.nav button:hover:not(:disabled) {
+  color: var(--paper-bright);
+  background: rgba(243, 230, 201, 0.045);
+}
+.nav button[aria-current="page"] {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+.nav button[aria-current="page"]::after {
+  background: linear-gradient(90deg, var(--cinnabar), var(--gold));
+  box-shadow: 0 0 8px rgba(212, 160, 23, 0.45);
+}
+
+.stage {
+  padding: clamp(0.7rem, 2.5vw, 1rem) clamp(0.8rem, 3vw, 1.2rem) clamp(1.1rem, 4vw, 1.6rem);
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------
+   卡片:纸本裱片。细纸线外框、金丝内衬、两角裱边。
+   ------------------------------------------------------------ */
+.card {
+  position: relative;
+  background:
+    linear-gradient(160deg, rgba(243, 230, 201, 0.05), transparent 40%),
+    var(--grain),
+    linear-gradient(180deg, rgba(47, 37, 26, 0.92), rgba(31, 23, 16, 0.9));
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 0.95rem 1.05rem;
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 160, 23, 0.06),
+    inset 0 1px 0 rgba(243, 230, 201, 0.05),
+    var(--shadow-card);
+  min-width: 0;
+}
+.card::before,
+.card::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--line-gold);
+  pointer-events: none;
+}
+.card::before {
+  top: 5px;
+  left: 5px;
+  border-right: 0;
+  border-bottom: 0;
+  border-top-left-radius: var(--r-md);
+}
+.card::after {
+  bottom: 5px;
+  right: 5px;
+  border-left: 0;
+  border-top: 0;
+  border-bottom-right-radius: var(--r-md);
+}
+.card h3 {
+  font-family: var(--font-title);
+  font-weight: 400;
+  font-size: 1.35rem;
+  letter-spacing: 0.1em;
+  color: var(--gold-bright);
+  margin: 0 0 0.6rem;
+  padding-bottom: 0.35rem;
+  background: linear-gradient(90deg, var(--line-gold), transparent 72%) left bottom / 100% 1px
+    no-repeat;
+}
+.card h3::before {
+  content: "◆";
+  font-size: 0.5em;
+  color: var(--cinnabar-bright);
+  vertical-align: 0.32em;
+  margin-right: 0.5em;
+}
+.card > p:first-of-type {
+  margin-top: 0;
+}
+
+.grid-2 {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: 1.2fr 0.8fr;
+  align-items: start;
+  min-width: 0;
+}
+.muted {
+  color: var(--wash);
+}
+.gold {
+  color: var(--gold-bright);
+}
+.pine {
+  color: var(--pine-bright);
+}
+.cin {
+  color: var(--cinnabar-bright);
+}
+
+/* ------------------------------------------------------------
+   开府之门:泥金题字 + 落款印,三族各以本色立牌。
+   ------------------------------------------------------------ */
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 2rem);
+}
+.gate-card {
+  max-width: 840px;
+  width: min(94vw, 840px);
+  text-align: center;
+  padding: clamp(1.2rem, 5vw, 2.4rem) clamp(1rem, 5vw, 2.6rem);
+}
+.gate h1 {
+  position: relative;
+  font-family: var(--font-title);
+  font-weight: 400;
+  font-size: clamp(2.6rem, 8vw, 4.6rem);
+  letter-spacing: 0.12em;
+  margin: 0.1em 0 0.25em;
+  background: linear-gradient(180deg, var(--paper-bright) 8%, var(--gold-bright) 46%, #b8860b 88%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 3px 14px rgba(0, 0, 0, 0.5));
+}
+/* 落款印:题字右侧朱砂竖印 */
+.gate h1::after {
+  content: "洞天";
+  display: inline-block;
+  writing-mode: vertical-rl;
+  font-size: 0.2em;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  padding: 0.3em 0.22em;
+  margin-left: 0.45em;
+  color: var(--paper-bright);
+  -webkit-text-fill-color: var(--paper-bright);
+  background: linear-gradient(180deg, #cf4429, var(--cinnabar-deep));
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(243, 230, 201, 0.38), 0 2px 6px rgba(0, 0, 0, 0.4);
+  transform: rotate(3deg);
+  vertical-align: 1.1em;
+}
+.gate .gate-card > .muted {
+  letter-spacing: 0.3em;
+  font-size: 0.78rem;
+}
+.gate p {
+  color: var(--paper-dim);
+  max-width: 34em;
+  margin-left: auto;
+  margin-right: auto;
+}
+.gate label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.4rem;
+  color: var(--paper-dim);
+  letter-spacing: 0.14em;
+}
+.gate input {
+  text-align: center;
+  letter-spacing: 0.1em;
+  width: min(52vw, 13em);
+}
+
+.factions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.8rem;
+  margin: 1.4rem 0 0.4rem;
+}
+.faction {
+  --fac: var(--paper-dim);
+  --fac-line: var(--line-strong);
+  position: relative;
+  overflow: hidden;
+  min-height: 172px;
+  padding: 1.05rem 0.8rem;
+  text-align: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, rgba(243, 230, 201, 0.04), rgba(18, 13, 9, 0.3));
+  box-shadow: inset 0 2px 0 var(--fac-line);
+  cursor: pointer;
+  transition:
+    transform var(--t-fast) var(--ease-brush),
+    border-color var(--t-fast) var(--ease-brush),
+    box-shadow var(--t-fast) var(--ease-brush);
+}
+/* 族徽水印:大字淡书于牌角 */
+.faction::before {
+  position: absolute;
+  right: -0.12em;
+  bottom: -0.28em;
+  font-family: var(--font-title);
+  font-size: 6.4rem;
+  line-height: 1;
+  color: var(--fac);
+  opacity: 0.12;
+  pointer-events: none;
+  transition: opacity var(--t-fast) var(--ease-brush);
+}
+.faction[data-faction="mortal"] {
+  --fac: var(--pine-bright);
+  --fac-line: rgba(125, 202, 164, 0.4);
+}
+.faction[data-faction="mortal"]::before {
+  content: "人";
+}
+.faction[data-faction="divine"] {
+  --fac: var(--gold-bright);
+  --fac-line: rgba(233, 185, 73, 0.4);
+}
+.faction[data-faction="divine"]::before {
+  content: "神";
+}
+.faction[data-faction="demon"] {
+  --fac: var(--cinnabar-bright);
+  --fac-line: rgba(232, 118, 92, 0.42);
+}
+.faction[data-faction="demon"]::before {
+  content: "魔";
+}
+.faction:hover,
+.faction.sel {
+  border-color: var(--fac-line);
+  transform: translateY(-3px);
+  box-shadow: inset 0 2px 0 var(--fac-line), var(--shadow-lift);
+}
+.faction:hover::before,
+.faction.sel::before {
+  opacity: 0.22;
+}
+.faction .muted {
+  font-size: 0.72rem;
+  letter-spacing: 0.32em;
+}
+.faction h3 {
+  font-family: var(--font-title);
+  font-weight: 400;
+  font-size: 1.9rem;
+  letter-spacing: 0.16em;
+  color: var(--fac);
+  margin: 0.25rem 0;
+  padding-bottom: 0;
+  background: none;
+}
+.faction h3::before {
+  content: none;
+}
+.faction p {
+  color: var(--paper-dim);
+  font-size: 0.82rem;
+  margin: 0.3rem 0 0;
+  position: relative;
+}
+
+/* ------------------------------------------------------------
+   窄屏:顶栏两行折叠、双栏归一、族牌纵列。皆不横向溢出。
+   ------------------------------------------------------------ */
+@media (max-width: 860px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .topbar {
+    flex-wrap: wrap;
+  }
+  .brand {
+    order: 1;
+    font-size: 1.45rem;
+  }
+  [data-act="reset"] {
+    order: 2;
+    margin-left: auto;
+  }
+  .res-bar {
+    order: 3;
+    width: 100%;
+  }
+}
+@media (max-width: 640px) {
+  .factions {
+    grid-template-columns: 1fr;
+  }
+  .faction {
+    min-height: 0;
+  }
+  .faction::before {
+    font-size: 5rem;
+  }
+}
+@media (max-width: 420px) {
+  .res-bar {
+    font-size: 0.72rem;
+    gap: 0.28rem 0.3rem;
+  }
+  .card {
+    padding: 0.8rem 0.75rem;
+  }
+  .gate input {
+    width: 100%;
+  }
+  .gate label {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faction:hover,
+  .faction.sel,
+  button:active:not(:disabled) {
+    transform: none;
+  }
+}

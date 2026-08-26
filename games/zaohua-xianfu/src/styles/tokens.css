@@ -1,0 +1,112 @@
+/* ============================================================
+   造化仙府 · 设计令牌
+   纸本水墨为底,朱砂/泥金点睛。所有组件只取此处令牌。
+   ============================================================ */
+:root {
+  /* —— 墨阶(由深至浅) —— */
+  --ink-0: #120d09; /* 渊墨:页面最深处 */
+  --ink: #1b140f; /* 底墨:主背景 */
+  --ink-2: #251c13; /* 卡面墨 */
+  --ink-3: #2f251a; /* 浮面墨:抬升元素 */
+
+  /* —— 纸阶 —— */
+  --paper: #f3e6c9; /* 正文纸白 */
+  --paper-bright: #f8efd9; /* 高光纸 */
+  --paper-dim: #cdbb96; /* 次级文字 */
+  --paper-faint: rgba(243, 230, 201, 0.6);
+
+  /* —— 点睛色 —— */
+  --cinnabar: #c23b22; /* 朱砂:强调、危险、魔 */
+  --cinnabar-deep: #8a2a1c;
+  --cinnabar-bright: #e8765c; /* 暗底上的朱砂文字 */
+  --gold: #d4a017; /* 泥金:神、突破、仙玉 */
+  --gold-deep: #9c7410;
+  --gold-bright: #e9b949; /* 暗底上的泥金文字 */
+  --pine: #2f6b4f; /* 松绿:人、灵田 */
+  --pine-bright: #7dcaa4;
+  --wash: #93a3b1; /* 石青淡彩:远山、禁用、注释 */
+  --azurite: #5e87a8; /* 石青实色:法器防御槽 */
+  --azurite-bright: #a3c6e0; /* 暗底上的石青文字 */
+  --lotus: #8f6fae; /* 青莲紫:法器通用槽 */
+  --lotus-bright: #c9b3e0; /* 暗底上的青莲文字 */
+  --spirit: #6ec8c0; /* 灵气、灵泉 */
+
+  /* —— 描线 —— */
+  --line: rgba(243, 230, 201, 0.13); /* 纸色发丝线 */
+  --line-strong: rgba(243, 230, 201, 0.26);
+  --line-gold: rgba(212, 160, 23, 0.42); /* 金边 */
+  --line-gold-dim: rgba(212, 160, 23, 0.2);
+  --line-cinnabar: rgba(194, 59, 34, 0.5);
+
+  /* —— 经营信号(语义别名,全部引自上方基色;调色只动此层) ——
+     bld-*:沙盘三新筑按五行换地色;*-ink 供暗底文字/字号,对比皆 ≥ 4.5:1。
+     fengshui-*:风水评签三档(上吉/中平/下乘)。
+     slot-*:法器三槽(attack 朱 / defend 石青 / util 青莲)。 */
+  --bld-spring: var(--spirit); /* 灵泉·水行:泉青 */
+  --bld-spring-ink: var(--spirit);
+  --bld-bounty: var(--gold); /* 悬赏阁·金行:泥金 */
+  --bld-bounty-ink: var(--gold-bright);
+  --bld-drill: var(--cinnabar); /* 演武场·火行:朱砂 */
+  --bld-drill-ink: var(--cinnabar-bright);
+  --fengshui-good: var(--gold-bright);
+  --fengshui-fair: var(--wash);
+  --fengshui-poor: var(--cinnabar-bright);
+  --slot-attack: var(--cinnabar);
+  --slot-attack-ink: var(--cinnabar-bright);
+  --slot-defend: var(--azurite);
+  --slot-defend-ink: var(--azurite-bright);
+  --slot-util: var(--lotus);
+  --slot-util-ink: var(--lotus-bright);
+
+  /* —— 纸纹(叠加于卡面,近不可察) —— */
+  --grain:
+    repeating-linear-gradient(0deg, rgba(243, 230, 201, 0.018) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.045) 0 1px, transparent 1px 4px);
+
+  /* —— 影 —— */
+  --shadow-card: 0 14px 34px rgba(0, 0, 0, 0.38), 0 2px 6px rgba(0, 0, 0, 0.28);
+  --shadow-lift: 0 10px 24px rgba(0, 0, 0, 0.4);
+  --shadow-seal: inset 0 0 0 2px rgba(243, 230, 201, 0.34), inset 0 0 12px rgba(0, 0, 0, 0.32),
+    0 4px 14px rgba(194, 59, 34, 0.32);
+
+  /* —— 圆角 —— */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  /* —— 动效 —— */
+  --t-fast: 150ms;
+  --t-med: 280ms; /* 金边一闪、血条推移 */
+  --ease-brush: cubic-bezier(0.25, 0.6, 0.3, 1);
+
+  /* —— 字 —— */
+  --font-title: "Ma Shan Zheng", "STKaiti", "KaiTi", serif;
+  --font-body: "Noto Serif SC", "Songti SC", "SimSun", serif;
+}
+
+/* 焦点环:金环压深底,任何背景上均可见 */
+:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(212, 160, 23, 0.35);
+  color: var(--paper-bright);
+}
+
+/* 减少动效:时长归零保留终态;悬浮位移与环境粒子一并撤去 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  :root {
+    --t-fast: 0.01ms;
+    --t-med: 0.01ms;
+  }
+}

@@ -1,0 +1,440 @@
+/* ============================================================
+   造化仙府 · 仙府沙盘
+   漆木框沙盘 + 等高线,空地为粉线圈地,建筑为浮雕小筑。
+   ============================================================ */
+.plot-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: clamp(4px, 1vw, 7px);
+  aspect-ratio: 1;
+  max-width: 520px;
+  width: 100%;
+  padding: clamp(7px, 1.6vw, 13px);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-gold-dim);
+  /* 顶光 + 等高线 + 沙色渐暗 */
+  background:
+    radial-gradient(120% 90% at 50% 6%, rgba(243, 230, 201, 0.06), transparent 58%),
+    repeating-radial-gradient(
+      circle at 46% 42%,
+      rgba(243, 230, 201, 0.024) 0 2px,
+      transparent 2px 28px
+    ),
+    linear-gradient(180deg, #2c2115, #221910);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 10px 26px rgba(0, 0, 0, 0.42),
+    inset 0 -2px 0 rgba(243, 230, 201, 0.04),
+    var(--shadow-card);
+}
+
+.plot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 2px;
+  border: 1px dashed rgba(243, 230, 201, 0.16);
+  border-radius: var(--r-sm);
+  background: rgba(18, 13, 9, 0.22);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease-brush),
+    background-color var(--t-fast) var(--ease-brush),
+    transform var(--t-fast) var(--ease-brush),
+    box-shadow var(--t-fast) var(--ease-brush);
+}
+.plot:hover {
+  border-color: var(--line-gold);
+  background-color: rgba(212, 160, 23, 0.07);
+}
+/* 建筑地块:纸面受光、金丝勒边,微微离沙而起。
+   地色由 --plot-accent 调制:默认松绿,三新筑按五行换色(见下);
+   不识 color-mix 的老浏览器回落到前一条松绿字面量。 */
+.plot.filled {
+  --plot-accent: var(--pine);
+  --plot-glyph: var(--paper-bright);
+  border: 1px solid rgba(212, 160, 23, 0.32);
+  background:
+    linear-gradient(180deg, rgba(243, 230, 201, 0.11), rgba(243, 230, 201, 0.02) 48%, rgba(0, 0, 0, 0.16)),
+    linear-gradient(180deg, rgba(47, 107, 79, 0.15), rgba(47, 107, 79, 0.04));
+  background:
+    linear-gradient(180deg, rgba(243, 230, 201, 0.11), rgba(243, 230, 201, 0.02) 48%, rgba(0, 0, 0, 0.16)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--plot-accent) 15%, transparent),
+      color-mix(in srgb, var(--plot-accent) 4%, transparent)
+    );
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(243, 230, 201, 0.12);
+}
+/* 三新筑辨识:楷书字号(泉/赏/武)+ 五行地色 + 建筑名三信号并用,不靠单一颜色。
+   现有 DOM 按 aria-label 名称前缀命中;UI 层日后补 data-type 即自动接管。 */
+.plot.filled[data-type="spring"],
+.plot.filled[aria-label^="灵泉"] {
+  --plot-accent: var(--bld-spring);
+  --plot-glyph: var(--bld-spring-ink);
+}
+.plot.filled[data-type="bounty"],
+.plot.filled[aria-label^="悬赏阁"] {
+  --plot-accent: var(--bld-bounty);
+  --plot-glyph: var(--bld-bounty-ink);
+}
+.plot.filled[data-type="drill"],
+.plot.filled[aria-label^="演武场"] {
+  --plot-accent: var(--bld-drill);
+  --plot-glyph: var(--bld-drill-ink);
+}
+.plot.filled:hover {
+  transform: translateY(-1px);
+  border-color: rgba(233, 185, 73, 0.55);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(243, 230, 201, 0.16);
+}
+.plot .glyph {
+  font-family: var(--font-title);
+  font-size: clamp(1rem, 3.4vw, 1.5rem);
+  line-height: 1.1;
+  color: var(--plot-glyph, var(--paper-bright));
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+/* 建筑名(中段 span):窄屏时舍名留字 */
+.plot.filled > span:not(.glyph):not(.lv) {
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  color: var(--paper-dim);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 等级金签 */
+.plot .lv {
+  font-size: 0.58rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  color: var(--ink-0);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-radius: 999px;
+  padding: 0 0.38em;
+  margin-top: 1px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.plot.sel {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 5px rgba(212, 160, 23, 0.16), 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.build-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.build-list button {
+  font-size: 0.8rem;
+  padding: 0.34rem 0.6rem;
+}
+/* 营造目录价笺:造价/拦截原因退为小字;不可点条目(未解锁、资源不足、已驻守)
+   改虚框示禁,并抬透明度令「为何不可」仍读得清。 */
+.build-list button .muted {
+  font-size: 0.72rem;
+}
+.build-list button:disabled {
+  opacity: 0.55;
+  border-style: dashed;
+  color: var(--paper-dim);
+}
+
+/* 沙盘摘要:每秒产量鎏金;风水评签 .fengshui 已接线——
+   UI 依 0-100 分落 data-tier(≥70 上吉 / ≥35 中平 / 其余 下乘),徽章文本只落分数。
+   评语(上吉/中平/下乘)由 ::before 依档楷体自书,免得同一句话写两遍;
+   读屏取不到 ::before,档位由 UI 层抄进 aria-label。
+   评语 + 分数 + 档色三信号并用,不靠单一颜色。未落 data-tier 退为素签;
+   老浏览器不识 color-mix 时描边/淡染声明失效,回落素签描边,文字色仍分档。 */
+.panel-summary .rate-line b {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+.fengshui {
+  display: inline-block;
+  padding: 0 0.45em;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--paper-dim);
+}
+.fengshui[data-tier]::before {
+  font-family: var(--font-title);
+  letter-spacing: 0.06em;
+  margin-right: 0.3em;
+}
+.fengshui[data-tier="good"] {
+  color: var(--fengshui-good);
+  border-color: color-mix(in srgb, var(--fengshui-good) 45%, transparent);
+  background: color-mix(in srgb, var(--fengshui-good) 8%, transparent);
+}
+.fengshui[data-tier="good"]::before {
+  content: "上吉";
+}
+.fengshui[data-tier="fair"] {
+  color: var(--fengshui-fair);
+  border-color: color-mix(in srgb, var(--fengshui-fair) 45%, transparent);
+  background: color-mix(in srgb, var(--fengshui-fair) 8%, transparent);
+}
+.fengshui[data-tier="fair"]::before {
+  content: "中平";
+}
+.fengshui[data-tier="poor"] {
+  color: var(--fengshui-poor);
+  border-color: color-mix(in srgb, var(--fengshui-poor) 45%, transparent);
+  background: color-mix(in srgb, var(--fengshui-poor) 8%, transparent);
+}
+.fengshui[data-tier="poor"]::before {
+  content: "下乘";
+}
+
+/* ------------------------------------------------------------
+   名录笺:弟子 / 法器条目,上阵者鎏金侧栏。
+   ------------------------------------------------------------ */
+.hero-card,
+.art-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.58rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  margin-bottom: 0.45rem;
+  background: linear-gradient(180deg, rgba(243, 230, 201, 0.032), transparent);
+  transition: border-color var(--t-fast) var(--ease-brush);
+  min-width: 0;
+}
+.hero-card:hover,
+.art-card:hover {
+  border-color: var(--line-gold);
+}
+.hero-card > div,
+.art-card > div {
+  min-width: 0;
+}
+.hero-card button,
+.art-card button {
+  flex: none;
+}
+.hero-card .muted,
+.art-card .muted {
+  font-size: 0.78rem;
+}
+.hero-card.in,
+.art-card.in {
+  border-color: rgba(212, 160, 23, 0.5);
+  background: linear-gradient(90deg, rgba(212, 160, 23, 0.1), transparent 55%);
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+
+/* 法器槽位三色(attack 朱 / defend 石青 / util 青莲):已接线。
+   UI 层(AD-8 改造)给法器卡、槽签 chip、分组题、槽位盘行/名/格落了 data-slot;
+   未佩卡也带 data-slot,但整卡转色只认 .in——素笺卡上槽色仅经槽签 chip 露面。
+   退化口径:老浏览器不识 color-mix 的声明整条失效,回落 .art-card.in 与
+   .slot-cell.filled 的既有金底——退化仍是完整视觉,故不设字面量回落。
+   品阶 chip(金品/红品)沿用金/朱文字,与槽色不混用。 */
+
+/* 已佩卡片:侧栏、描边、渐染整卡转槽色(比例与 .art-card.in 金版一致) */
+.art-card.in[data-slot="attack"] {
+  border-color: color-mix(in srgb, var(--slot-attack) 50%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--slot-attack) 10%, transparent),
+    transparent 55%
+  );
+  box-shadow: inset 3px 0 0 var(--slot-attack);
+}
+.art-card.in[data-slot="defend"] {
+  border-color: color-mix(in srgb, var(--slot-defend) 50%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--slot-defend) 10%, transparent),
+    transparent 55%
+  );
+  box-shadow: inset 3px 0 0 var(--slot-defend);
+}
+.art-card.in[data-slot="util"] {
+  border-color: color-mix(in srgb, var(--slot-util) 50%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--slot-util) 10%, transparent),
+    transparent 55%
+  );
+  box-shadow: inset 3px 0 0 var(--slot-util);
+}
+
+/* 槽签 chip:槽色文字 + 描边 + 淡染 */
+.d-chip[data-slot="attack"] {
+  color: var(--slot-attack-ink);
+  border-color: color-mix(in srgb, var(--slot-attack) 55%, transparent);
+  background: color-mix(in srgb, var(--slot-attack) 9%, transparent);
+}
+.d-chip[data-slot="defend"] {
+  color: var(--slot-defend-ink);
+  border-color: color-mix(in srgb, var(--slot-defend) 55%, transparent);
+  background: color-mix(in srgb, var(--slot-defend) 9%, transparent);
+}
+.d-chip[data-slot="util"] {
+  color: var(--slot-util-ink);
+  border-color: color-mix(in srgb, var(--slot-util) 55%, transparent);
+  background: color-mix(in srgb, var(--slot-util) 9%, transparent);
+}
+
+/* 分组题:槽色文字压 currentColor 笔锋线(与战场标题同语汇)。
+   旧版在此写 border-color,但 h4.sub 无边框,声明落空,故改压底一线。 */
+h4.sub[data-slot] {
+  padding-bottom: 0.25rem;
+  background: linear-gradient(90deg, currentColor, transparent 72%) left bottom / 100% 1px
+    no-repeat;
+}
+h4.sub[data-slot="attack"] {
+  color: var(--slot-attack-ink);
+}
+h4.sub[data-slot="defend"] {
+  color: var(--slot-defend-ink);
+}
+h4.sub[data-slot="util"] {
+  color: var(--slot-util-ink);
+}
+
+/* 槽位盘行:行名与计数转槽色,已佩格改槽色描边 + 淡染;
+   空格与「未佩 / 无槽 / 已满」保持素虚框——金仍是可交互专用信号。 */
+.slot-row[data-slot="attack"] {
+  --slot-c: var(--slot-attack);
+  --slot-ink-c: var(--slot-attack-ink);
+}
+.slot-row[data-slot="defend"] {
+  --slot-c: var(--slot-defend);
+  --slot-ink-c: var(--slot-defend-ink);
+}
+.slot-row[data-slot="util"] {
+  --slot-c: var(--slot-util);
+  --slot-ink-c: var(--slot-util-ink);
+}
+.slot-row[data-slot] .slot-name,
+.slot-row[data-slot] .slot-name b {
+  color: var(--slot-ink-c);
+}
+.slot-row[data-slot] .slot-cell.filled {
+  border-color: color-mix(in srgb, var(--slot-c) 45%, transparent);
+  background: color-mix(in srgb, var(--slot-c) 10%, transparent);
+}
+
+/* ------------------------------------------------------------
+   气血/修为条:墨槽金焰,推移 280ms。
+   ------------------------------------------------------------ */
+.hpbar {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #16100b, #241a12);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(243, 230, 201, 0.07);
+  overflow: hidden;
+  position: relative;
+}
+.hpbar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cinnabar-deep), var(--cinnabar) 45%, var(--gold));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: width var(--t-med) var(--ease-brush);
+}
+
+.unit-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+/* 府报:朱点起行,虚线分条 */
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 190px;
+  overflow: auto;
+  font-size: 0.8rem;
+  scrollbar-width: thin;
+}
+.log-list li {
+  position: relative;
+  padding: 0.3rem 0 0.3rem 0.95rem;
+  color: var(--paper-dim);
+  border-bottom: 1px dashed rgba(243, 230, 201, 0.08);
+}
+.log-list li:first-child {
+  color: var(--paper);
+}
+.log-list li::before {
+  content: "";
+  position: absolute;
+  left: 0.15rem;
+  top: 0.78em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--cinnabar);
+  opacity: 0.75;
+}
+
+/* 灵气升腾:慢速轻粒,减少动效时整体撤去 */
+.spirit-orb {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--spirit);
+  box-shadow: 0 0 10px var(--spirit), 0 0 3px var(--paper-bright);
+  animation: rise 3.6s linear infinite;
+  position: absolute;
+  opacity: 0.7;
+  pointer-events: none;
+}
+@keyframes rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0.1;
+  }
+  to {
+    transform: translateY(-28px);
+    opacity: 0;
+  }
+}
+
+/* 窄屏:沙盘满幅,舍建筑名,只留字号金签 */
+@media (max-width: 560px) {
+  .plot-grid {
+    max-width: none;
+  }
+  .plot.filled > span:not(.glyph):not(.lv) {
+    display: none;
+  }
+  .plot .glyph {
+    font-size: clamp(0.95rem, 5.5vw, 1.3rem);
+  }
+  .plot .lv {
+    font-size: 0.54rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spirit-orb {
+    display: none;
+  }
+  .plot.filled:hover {
+    transform: none;
+  }
+}

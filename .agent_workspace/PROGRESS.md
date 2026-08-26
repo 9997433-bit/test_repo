@@ -1,131 +1,44 @@
-# 赵云与阿斗 SOTA 复刻 · 编排进度
+# 多游戏编排索引
 
-- 目标：在独立目录 `games/zhao-yun-adou/` 实现抖音/微信爆款《赵云与阿斗》的 SOTA 级网页复刻（汉字合成 + 水墨塔防 + 对称竞技）。
-- 隔离原因：同仓库还会并行其他游戏（如 `games/linghuashi/`、`games/bingqi-wangzhe/`），禁止污染仓库根目录与其他游戏目录。
-- 工作分支：`cursor/zhao-yun-adou-673d`（系统前缀） / 逻辑名 `agent/zhao-yun-adou`
-- 模型映射（严禁静默降级）：
-  - fable → `claude-fable-5-thinking-xhigh`
-  - opus-fast → `claude-opus-5-thinking-high-fast`
-  - gpt-sol → `gpt-5.6-sol-xhigh-fast`
+同仓库并行多款游戏，进度分节记录。模型映射统一：
 
-## 玩法锚点（调研基线）
+- fable → `claude-fable-5-thinking-xhigh`
+- opus-fast → `claude-opus-5-thinking-high-fast`
+- gpt-sol → `gpt-5.6-sol-xhigh-fast`
 
-蜜獾工坊《赵云与阿斗》：Random Dice 本土化魔改。消耗「馒头」征兵，随机刷出刀/枪/弓/骑、武将单字或铲子；同种同级合并升级；拼出武将姓名召唤名将；敌军沿固定路线进逼「斗」字阿斗（三颗心）；1v1 上下半区对称对抗，先破阿斗者胜。水墨汉字即单位，开战时字体变形攻杀。
+---
 
-## 文件所有权（并发防冲突）
+# 造化仙府 SOTA 复刻 · 编排进度
 
-| 角色 | 模型 | 可写路径 |
-| --- | --- | --- |
-| Fable-1 架构 | fable | `games/zhao-yun-adou/docs/ARCHITECTURE.md`, `docs/API_CONTRACT.md` |
-| Fable-2 美术 UX | fable | `games/zhao-yun-adou/docs/ART_DIRECTION.md`, `src/styles/**` |
-| Fable-3 玩法数值 | fable | `games/zhao-yun-adou/docs/GDD.md`, `src/data/**` |
-| Fable-4 SOTA 验收 | fable | `games/zhao-yun-adou/docs/SOTA_CHECKLIST.md`, `docs/ACCEPTANCE.md` |
-| Opus-1 引擎主循环 | opus-fast | `games/zhao-yun-adou/src/core/**`, `src/main.js` |
-| Opus-2 棋盘合成 | opus-fast | `games/zhao-yun-adou/src/board/**` |
-| Opus-3 战斗与技能 | opus-fast | `games/zhao-yun-adou/src/combat/**` |
-| Opus-4 UI 与 AI | opus-fast | `games/zhao-yun-adou/src/ui/**`, `src/ai/**`, `index.html` |
-| GPT-sol-1 单测探针 | gpt-sol | `games/zhao-yun-adou/tests/**` |
-| GPT-sol-2 基准脚本 | gpt-sol | `games/zhao-yun-adou/scripts/**` |
+- 目标：在独立目录 `games/zaohua-xianfu/` 实现《造化仙府》SOTA 级网页复刻（洞府经营 + 弟子养成 + 人/神/魔阵营战斗 + 登天塔/兽潮 + 法器 + 放置挂机）。
+- 工作分支：`cursor/zaohua-xianfu-e1bf` / 逻辑名 `agent/zaohua-xianfu`
+- 开发端口：`4174`
 
-共享只读（由主调度器维护）：`package.json`, `vite.config.js`, `docs/OWNERSHIP.md`, `src/audio/**`。需要改共享文件时只追加、不删他人段落，并在本文件记录。
+## 文件所有权
+
+| 角色 | 可写路径 |
+| --- | --- |
+| Fable-1 | `games/zaohua-xianfu/docs/ARCHITECTURE.md`, `docs/API_CONTRACT.md` |
+| Fable-2 | `games/zaohua-xianfu/docs/ART_DIRECTION.md`, `src/styles/**` |
+| Fable-3 | `games/zaohua-xianfu/docs/GDD.md`, `src/data/**` |
+| Fable-4 | `games/zaohua-xianfu/docs/SOTA_CHECKLIST.md`, `docs/ACCEPTANCE.md` |
+| Opus-1 | `games/zaohua-xianfu/src/core/**`, `src/main.js` |
+| Opus-2 | `games/zaohua-xianfu/src/mansion/**` |
+| Opus-3 | `games/zaohua-xianfu/src/combat/**`, `src/progression/**` |
+| Opus-4 | `games/zaohua-xianfu/src/ui/**`, `src/disciples/**`, `index.html` |
+| GPT-sol-1 | `games/zaohua-xianfu/tests/**` |
+| GPT-sol-2 | `games/zaohua-xianfu/scripts/**` |
 
 ## Round 状态
 
-- Round 1：10/10 已回收并合入父分支
-- Round 2：10/10 已回收并合入父分支
-- Round 3：10 路目标已回收（视觉收口并入 juice 合流）；循环结束
+- Round 1–3：已完成。见 `ROUND1_BRIEF.md` / `ROUND2_BRIEF.md` / `ROUND3_BRIEF.md`。
 
-## 基线实测（主调度器 Round 0）
+---
 
-```
-npm test     8/8 pass
-npm run probe  settled wave 12, winner ai, 190.5s, player kills 120
-npm run bench 20/20 settled, playerWins 6/20, 9.9ms/match
-```
+# 赵云与阿斗 SOTA 复刻 · 编排进度
 
-## 《Round 1 结论简报》
+- 目标：独立目录 `games/zhao-yun-adou/`（《赵云与阿斗》汉字合成 + 水墨塔防）。
+- 工作分支：`cursor/zhao-yun-adou-673d` / 逻辑名 `agent/zhao-yun-adou`
+- 开发端口：`4180`
 
-### 已实现功能
-
-- 独立目录可玩闭环：征兵 / 放置 / 合并 / 拼字觉醒 / 铲子 / 波次 / 镜像 AI / 胜负结算
-- 棋盘：自合并崩溃修复、觉醒计划重放校验、铲子外扩、手牌工具模块
-- 战斗：格-路径真实射程、六武将技能 juice 契约、击杀压力波、护盾走统一伤害
-- 引擎：停止整页 innerHTML 重建、拖拽/棋盘合并/暂停/键盘、pause-load-restart
-- 视觉：水墨 token 拆分、HUD/教程文案、路线 Boss 标记
-- 数据：前期保底兵种、更平合并曲线、13 波教程-高压结构
-- 测试：67 项单测全绿；probe 6 路径通过
-
-### 遗留缺陷
-
-- 技能/击杀 juice 未接到画面（飘字、泼墨、投射物仍缺）
-- 教程仍是静态说明，无强制引导与首局记忆
-- AI 仍按旧 `cellDistToPath` 布阵，未用新 `coverageWindows`
-- `enemySeq` 仍在模块级，严格回放会漂
-- 字体走 Google CDN，微信/离线会回退
-- 无障碍与触控防滚仍不完整
-
-### 性能瓶颈
-
-- 模拟层充裕（bench 单局约 26ms）
-- 渲染已从全量 DOM 重建改为增量 diff，画布仍 30Hz 刷新 HUD
-- 真实射程降低清线效率，需与数值一起重校
-
-### 下轮攻坚重点
-
-1. 把技能返回的 juice 接到 UI（飘字、震屏、泼墨）
-2. 数据重校：合入新战斗后 headless 胜率升到 91%，目标拉回 45–55%
-3. AI 改用覆盖窗口；补强制教程与 `touch-action`
-4. `enemySeq` 入 state；字体自托管或系统字体栈
-5. 交叉验收并补测试
-
-### Round 1 合入后实测
-
-```
-npm test     67/67 pass
-npm run probe  passed（首征兵 cost=8）
-npm run bench  36/36 settled, playerWins 33/36 (91%)
-```
-
-## 《Round 2 结论简报》
-
-### 演进对比
-
-| 项 | Round 1 末 | Round 2 末 |
-| --- | --- | --- |
-| 单测 | 67 | 134 |
-| headless 胜率 | 91% | 47%（目标 45–55%） |
-| juice | 仅 sfx/toast | skill/kill/leak/merge 上屏 + fx.css |
-| AI 布阵 | `cellDistToPath` 内外圈 | 覆盖窗口 + `placement.js` |
-| 回放 | 模块级 `enemySeq` | per-side 序列 + replay 测试 |
-| 教程/触控 | 静态文案 | 教练条、`touch-action: none`、系统字体回退 |
-
-### 潜在边界风险
-
-- 平局仍偏玩家；决胜波（10–12）灵敏度极高（HP 斜率 ±1 可摆数个点）
-- `fx.css` 与 `juice.js` 双轨演出，需合流以免 diff 洗掉 class
-- `rollRecruit` 课程计数挂 WeakMap，restart/load 可能漂阶段
-- 无头对局里英雄觉醒仍稀少（约 0.08/侧）
-- `board/hand.js`、`classifyDrop`、`atkBonus` 仍少运行时消费者
-
-### SOTA 验收差距
-
-- 强制 FTUE / 本地记忆仍缺
-- 微信离线字体未自托管 woff2
-- 无障碍键盘路径未全覆盖
-- 缺少真机触控与 60fps 实机录证
-
-### Round 2 合入后实测
-
-```
-npm test     134/134 pass
-npm run bench  36/36 settled, playerWins 17/36 (47.2%), 171–242s
-```
-
-## 《Round 3 结论简报》
-
-- juice 单轨：`#fx-layer` + `fx.css` 契约类；首局三步教程写入 localStorage
-- 课程征兵随 `recruitCount` 入档；坏档战斗不再抛死
-- 棋盘辅助有对拍测试；GDD/验收/架构已回签
-- 最终实测：单测 244；probe 通过；bench 胜率约 47%
-- 残留：Google Fonts 链接仍在（已降级为首屏不阻塞）、平局规则仍偏玩家、无头觉醒率偏低
-
+三轮已回收合入父分支。详见该游戏目录文档；本文件只作索引，避免覆盖造化仙府进度。
