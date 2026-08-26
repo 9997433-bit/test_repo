@@ -82,7 +82,8 @@
 | B | R2-O2 小游戏单测 | 运行中 | `bc-3c2aa0f4-0423-5a82-be7e-f71e296136eb` |
 | B | R2-O4 HUD文案接线 | 运行中 | `bc-6d654f68-fc2b-5f5a-9bee-36baaff1801b` |
 | C | R2-G2 模拟脚本 | 已完成，simulate + bench 地板已合入 | `bc-ae73f2e8-0ebc-57ea-ad67-2389d991637b` |
-| C | R2-G1 补测 | 运行中 | `bc-ac408e7a-ec0d-5f7c-8e47-820d6de66ee3` |
+| C | R2-G1 补测 | 已完成，contracts 测试已合入 | `bc-ac408e7a-ec0d-5f7c-8e47-820d6de66ee3` |
+| D | R2-F4 UX 文档 | 续发中 | 待回填 |
 
 ## 已实现基线（Parent 预置）
 
