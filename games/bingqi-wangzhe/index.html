@@ -17,13 +17,25 @@
     <title>兵器王者·炉火 — 炉火兵谱</title>
 
     <link rel="icon" type="image/svg+xml" href="./assets/brand/favicon.svg" />
-    <link rel="preload" as="image" href="./assets/brand/seal.svg" />
     <link rel="stylesheet" href="./css/main.css" />
+    <script>
+      (function () {
+        var path = location.pathname;
+        if (path && path.charAt(path.length - 1) !== '/') {
+          location.replace(path + '/' + location.search + location.hash);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app">
       <div class="boot">
-        <img class="boot__seal" src="./assets/brand/seal.svg" alt="" aria-hidden="true" />
+        <svg class="boot__seal" viewBox="0 0 72 72" width="46" height="46" aria-hidden="true" focusable="false">
+          <rect width="72" height="72" rx="12" fill="#0b0a09"/>
+          <rect x="5" y="5" width="62" height="62" rx="10" fill="#9b1f16"/>
+          <rect x="9.5" y="9.5" width="53" height="53" rx="8" fill="none" stroke="#e4b84a" stroke-width="2"/>
+          <text x="36" y="48" text-anchor="middle" font-family="STSong, Songti SC, Noto Serif SC, serif" font-size="34" font-weight="700" fill="#f7ecd2">兵</text>
+        </svg>
         <p class="boot__text">炉火初燃，正在唤醒兵谱…</p>
         <p class="boot__hint">若长时间停留，请以静态服务器（非 file://）打开本页</p>
       </div>

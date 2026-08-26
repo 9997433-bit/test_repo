@@ -12,6 +12,7 @@
  */
 
 import { h, clear } from './dom.js';
+import { brandSeal } from './art/logo.js';
 import { createUiGame, hasCoreRuntime, probeLogicModules } from './gameAdapter.js';
 import { createResourceBar } from './components/resourceBar.js';
 import { createTabBar } from './components/tabBar.js';
@@ -72,7 +73,7 @@ export function mountApp(root, injectedGame) {
   let resourceBar = createResourceBar(game);
 
   const brand = h('.brand',
-    h('img.brand__seal', { src: './assets/brand/seal.svg', alt: '', 'aria-hidden': 'true' }),
+    brandSeal({ size: 28, className: 'brand__seal' }),
     h('.brand__text',
       h('h1.brand__title', { text: '兵器王者·炉火' }),
       h('.brand__sub', { text: '炉火兵谱' })),
