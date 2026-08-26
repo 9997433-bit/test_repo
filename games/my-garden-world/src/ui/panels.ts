@@ -3,12 +3,13 @@ import { DECORATIONS, THEMES, anchorName } from "../data/decorations";
 import { SPIRITS } from "../data/spirits";
 import type { GameState, ActiveOrder } from "../engine/state";
 import { seasonLabel } from "../engine/time";
+import { neighborRoster } from "../systems/neighbors";
 import { orderParts, orderReady, qualifyingArrangements } from "../systems/orders";
 import { SPIRIT_VISUALS, spiritPortrait } from "../systems/spirits";
 import { scoreArrangement, VASES } from "../systems/workshop";
 import { totalInventory } from "../systems/economy";
 
-export type PanelId = "seed" | "order" | "workshop" | "decor" | "spirit" | "bag" | null;
+export type PanelId = "seed" | "order" | "workshop" | "decor" | "spirit" | "bag" | "visit" | null;
 
 export interface PanelSelection {
   workshopPick: string[];
@@ -28,6 +29,8 @@ export interface PanelHandlers {
   theme: (t: string) => void;
   /** 手持某件陈设（或空手 null）进入摆放模式。 */
   arrange: (decorId: string | null) => void;
+  /** 串门：进入某位邻居的园子。 */
+  visit: (neighborId: string) => void;
   spirit: (id: string | null) => void;
   close: () => void;
 }
@@ -314,6 +317,46 @@ function renderDecor(sheet: HTMLElement, state: GameState, h: PanelHandlers): vo
   sheet.append(arrange);
 }
 
+function renderVisit(sheet: HTMLElement, state: GameState, h: PanelHandlers): void {
+  // 自家有 30 秒内到期的订单：串门前提个醒（UX.md 六 6.4）
+  if (state.orders.some((o) => o.dueAt - state.now <= 30_000)) {
+    const warn = document.createElement("p");
+    warn.className = "visit-urgent";
+    warn.textContent = "家里有客急等交花";
+    sheet.append(warn);
+  }
+  const tip = document.createElement("p");
+  tip.className = "muted";
+  tip.textContent = "帮邻居浇水攒友谊，盛开的花可借一枝回来（一日两枝、一家一枝）。";
+  sheet.append(tip);
+
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  for (const r of neighborRoster(state)) {
+    const card = document.createElement("div");
+    card.className = `card neighbor-card${r.unlocked ? "" : " is-sealed"}`;
+    const heartsStr = "♥".repeat(r.hearts) + "♡".repeat(5 - r.hearts);
+    const allowance =
+      r.waterLeft <= 0 && r.pickLeft <= 0 ? "今日已叨扰，明日再来" : `可浇 ${r.waterLeft} · 可摘 ${r.pickLeft}`;
+    card.innerHTML = r.unlocked
+      ? `<h4><span class="neighbor-seal" aria-hidden="true">${r.def.seal}</span>${r.def.name} <small class="hearts" aria-label="友谊${r.hearts}心">${heartsStr}</small></h4>
+        <div class="muted">${allowance}</div>`
+      : `<h4><span class="neighbor-seal silhouette" aria-hidden="true">？</span>${r.def.name}</h4>
+        <div class="muted">${r.def.unlockLevel} 阶后来往</div>`;
+    if (r.unlocked) {
+      const go = document.createElement("button");
+      go.type = "button";
+      go.className = "primary";
+      go.textContent = "串门";
+      go.setAttribute("aria-label", `串门去${r.def.name}家的园子，友谊${r.hearts}心，${allowance}`);
+      go.addEventListener("click", () => h.visit(r.def.id));
+      card.append(go);
+    }
+    grid.append(card);
+  }
+  sheet.append(grid);
+}
+
 const SPIRIT_ROW = "display:flex;align-items:center;gap:10px;text-align:left";
 // 形象已经替代了视觉层的「首字放大作灵字」占位，标题回到一行，免得灵字与形象打架
 const SPIRIT_TITLE = "display:flex;align-items:baseline;gap:6px";
@@ -401,6 +444,7 @@ const TITLES: Record<Exclude<PanelId, null>, string> = {
   decor: "庭院装扮",
   spirit: "花灵",
   bag: "花材库存",
+  visit: "串门访邻",
 };
 
 export function renderPanel(host: HTMLElement, id: PanelId, state: GameState, sel: PanelSelection, h: PanelHandlers): void {
@@ -417,6 +461,7 @@ export function renderPanel(host: HTMLElement, id: PanelId, state: GameState, se
   if (id === "decor") renderDecor(sheet, state, h);
   if (id === "spirit") renderSpirit(sheet, state, h);
   if (id === "bag") renderBag(sheet, state);
+  if (id === "visit") renderVisit(sheet, state, h);
   host.append(sheet);
 }
 

@@ -1,12 +1,28 @@
 import type { Season } from "../data/flowers";
 
+/** 静音偏好独立持久化（与存档分离）：清档重开、跨会话都记得玩家的耳朵。 */
+const MUTE_KEY = "my-garden-world:muted";
+
+function loadMuted(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 let ctx: AudioContext | null = null;
-let muted = false;
+let muted = loadMuted();
 /** 自动播放策略：首个用户手势之前不建 AudioContext，也就不会有控制台告警。 */
 let gestured = false;
 
 export function toggleMute(): boolean {
   muted = !muted;
+  try {
+    localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+  } catch {
+    /* 隐私模式写不进就只在本次会话生效 */
+  }
   if (muted) stopAmbient();
   else startAmbient();
   return muted;

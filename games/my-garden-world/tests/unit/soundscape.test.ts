@@ -115,6 +115,8 @@ const latest = (): FakeCtx => FakeCtx.created[FakeCtx.created.length - 1]!;
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  // 静音偏好落在 localStorage（跨会话记忆），测试间要清空以免顺序耦合
+  localStorage.clear();
 });
 
 afterEach(() => {

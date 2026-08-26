@@ -51,6 +51,7 @@ describe("app smoke: full tutorial loop", () => {
     expect(el(".modal.tutorial").textContent).toContain("荒园来信");
     expect(dockBtn("workshop").disabled).toBe(true);
     expect(dockBtn("water").disabled).toBe(true);
+    expect(dockBtn("visit").disabled).toBe(true);
     el<HTMLButtonElement>(".modal-card .cta").click();
     tick(50);
 
@@ -116,7 +117,7 @@ describe("app smoke: full tutorial loop", () => {
     deliver.click();
     tick(50);
 
-    // 尾声：结业弹窗 → 全部解锁
+    // 尾声：结业弹窗 → 全部解锁（含访邻），并附一次性音效贴士
     expect(el(".modal.tutorial").textContent).toContain("自此看花");
     el<HTMLButtonElement>(".modal-card .cta").click();
     tick(50);
@@ -124,6 +125,9 @@ describe("app smoke: full tutorial loop", () => {
     expect(document.querySelector(".coach")).toBeNull();
     expect(dockBtn("workshop").disabled).toBe(false);
     expect(dockBtn("decor").disabled).toBe(false);
+    expect(dockBtn("visit").disabled).toBe(false);
+    const toasts = [...document.querySelectorAll(".toast")].map((t) => t.textContent).join("|");
+    expect(toasts).toContain("园中有声");
   });
 
   it("workshop picks survive re-renders and crafting consumes them", () => {

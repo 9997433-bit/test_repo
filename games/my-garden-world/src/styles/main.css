@@ -757,6 +757,96 @@ button { font-family: var(--font-body); }
 /* 读屏播报（进出摆放/邻家等模式） */
 .sr-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
+/* ---------- 邻家庭院互访（UX.md 六）----------
+   邻园整层盖在自家舞台上：顶部访客横幅，中间只读园圃，底部访客动作条；
+   自家 dock 隐去，时间照常流动（HUD 仍在）。 */
+[data-mode="visit"] .dock { display: none; }
+.visit-layer {
+  position: absolute; inset: 0; z-index: var(--z-coach);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px 16px calc(10px + var(--safe-b));
+  background:
+    radial-gradient(140% 100% at 50% 30%, transparent 52%, var(--vignette) 100%),
+    radial-gradient(120% 58% at 50% -12%, var(--sky-glow), transparent 56%),
+    linear-gradient(180deg, var(--sky-hi) 0%, var(--sky-mid) 44%, var(--sky-lo) 100%);
+  animation: fadein 0.3s ease;
+}
+.visit-banner {
+  display: flex; align-items: center; gap: 10px;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  border: 1px solid var(--gold);
+  border-radius: 14px;
+  padding: 8px 12px;
+  box-shadow: 0 6px 18px var(--shadow);
+}
+.visit-seal {
+  display: grid; place-items: center;
+  width: 40px; height: 40px; flex: none;
+  font-family: var(--font-display); font-size: 20px;
+  color: #fff8e8;
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 10px;
+  transform: rotate(-4deg);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 214, 0.4), 0 2px 5px var(--shadow-soft);
+}
+.visit-title { display: grid; gap: 2px; min-width: 0; }
+.visit-title strong { font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: 0.04em; }
+.visit-greet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visit-home {
+  margin-left: auto; flex: none;
+  border: 1px solid var(--vermilion);
+  background: var(--vermilion); color: #fff8e8;
+  border-radius: 999px; padding: 6px 14px; min-height: 32px; cursor: pointer;
+  box-shadow: 0 2px 0 var(--shadow); font-size: 13px;
+}
+.garden.visit-garden { height: 100%; }
+/* 被借走的圃：花换「借花笺」纸条，当日不可再动 */
+.plot.is-borrowed { filter: saturate(0.7); cursor: default; }
+.visit-note {
+  position: absolute; inset: 14% 26% 26%;
+  display: grid; place-items: center;
+  font-family: var(--font-display); font-size: 15px;
+  color: var(--seal-red);
+  background: linear-gradient(174deg, #fbf3dd, #efe2c2);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  transform: rotate(-5deg);
+  box-shadow: 0 3px 6px var(--shadow-soft);
+  writing-mode: vertical-rl;
+  letter-spacing: 0.2em;
+}
+.visit-actions { display: flex; gap: 14px; justify-content: center; }
+.visit-act:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.6); }
+.visit-act.is-on .seal { background: var(--vermilion); color: #fff8e8; border-color: var(--vermilion); }
+
+/* 访邻面板：邻居卡与急单提醒 */
+.visit-urgent {
+  margin: 8px 0 0;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fff4e4;
+  background: #6b3a1f;
+  border: 1px solid color-mix(in srgb, var(--c-gold) 55%, transparent);
+  width: fit-content;
+}
+.neighbor-card { display: grid; gap: 6px; }
+.neighbor-card.is-sealed { opacity: 0.6; filter: grayscale(0.5); }
+.neighbor-seal {
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px; flex: none;
+  font-family: var(--font-display); font-size: 14px;
+  color: #fff8e8;
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 7px;
+  transform: rotate(-4deg);
+}
+.neighbor-seal.silhouette { background: color-mix(in srgb, var(--ink) 55%, var(--paper)); }
+.neighbor-card .hearts { color: var(--seal-red); letter-spacing: 1px; }
+.neighbor-card button.primary { justify-self: start; }
+
 /* ---------- 环境粒子 ---------- */
 .petals { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: var(--z-petals); }
 .particle { position: absolute; top: -4%; display: block; }

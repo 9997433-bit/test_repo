@@ -116,6 +116,14 @@ export function neighborGarden(state: GameState, neighborId: string): NeighborGa
       }
     }
   }
+  // 当日痕迹回放：帮浇过的圃水滴补满，重复进入呈现一致（借花痕迹由 UI 换借花笺）
+  if (state.social.day === day) {
+    for (const m of state.social.marks) {
+      if (m.n !== neighborId || m.k !== "water") continue;
+      const p = plots[m.p];
+      if (p?.flowerId) plots[m.p] = makePlot(p.idx, p.flowerId, p.stage, p.waterNeed);
+    }
+  }
   return { neighborId, day, plots };
 }
 

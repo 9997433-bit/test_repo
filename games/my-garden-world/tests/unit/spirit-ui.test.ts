@@ -18,6 +18,7 @@ const handlers = (over: Partial<PanelHandlers> = {}): PanelHandlers => ({
   place: noop,
   theme: noop,
   arrange: noop,
+  visit: noop,
   spirit: noop,
   close: noop,
   ...over,

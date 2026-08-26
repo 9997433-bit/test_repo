@@ -6,7 +6,7 @@ import { loadState, flushSave, clearSave } from "./engine/save";
 import { applyOfflineCatchUp } from "./engine/offline";
 import { startLoop } from "./engine/loop";
 import { isNight } from "./engine/time";
-import { onGameEvent } from "./engine/events";
+import { emit, onGameEvent } from "./engine/events";
 import { MAX_PLOTS } from "./engine/state";
 import { plant, waterPlot, fertilize, harvest, unlockPlot } from "./systems/planting";
 import { fulfillOrder, cancelOrder } from "./systems/orders";
@@ -19,6 +19,7 @@ import { mountSky } from "./scene/ambience";
 import { createHud } from "./ui/hud";
 import { renderPanel, updatePanelTimers, type PanelHandlers, type PanelId, type PanelSelection } from "./ui/panels";
 import { createPlaceMode } from "./ui/place-mode";
+import { createVisitMode } from "./ui/visit-mode";
 import { mountToasts } from "./ui/toast";
 import { renderTutorial, advanceTutorial, tutorialEventAdvances, coachTargetId, renderSideStory } from "./ui/tutorial";
 import { resumeAudio, toggleMute, isMuted, chime } from "./audio/soundscape";
@@ -27,6 +28,8 @@ type Tool = "none" | "water" | "fert" | "harvest";
 
 export function boot(root: HTMLElement): void {
   const state = loadState();
+  /** 开局就已通关教程的老玩家不补弹音效贴士（贴士只在本会话结业那一刻出现）。 */
+  const tutorialWasDone = state.tutorialDone;
   let selected: number | null = null;
   let panel: PanelId = null;
   let tool: Tool = "none";
@@ -81,6 +84,7 @@ export function boot(root: HTMLElement): void {
 
   const garden = createGardenView(stage, onPick);
   const placeMode = createPlaceMode(stage, root, state, invalidate);
+  const visitMode = createVisitMode(stage, root, state, invalidate);
 
   // 拖拽浇水：按住洒水壶扫过花圃
   let dragging = false;
@@ -168,6 +172,13 @@ export function boot(root: HTMLElement): void {
       renderSideStory(root, state, "settle");
       invalidate();
     },
+    visit: (id) => {
+      // 收起面板，邻家庭院盖上舞台；首次串门弹「篱外人家」番外折
+      panel = null;
+      visitMode.enter(id);
+      renderSideStory(root, state, "fence");
+      invalidate();
+    },
     spirit: (id) => {
       setSpirit(state, id);
       invalidate();
@@ -203,6 +214,7 @@ export function boot(root: HTMLElement): void {
     { id: "order", glyph: "单", label: "订单", aria: "打开花坊订单", kind: "panel", run: () => togglePanel("order") },
     { id: "decor", glyph: "饰", label: "装扮", aria: "打开庭院装扮", kind: "panel", run: () => togglePanel("decor") },
     { id: "spirit", glyph: "灵", label: "花灵", aria: "打开花灵栖所", kind: "panel", run: () => togglePanel("spirit") },
+    { id: "visit", glyph: "邻", label: "访邻", aria: "串门去邻家花园", kind: "panel", run: () => togglePanel("visit") },
     { id: "bag", glyph: "囊", label: "库存", aria: "打开花材库存", kind: "panel", run: () => togglePanel("bag") },
     { id: "plot", glyph: "拓", label: "扩建", aria: "扩建一块花圃", kind: "action", run: () => unlockPlot(state) },
     { id: "mute", glyph: "音", label: "音效", aria: "开关音效", kind: "action", run: () => toggleMute() },
@@ -243,6 +255,14 @@ export function boot(root: HTMLElement): void {
       if (placeMode.isOpen()) {
         placeMode.exit();
         if (s.id === "decor") {
+          invalidate();
+          return;
+        }
+      }
+      // 访邻中点 dock（键盘可达路径）先回自家园，再点「访邻」即纯回家
+      if (visitMode.isOpen()) {
+        visitMode.exit();
+        if (s.id === "visit") {
           invalidate();
           return;
         }
@@ -317,6 +337,10 @@ export function boot(root: HTMLElement): void {
         return `p|${state.unlockedSpirits.join(",")}|${state.activeSpirit ?? ""}`;
       case "bag":
         return `b|${invSig()}|${state.stats.harvested}|${state.stats.ordersDone}`;
+      case "visit":
+        return `v|${state.level}|${state.social.day}|${state.social.marks.length}|${Object.entries(state.social.friendship)
+          .map(([k, n]) => `${k}:${n}`)
+          .join(",")}|${state.orders.some((o) => o.dueAt - state.now <= 30_000) ? 1 : 0}`;
     }
   };
 
@@ -349,14 +373,22 @@ export function boot(root: HTMLElement): void {
     if (tutKey !== tutKeyLast) {
       tutKeyLast = tutKey;
       renderTutorial(root, state, () => advanceTutorial(state));
+      // 开园后的一次性音效小贴士：已读记入存档（seenTips），跨会话不再叨扰
+      if (state.tutorialDone && !tutorialWasDone && !state.seenTips.includes("sound")) {
+        state.seenTips.push("sound");
+        emit({ type: "toast", text: "园中有声——工具栏「音」钮可开关，偏好会记住", tone: "ok" });
+      }
     }
   };
 
-  // Esc 分场景收起最上层临时物（UX.md 五）：番外折自带监听收自己；这里管摆放模式
+  // Esc 分场景收起最上层临时物（UX.md 五）：番外折自带监听收自己；这里管摆放与访邻模式
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || document.querySelector(".modal.side-story")) return;
     if (placeMode.isOpen()) {
       placeMode.exit();
+      invalidate();
+    } else if (visitMode.isOpen()) {
+      visitMode.exit();
       invalidate();
     }
   });
