@@ -1,10 +1,12 @@
 import { performance } from "node:perf_hooks";
-import { createStore } from "../src/core/store.js";
+import { createStore, hydrateSave } from "../src/core/store.js";
 import { stepSim } from "../src/core/engine.js";
 import { placeBuilding, expandRaft, canPlace } from "../src/world/build.js";
 import { tickWorld } from "../src/world/sim.js";
 import { adjacentWalls } from "../src/world/grid.js";
 import { spawnFlotsam } from "../src/explore/salvage.js";
+import { beginDive } from "../src/explore/dive.js";
+import { beginCast, hookCast } from "../src/explore/fishing.js";
 import { simulateBattle } from "../src/combat/battle.js";
 import { mulberry32 } from "../src/core/rng.js";
 import { BUILDINGS } from "../src/data/buildings.js";
@@ -14,6 +16,8 @@ import { STAGES } from "../src/data/stages.js";
 const TARGET_BUILDINGS = 64;
 const TARGET_RAFT_SIDE = 24;
 const STOCK = 1_000_000_000;
+const TSUNAMI_SIM_STEPS = 12;
+const ROUND_TRIP_NOW_MS = 1_700_000_000_000;
 const SHELTER_WALLS = [
   [2, 1],
   [3, 1],
@@ -37,6 +41,17 @@ function round(value) {
 
 function percentile(sorted, fraction) {
   return sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)];
+}
+
+function finiteState(state) {
+  const pending = [state];
+  while (pending.length) {
+    const value = pending.pop();
+    if (typeof value === "number" && !Number.isFinite(value)) return false;
+    if (Array.isArray(value)) pending.push(...value);
+    else if (value && typeof value === "object") pending.push(...Object.values(value));
+  }
+  return true;
 }
 
 function measure(run, { samples, batch, warmup }) {
@@ -149,6 +164,45 @@ const allies = [
   { id: "h-kan", heroKey: "kan", star: 5 },
 ];
 
+let tsunamiProbeState = {
+  ...prepared,
+  world: { ...prepared.world, weather: "clear", weatherTimer: 3600 },
+};
+tsunamiProbeState = beginDive(tsunamiProbeState, "wreck");
+const tsunamiDiveStarted = !!tsunamiProbeState.explore.dive?.ok;
+tsunamiProbeState = {
+  ...tsunamiProbeState,
+  world: { ...tsunamiProbeState.world, weather: "tsunami", weatherTimer: 3600 },
+};
+let tsunamiStepFinite = true;
+for (let i = 0; i < TSUNAMI_SIM_STEPS; i += 1) {
+  tsunamiProbeState = stepSim(tsunamiProbeState);
+  tsunamiStepFinite &&= finiteState(tsunamiProbeState);
+}
+const tsunamiDiveClosed = tsunamiProbeState.explore.dive === null;
+
+let codexState = {
+  ...prepared,
+  world: { ...prepared.world, weather: "clear", weatherTimer: 3600 },
+};
+codexState = beginCast(codexState);
+const codexCast = codexState.explore.fishing.cast;
+const codexCastStarted = !!codexCast?.ok;
+if (codexCastStarted) {
+  codexState = hookCast(codexState, (codexCast.window[0] + codexCast.window[1]) / 2);
+}
+const codexBefore = codexState.explore.fishing.codex || {};
+const codexHydrated = hydrateSave(
+  JSON.parse(JSON.stringify({
+    ...codexState,
+    meta: { ...codexState.meta, savedAt: ROUND_TRIP_NOW_MS },
+  })),
+  ROUND_TRIP_NOW_MS,
+);
+const codexAfter = codexHydrated?.explore.fishing.codex || {};
+const codexRoundTripRetained =
+  Object.keys(codexBefore).length > 0 && JSON.stringify(codexAfter) === JSON.stringify(codexBefore);
+
 const metrics = {
   tick: measure(() => {
     tickState = tickWorld(tickState, 0.1);
@@ -181,6 +235,11 @@ const checks = {
   assignedHeroesResolve: prepared.buildings.every((building) =>
     prepared.heroes.some((hero) => hero.id === building.occupantHeroId)),
   adjacentFences: adjacentFenceCount === SHELTER_WALLS.length,
+  tsunamiDiveStarted,
+  tsunamiStepFinite,
+  tsunamiDiveClosed,
+  codexCastStarted,
+  codexRoundTripRetained,
   allBudgetsPass: Object.values(metrics).every((metric) => metric.pass),
 };
 const report = {
@@ -194,6 +253,20 @@ const report = {
     weather: prepared.world.weather,
     battleStage: STAGES[29].id,
     battleUnits: allies.length + STAGES[29].enemies.length,
+  },
+  tsunamiStepSim: {
+    steps: TSUNAMI_SIM_STEPS,
+    finite: tsunamiStepFinite,
+    diveStarted: tsunamiDiveStarted,
+    diveClosed: tsunamiDiveClosed,
+    finalWeather: tsunamiProbeState.world.weather,
+    finalTick: tsunamiProbeState.meta.tick,
+  },
+  saveRoundTrip: {
+    method: "JSON.parse/stringify + hydrateSave",
+    codexEntriesBefore: Object.keys(codexBefore).length,
+    codexEntriesAfter: Object.keys(codexAfter).length,
+    codexRetained: codexRoundTripRetained,
   },
   metrics,
   checks,
