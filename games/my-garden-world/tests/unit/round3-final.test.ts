@@ -23,6 +23,14 @@ function placedIds(state: GameState): string[] {
   });
 }
 
+function storageSnapshot(storage: Storage): string {
+  return Array.from({ length: storage.length }, (_, index) => storage.key(index))
+    .filter((key): key is string => key !== null)
+    .sort()
+    .map((key) => `${key}=${storage.getItem(key)}`)
+    .join("\n");
+}
+
 beforeEach(() => {
   resetSaveScheduler();
   localStorage.clear();
@@ -147,10 +155,12 @@ describe("Round 3 optional feature contracts", () => {
     const sound = await import("../../src/audio/soundscape");
     if (sound.isMuted()) sound.toggleMute();
     expect(sound.isMuted()).toBe(false);
+    const beforeToggle = `${storageSnapshot(localStorage)}\n${storageSnapshot(sessionStorage)}`;
     expect(sound.toggleMute()).toBe(true);
     expect(sound.isMuted()).toBe(true);
 
-    const wrotePreference = localStorage.length > 0 || sessionStorage.length > 0;
+    const afterToggle = `${storageSnapshot(localStorage)}\n${storageSnapshot(sessionStorage)}`;
+    const wrotePreference = afterToggle !== beforeToggle;
     vi.resetModules();
     const reloaded = await import("../../src/audio/soundscape");
     expect(reloaded.isMuted()).toBe(wrotePreference);
