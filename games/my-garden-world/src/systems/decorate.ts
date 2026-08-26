@@ -3,6 +3,32 @@ import { emit } from "../engine/events";
 import type { GameState } from "../engine/state";
 import { spendCoins } from "./economy";
 
+const DECOR_MAP = new Map(DECORATIONS.map((d) => [d.id, d]));
+
+/** 场景要画的一件陈设：已入园的 id 解析成图名与落款，旧存档的未知 id 也保留。 */
+export interface PlacedDecor {
+  id: string;
+  name: string;
+  glyph: string;
+  /** 陈列牌文案：已知者「灯 纱灯」，未知者原样 id */
+  label: string;
+  mood: number;
+  known: boolean;
+}
+
+export function resolvePlacedDecor(state: GameState): PlacedDecor[] {
+  return state.placedDecor.map((id) => {
+    const def = DECOR_MAP.get(id);
+    if (!def) return { id, name: id, glyph: id.slice(0, 1), label: id, mood: 0, known: false };
+    return { id, name: def.name, glyph: def.glyph, label: `${def.glyph} ${def.name}`, mood: def.mood, known: true };
+  });
+}
+
+/** 庭院雅致合计，仅计已知陈设。 */
+export function decorMood(state: GameState): number {
+  return resolvePlacedDecor(state).reduce((sum, d) => sum + d.mood, 0);
+}
+
 export function placeDecor(state: GameState, id: string): boolean {
   const def = DECORATIONS.find((d) => d.id === id);
   if (!def) return false;

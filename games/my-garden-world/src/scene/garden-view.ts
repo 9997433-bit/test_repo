@@ -1,7 +1,8 @@
 import { FLOWER_MAP, type GrowthStage } from "../data/flowers";
-import { DECORATIONS } from "../data/decorations";
 import type { GameState, Plot } from "../engine/state";
+import { resolvePlacedDecor } from "../systems/decorate";
 import { plotProgress } from "../systems/garden";
+import { createDecorLayer } from "./decor-layer";
 import { plotArt } from "./flower-art";
 
 const STAGE_ZH: Record<GrowthStage, string> = {
@@ -42,13 +43,13 @@ function needsWater(plot: Plot): boolean {
 /** 增量花园视图：节点常驻，每帧只写有变化的属性；SVG 仅在阶段切换时重建。 */
 export function createGardenView(root: HTMLElement, onPick: (id: number) => void): GardenView {
   root.replaceChildren();
-  const decorRow = document.createElement("div");
-  decorRow.className = "decor-row";
+  const decor = createDecorLayer();
   const grid = document.createElement("div");
   grid.className = "garden";
   grid.setAttribute("role", "group");
   grid.setAttribute("aria-label", "花园地块");
-  root.append(decorRow, grid);
+  // 景物层在 DOM 中先于花圃，绝对定位仍绘于其下，且不吃指针事件。
+  root.append(decor.row, decor.scene, grid);
 
   const cells = new Map<number, Cell>();
   let decorKey = "";
@@ -85,14 +86,7 @@ export function createGardenView(root: HTMLElement, onPick: (id: number) => void
     const dk = state.placedDecor.join(",");
     if (dk !== decorKey) {
       decorKey = dk;
-      decorRow.replaceChildren();
-      for (const id of state.placedDecor) {
-        const d = DECORATIONS.find((x) => x.id === id);
-        const chip = document.createElement("span");
-        chip.className = "decor-chip";
-        chip.textContent = d ? `${d.glyph} ${d.name}` : id;
-        decorRow.append(chip);
-      }
+      decor.update(resolvePlacedDecor(state));
     }
 
     for (const plot of state.plots) {

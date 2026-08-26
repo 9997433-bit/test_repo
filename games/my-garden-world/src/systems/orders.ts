@@ -27,12 +27,23 @@ function instantiate(state: GameState, t: OrderTemplate, timeMul = 1): ActiveOrd
   };
 }
 
-export function spawnOrders(state: GameState): void {
+/**
+ * 补满订单栏。同一模板不会在列表里撞车；`avoidTemplateId` 用于挡住刚刚离场的那张，
+ * 免得交付/超时之后原样又贴回来。模板数不够铺满时才退让允许重复。
+ */
+export function spawnOrders(state: GameState, avoidTemplateId?: string): void {
   const cap = 3 + Math.min(2, Math.floor(state.level / 4));
+  const eligible = ORDER_TEMPLATES.filter((t) => t.minLevel <= state.level);
+  if (eligible.length === 0) return;
+  const taken = new Set(state.orders.map((o) => o.templateId));
+  if (avoidTemplateId) taken.add(avoidTemplateId);
   while (state.orders.length < cap) {
-    const pool = ORDER_TEMPLATES.filter((t) => t.minLevel <= state.level);
+    let pool = eligible.filter((t) => !taken.has(t.id));
+    if (pool.length === 0) pool = eligible.filter((t) => t.id !== avoidTemplateId);
+    if (pool.length === 0) pool = eligible;
     const t = pool[Math.floor(Math.random() * pool.length)];
     if (!t) break;
+    taken.add(t.id);
     state.orders.push(instantiate(state, t));
   }
 }
@@ -125,18 +136,19 @@ export function fulfillOrder(state: GameState, uid: string, arrangementId?: stri
   bumpQuest(state, "order1");
   emit({ type: "orderDone", title: order.title });
   emit({ type: "toast", text: `交付成功 · +${order.coin}金`, tone: "ok" });
-  spawnOrders(state);
+  spawnOrders(state, order.templateId);
   return true;
 }
 
 export function cancelOrder(state: GameState, uid: string, expired = false): void {
   const idx = state.orders.findIndex((o) => o.uid === uid);
-  if (idx < 0) return;
+  const order = state.orders[idx];
+  if (idx < 0 || !order) return;
   state.orders.splice(idx, 1);
   state.reputation = Math.max(30, state.reputation - 4);
   state.stats.cancelled += 1;
   emit({ type: "toast", text: expired ? "订单超时，客人失望离去" : "客人离去，口碑微损", tone: "warn" });
-  spawnOrders(state);
+  spawnOrders(state, order.templateId);
 }
 
 export function tickOrders(state: GameState): void {
