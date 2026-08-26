@@ -217,25 +217,19 @@ const CSS = `
 .neighbor-home { margin-left: auto; flex: none; cursor: pointer; border-radius: 999px; padding: 5px 12px;
   font-family: var(--font-display, serif); font-size: 12px; color: var(--text-soft, #4a3a2a);
   background: var(--surface-hi, #fbf3e2); border: 1px solid var(--line-strong, rgba(90, 70, 45, .5)); }
+/* 花圃沿用自家那套（.plot / .plot-art / .plot-badges / .plot-meta），
+   邻家只添两圈邀请光与一张借花笺，视觉与自家园子一脉。 */
 .neighbor-plots { flex: 1 1 auto; display: grid; gap: 12px; min-height: 0;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
-.n-plot { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
-  gap: 4px; padding: 6px; cursor: pointer; border-radius: 12px; color: inherit;
-  background: linear-gradient(180deg, rgba(122, 90, 58, .16), rgba(60, 42, 22, .3));
-  border: 1px solid rgba(90, 70, 45, .35); transition: transform .16s ease, box-shadow .2s ease; }
-.n-plot:disabled { cursor: default; opacity: .72; }
-.n-plot:not(:disabled):hover { transform: translateY(-2px); }
-.n-plot .n-art { width: 100%; }
-.n-plot .n-art svg { display: block; width: 100%; height: auto; }
-.n-plot .n-name { font-size: 11px; font-family: var(--font-display, serif); }
-.n-plot .n-drops { display: flex; gap: 3px; }
-.n-plot .n-drops i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, .35); }
-.n-plot .n-drops i.full { background: #8fc3d4; }
-.n-plot.can-act { box-shadow: 0 0 0 2px rgba(95, 143, 87, .75); }
-.n-plot.can-pick { box-shadow: 0 0 0 2px rgba(244, 211, 94, .9); }
+  align-content: center; justify-content: center;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 158px)); width: 100%; margin: 0 auto; }
+.n-plot:disabled { cursor: default; }
+.n-plot.can-act {
+  box-shadow: 0 10px 0 rgba(0, 0, 0, .2), inset 0 0 0 3px rgba(126, 200, 163, .95);
+  animation: invite 1.6s ease-in-out infinite;
+}
 .n-plot .n-note { position: absolute; top: 6px; left: 50%; transform: translateX(-50%) rotate(-4deg);
   font-size: 10px; padding: 2px 6px; border-radius: 3px; background: #f4ead2; color: #6b4b2a;
-  border: 1px solid rgba(107, 75, 42, .4); }
+  border: 1px solid rgba(107, 75, 42, .4); pointer-events: none; }
 .neighbor-bar { flex: none; display: flex; gap: 10px; align-items: center; justify-content: center; }
 .n-act { cursor: pointer; border-radius: 999px; padding: 6px 14px; font-family: var(--font-display, serif);
   font-size: 13px; color: var(--text-soft, #4a3a2a); background: var(--surface-hi, #fbf3e2);
@@ -336,17 +330,26 @@ export function createNeighborView(host: HTMLElement, opts: NeighborViewOptions)
       if (!cell) continue;
       const def = plot.flowerId ? FLOWER_MAP[plot.flowerId] : undefined;
       const actionable = action === "water" ? canWater(plot) && waterLeft > 0 : canPick(plot) && pickLeft > 0;
-      cell.className = `n-plot${actionable ? (action === "pick" ? " can-pick" : " can-act") : ""}`;
+      cell.className = [
+        "plot",
+        "n-plot",
+        canPick(plot) ? "is-ready" : "",
+        canWater(plot) ? "is-thirsty" : "",
+        plot.watered > 0 && plot.stage !== "bloom" ? "is-wet" : "",
+        actionable && action === "water" ? "can-act" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       // 空圃无事可做；其余照点不误——点了不生效也要有一声回应（见 UX 六·6.6）
       cell.disabled = plot.flowerId === null;
-      const art = cell.querySelector(".n-art");
+      const art = cell.querySelector(".plot-art");
       if (art) art.innerHTML = plotArt(def, plot.stage);
-      const name = cell.querySelector(".n-name");
+      const name = cell.querySelector(".plot-name");
       if (name) name.textContent = plot.flowerId ? `${def?.name ?? plot.flowerId} · ${STAGE_ZH[plot.stage]}` : "空圃";
-      const drops = cell.querySelector(".n-drops");
+      const drops = cell.querySelector(".plot-badges");
       if (drops) {
         let html = "";
-        for (let i = 0; i < plot.waterNeed; i++) html += `<i class="${i < plot.watered ? "full" : ""}"></i>`;
+        for (let i = 0; i < plot.waterNeed; i++) html += `<i class="drop${i < plot.watered ? " full" : ""}"></i>`;
         drops.innerHTML = plot.stage === "bloom" || !plot.flowerId ? "" : html;
       }
       const note = cell.querySelector(".n-note");
@@ -407,13 +410,13 @@ export function createNeighborView(host: HTMLElement, opts: NeighborViewOptions)
   for (const plot of plots) {
     const cell = document.createElement("button");
     cell.type = "button";
-    cell.className = "n-plot";
+    cell.className = "plot n-plot";
     cell.dataset.plotIdx = String(plot.idx);
     cell.innerHTML =
+      `<span class="plot-art" aria-hidden="true"></span>` +
+      `<span class="plot-badges" aria-hidden="true"></span>` +
       `<span class="n-note" hidden></span>` +
-      `<span class="n-art" aria-hidden="true"></span>` +
-      `<span class="n-drops" aria-hidden="true"></span>` +
-      `<span class="n-name"></span>`;
+      `<span class="plot-meta"><span class="plot-name"></span></span>`;
     cell.addEventListener("click", () => (action === "water" ? water(plot) : borrow(plot)));
     cells.set(plot.idx, cell);
     grid.append(cell);

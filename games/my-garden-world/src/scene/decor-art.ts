@@ -63,14 +63,16 @@ const FALLBACK_SLOTS: DecorSlot[] = [
  * 锚位只定「在哪儿」与「远近」，每件陈设占多宽仍由自己的 `decorSlot(id).w` 决定。
  */
 const ANCHOR_SLOTS: Record<AnchorId, Omit<DecorSlot, "w">> = {
+  // 天际一带（花圃上沿之上）
   eave: { x: 8, y: 20, depth: "near" },
-  gate: { x: 88, y: 30, depth: "far" },
-  "path-west": { x: 9, y: 60, depth: "near" },
-  "path-east": { x: 84, y: 74, depth: "near" },
-  pondside: { x: 18, y: 87, depth: "near" },
-  "corner-north": { x: 30, y: 20, depth: "far" },
-  "corner-south": { x: 93, y: 55, depth: "near" },
-  heart: { x: 50, y: 91, depth: "near" },
+  "corner-north": { x: 30, y: 17, depth: "far" },
+  gate: { x: 88, y: 27, depth: "far" },
+  // 园前一带（花圃下沿之下）
+  "path-west": { x: 8, y: 74, depth: "near" },
+  pondside: { x: 20, y: 89, depth: "near" },
+  heart: { x: 50, y: 93, depth: "near" },
+  "path-east": { x: 78, y: 76, depth: "near" },
+  "corner-south": { x: 94, y: 88, depth: "near" },
 };
 
 export function anchorSlot(anchor: AnchorId): Omit<DecorSlot, "w"> {

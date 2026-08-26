@@ -132,6 +132,8 @@ const CSS = `
 .decor-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
 .anchor-layer { position: absolute; inset: 0; display: none; z-index: 3; }
+/* 摆放时整层浮到花圃之上：锚位标记与景物都要看得见、点得到 */
+.decor-scene.is-placing { z-index: 2; }
 .decor-scene.is-placing .anchor-layer { display: block; }
 .decor-scene.is-placing .decor-item { opacity: .55; }
 .decor-scene.is-placing .decor-item.is-held { opacity: 1; --ds: 1.1; }
