@@ -11,6 +11,14 @@
   const HERO_HP_REGEN = 3;
   const HERO_MELEE_RANGE = 30;
   const HERO_DOWN_TIME = 22;
+  const HERO_HIT_FLASH = 0.16;
+  const HERO_HIT_FX_GAP = 0.12;
+
+  /* Effect kinds render.js knows how to paint. Anything else is dropped. */
+  const FX_KINDS = { spark: true, ring: true, text: true };
+  /* Transient effects are capped so a long fight cannot grow the list forever. */
+  const FX_SOFT_CAP = 640;
+  const FX_TRIM_TO = 480;
 
   function Game(opts) {
     opts = opts || {};
@@ -138,6 +146,8 @@
       attackCd: 0,
       dead: false,
       respawn: 0,
+      _hitFlash: 0,
+      _hitFxAt: -1,
     };
   };
 
@@ -146,32 +156,85 @@
     if (this.log.length > 30) this.log.pop();
   };
 
+  /* ------------------------------------------------------------------ *
+   * FX events
+   *
+   * Every visual beat the sim produces goes through fxEmit and lands in
+   * `game.fx` as one of the three kinds render.js already paints: spark,
+   * ring or text. The extra `name` field tags which gameplay moment fired
+   * the effect, so the renderer can give each moment its own look and can
+   * safely no-op on names it does not recognise. Optional fields on every
+   * entry: color, r, banner, text, vy.
+   * ------------------------------------------------------------------ */
+
+  Game.prototype.fxEmit = function (name, kind, x, y, opts) {
+    if (!FX_KINDS[kind]) return null;
+    opts = opts || {};
+    const life = opts.life || 0.3;
+    const f = {
+      kind: kind,
+      name: name,
+      x: x,
+      y: y,
+      color: opts.color || "#ffe082",
+      life: life,
+      max: life,
+      r: opts.r || 0,
+    };
+    if (opts.text != null) f.text = opts.text;
+    if (opts.vy) f.vy = opts.vy;
+    if (opts.banner) f.banner = true;
+    return this._pushFx(f);
+  };
+
+  /** Expanding ring plus a spark at the same spot — the generic "pop". */
+  Game.prototype.fxBurst = function (name, x, y, opts) {
+    opts = opts || {};
+    const life = opts.life || 0.4;
+    this.fxEmit(name, "ring", x, y, { color: opts.ring || opts.color, life: life, r: opts.r || 18 });
+    return this.fxEmit(name, "spark", x, y, { color: opts.color, life: life * 0.7, r: opts.sparkR || 5 });
+  };
+
+  Game.prototype._pushFx = function (f) {
+    this.fx.push(f);
+    if (this.fx.length > FX_SOFT_CAP) this._trimFx();
+    return f;
+  };
+
+  /** Drop the oldest transient effects; banners always survive a trim. */
+  Game.prototype._trimFx = function () {
+    const fx = this.fx;
+    let drop = fx.length - FX_TRIM_TO;
+    const kept = [];
+    for (let i = 0; i < fx.length; i++) {
+      if (drop > 0 && !fx[i].banner) { drop -= 1; continue; }
+      kept.push(fx[i]);
+    }
+    this.fx = kept;
+  };
+
   /** Log line plus a large floating banner drawn over the middle of the lane. */
   Game.prototype.banner = function (msg, color) {
     this.announce(msg);
-    this.fx.push({
-      kind: "text",
-      x: this.mapW * this.tile * 0.5 - 150,
-      y: this.mapH * this.tile * 0.42,
+    return this.fxEmit("banner", "text", this.mapW * this.tile * 0.5 - 150, this.mapH * this.tile * 0.42, {
       text: msg,
       color: color || "#ffe082",
       life: 3.4,
-      max: 3.4,
       vy: -8,
       banner: true,
     });
   };
 
   Game.prototype.float = function (x, y, text, color) {
-    this.fx.push({ kind: "text", x: x, y: y, text: text, color: color || "#fff", life: 0.9, max: 0.9, vy: -22 });
+    return this.fxEmit("float", "text", x, y, { text: text, color: color || "#fff", life: 0.9, vy: -22 });
   };
 
-  Game.prototype.spark = function (x, y, color) {
-    this.fx.push({ kind: "spark", x: x, y: y, color: color || "#ffe082", life: 0.25, max: 0.25, r: 4 });
+  Game.prototype.spark = function (x, y, color, r, life) {
+    return this.fxEmit("spark", "spark", x, y, { color: color || "#ffe082", r: r || 4, life: life || 0.25 });
   };
 
   Game.prototype.ring = function (x, y, color, life, r) {
-    this.fx.push({ kind: "ring", x: x, y: y, color: color || "#fff", life: life || 0.4, max: life || 0.4, r: r || 20 });
+    return this.fxEmit("ring", "ring", x, y, { color: color || "#fff", life: life || 0.4, r: r || 20 });
   };
 
   Game.prototype.tileAt = function (x, y) {
@@ -221,6 +284,8 @@
     this.occupied[t.tx + "," + t.ty] = tower.id;
     this.towers.push(tower);
     this.selected = tower;
+    this.fxBurst("build", tower.x, tower.y, { color: def.color, r: 22, life: 0.5, sparkR: 6 });
+    this.float(tower.x, tower.y - 30, "-" + cost, "#ffcc80");
     if (this.audio) this.audio.build();
     return tower;
   };
@@ -237,6 +302,8 @@
     t.range = t.def.range[t.tier - 1];
     t.dmg = t.def.dmg[t.tier - 1];
     t.rate = t.def.rate[t.tier - 1];
+    this.fxBurst("upgrade", t.x, t.y, { color: t.def.color, ring: "#ffe082", r: 26, life: 0.65, sparkR: 7 });
+    this.float(t.x, t.y - 34, "T" + t.tier, "#ffe082");
     if (this.audio) this.audio.build();
     return true;
   };
@@ -250,6 +317,7 @@
     this.towers = this.towers.filter(function (x) { return x !== t; });
     this.selected = null;
     if (this.audio) this.audio.sell();
+    this.fxBurst("sell", t.x, t.y, { color: "#bcaaa4", ring: "#ffd54f", r: 20, life: 0.45 });
     this.float(t.x, t.y, "+" + refund, "#ffe082");
     return refund;
   };
@@ -367,7 +435,7 @@
         ability: D.abilityText(w.abilities, this.lang),
       }), "#ff8a65");
       const portal = this.path[0];
-      this.ring(portal.x, portal.y, "#ff5252", 1.2, 48);
+      this.fxEmit("bossPortal", "ring", portal.x, portal.y, { color: "#ff5252", life: 1.2, r: 48 });
     }
     if (this.audio) this.audio.wave();
   };
@@ -411,7 +479,7 @@
       const stomp = this._abilityDef(creep, "stomp");
       creep.castCd = stomp ? stomp.cd : 0;
       this.banner(this.msg("bossSpawn", { name: this.waveLabel(wave) }), "#ff8a65");
-      this.ring(start.x, start.y, "#ff5252", 0.8, 34);
+      this.fxBurst("bossSpawn", start.x, start.y, { color: wave.color, ring: "#ff5252", life: 0.8, r: 34, sparkR: 8 });
       if (this.audio) this.audio.wave();
     }
     this.creeps.push(creep);
@@ -449,7 +517,11 @@
     if (this.settings.dmgNumbers) {
       this.float(creep.x, creep.y - 12, Math.round(res.damage).toString(), res.multiplier >= 1.4 ? "#ffee66" : "#ffffff");
     }
-    this.spark(creep.x, creep.y - 6, source && source.def && source.def.color ? source.def.color : "#ffe082");
+    this.fxEmit("impact", "spark", creep.x, creep.y - 6, {
+      color: source && source.def && source.def.color ? source.def.color : "#ffe082",
+      r: res.multiplier >= 1.4 ? 6 : 4,
+      life: 0.25,
+    });
     if (source) {
       if (source.slow) creep.slow = Math.max(creep.slow, 1.6);
       if (source.poison) creep.poison = Math.max(creep.poison, 2.4);
@@ -466,7 +538,17 @@
     this.gold += creep.bounty;
     this.goldEarned += creep.bounty;
     this.float(creep.x, creep.y, "+" + creep.bounty, "#ffd54f");
-    this.fx.push({ kind: "ring", x: creep.x, y: creep.y, color: "#cfd8dc", life: 0.35, max: 0.35, r: 14 });
+    const tone = creep.color || "#cfd8dc";
+    this.fxEmit("kill", "ring", creep.x, creep.y, {
+      color: creep.boss ? "#ff8a65" : "#cfd8dc",
+      life: creep.boss ? 0.9 : 0.35,
+      r: creep.boss ? 36 : 14,
+    });
+    this.fxEmit("kill", "spark", creep.x, creep.y - 4, {
+      color: tone,
+      life: creep.boss ? 0.5 : 0.3,
+      r: creep.boss ? 9 : 5,
+    });
     if (creep.boss) {
       this.banner(this.lang === "zh"
         ? "★ " + (creep.name[this.lang] || creep.name.zh) + " 已被击杀！"
@@ -478,7 +560,12 @@
     if (creep._dead) return;
     creep._dead = true;
     creep.hp = 0;
+    const livesBefore = this.lives;
     this.lives = S.livesAfterLeak(this.lives, 1, creep.boss ? 2 : 1);
+    this.fxEmit("leak", "ring", creep.x, creep.y, { color: "#ff5252", life: 0.75, r: creep.boss ? 40 : 26 });
+    this.fxEmit("leak", "spark", creep.x, creep.y - 8, { color: "#ff8a80", life: 0.35, r: 6 });
+    this.float(creep.x, creep.y - 26,
+      "-" + (livesBefore - this.lives) + (this.lang === "zh" ? " 生命" : " LIFE"), "#ff5252");
     if (this.audio) this.audio.leak();
     this.announce(this.msg("leak", { lives: this.lives }));
     if (this.lives <= 0) this._end("defeat");
@@ -538,7 +625,8 @@
       hero: h.def.name[this.lang] || h.def.name.zh,
       spell: def[this.lang] || def.zh,
     }));
-    this.fx.push({ kind: "ring", x: h.x, y: h.y, color: h.def.color, life: 0.4, max: 0.4, r: 28 });
+    this.fxEmit("heroCast", "ring", h.x, h.y, { color: h.def.color, life: 0.4, r: 28 });
+    this.fxEmit("heroCast", "spark", h.x, h.y - 10, { color: h.def.color, life: 0.32, r: 7 });
     return true;
   };
 
@@ -548,7 +636,7 @@
     if (id === "blademaster") {
       h.critUntil = this.time + (def.dur || 5);
       h.cleaveUntil = this.time + (def.dur || 5);
-      this.ring(h.x, h.y, "#ff7043", 0.5, 34);
+      this.fxEmit("heroBuff", "ring", h.x, h.y, { color: "#ff7043", life: 0.5, r: 34 });
       return;
     }
     if (!target) {
@@ -558,7 +646,7 @@
     let dmg = def.dmg || 0;
     if (id === "demonhunter" && target.boss) dmg += def.bossBonus || 0;
     this._hitCreep(target, dmg, "spells", { canHitFlying: true });
-    this.ring(target.x, target.y, h.def.color, 0.45, 26);
+    this.fxBurst("spellHit", target.x, target.y, { color: h.def.color, life: 0.45, r: 26, sparkR: 7 });
     if (id === "paladin" && def.nova) {
       const near = this.hash.queryRadius(target.x, target.y, def.novaRadius || 70);
       for (let i = 0; i < near.length; i++) {
@@ -578,12 +666,12 @@
     const id = h.def.id;
     if (id === "blademaster") {
       h.imagesUntil = this.time + (def.dur || 6);
-      this.ring(h.x, h.y, "#ffb74d", 0.6, 30);
+      this.fxEmit("heroBuff", "ring", h.x, h.y, { color: "#ffb74d", life: 0.6, r: 30 });
       return;
     }
     if (def.affects === "towers") {
       h.auraBoostUntil = this.time + (def.dur || 8);
-      this.ring(h.x, h.y, h.def.color, 0.8, def.radius || 200);
+      this.fxEmit("heroAura", "ring", h.x, h.y, { color: h.def.color, life: 0.8, r: def.radius || 200 });
     }
   };
 
@@ -600,7 +688,7 @@
       h.ambush = true;
     } else if (id === "demonhunter") {
       h.metaUntil = this.time + (def.dur || 8);
-      this.ring(h.x, h.y, "#7e57c2", 0.9, 40);
+      this.fxBurst("heroBuff", h.x, h.y, { color: "#7e57c2", life: 0.9, r: 40, sparkR: 8 });
     } else if (id === "deathknight") {
       const n = def.count || 2;
       for (let i = 0; i < n; i++) this._summonSkeleton(h, i, n, def);
@@ -652,7 +740,7 @@
       cd: 0,
       stun: 0,
     });
-    this.ring(x, y, "#cfd8dc", 0.5, 18);
+    this.fxBurst("summon", x, y, { color: skDef.color, ring: "#cfd8dc", life: 0.5, r: 18 });
   };
 
   Game.prototype._closestCreep = function (x, y, range) {
@@ -756,7 +844,7 @@
     if (this._portalAcc < 0.6) return;
     this._portalAcc = 0;
     const p = this.path[0];
-    this.ring(p.x, p.y, "#ff5252", 0.6, 26);
+    this.fxEmit("portalCharge", "ring", p.x, p.y, { color: "#ff5252", life: 0.6, r: 26 });
   };
 
   Game.prototype._tickCreeps = function (dt) {
@@ -801,7 +889,7 @@
       c.enraged = true;
       c.speed *= D.BOSS_ENRAGE.speed;
       this.banner(this.msg("bossEnrage", { name: c.name[this.lang] || c.name.zh }), "#ff7043");
-      this.ring(c.x, c.y, "#ff5252", 0.7, 30);
+      this.fxBurst("bossEnrage", c.x, c.y, { color: c.color, ring: "#ff5252", life: 0.7, r: 30, sparkR: 8 });
     }
   };
 
@@ -826,7 +914,7 @@
       if (!c.warned && c.castCd <= stomp.warn) {
         c.warned = true;
         this.banner(this.msg("bossStompWarn", { name: c.name[this.lang] || c.name.zh }), "#ffab40");
-        this.ring(c.x, c.y, "#ffab40", stomp.warn, stomp.radius);
+        this.fxEmit("bossStompWarn", "ring", c.x, c.y, { color: "#ffab40", life: stomp.warn, r: stomp.radius });
       }
       if (c.castCd <= 0) {
         c.castCd = stomp.cd;
@@ -843,9 +931,12 @@
       if (S.dist2(boss.x, boss.y, t.x, t.y) > stomp.radius * stomp.radius) continue;
       t.stun = Math.max(t.stun || 0, stomp.stun);
       this.float(t.x, t.y - 26, this.lang === "zh" ? "震晕" : "STUN", "#ffab40");
+      this.fxEmit("bossStomp", "spark", t.x, t.y - 18, { color: "#ffab40", life: 0.3, r: 5 });
       hitCount += 1;
     }
-    this.ring(boss.x, boss.y, "#ff8a65", 0.6, stomp.radius);
+    this.fxEmit("bossStomp", "ring", boss.x, boss.y, { color: "#ff8a65", life: 0.6, r: stomp.radius });
+    this.fxEmit("bossStomp", "ring", boss.x, boss.y, { color: "#ffd180", life: 0.4, r: stomp.radius * 0.55 });
+    this.fxEmit("bossStomp", "spark", boss.x, boss.y + 6, { color: "#ffab40", life: 0.35, r: 9 });
     if (hitCount > 0) this.announce(this.msg("bossStomp", { n: hitCount }));
   };
 
@@ -893,7 +984,7 @@
       const self = this;
       this.towers = this.towers.filter(function (t) {
         if (!t.temp || t.expire > now) return true;
-        self.ring(t.x, t.y, "#90a4ae", 0.4, 16);
+        self.fxEmit("summonExpire", "ring", t.x, t.y, { color: "#90a4ae", life: 0.4, r: 16 });
         if (self.selected === t) self.selected = null;
         return false;
       });
@@ -918,6 +1009,11 @@
       source: tower,
       color: tower.def.color,
       life: 1.2,
+    });
+    this.fxEmit("towerFire", "spark", tower.x + (dx / len) * 13, tower.y - 16 + (dy / len) * 7, {
+      color: tower.def.color,
+      life: 0.14,
+      r: 3,
     });
   };
 
@@ -979,6 +1075,7 @@
     if (!h) return;
     h.px = h.x;
     h.py = h.y;
+    if (h._hitFlash > 0) h._hitFlash = Math.max(0, h._hitFlash - dt);
     h.cd.q = Math.max(0, h.cd.q - dt);
     h.cd.w = Math.max(0, h.cd.w - dt);
     h.cd.e = Math.max(0, h.cd.e - dt);
@@ -1027,6 +1124,10 @@
       h.ambush = false;
       this.float(target.x, target.y - 26, this.lang === "zh" ? "偷袭!" : "AMBUSH!", "#ffcc80");
     }
+    this.fxEmit("heroAttack", "spark",
+      h.x + (target.x - h.x) * 0.55,
+      h.y - 8 + (target.y - h.y) * 0.55,
+      { color: h.def.color, life: 0.18, r: 3 });
     this._hitCreep(target, dmg, "hero", HERO_SOURCE);
 
     if (h.cleaveUntil > this.time && h.def.q.cleave) {
@@ -1080,13 +1181,24 @@
     }
     if (dps <= 0) return;
     h.hp -= Math.min(dps, 60) * dt;
+    h._hitFlash = HERO_HIT_FLASH;
+    this._heroHitFx(h);
     if (h.hp <= 0) this._heroDown(h);
+  };
+
+  /** Melee chewing is continuous; throttle the spark so it reads as hits. */
+  Game.prototype._heroHitFx = function (h) {
+    if (this.time - (h._hitFxAt == null ? -1 : h._hitFxAt) < HERO_HIT_FX_GAP) return;
+    h._hitFxAt = this.time;
+    this.fxEmit("heroHit", "spark", h.x, h.y - 10, { color: "#ff8a80", life: 0.2, r: 4 });
   };
 
   Game.prototype._heroDown = function (h) {
     h.hp = 0;
     h.dead = true;
     h.respawn = HERO_DOWN_TIME;
+    h._hitFlash = 0;
+    this.fxBurst("heroDown", h.x, h.y, { color: h.def.color, ring: "#ff5252", r: 30, life: 0.9, sparkR: 8 });
     h.immolation = false;
     h.critUntil = 0;
     h.cleaveUntil = 0;
@@ -1119,8 +1231,9 @@
     h.py = home.y;
     h.tx = home.x;
     h.ty = home.y;
+    h._hitFlash = 0;
     this.announce(this.msg("heroRevive", { hero: h.def.name[this.lang] || h.def.name.zh }));
-    this.ring(h.x, h.y, h.def.color, 0.8, 30);
+    this.fxBurst("heroRevive", h.x, h.y, { color: h.def.color, r: 30, life: 0.85, sparkR: 8 });
   };
 
   Game.prototype._tickFx = function (dt) {
