@@ -44,6 +44,39 @@ function normalizeGlove(g, base) {
   };
 }
 
+/** 候选掌表是不是真实数值：同一张 8 掌表，允许 skillId 已被装配层翻译成 combat 词表 */
+function isRealGloveTable(list) {
+  if (!Array.isArray(list) || list.length !== realData.GLOVES.length) return false;
+  const seen = new Set();
+  for (const g of list) {
+    if (!g || seen.has(g.id)) return false;
+    const base = BASE_GLOVE_BY_ID[g.id];
+    if (!base) return false;
+    seen.add(g.id);
+    for (const [key, want] of Object.entries(base)) {
+      const got = g[key];
+      if (key === "skillId") {
+        if (bridge.combatSkillId(got) !== bridge.combatSkillId(want)) return false;
+      } else if (want && typeof want === "object") {
+        if (JSON.stringify(got) !== JSON.stringify(want)) return false;
+      } else if (got !== want) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** 装进来的 data 是不是真身（或与真身等价的翻译版）。是就折回静态 import，不算替身。 */
+function isRealData(mod) {
+  if (!mod) return false;
+  if (mod.MATCH && JSON.stringify({ ...realData.MATCH, ...mod.MATCH }) !== JSON.stringify(realData.MATCH)) {
+    return false;
+  }
+  if (mod === realData || mod.GLOVES === realData.GLOVES) return true;
+  return isRealGloveTable(mod.GLOVES);
+}
+
 function rebuild() {
   const overrideGloves = dataMod && Array.isArray(dataMod.GLOVES) && dataMod.GLOVES.length;
   const rawGloves = overrideGloves ? dataMod.GLOVES : realData.GLOVES;
@@ -78,15 +111,24 @@ export function getDeps() {
   return cache || rebuild();
 }
 
-/** 测试替身：传整个模块命名空间对象，传 null 回到真实模块 */
+/**
+ * 测试替身：传整个模块命名空间对象，传 null 回到真实模块。
+ *
+ * 探针 / 装配层会把真身再装一遍（`installData(dataModule)`），那不是替身：认出来就折回静态
+ * import，`usingRealData` 保持 true。只有认不出的表才当替身。
+ */
 export function installData(mod) {
-  dataMod = mod || null;
+  dataMod = mod && !isRealData(mod) ? mod : null;
   cache = null;
   return getDeps();
 }
 
+/**
+ * 同上。装进来的若是 `src/combat/index.js` 真身（或只做转发的薄适配器），折回静态桥：
+ * 朝向相位与命中形状的换算只在 combat-bridge 里做过一次，绕过去技能就全哑。
+ */
 export function installCombat(mod) {
-  combatMod = mod || null;
+  combatMod = mod && !bridge.isRealCombat(mod) ? mod : null;
   cache = null;
   return getDeps();
 }

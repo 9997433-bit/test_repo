@@ -26,8 +26,13 @@ import { UNLOCK_BY_ID } from "./unlocks.js";
  * @property {number} windup      前摇（按下到判定生效）
  * @property {number} recovery    后摇（判定结束到可行动；打空同样吃满）
  * @property {number} moveSpeedMul 持该掌时移速倍率（重掌更慢）
- * @property {string} skillId     主动技 id（详参 skills.js）。"none" = 无主动技
- *                                （契约测试要求全字段非空，禁用 null；combat/ui 同用此哨兵）
+ * @property {string} skillId    主动技 id（skills.js 的 SKILLS 键）。"" = 无主动技（仅木棉）。
+ *                                空串是两份契约的交集：tests/glove-data.test.js 要求每掌的
+ *                                skillId 都是字符串（any(String) 不收 null），core 的
+ *                                alignSkillIds 及其测试要求「无技能 = falsy」（"none" 会被
+ *                                当成真值拒收）。"none" 是 combat 内部哨兵，不写进数据；
+ *                                接线层把 falsy 归一成它（sim/combat-bridge.js 的
+ *                                combatSkillId、combat 的 normalizeSkillId）
  * @property {number} skillCooldown 主动技冷却
  * @property {string} unlock      "default" 或 unlocks.js 中的挑战 id
  * @property {AwakenModifiers} awakenModifiers
@@ -48,7 +53,7 @@ export const GLOVES = [
     windup: 0.16,
     recovery: 0.22,
     moveSpeedMul: 1.05,
-    skillId: "none", // 设计如此：无主动技，换手感换节奏（"none" 哨兵，非 null）
+    skillId: "", // 设计如此：无主动技，换手感换节奏（"" = 无技能，见 typedef 契约注）
     skillCooldown: 0,
     unlock: "default",
     awakenModifiers: {

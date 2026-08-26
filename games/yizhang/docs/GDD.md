@@ -12,7 +12,7 @@ Fable-3 出品。本文只做一件事：把 DESIGN_SEED 定下的核心循环�
 | --- | --- | --- |
 | `src/data/gloves.js` | `GLOVES` `GLOVE_BY_ID` `MATCH` `isGloveUnlocked` | 8 掌 + 契约对局常量 + 解锁判定 |
 | `src/data/tuning.js` | `MOVEMENT` `KNOCKBACK` `METER` `RULES` | 运动 / 击退 / 掌意 / 规则扩展 |
-| `src/data/skills.js` | `SKILLS` `SKILL_IDS` `SKILL_COMBAT_ALIASES` | 7 个主动技参数 + combat id 过渡映射 |
+| `src/data/skills.js` | `SKILLS` `SKILL_IDS` `SKILL_COMBAT_ALIASES` | 7 个主动技参数 + data→combat id 完整映射（§6） |
 | `src/data/tiles.js` | `TILE` | 台面碎裂（方格拓扑，对齐 sim） |
 | `src/data/bots.js` | `BOT_PERSONAS` | 3 种 Bot 人格 |
 | `src/data/unlocks.js` | `UNLOCKS` | 局内解锁挑战 |
@@ -96,7 +96,7 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 
 各掌一句话意图：
 
-- **木棉**：默认解锁的「尺子」，所有其他掌都以它为参照上下浮动。无主动技（`skillId: "none"` 哨兵，禁用 null——契约测试要求全字段非空，combat/ui 也按 `"none"` 分支）是刻意的——教学期只学移动/扇/跳三件事。
+- **木棉**：默认解锁的「尺子」，所有其他掌都以它为参照上下浮动。无主动技（`skillId: ""`，全表唯一——空串同时满足「skillId 必须是字符串」的数据契约测试与「无技能必须 falsy」的装配层契约；`"none"` 是 combat 内部哨兵、不进数据，接线层把 falsy 归一成它）是刻意的——教学期只学移动/扇/跳三件事。
 - **磐石**：唯一 power 上 15 的掌；一切弱点（前摇/角度/移速/冷却）都是为这个数字付费。
 - **疾风**：裸 power 全场最低（7.5），必须用 `wind_rush` 冲刺中出掌（+3.5 → 11）才有斩杀力——技能表达在位移里。
 - **冰霜**：power 平庸，价值在把对手移速打到 65% 之后的**追身逼边**。
@@ -119,7 +119,12 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 
 冷却梯度 6→11 与技能决定性成正比：位移最短、清场最长。
 
-过渡适配（Round 2）：`src/combat/skills.js` 的处理器键仍是旧 id（groundPound / dashSlap / frostArc / parry / blinkSwap / magnetPull / meteorSlam）。接线层用 `SKILL_COMBAT_ALIASES`（`skills.js` 导出）把 `glove.skillId` 翻译后再交给 combat，否则 combat 会把未知 id 归一成 `"none"`（技能全哑）；combat 迁移到 data id 后删除该表。另注意：sim 的 fallback-combat 不识别 `"none"` 哨兵，主循环必须 data + combat **成对注入**。
+技能 id 收敛（Round 3 定稿）：全游戏只有两套合法词表，映射唯一、一张表定死。
+
+- **data id（规范名，数值与本文用它）**：`GLOVES[].skillId` ∈ { `quake_slam`, `wind_rush`, `frost_arc`, `coil_counter`, `phantom_swap`, `iron_pull`, `sky_fall` }；木棉无主动技，`skillId: ""`（空串——既是字符串又是 falsy，同时满足两份契约测试；数据里禁写 `"none"`）。
+- **combat 处理器 id（运行时分派键，`src/combat/skills.js` 的 `SKILL_HANDLERS`）**：`groundPound` / `dashSlap` / `frostArc` / `parry` / `blinkSwap` / `magnetPull` / `meteorSlam`，外加内部哨兵 `"none"`。
+- 两套词表由 `SKILL_COMBAT_ALIASES`（`skills.js` 导出）一一对应：7 个 data id 各有一条，另含 `none → none` 自映射，表是**完整**的。接线层（`core/modules.js` 的 `alignSkillIds`、`sim/combat-bridge.js` 的 `combatSkillId`）照此翻译后再交给 combat；falsy `skillId` 不查表，直接归一成 combat 的 `"none"`。combat 未来迁移到 data id 时删掉此表即收敛为一套。
+- sim 静态 import 真实 data 与 combat（fallback-combat 已删除，无兜底战斗），`installData` / `installCombat` 只留给测试做替身。
 
 ## 7. 掌意与觉醒（`METER` + 各掌 `awakenModifiers`）
 
@@ -153,14 +158,14 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 | `baseHp` / `seamHp` | `ARENA.tileHp` / `ARENA.seamTileHp` | 120 / 80 |
 | `seamHalfWidth` | `ARENA.seamHalfWidth` | 1.9 |
 | `floorY` | `ARENA.floorY` | 0 |
-| `slapDamagePerPower` | `PHYSICS.tileDamagePerPower` | 3 |
-| （重击门槛）`KNOCKBACK.heavyPowerThreshold` | `PHYSICS.heavyTileThreshold` | 12 |
+| `slapDamagePerPower` | —（设计规格，扇击伤台待接线） | 3 |
+| （重击门槛）`KNOCKBACK.heavyPowerThreshold` | —（同上） | 12 |
 
-伤害来源（全部走 sim 的 `damageFloor` 单入口）：
+伤害来源：
 
-- **重扇击**：有效击退 ≥ 12 的命中在受击者位置结算 `(有效击退 − 12 + slapDamageBias 4) × slapDamagePerPower 3`。磐石 15 → 21/掌（普通块 6 掌、中缝 4 掌）；陨掌 12 → 12/掌；觉醒磐石 18 → 30/掌。
-- **技能**：磐石 `quake_slam` 45（3 砸必碎任何普通块，中缝 2 砸）；陨掌 `sky_fall` 40（台心满血块 3–4 砸）。
+- **技能**（已实现：combat 各技能 handler 调 `damageTilesInRadius`，桥接层 `creditTileBreak` 记账；sim 侧统一入口是 `damageTileAt` → `damageFloor`）：磐石 `quake_slam` 45（3 砸必碎任何普通块，中缝 2 砸）；陨掌 `sky_fall` 40（台心满血块 3–4 砸）。
 - **觉醒**：`slam_shatter` / `crater_ring` 130 ≥ 满血上限，整块直碎。
+- **重扇击**（设计规格，待接线——旧实现随 fallback-combat 删除）：有效击退 ≥ 12 的命中在受击者位置结算 `(有效击退 − 12 + slapDamageBias 4) × slapDamagePerPower 3`。磐石 15 → 21/掌（普通块 6 掌、中缝 4 掌）；陨掌 12 → 12/掌；觉醒磐石 18 → 30/掌。
 
 其余规则：
 
@@ -169,7 +174,7 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 - 预算：专注拆台的磐石 ≈ 21s 一块（3 砸 × 7s cd），一局 240s 加上重掌命中的自然损耗约 15–30 块（208 块的 7–15%），另有觉醒时刻定点开洞——台面**可感知地变险**。
 - 洞的判死走 §4 的「脚下无台面」分支（sim `isSupported`）：被扇过洞 = 提前出岛。
 
-尚未接线的设计约束（字段已在 `TILE`，Round 2 由 O1 在 `damageFloor` 实现，均为单点改动）：
+尚未接线的设计约束（字段已在 `TILE`，接线点是 sim 的 `damageFloor` 单入口，均为单点改动）：
 
 - `innerSafeRadius 6`：格中心 `r < 6` 的 16 块台心永不碎（`damageFloor` 里跳过即可），保底立足点；接线前由 `findSpawnSpot` 的扫描兜底重生安全。
 - `collapseDelaySeconds 0.6`：HP≤0 先抖 0.6s 警示再塌。sim 现为瞬时判碎，接线前由渲染做塌落表演。

@@ -18,8 +18,6 @@ const ZERO_INPUT = Object.freeze({
 
 const SIMULATION_URL = new URL('../src/sim/index.js', import.meta.url);
 const AI_URL = new URL('../src/ai/bots.js', import.meta.url);
-const DATA_URL = new URL('../src/data/index.js', import.meta.url);
-const COMBAT_URL = new URL('../src/combat/index.js', import.meta.url);
 
 function moduleSpecifier(environmentName, defaultUrl) {
   return process.env[environmentName] || defaultUrl.href;
@@ -54,7 +52,6 @@ export async function loadSimulation() {
     }
   }
 
-  await installSimulationDependencies(simulation);
   return simulation;
 }
 
@@ -271,32 +268,6 @@ export function findNonFinite(value, path = 'state', seen = new WeakSet()) {
 
 export function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function installSimulationDependencies(simulation) {
-  if (typeof simulation.installData === 'function') {
-    let data;
-    try {
-      data = await import(DATA_URL);
-    } catch (error) {
-      throw new Error(`could not load data module: ${errorMessage(error)}`, {
-        cause: error,
-      });
-    }
-    simulation.installData(data);
-  }
-
-  if (typeof simulation.installCombat === 'function') {
-    let combat;
-    try {
-      combat = await import(COMBAT_URL);
-    } catch (error) {
-      throw new Error(`could not load combat module: ${errorMessage(error)}`, {
-        cause: error,
-      });
-    }
-    simulation.installCombat(combat);
-  }
 }
 
 function readProbeSteps(value) {

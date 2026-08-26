@@ -15,8 +15,24 @@ import * as combat from "../combat/index.js";
 import { PHYSICS } from "./constants.js";
 import { FACE, wrapAngle } from "./math.js";
 
-/** `src/data/gloves.js` 的技能 id -> `src/combat/skills.js` 的 handler id */
+/**
+ * 技能 id -> `src/combat/skills.js` 的 handler id。
+ *
+ * 掌表可能来自 `src/data/gloves.js`（`quake_slam`…）、来自装配层 `alignSkillIds` 翻译过的
+ * combat id（`groundPound`…），也可能是契约文档里的短名（`slam`/`pull`…）。三套词表都要认，
+ * 认不出的原样放行交给 combat 自己的 normalizeSkillId 兜底。
+ */
 export const SKILL_ALIAS = Object.freeze({
+  // combat 自己的 id：恒等放行
+  groundPound: "groundPound",
+  dashSlap: "dashSlap",
+  frostArc: "frostArc",
+  parry: "parry",
+  blinkSwap: "blinkSwap",
+  magnetPull: "magnetPull",
+  meteorSlam: "meteorSlam",
+
+  // src/data/gloves.js 的 id
   quake_slam: "groundPound",
   wind_rush: "dashSlap",
   frost_arc: "frostArc",
@@ -24,11 +40,27 @@ export const SKILL_ALIAS = Object.freeze({
   phantom_swap: "blinkSwap",
   iron_pull: "magnetPull",
   sky_fall: "meteorSlam",
+
+  // 文档 / 历史短名
+  slam: "groundPound",
+  ground_slam: "groundPound",
+  rush: "dashSlap",
+  dash_attack: "dashSlap",
+  cone: "frostArc",
+  counter_stance: "parry",
+  riposte: "parry",
+  decoy_swap: "blinkSwap",
+  decoy_blink: "blinkSwap",
+  blink: "blinkSwap",
+  pull: "magnetPull",
+  sky_drop: "meteorSlam",
+  leap_slam: "meteorSlam",
+  meteorFall: "meteorSlam",
 });
 
 export function combatSkillId(skillId) {
-  if (!skillId) return "none";
-  return SKILL_ALIAS[skillId] || skillId;
+  if (!skillId || skillId === "none") return "none";
+  return SKILL_ALIAS[skillId] || SKILL_ALIAS[String(skillId).toLowerCase()] || skillId;
 }
 
 /** 让 combat 内部的 gloveTable 也看到真实数据（延迟觉醒等路径会用到） */
@@ -217,4 +249,55 @@ export function tickStatuses(state, dt) {
 
 export function applyAwaken(attacker, glove) {
   return combat.applyAwaken(attacker, toCombatGlove(glove));
+}
+
+// ---------------------------------------------------------------- 真身识别
+
+const CONTRACT_FNS = ["resolveSlap", "resolveSkill", "tickStatuses", "applyAwaken"];
+
+/** 本桥自己的四件套，用来认出「把桥再装一遍」的调用方 */
+const BRIDGE_FNS = { resolveSlap, resolveSkill, tickStatuses, applyAwaken };
+
+/**
+ * 纯函数探针：同一份合成素材分别喂给候选与真身，返回值与副作用都一致才算同一实现。
+ * 只在候选四件套齐全时用，用来认出 `src/combat/sim-bridge.js` 那种只做转发的薄适配器。
+ */
+function scratchAwakenInput() {
+  return {
+    actor: { id: "__probe__", alive: true, meter: 1, awakenedT: 0, cottonChain: 0, statuses: [] },
+    glove: { id: "cotton", skillId: "none" },
+  };
+}
+
+function forwardsToRealCombat(mod) {
+  try {
+    const a = scratchAwakenInput();
+    const b = scratchAwakenInput();
+    const got = JSON.stringify(mod.applyAwaken(a.actor, a.glove));
+    const want = JSON.stringify(combat.applyAwaken(b.actor, b.glove));
+    return got === want && JSON.stringify(a.actor) === JSON.stringify(b.actor);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 候选 combat 模块是不是「真实解算」。
+ *
+ * 探针 / 装配层会把 `src/combat/index.js` 原样 installCombat 进来，那仍然是生产路径：
+ * 认出来之后 deps 会折回静态桥（朝向与命中形状的换算不能绕过），`usingRealCombat` 保持 true。
+ * 只有认不出的替身（测试桩）才算「不是真实解算」。
+ */
+export function isRealCombat(mod) {
+  if (!mod) return false;
+  if (typeof mod !== "object" && typeof mod !== "function") return false;
+  if (mod === combat) return true;
+
+  const own = CONTRACT_FNS.filter((name) => typeof mod[name] === "function");
+  if (!own.length) return false;
+  if (own.every((name) => mod[name] === combat[name] || mod[name] === BRIDGE_FNS[name])) return true;
+
+  // 四件套不齐的一律当替身：真身与转发器都是整套的
+  if (own.length !== CONTRACT_FNS.length) return false;
+  return forwardsToRealCombat(mod);
 }

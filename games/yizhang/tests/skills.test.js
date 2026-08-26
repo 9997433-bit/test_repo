@@ -1,13 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import * as combat from "../src/combat/index.js";
 import * as gloveData from "../src/data/gloves.js";
-import {
-  createMatch,
-  installCombat,
-  installData,
-  resetDeps,
-  step,
-} from "../src/sim/index.js";
+import { createMatch, resetDeps, step } from "../src/sim/index.js";
 import {
   DT,
   advance,
@@ -23,8 +16,6 @@ const { GLOVE_BY_ID } = gloveData;
 
 beforeEach(() => {
   resetDeps();
-  installData(gloveData);
-  installCombat(combat);
 });
 
 afterEach(() => {
