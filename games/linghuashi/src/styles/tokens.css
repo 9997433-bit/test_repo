@@ -1,0 +1,15 @@
+:root {
+  --ink: #1a120b;
+  --ink-soft: #3b2a18;
+  --paper: #efe3c8;
+  --paper-deep: #e4d3ae;
+  --seal: #7a1818;
+  --seal-bright: #b42323;
+  --gold: #c9a227;
+  --cyan: #2f5d62;
+  --malachite: #3d6b4f;
+  --mist: rgba(26, 18, 11, 0.08);
+  --shadow: 0 18px 50px rgba(26, 18, 11, 0.18);
+  --serif: "Noto Serif SC", "Songti SC", serif;
+  --script: "Ma Shan Zheng", "Noto Serif SC", cursive;
+}

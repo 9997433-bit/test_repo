@@ -1,0 +1,15 @@
+.hero { max-width: 920px; margin: 8vh auto 0; }
+.hero .actions { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+.class-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.class-card { text-align: left; width: 100%; }
+.class-card.active { outline: 2px solid var(--seal); }
+.hub-grid { grid-template-columns: 1.3fr 0.7fr; }
+@media (max-width: 800px) {
+  .hub-grid { grid-template-columns: 1fr; }
+}
+.battle-layout { display: grid; grid-template-columns: 1fr 280px; gap: 16px; }
+@media (max-width: 860px) {
+  .battle-layout { grid-template-columns: 1fr; }
+}
+.portrait { display: flex; justify-content: space-between; align-items: flex-end; }
+.vtitle { writing-mode: vertical-rl; letter-spacing: 0.35em; font-family: var(--script); }
