@@ -17,10 +17,16 @@
 
 ## Validation
 
-Run from the repository root:
+Executed from the repository root:
 
 ```sh
 node warcraft3-td/tests/edges.mjs
 node warcraft3-td/tests/run.mjs
 node warcraft3-td/tests/bench.mjs
 ```
+
+Results:
+
+- Edge suite: `6 passed, 0 failed`.
+- Main headless suite: `45 passed, 0 failed`.
+- Benchmark: `0.1706 ms/tick`, below the `4 ms/tick` failure threshold.
