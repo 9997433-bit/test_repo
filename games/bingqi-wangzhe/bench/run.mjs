@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * Round 1 benchmark and boundary probe.
+ * Round 2 live benchmark and boundary probe.
  *
- * This file intentionally uses only Node globals and the game's public modules.
- * Missing production modules are reported as SKIP so the probe can land before
- * the parallel core/forge/combat implementations.
+ * This file uses only Node globals and the game's production public modules.
+ * A missing module/export is a failure: the Round 1 SKIP path is no longer an
+ * acceptable benchmark result now that core, forge, and combat have landed.
  */
 
 const BATTLE_ITERATIONS = 500;
 const FORGE_SAMPLES = 1_000;
 const BENCH_SEED = 20_260_826;
+const BATTLE_TARGET_MS = 500;
+const FORGE_TARGET_MS = 500;
 
 const MODULE_URLS = {
   rng: new URL('../js/core/rng.js', import.meta.url),
@@ -138,7 +140,8 @@ function runBattleBenchmark(simulateBattle, createRng) {
 
   const elapsedMs = performance.now() - startedAt;
   return {
-    status: 'ok',
+    status: elapsedMs <= BATTLE_TARGET_MS ? 'pass' : 'fail',
+    targetMs: BATTLE_TARGET_MS,
     iterations: BATTLE_ITERATIONS,
     elapsedMs,
     meanMs: elapsedMs / BATTLE_ITERATIONS,
@@ -203,7 +206,8 @@ function runForgeBenchmark(forgeWeapon, createInitialState, createRng) {
 
   const elapsedMs = performance.now() - startedAt;
   return {
-    status: 'ok',
+    status: elapsedMs <= FORGE_TARGET_MS ? 'pass' : 'fail',
+    targetMs: FORGE_TARGET_MS,
     samples: FORGE_SAMPLES,
     elapsedMs,
     meanMs: elapsedMs / FORGE_SAMPLES,
@@ -215,6 +219,9 @@ function runForgeBenchmark(forgeWeapon, createInitialState, createRng) {
 function runBoundary(name, fn) {
   try {
     const detail = fn();
+    if (!finiteNumbers(detail)) {
+      throw new Error('结果含 NaN 或 Infinity');
+    }
     return { boundary: name, status: 'PASS', detail: String(detail) };
   } catch (error) {
     return { boundary: name, status: 'THREW', detail: errorMessage(error) };
@@ -246,6 +253,7 @@ function probeBattleBoundaries(simulateBattle, createRng) {
         ...battleFixture(0),
         rng: createRng(1),
       });
+      if (!finiteNumbers(result)) throw new Error('战斗结果含 NaN 或 Infinity');
       return summarizeBattle(result);
     }),
   );
@@ -256,6 +264,7 @@ function probeBattleBoundaries(simulateBattle, createRng) {
         ...battleFixture(5),
         rng: createRng(2),
       });
+      if (!finiteNumbers(result)) throw new Error('战斗结果含 NaN 或 Infinity');
       return summarizeBattle(result);
     }),
   );
@@ -303,6 +312,9 @@ function probeSeedZero(createRng, simulateBattle) {
       const input = battleFixture();
       const battleA = simulateBattle({ ...clone(input), rng: createRng(0) });
       const battleB = simulateBattle({ ...clone(input), rng: createRng(0) });
+      if (!finiteNumbers(battleA) || !finiteNumbers(battleB)) {
+        throw new Error('种子 0 的战斗结果含 NaN 或 Infinity');
+      }
       if (JSON.stringify(battleA) !== JSON.stringify(battleB)) {
         throw new Error('种子 0 的战斗结果不确定');
       }
@@ -322,6 +334,9 @@ function probeZeroStamina(createInitialState, spend) {
 
     if (spent !== false || remaining !== 0) {
       throw new Error(`spend=${String(spent)}, remaining=${String(remaining)}`);
+    }
+    if (!finiteNumbers(state)) {
+      throw new Error('资源状态含 NaN 或 Infinity');
     }
 
     return 'spend=false, remaining=0';
@@ -343,7 +358,7 @@ function printBenchmarkRows(rows) {
 }
 
 async function main() {
-  console.log('兵器王者 Round 1 基准 / 边界压力探针');
+  console.log('兵器王者 Round 2 生产模块基准 / 边界压力探针');
   console.log(`Node ${process.version}; platform=${process.platform}/${process.arch}`);
 
   const [rngLoad, stateLoad, forgeLoad, combatLoad] = await Promise.all([
@@ -376,6 +391,7 @@ async function main() {
         throughput: battle.operationsPerSecond,
         detail: battle.summary,
       });
+      if (battle.status !== 'pass') process.exitCode = 1;
     } catch (error) {
       benchmarkRows.push({
         probe: '战斗模拟',
@@ -412,6 +428,7 @@ async function main() {
           .map(([quality, count]) => `${quality}=${count}`)
           .join(', '),
       });
+      if (forgeResult.status !== 'pass') process.exitCode = 1;
     } catch (error) {
       benchmarkRows.push({
         probe: '锻造权重采样',
@@ -431,6 +448,9 @@ async function main() {
 
   console.log('\n基准结果');
   printBenchmarkRows(benchmarkRows);
+  if (benchmarkRows.some((row) => row.status !== 'pass')) {
+    process.exitCode = 1;
+  }
 
   if (forgeResult) {
     console.log('\n锻造品质分布（1000 次）');
@@ -473,6 +493,9 @@ async function main() {
 
   console.log('\n边界结果');
   console.table(boundaries);
+  if (boundaries.some((row) => row.status !== 'PASS')) {
+    process.exitCode = 1;
+  }
 
   for (const row of benchmarkRows) {
     console.log(
@@ -481,6 +504,15 @@ async function main() {
       )}`,
     );
   }
+
+  const battleRow = benchmarkRows.find((row) => row.probe === '战斗模拟');
+  const forgeRow = benchmarkRows.find((row) => row.probe === '锻造权重采样');
+  console.log(
+    `METRIC combat runs=${battleRow?.runs ?? 0} total_ms=${battleRow?.elapsedMs?.toFixed(3) ?? 'NaN'} target_ms=${BATTLE_TARGET_MS} pass=${battleRow?.status === 'pass'}`,
+  );
+  console.log(
+    `METRIC forge samples=${forgeRow?.runs ?? 0} total_ms=${forgeRow?.elapsedMs?.toFixed(3) ?? 'NaN'} target_ms=${FORGE_TARGET_MS} pass=${forgeRow?.status === 'pass'}`,
+  );
 }
 
 await main();
