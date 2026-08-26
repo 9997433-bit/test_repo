@@ -91,7 +91,7 @@ describe("plant growth", () => {
     expect(harvest(state, plot.id)).toBe(false);
     expect(state.coins).toBe(startingCoins + Math.round(flower.harvestCoin * 0.2));
     expect(state.exp).toBe(2);
-    expect(state.inventory[flower.id]).toBeUndefined();
+    expect(state.inventory[flower.id]).toBe(0);
     expect(state.stats.harvested).toBe(0);
     expect(state.plots[0]).toMatchObject({
       id: 0,
