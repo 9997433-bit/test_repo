@@ -4,7 +4,7 @@
 
 | 游戏 | 目录 | 端口 | 本轮状态 |
 | --- | --- | --- | --- |
-| 异掌 | `games/yizhang/` | 4181 | Round 1 进行中，见 `PROGRESS.yizhang.md` |
+| 异掌 | `games/yizhang/` | 4181 | Round 1 完成 91/97；Round 2 进行中，见 `PROGRESS.yizhang.md` |
 | 三国：冰河时代 | `games/sanguo-ice-age/` | 4176 | Round 1–3 完成，24 测 / 10 探针全绿 |
 | 我的花园世界 | `games/my-garden-world/` | 5173 | Round 1–3 完成，见 `PROGRESS.my-garden-world.md` |
 | 超能下蛋鸭 | `games/chao-neng-xia-dan-ya/` | 4174 | Round 1–3 完成，L1 |
