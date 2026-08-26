@@ -2,6 +2,7 @@ import { recruitCost, HAND_LIMIT, UNIT_TABLE, MAX_LEVEL, unitAttack } from "../d
 import { HEROES, heroById } from "../data/heroes.js";
 import * as waves from "../data/waves.js";
 import { drawLane } from "./lane.js";
+import { attachJuice } from "./juice.js";
 
 const MAX_WAVE = Number.isFinite(waves.MAX_WAVE) ? waves.MAX_WAVE : 12;
 
@@ -340,6 +341,9 @@ function ensureStyles() {
 
 export function render(root, api, ui) {
   ensureStyles();
+  // juice 层自挂在 body 上、按事件驱动，和这里的 diff 互不干涉；
+  // 同一个 api 重复调用是空操作，所以放在每帧都会走到的地方最省心。
+  attachJuice(api);
   const s = api.state;
   const p = s.sides.player;
   const a = s.sides.ai;
