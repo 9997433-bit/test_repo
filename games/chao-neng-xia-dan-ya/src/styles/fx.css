@@ -1,0 +1,4 @@
+.boot-card {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--teal) 20%, transparent),
+    0 16px 40px rgba(0, 0, 0, 0.35);
+}
