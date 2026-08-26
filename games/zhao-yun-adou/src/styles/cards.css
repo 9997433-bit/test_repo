@@ -1,0 +1,155 @@
+/* ============================================================
+   兵营手牌与按钮：卡是小纸片，按钮是墨锭与长条闲章
+   ============================================================ */
+
+.hand-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 14px;
+}
+
+.hand {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.card {
+  position: relative;
+  isolation: isolate;
+  min-height: 76px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-brush);
+  font-size: clamp(26px, 7vw, 32px);
+  line-height: 1;
+  color: var(--ink);
+  text-shadow: 0 0 1px currentColor;
+  background-color: var(--paper-bright);
+  background-image: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.6),
+    rgba(243, 231, 206, 0.55) 70%,
+    rgba(233, 218, 184, 0.6)
+  );
+  border: 1px solid rgba(var(--ink-rgb), 0.32);
+  border-radius: 5px;
+  box-shadow: var(--shadow-card);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card.selected {
+  transform: translateY(-6px) rotate(-1.6deg);
+  outline: 2px solid var(--cinnabar);
+  outline-offset: 1px;
+  border-color: rgba(var(--cinnabar-rgb), 0.55);
+  box-shadow:
+    var(--shadow-raised),
+    0 0 0 4px rgba(var(--cinnabar-rgb), 0.08);
+  z-index: 1;
+}
+
+/* 空槽：一张没裁的虚线纸位 */
+.card.ghost {
+  background: transparent;
+  border: 1px dashed rgba(var(--ink-rgb), 0.2);
+  box-shadow: none;
+  color: rgba(var(--ink-rgb), 0.28);
+  font-family: var(--font-body);
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  text-shadow: none;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card:not(.ghost):not(.selected):hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-raised);
+  }
+}
+
+/* —— 按钮 —— */
+
+/* 墨锭按钮：焦墨底、压边、按下有触感 */
+button.ink {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  color: var(--paper-bright);
+  background: linear-gradient(160deg, #362b1d 0%, var(--ink) 45%, #0e0a06 100%);
+  border: 0;
+  border-radius: 4px;
+  padding: 12px 18px;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(251, 245, 230, 0.14),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.42),
+    2px 3px 0 rgba(var(--ink-rgb), 0.2);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+button.ink:not(:disabled):active {
+  transform: translate(1px, 2px);
+  box-shadow:
+    inset 0 1px 0 rgba(251, 245, 230, 0.1),
+    inset 0 2px 3px rgba(0, 0, 0, 0.45);
+}
+
+button.ink:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* 征兵：竖排，像一枚长条闲章立在兵营旁（数字直立不侧躺） */
+#btn-recruit {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  min-width: 52px;
+  padding: 14px 15px;
+  font-size: 16px;
+  letter-spacing: 0.34em;
+  text-indent: 0;
+  border-radius: var(--radius-cut);
+}
+
+button.ghost {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid rgba(var(--ink-rgb), 0.5);
+  border-radius: 4px;
+  padding: 8px 14px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .hand {
+    gap: 5px;
+  }
+
+  .card {
+    min-height: 64px;
+  }
+
+  #btn-recruit {
+    min-width: 46px;
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+}

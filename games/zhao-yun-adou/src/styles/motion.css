@@ -1,0 +1,221 @@
+/* ============================================================
+   动效（纯 CSS）
+   冻结容错铁律：渲染层目前 30Hz 全量重建 DOM（ARCHITECTURE §9 P2），
+   动画每帧会被重置到 0%。因此所有关键帧把「最强帧」放在 0%：
+   即使只播首帧，反馈依然成立；渲染层改为 keyed patch 后自动播全程。
+   属性白名单：transform / opacity + 小面积短时长的 box/text-shadow。
+   ============================================================ */
+
+/* —— 阿斗受创：整半区震颤 + 朱砂边闪（JS 已接线：.half.player.shake） —— */
+
+.shake {
+  animation: ink-shake 0.36s var(--ease-snap) both;
+}
+
+@keyframes ink-shake {
+  0% {
+    transform: translate(-5px, 1px) rotate(-0.35deg);
+    box-shadow:
+      inset 0 0 0 2px rgba(var(--cinnabar-rgb), 0.45),
+      inset 0 0 30px rgba(var(--cinnabar-rgb), 0.16);
+  }
+  18% {
+    transform: translate(5px, -1px) rotate(0.3deg);
+  }
+  36% {
+    transform: translate(-4px, 0) rotate(-0.2deg);
+  }
+  54% {
+    transform: translate(3px, 1px);
+  }
+  72% {
+    transform: translate(-2px, 0);
+  }
+  100% {
+    transform: translate(0, 0);
+    box-shadow:
+      inset 0 0 0 0 rgba(var(--cinnabar-rgb), 0),
+      inset 0 0 0 rgba(var(--cinnabar-rgb), 0);
+  }
+}
+
+/* —— 合并升阶：墨字炸开一圈朱砂涟漪，金光一闪（渲染层对合并格加 .fx-merge，约 480ms 后移除） —— */
+
+.fx-merge {
+  animation: merge-burst var(--dur-burst) var(--ease-brush) both;
+}
+
+@keyframes merge-burst {
+  0% {
+    transform: scale(1.28);
+    text-shadow:
+      0 0 2px currentColor,
+      0 0 16px rgba(var(--gold-rgb), 0.9),
+      0 0 30px rgba(var(--cinnabar-rgb), 0.5);
+    box-shadow:
+      0 0 0 0 rgba(var(--cinnabar-rgb), 0.55),
+      inset 0 0 18px rgba(var(--gold-rgb), 0.35);
+  }
+  60% {
+    transform: scale(0.96);
+    box-shadow:
+      0 0 0 14px rgba(var(--cinnabar-rgb), 0),
+      inset 0 0 4px rgba(var(--gold-rgb), 0.12);
+  }
+  100% {
+    transform: scale(1);
+    text-shadow: 0 0 1px currentColor;
+    box-shadow:
+      0 0 0 14px rgba(var(--cinnabar-rgb), 0),
+      inset 0 0 0 rgba(var(--gold-rgb), 0);
+  }
+}
+
+/* —— 武将觉醒：双环冲击波（金内环、朱外环），落笔定身（渲染层加 .fx-awaken，约 700ms） —— */
+
+.fx-awaken {
+  animation: awaken-burst 0.7s var(--ease-brush) both;
+}
+
+@keyframes awaken-burst {
+  0% {
+    transform: scale(1.4) rotate(-2deg);
+    text-shadow:
+      0 0 3px currentColor,
+      0 0 22px rgba(var(--gold-rgb), 1),
+      0 0 44px rgba(var(--gold-rgb), 0.6);
+    box-shadow:
+      0 0 0 0 rgba(var(--gold-rgb), 0.65),
+      0 0 0 0 rgba(var(--cinnabar-rgb), 0.4);
+  }
+  55% {
+    transform: scale(0.94) rotate(0.5deg);
+    box-shadow:
+      0 0 0 12px rgba(var(--gold-rgb), 0),
+      0 0 0 22px rgba(var(--cinnabar-rgb), 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 12px rgba(var(--gold-rgb), 0),
+      0 0 0 22px rgba(var(--cinnabar-rgb), 0);
+  }
+}
+
+/* —— 武将辉光呼吸：0% 即满辉，冻结时仍是常亮金圈 —— */
+
+.cell.hero::before,
+.card.hero::before {
+  animation: hero-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes hero-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.86);
+  }
+}
+
+/* —— 落点脉动：朱砂框一收一放 —— */
+
+.cell.drop {
+  animation: drop-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes drop-pulse {
+  0%,
+  100% {
+    outline-color: var(--cinnabar);
+    box-shadow:
+      inset 0 0 14px rgba(var(--cinnabar-rgb), 0.16),
+      0 0 0 4px rgba(var(--cinnabar-rgb), 0.12);
+  }
+  50% {
+    outline-color: rgba(var(--cinnabar-rgb), 0.55);
+    box-shadow:
+      inset 0 0 6px rgba(var(--cinnabar-rgb), 0.08),
+      0 0 0 7px rgba(var(--cinnabar-rgb), 0.04);
+  }
+}
+
+/* 选中源格保持常亮，不参与落点脉动 */
+.cell.drop.selected {
+  animation: none;
+}
+
+/* —— 飘字：伤害/馒头数字，纸色描边保证在墨迹上可读 —— */
+
+.fx-float {
+  position: absolute;
+  z-index: var(--z-float);
+  pointer-events: none;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cinnabar);
+  text-shadow:
+    0 0 3px var(--paper-bright),
+    0 0 6px var(--paper-bright);
+  animation: ink-rise 0.8s ease-out forwards;
+}
+
+@keyframes ink-rise {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1.12);
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(5px, -32px) scale(0.92) rotate(3deg);
+  }
+}
+
+/* —— 覆层入场（起点不透明度 ≥0.85：冻结在首帧也完全可用） —— */
+
+.overlay {
+  animation: overlay-in 0.28s ease-out both;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0.86;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.panel {
+  animation: panel-in 0.32s var(--ease-brush) both;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0.9;
+    transform: scale(0.975) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* —— 无障碍：偏好减弱动效时全部退化为静态终帧 —— */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}

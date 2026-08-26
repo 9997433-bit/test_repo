@@ -1,0 +1,111 @@
+/* ============================================================
+   赵云与阿斗 · 设计令牌（唯一事实源）
+   规则：组件层禁止出现裸色值 / 裸阴影 / 裸缓动，一律引用此处。
+   材质只有四种：纸、墨、朱砂、泥金。品阶 1-5 = 白 / 石绿 / 青花 / 紫棠 / 赭火。
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* —— 纸 · 宣纸四阶 —— */
+  --paper-bright: #fbf5e6; /* 受光纸面：卡面、HUD 牌匾 */
+  --paper: #f3ead6;        /* 基准纸色（与 index.html theme-color 一致，勿改） */
+  --paper-deep: #e6d7b8;   /* 陈化纸边、凹陷区 */
+  --paper-shadow: #d8c59d; /* 折痕、压痕 */
+
+  /* —— 墨 · 焦浓淡宿 —— */
+  --ink-strong: #16110b;   /* 焦墨：标题、主按钮 */
+  --ink: #211a12;          /* 浓墨：正文、字符单位 */
+  --ink-soft: #4a4033;     /* 淡墨：次级文本 */
+  --ink-faint: #8b8071;    /* 宿墨：提示、占位 */
+  --ink-line: rgba(33, 26, 18, 0.2);
+  --ink-wash: rgba(33, 26, 18, 0.055);
+  --ink-rgb: 33, 26, 18;
+
+  /* —— 朱砂 · 印泥（系统之手：印章、警示、交互焦点） —— */
+  --cinnabar-bright: #d2503c;
+  --cinnabar: #b23a2f;
+  --cinnabar-deep: #8c281f;
+  --cinnabar-wash: rgba(178, 58, 47, 0.1);
+  --cinnabar-rgb: 178, 58, 47;
+
+  /* —— 金 · 泥金（只留给英雄与胜利） —— */
+  --gold-bright: #e8c56f;
+  --gold: #c9a24a;
+  --gold-ink: #9a7524;     /* 纸面上可读的金字 */
+  --gold-wash: rgba(201, 162, 74, 0.14);
+  --gold-rgb: 201, 162, 74;
+
+  /* —— 辅色 —— */
+  --moss: #6b7a6a;
+  --ai-steel: #5a6d7a;     /* 敌方半区的青灰 */
+  --ai-steel-rgb: 90, 109, 122;
+
+  /* —— 品阶 1-5（glyph 色 / 描边 / 底晕 三件套） —— */
+  --tier-1: #6e6455;
+  --tier-1-line: rgba(110, 100, 85, 0.42);
+  --tier-1-wash: rgba(110, 100, 85, 0.08);
+
+  --tier-2: #2f7d54;
+  --tier-2-line: rgba(47, 125, 84, 0.45);
+  --tier-2-wash: rgba(47, 125, 84, 0.09);
+
+  --tier-3: #31619c;
+  --tier-3-line: rgba(49, 97, 156, 0.45);
+  --tier-3-wash: rgba(49, 97, 156, 0.09);
+
+  --tier-4: #6d3d91;
+  --tier-4-line: rgba(109, 61, 145, 0.45);
+  --tier-4-wash: rgba(109, 61, 145, 0.09);
+
+  --tier-5: #b4560f;
+  --tier-5-line: rgba(180, 86, 15, 0.5);
+  --tier-5-wash: rgba(180, 86, 15, 0.1);
+
+  /* —— 字体 —— */
+  --font-body: "Noto Serif SC", "Songti SC", "STSong", serif;
+  --font-brush: "Ma Shan Zheng", "STKaiti", "KaiTi", cursive;
+
+  /* —— 圆角（纸是手裁的：小、且四角略歪） —— */
+  --radius-s: 3px;
+  --radius-m: 6px;
+  --radius-cut: 4px 6px 5px 4px / 5px 4px 6px 5px;
+
+  /* —— 海拔（宣纸上的东西只会「叠」，不会「浮」，阴影短而实） —— */
+  --shadow-flat:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    1px 2px 0 rgba(var(--ink-rgb), 0.07);
+  --shadow-card:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    1px 2px 0 rgba(var(--ink-rgb), 0.09),
+    2px 4px 10px rgba(var(--ink-rgb), 0.1);
+  --shadow-raised:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    2px 5px 0 rgba(var(--ink-rgb), 0.12),
+    4px 10px 18px rgba(var(--ink-rgb), 0.18);
+  --shadow-panel:
+    0 22px 48px rgba(22, 17, 11, 0.38),
+    8px 10px 0 rgba(var(--ink-rgb), 0.16);
+
+  /* —— 动效 —— */
+  --ease-brush: cubic-bezier(0.25, 0.9, 0.3, 1);   /* 起笔快、收笔缓 */
+  --ease-snap: cubic-bezier(0.36, 0.07, 0.19, 0.97); /* 震颤、盖章 */
+  --dur-flick: 120ms;
+  --dur-move: 260ms;
+  --dur-burst: 480ms;
+
+  /* —— 层级 —— */
+  --z-float: 30;    /* 飘字 */
+  --z-overlay: 50;  /* 结算/菜单覆层 */
+  --z-texture: 90;  /* 全局纸纹压在一切之上，统一质感 */
+
+  /* —— 纹理（内联 SVG，总预算 < 2KB，禁止外链图片） —— */
+  /* 细颗粒：fractalNoise 阈值化成稀疏墨点 */
+  --tex-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.13 0 0 0 0 0.1 0 0 0 0 0.07 0.7 0.7 0.7 0 -0.65'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23a)'/%3E%3C/svg%3E");
+  /* 纸色斑驳：印章上「印泥没铺匀」的漏白 */
+  --tex-grain-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.99 0 0 0 0 0.95 0 0 0 0 0.87 0.85 0.85 0.85 0 -0.92'/%3E%3C/filter%3E%3Crect width='90' height='90' filter='url(%23a)'/%3E%3C/svg%3E");
+  /* 帘纹：横向拉伸的长纤维（宣纸抄纸痕） */
+  --tex-fiber: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.16' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.24 0 0 0 0 0.19 0 0 0 0 0.12 0.9 0.9 0.9 0 -1.15'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23a)'/%3E%3C/svg%3E");
+  /* 远山两叠：行军道背景的水墨山影（feGaussianBlur 出晕染） */
+  --tex-hills: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='160' viewBox='0 0 480 160'%3E%3Cfilter id='b' x='-10%25' y='-10%25' width='120%25' height='120%25'%3E%3CfeGaussianBlur stdDeviation='3.5'/%3E%3C/filter%3E%3Cg filter='url(%23b)' fill='%231c1610'%3E%3Cpath d='M0 160V92Q70 46 140 76T280 64T400 86T480 72V160Z' fill-opacity='0.14'/%3E%3Cpath d='M0 160V124Q80 92 170 110T330 98T480 120V160Z' fill-opacity='0.22'/%3E%3C/g%3E%3C/svg%3E");
+}
