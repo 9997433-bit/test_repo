@@ -5,15 +5,28 @@
  * 想让蛋变大、分裂、追加发射、生成冰面，一律走 `egg_patch` / `spawn_egg` / `field`
  * 指令，由 src/physics 自行决定怎么落地。战斗层因此可以在无浏览器环境下单测。
  *
- * 技能 id 解析顺序：显式传入 → `src/data` 英雄表的 `skill` 字段 → 英雄 id 别名。
+ * ## 口径
+ *
+ * 技能 id 以 `src/data/heroes.js` 的 `skill` 字段为唯一权威，本表的键与之一一对应：
+ * 18 个在役英雄 = 18 个技能，一个不多一个不少。`src/data` 的 `RESERVED_HERO_IDS`
+ * （云朵雀 lark / 倒霉鸭 unlucky_duck）是基线 GDD 的预留位，本版本不上场，
+ * 因此这里没有、也不允许有对应的技能条目——`SKILL_BY_HERO` 直接从英雄表派生，
+ * 结构上杜绝了旧的 20 英雄口径回流。
+ *
+ * 历史上战斗层与 `src/heroes/skills.js` 各自起过一套 id，统一由 `SKILL_ALIAS` 归一，
+ * 老调用方传 `fallen_slash` / `shock_spread` 这类旧名仍然解析得到。
+ *
+ * 技能 id 解析顺序：显式 id / 别名 → 英雄表的 `skill` 字段 → 英雄 id。
  */
 
 import * as DATA from "../data/index.js";
 import { ELEMENT, ELEMENTS, STATUS } from "./constants.js";
 import {
+  EGG_SCOPE,
+  FEEDBACK,
+  PARTY_SCOPE,
   buffEffect,
   chainEffect,
-  comboEffect,
   eggPatchEffect,
   energyEffect,
   explosionEffect,
@@ -21,6 +34,7 @@ import {
   fieldEffect,
   healEffect,
   shieldEffect,
+  sortEffects,
   spawnEggEffect,
   statusEffect,
 } from "./effects.js";
@@ -50,32 +64,37 @@ function withinRadius(targets = [], at, radius) {
 }
 
 /**
- * 技能定义。
+ * 技能行为表：战斗层只拥有 `cast()` / `requires()`，展示信息与能耗以 `src/data` 为准。
  * `cast(p)` 接收 { caster, primaryTarget, targets, allies, now, mods, ctx, combo, launcher }，
- * 返回效果指令数组。
+ * 返回效果指令数组。`hero` 字段声明归属，供 `SKILL_BY_HERO` 反查。
  */
-export const SKILLS = {
-  /* ---------------- 连击流 ---------------- */
-  shuriken_eggs: {
-    id: "shuriken_eggs",
-    name: "手里剑蛋",
+const BEHAVIORS = {
+  /* ---------------- 连击流 combo（4） ---------------- */
+  shuriken_split: {
+    id: "shuriken_split",
+    hero: "ninja_goose",
+    name: "手里剑分蛋",
     school: "combo",
     cost: 80,
     desc: "主蛋命中后追加 2 枚小手里剑蛋",
-    cast: ({ caster, launcher, now }) => [
-      spawnEggEffect({
-        count: 2,
-        spread: 0.28,
-        inherit: 0.7,
-        origin: posOf(launcher, { x: 240, y: 60 }),
-        template: { power: atkOf(caster) * 0.45, radius: 7, tags: ["shuriken"], bouncePriority: "enemy" },
-        source: caster?.id ?? null,
-      }),
-      feedbackEffect({ kind: "sfx", tone: "shuriken", intensity: 0.7, at: posOf(launcher, { x: 240, y: 60 }), duration: 0, text: null }),
-    ],
+    cast: ({ caster, launcher }) => {
+      const origin = posOf(launcher, { x: 240, y: 60 });
+      return [
+        spawnEggEffect({
+          count: 2,
+          spread: 0.28,
+          inherit: 0.7,
+          origin,
+          template: { power: atkOf(caster) * 0.45, radius: 7, tags: ["shuriken"], bouncePriority: "enemy" },
+          source: caster?.id ?? null,
+        }),
+        feedbackEffect({ kind: FEEDBACK.SFX, tone: "shuriken", intensity: 0.7, at: origin }),
+      ];
+    },
   },
-  fallen_slash: {
-    id: "fallen_slash",
+  dusk_slash: {
+    id: "dusk_slash",
+    hero: "fallen_crow",
     name: "堕羽斩",
     school: "combo",
     cost: 100,
@@ -84,54 +103,46 @@ export const SKILLS = {
     cast: ({ caster, primaryTarget, combo = 0 }) =>
       primaryTarget
         ? [
-            strike({ target: primaryTarget, damage: atkOf(caster) * (2.6 + combo * 0.08), sourceId: caster?.id ?? null, kind: "fallen_slash" }),
-            feedbackEffect({ kind: "hitstop", duration: 0.09, intensity: 0.9, at: posOf(primaryTarget) }),
-            feedbackEffect({ kind: "floater", text: "堕羽斩", tone: "combo", at: posOf(primaryTarget) }),
+            strike({ target: primaryTarget, damage: atkOf(caster) * (2.6 + combo * 0.08), sourceId: caster?.id ?? null, kind: "dusk_slash" }),
+            feedbackEffect({ kind: FEEDBACK.HITSTOP, duration: 0.09, intensity: 0.9, at: posOf(primaryTarget), targetId: primaryTarget.id ?? null }),
+            feedbackEffect({ kind: FEEDBACK.FLOATER, text: "堕羽斩", tone: "combo", at: posOf(primaryTarget), targetId: primaryTarget.id ?? null }),
           ]
         : [],
   },
   dash_crit: {
     id: "dash_crit",
+    hero: "dash_duck",
     name: "冲刺暴击",
     school: "combo",
     cost: 70,
     desc: "发射瞬移短冲刺，首撞必定暴击",
     cast: ({ caster, launcher }) => [
       eggPatchEffect({
-        scope: "next",
+        scope: EGG_SCOPE.NEXT,
         duration: 0,
         patch: { forceCrit: true, critMult: 2.1, speedMult: 1.35, tags: ["dash"] },
         source: caster?.id ?? null,
       }),
-      feedbackEffect({ kind: "trail", tone: "dash", intensity: 1, duration: 0.3, at: posOf(launcher, { x: 240, y: 60 }) }),
+      feedbackEffect({ kind: FEEDBACK.TRAIL, tone: "dash", intensity: 1, duration: 0.3, at: posOf(launcher, { x: 240, y: 60 }) }),
     ],
   },
-  energy_share: {
-    id: "energy_share",
+  encore_wing: {
+    id: "encore_wing",
+    hero: "dandy_pigeon",
     name: "小帅光环",
     school: "combo",
     cost: 100,
     desc: "为其他英雄回复 30% 能量",
     cast: ({ caster }) => [
-      energyEffect({ scope: "others", ratio: 0.3, source: caster?.id ?? null }),
-      feedbackEffect({ kind: "flash", tone: "support", intensity: 0.6, duration: 0.25 }),
-    ],
-  },
-  combo_hold: {
-    id: "combo_hold",
-    name: "云端悬停",
-    school: "combo",
-    cost: 90,
-    desc: "4 秒内连击不衰减",
-    cast: ({ caster }) => [
-      buffEffect({ id: "combo_hold", scope: "team", duration: 4, mods: { comboDecayMult: 0 }, source: caster?.id ?? null }),
-      comboEffect({ op: "hold", duration: 4, source: caster?.id ?? null }),
+      energyEffect({ scope: PARTY_SCOPE.OTHERS, ratio: 0.3, source: caster?.id ?? null }),
+      feedbackEffect({ kind: FEEDBACK.FLASH, tone: "support", intensity: 0.6, duration: 0.25 }),
     ],
   },
 
-  /* ---------------- 直殴流 ---------------- */
+  /* ---------------- 直殴流 brute（4） ---------------- */
   solar_burn: {
     id: "solar_burn",
+    hero: "sun_bird",
     name: "日轮灼烧",
     school: "brute",
     element: ELEMENT.FIRE,
@@ -152,48 +163,37 @@ export const SKILLS = {
           source: caster?.id ?? null,
           meta: { element: ELEMENT.FIRE },
         }),
-        feedbackEffect({ kind: "shake", intensity: 0.8, duration: 0.22, at }),
+        feedbackEffect({ kind: FEEDBACK.SHAKE, intensity: 0.8, duration: 0.22, at, targetId: primaryTarget.id ?? null }),
       ];
     },
   },
-  heavy_pierce: {
-    id: "heavy_pierce",
+  gear_egg: {
+    id: "gear_egg",
+    hero: "mech_goose",
     name: "齿轮增重",
     school: "brute",
     cost: 90,
     desc: "蛋变重，击碎砖块额外穿透",
     cast: ({ caster }) => [
-      eggPatchEffect({ scope: "active", duration: 8, patch: { massMult: 1.6, radiusDelta: 3, pierce: 1, restitutionMult: 0.9 }, source: caster?.id ?? null }),
-      buffEffect({ id: "heavy_pierce", scope: "team", duration: 8, mods: { pierce: 1, knockback: 1 }, source: caster?.id ?? null }),
+      eggPatchEffect({ scope: EGG_SCOPE.ACTIVE, duration: 8, patch: { massMult: 1.6, radiusDelta: 3, pierce: 1, restitutionMult: 0.9 }, source: caster?.id ?? null }),
+      buffEffect({ id: "gear_egg", scope: PARTY_SCOPE.TEAM, duration: 8, mods: { pierce: 1, knockback: 1 }, source: caster?.id ?? null }),
     ],
   },
   war_drum: {
     id: "war_drum",
+    hero: "drum_chick",
     name: "战鼓光环",
     school: "brute",
     cost: 110,
     desc: "全队攻击 +12%",
     cast: ({ caster }) => [
-      buffEffect({ id: "war_drum", scope: "team", duration: 12, mods: { atkMult: 1.12 }, source: caster?.id ?? null }),
-      feedbackEffect({ kind: "sfx", tone: "drum", intensity: 0.8 }),
+      buffEffect({ id: "war_drum", scope: PARTY_SCOPE.TEAM, duration: 12, mods: { atkMult: 1.12 }, source: caster?.id ?? null }),
+      feedbackEffect({ kind: FEEDBACK.SFX, tone: "drum", intensity: 0.8 }),
     ],
   },
-  grudge_stack: {
-    id: "grudge_stack",
-    name: "倒霉反弹",
-    school: "brute",
-    cost: 80,
-    desc: "按本回合砖块反弹次数提升伤害",
-    cast: ({ caster, ctx = {} }) => {
-      const stacks = Math.min(10, Math.max(1, Math.floor(ctx.bounces ?? ctx.brickBounces ?? 1)));
-      return [
-        buffEffect({ id: "grudge_stack", scope: "team", duration: 10, stacks, mods: { damageMult: 1.08 }, source: caster?.id ?? null }),
-        feedbackEffect({ kind: "floater", text: `倒霉 ×${stacks}`, tone: "brute" }),
-      ];
-    },
-  },
-  extra_egg: {
-    id: "extra_egg",
+  pep_start: {
+    id: "pep_start",
+    hero: "pep_chick",
     name: "元气加蛋",
     school: "brute",
     cost: 60,
@@ -203,9 +203,10 @@ export const SKILLS = {
     ],
   },
 
-  /* ---------------- 属性流 ---------------- */
+  /* ---------------- 属性流 elemental（5） ---------------- */
   shock_bounce: {
     id: "shock_bounce",
+    hero: "thunder_chick",
     name: "感电弹跳",
     school: "elemental",
     element: ELEMENT.THUNDER,
@@ -213,7 +214,7 @@ export const SKILLS = {
     desc: "主蛋带雷，弹跳优先敌人",
     cast: ({ caster, primaryTarget }) => {
       const effects = [
-        eggPatchEffect({ scope: "active", duration: 6, patch: { element: ELEMENT.THUNDER, bouncePriority: "enemy", homing: 0.25 }, source: caster?.id ?? null }),
+        eggPatchEffect({ scope: EGG_SCOPE.ACTIVE, duration: 6, patch: { element: ELEMENT.THUNDER, bouncePriority: "enemy", homing: 0.25 }, source: caster?.id ?? null }),
       ];
       if (primaryTarget) {
         const at = posOf(primaryTarget);
@@ -233,8 +234,9 @@ export const SKILLS = {
       return effects;
     },
   },
-  shock_spread: {
-    id: "shock_spread",
+  chain_groove: {
+    id: "chain_groove",
+    hero: "hiphop_duck",
     name: "嘻哈扩散",
     school: "elemental",
     element: ELEMENT.THUNDER,
@@ -246,12 +248,13 @@ export const SKILLS = {
       return [
         statusEffect({ targetId: primaryTarget.id, status: STATUS.SHOCK, duration: ELEMENTS.SHOCK.duration * modOf(mods, "statusDurationMult"), source: caster?.id ?? null, meta: { element: ELEMENT.THUNDER } }),
         chainEffect({ fromId: primaryTarget.id, x: at.x, y: at.y, hops: 2, damage: atkOf(caster) * 1.4, element: ELEMENT.THUNDER, falloff: 0.7, radius: 190 }),
-        feedbackEffect({ kind: "floater", text: "扩散", tone: "thunder", at }),
+        feedbackEffect({ kind: FEEDBACK.FLOATER, text: "扩散", tone: "thunder", at, targetId: primaryTarget.id ?? null }),
       ];
     },
   },
-  sky_thunder: {
-    id: "sky_thunder",
+  afterglow_bolt: {
+    id: "afterglow_bolt",
+    hero: "bird_of_paradise",
     name: "天堂落雷",
     school: "elemental",
     element: ELEMENT.THUNDER,
@@ -262,12 +265,13 @@ export const SKILLS = {
       const list = charged.length ? charged : targets.slice(0, 1);
       return list.map((t) => {
         const at = posOf(t);
-        return explosionEffect({ x: at.x, y: at.y, radius: 70, damage: atkOf(caster) * 1.6, element: ELEMENT.THUNDER, falloff: 0.3, kind: "sky_thunder", sourceId: caster?.id ?? null });
+        return explosionEffect({ x: at.x, y: at.y, radius: 70, damage: atkOf(caster) * 1.6, element: ELEMENT.THUNDER, falloff: 0.3, kind: "afterglow_bolt", sourceId: caster?.id ?? null });
       });
     },
   },
   blizzard: {
     id: "blizzard",
+    hero: "ice_phoenix",
     name: "暴风雪",
     school: "elemental",
     element: ELEMENT.ICE,
@@ -282,70 +286,78 @@ export const SKILLS = {
         ...frozen.map((t) =>
           statusEffect({ targetId: t.id, status: STATUS.FREEZE, duration: ELEMENTS.FREEZE.duration * modOf(mods, "statusDurationMult"), potency: ELEMENTS.FREEZE.damageTakenMult, source: caster?.id ?? null, meta: { element: ELEMENT.ICE } }),
         ),
-        feedbackEffect({ kind: "flash", tone: "ice", intensity: 0.9, duration: 0.3, at }),
+        feedbackEffect({ kind: FEEDBACK.FLASH, tone: "ice", intensity: 0.9, duration: 0.3, at }),
       ];
     },
   },
-  deep_freeze: {
-    id: "deep_freeze",
+  glacier_march: {
+    id: "glacier_march",
+    hero: "emperor_penguin",
     name: "极寒领域",
     school: "elemental",
     element: ELEMENT.ICE,
     cost: 100,
     desc: "延长冻结并生成冰面",
     cast: ({ caster, launcher }) => [
-      buffEffect({ id: "deep_freeze", scope: "team", duration: 10, mods: { statusDurationMult: 1.5, elementPowerMult: 1.15 }, source: caster?.id ?? null }),
+      buffEffect({ id: "glacier_march", scope: PARTY_SCOPE.TEAM, duration: 10, mods: { statusDurationMult: 1.5, elementPowerMult: 1.15 }, source: caster?.id ?? null }),
       fieldEffect({ kind: "ice", x: posOf(launcher, { x: 240, y: 700 }).x, y: 760, w: 480, h: 24, duration: 10, params: { friction: 0.02 }, source: caster?.id ?? null }),
     ],
   },
 
-  /* ---------------- 碰撞流 / 辅助 ---------------- */
-  growing_fang: {
-    id: "growing_fang",
+  /* ---------------- 碰撞流 collide（2） ---------------- */
+  feeding_frenzy: {
+    id: "feeding_frenzy",
+    hero: "shark_eagle",
     name: "鲨齿增生",
     school: "collide",
     cost: 90,
     desc: "每次碰撞蛋半径 +1",
     cast: ({ caster }) => [
-      eggPatchEffect({ scope: "active", duration: 10, patch: { radiusPerCollision: 1, maxRadius: 22 }, source: caster?.id ?? null }),
-      buffEffect({ id: "growing_fang", scope: "team", duration: 10, mods: { radiusPerCollision: 1, collisionDamageMult: 1.1 }, source: caster?.id ?? null }),
+      eggPatchEffect({ scope: EGG_SCOPE.ACTIVE, duration: 10, patch: { radiusPerCollision: 1, maxRadius: 22 }, source: caster?.id ?? null }),
+      buffEffect({ id: "feeding_frenzy", scope: PARTY_SCOPE.TEAM, duration: 10, mods: { radiusPerCollision: 1, collisionDamageMult: 1.1 }, source: caster?.id ?? null }),
     ],
   },
   antler_split: {
     id: "antler_split",
+    hero: "deer_chick",
     name: "鹿角分裂",
     school: "collide",
     cost: 100,
     desc: "碰撞时分裂出小蛋",
     cast: ({ caster }) => [
-      eggPatchEffect({ scope: "active", duration: 8, patch: { splitOnCollide: true, splitCount: 2, splitInherit: 0.7 }, source: caster?.id ?? null }),
-      buffEffect({ id: "antler_split", scope: "team", duration: 8, mods: { splitChance: 0.2 }, source: caster?.id ?? null }),
+      eggPatchEffect({ scope: EGG_SCOPE.ACTIVE, duration: 8, patch: { splitOnCollide: true, splitCount: 2, splitInherit: 0.7 }, source: caster?.id ?? null }),
+      buffEffect({ id: "antler_split", scope: PARTY_SCOPE.TEAM, duration: 8, mods: { splitChance: 0.2 }, source: caster?.id ?? null }),
     ],
   },
+
+  /* ---------------- 辅助 support（3） ---------------- */
   yolk_heal: {
     id: "yolk_heal",
+    hero: "heal_duck",
     name: "蛋黄治愈",
     school: "support",
     cost: 80,
     desc: "回收蛋时恢复生命",
     cast: ({ caster }) => [
-      healEffect({ scope: "party", ratio: 0.04, source: caster?.id ?? null }),
-      feedbackEffect({ kind: "floater", text: "回复", tone: "heal" }),
+      healEffect({ scope: PARTY_SCOPE.PARTY, ratio: 0.04, source: caster?.id ?? null }),
+      feedbackEffect({ kind: FEEDBACK.FLOATER, text: "回复", tone: "heal" }),
     ],
   },
   shell_guard: {
     id: "shell_guard",
+    hero: "guard_duck",
     name: "蛋壳护盾",
     school: "support",
     cost: 90,
     desc: "抵挡一次漏怪伤害",
     cast: ({ caster, mods = {} }) => [
-      shieldEffect({ scope: "party", amount: atkOf(caster) * 3 * modOf(mods, "shieldMult"), duration: 20, blocks: 1, source: caster?.id ?? null }),
-      feedbackEffect({ kind: "flash", tone: "shield", intensity: 0.5, duration: 0.2 }),
+      shieldEffect({ scope: PARTY_SCOPE.PARTY, amount: atkOf(caster) * 3 * modOf(mods, "shieldMult"), duration: 20, blocks: 1, source: caster?.id ?? null }),
+      feedbackEffect({ kind: FEEDBACK.FLASH, tone: "shield", intensity: 0.5, duration: 0.2 }),
     ],
   },
-  grace_slow: {
-    id: "grace_slow",
+  grace_waltz: {
+    id: "grace_waltz",
+    hero: "grace_goose",
     name: "优雅领域",
     school: "support",
     cost: 90,
@@ -359,42 +371,97 @@ export const SKILLS = {
   },
 };
 
-/** 英雄 id → 技能 id 的兜底别名，数据表尚未填齐时也能拿到技能。 */
-export const SKILL_BY_HERO = {
-  ninja_goose: "shuriken_eggs",
-  fallen_crow: "fallen_slash",
-  dash_duck: "dash_crit",
-  dandy_pigeon: "energy_share",
-  lark: "combo_hold",
-  sun_bird: "solar_burn",
-  mech_goose: "heavy_pierce",
-  drum_chick: "war_drum",
-  unlucky_duck: "grudge_stack",
-  pep_chick: "extra_egg",
-  thunder_chick: "shock_bounce",
-  hiphop_duck: "shock_spread",
-  bird_of_paradise: "sky_thunder",
-  ice_phoenix: "blizzard",
-  emperor_penguin: "deep_freeze",
-  shark_eagle: "growing_fang",
-  deer_chick: "antler_split",
-  heal_duck: "yolk_heal",
-  guard_duck: "shell_guard",
-  grace_goose: "grace_slow",
-};
+/**
+ * 能量消耗。
+ *
+ * 数据表声明了 `energyCost` 就照抄；没声明的（被动型技能，战斗层把它做成了可主动释放的形态）
+ * 用本表的默认值，但必须夹到英雄自己的能量上限以内——消耗大于上限的技能永远攒不满，
+ * 等于没做。战斗层不自行发明数值，只做这一层夹取。
+ */
+function costOf(behavior) {
+  const declared = (DATA.SKILLS ?? {})[behavior.id]?.energyCost;
+  if (Number.isFinite(declared)) return declared;
+  const cap = (DATA.HEROES ?? {})[behavior.hero]?.energy;
+  return Number.isFinite(cap) ? Math.min(behavior.cost ?? DEFAULT_COST, cap) : behavior.cost ?? DEFAULT_COST;
+}
 
-/** 解析出技能 id。 */
+/**
+ * 技能注册表：行为（本层） + 展示信息与能耗（`src/data`）。
+ * 名称 / 描述不在战斗层再抄一份，数据表改名这里自动跟随；数据表缺条目时用本层兜底值。
+ */
+export const SKILLS = Object.fromEntries(
+  Object.entries(BEHAVIORS).map(([id, behavior]) => {
+    const meta = (DATA.SKILLS ?? {})[id] ?? null;
+    return [id, { ...behavior, name: meta?.name ?? behavior.name, desc: meta?.desc ?? behavior.desc, trigger: meta?.trigger ?? "active", cost: costOf(behavior) }];
+  }),
+);
+
+/**
+ * 历史 id → 当前 id。
+ *
+ * 左侧收录了战斗层早期的自造名与 `src/heroes/skills.js` 的另一套 id，
+ * 让旧存档、旧日志、旧调用方都还能解析。新代码一律直接用右侧的权威 id。
+ */
+export const SKILL_ALIAS = Object.freeze({
+  shuriken_eggs: "shuriken_split",
+  fallen_slash: "dusk_slash",
+  energy_share: "encore_wing",
+  dandy_refresh: "encore_wing",
+  heavy_pierce: "gear_egg",
+  gear_heavy: "gear_egg",
+  extra_egg: "pep_start",
+  pep_extra_egg: "pep_start",
+  shock_spread: "chain_groove",
+  sky_thunder: "afterglow_bolt",
+  paradise_bolt: "afterglow_bolt",
+  frost_egg: "blizzard",
+  deep_freeze: "glacier_march",
+  ice_floor: "glacier_march",
+  growing_fang: "feeding_frenzy",
+  collide_growth: "feeding_frenzy",
+  collide_split: "antler_split",
+  grace_slow: "grace_waltz",
+});
+
+/** 本版本不上场的预留英雄，任何情况下都不该解析出技能。 */
+const RESERVED_HEROES = new Set(DATA.RESERVED_HERO_IDS ?? []);
+
+/**
+ * 英雄 id → 技能 id。
+ *
+ * 直接从 `src/data` 英雄表派生而不是手抄：英雄表增删英雄时这里自动跟随，
+ * 预留英雄（lark / unlucky_duck）因为不在表里而天然缺席。
+ */
+export const SKILL_BY_HERO = Object.freeze(
+  Object.fromEntries(
+    Object.values(DATA.HEROES ?? {})
+      .filter((hero) => hero?.id && !RESERVED_HEROES.has(hero.id))
+      .map((hero) => [hero.id, canonicalSkillId(hero.skill) ?? heroOwnedSkill(hero.id)])
+      .filter(([, skill]) => Boolean(skill)),
+  ),
+);
+
+/** 技能表里声明自己属于某英雄的那一条，作为英雄表 `skill` 字段缺失时的兜底。 */
+function heroOwnedSkill(heroId) {
+  return Object.values(SKILLS).find((skill) => skill.hero === heroId)?.id ?? null;
+}
+
+/** 把任意历史写法的技能 id 归一到当前 id，认不出来则返回 null。 */
+export function canonicalSkillId(id) {
+  if (typeof id !== "string" || !id) return null;
+  if (SKILLS[id]) return id;
+  const aliased = SKILL_ALIAS[id];
+  return aliased && SKILLS[aliased] ? aliased : null;
+}
+
+/** 解析出技能 id。入参可以是技能 id、别名、英雄 id 或英雄对象。 */
 export function skillIdFor(hero) {
   if (!hero) return null;
   if (typeof hero === "string") {
-    if (SKILLS[hero]) return hero;
-    const fromData = (DATA.HEROES ?? {})[hero]?.skill;
-    if (fromData && SKILLS[fromData]) return fromData;
-    return SKILL_BY_HERO[hero] ?? null;
+    if (RESERVED_HEROES.has(hero)) return null;
+    return canonicalSkillId(hero) ?? canonicalSkillId((DATA.HEROES ?? {})[hero]?.skill) ?? SKILL_BY_HERO[hero] ?? null;
   }
-  if (hero.skill && SKILLS[hero.skill]) return hero.skill;
-  if (hero.skillId && SKILLS[hero.skillId]) return hero.skillId;
-  return skillIdFor(hero.id ?? null);
+  return canonicalSkillId(hero.skill) ?? canonicalSkillId(hero.skillId) ?? skillIdFor(hero.id ?? null);
 }
 
 /** 取技能定义。 */
@@ -410,6 +477,9 @@ export function skillCost(hero) {
 
 /**
  * 释放技能，只产出指令。
+ *
+ * `effects` 与 `resolveHit()` 同一套契约：按 combat → physics → party → presentation
+ * 稳定分段，失败时恒为空数组。
  *
  * @param {string|object} hero 英雄 id 或英雄对象
  * @param {object} params { caster, primaryTarget, targets, allies, energy, combo, mods, ctx, now, launcher }
@@ -441,7 +511,7 @@ export function castSkill(hero, params = {}) {
     ok: true,
     id: skill.id,
     cost,
-    effects: effects.filter(Boolean),
+    effects: sortEffects(effects),
     events: [skillCastEvent({ heroId: casterId, skill: skill.id, name: skill.name, cost })],
     reason: null,
   };

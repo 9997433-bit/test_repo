@@ -9,7 +9,9 @@
  *
  * 对外契约（缺字段的蛋也必须满足）：
  * - `damage`：有限的非负整数；蛋显式写了 0 威力就是 0 伤害，什么都没写才吃默认威力
- * - `effects`：恒为数组，元素是效果指令；一次普通命中至少带一条飘字指令，不会是空数组
+ * - `effects`：恒为数组，元素是效果指令；一次普通命中至少带一条飘字指令，不会是空数组。
+ *   数组按 combat → physics → party → presentation 稳定分段（见 effects.js 的指令契约），
+ *   调用方可以直接 `splitEffects()` 分流，或对尾部的表现层指令 `presentationPlan()` 折叠成一帧计划
  * - `comboDelta`：有限数；普通命中 +1（叠层羁绊更多），爆蛋时刻为负（清零或保留部分层数）
  * - `events`：恒为数组
  */
@@ -18,7 +20,7 @@ import { COMBO, ELEMENT } from "./constants.js";
 import { BURST_BUFF_ID, advanceCombo, burstEffects, burstHitEffects, comboGain, isBurstActive, planCombo } from "./combo.js";
 import { applyShield, computeDamage, eggElement, eggSchool } from "./damage.js";
 import { elementEffects, previewElement } from "./elements.js";
-import { feedbackEffect } from "./effects.js";
+import { FEEDBACK, feedbackEffect, sortEffects } from "./effects.js";
 import { blockedEvent, critEvent, hitEvent, killEvent, shieldAbsorbEvent } from "./events.js";
 import { bondModsFrom } from "./bonds.js";
 import { mergeMods, modOf, modsFromBuffs } from "./modifiers.js";
@@ -145,8 +147,10 @@ export function resolveHit(egg = {}, target = {}, ctx = {}) {
     effects.push(...burstHitEffects({ damage: dmg.amount, at, element, sourceId, targetId }));
   }
 
-  effects.push(feedbackEffect({ kind: "floater", text: String(dmg.amount), tone: dmg.crit ? "crit" : element, intensity: dmg.crit ? 1.2 : 0.7, at }));
-  if (dmg.crit) effects.push(feedbackEffect({ kind: "hitstop", duration: 0.03, intensity: 0.6, at }));
+  effects.push(
+    feedbackEffect({ kind: FEEDBACK.FLOATER, text: String(dmg.amount), tone: dmg.crit ? "crit" : element, intensity: dmg.crit ? 1.2 : 0.7, at, targetId }),
+  );
+  if (dmg.crit) effects.push(feedbackEffect({ kind: FEEDBACK.HITSTOP, duration: 0.03, intensity: 0.6, at, targetId }));
 
   events.push(
     hitEvent({
@@ -167,7 +171,8 @@ export function resolveHit(egg = {}, target = {}, ctx = {}) {
 
   return {
     damage: dmg.amount,
-    effects,
+    // 分段排序放在最后一步：产出侧只管按语义 push，消费侧永远拿到同一种顺序
+    effects: sortEffects(effects),
     // 普通命中恒为 +1（叠层羁绊会更多）；爆蛋时刻是负数（清零 / 保留部分层数），但一定是有限数
     comboDelta: Number.isFinite(plannedCombo.delta) ? plannedCombo.delta : 0,
     events,

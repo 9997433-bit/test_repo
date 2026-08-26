@@ -14,6 +14,8 @@
 
 import { ELEMENT, ELEMENTS, REACTION, REACTION_LABEL, STATUS } from "./constants.js";
 import {
+  FEEDBACK,
+  PARTY_SCOPE,
   auraEffect,
   chainEffect,
   clearStatusEffect,
@@ -190,11 +192,11 @@ export function elementEffects(plan, { damage = 0, target = null, position = nul
 
   if (plan.reaction) {
     events.push(reactionEvent({ targetId, reaction: plan.reaction, label: REACTION_LABEL[plan.reaction], incoming: plan.element, consumed: plan.prevAura?.element ?? null, damage }));
-    effects.push(feedbackEffect({ kind: "floater", text: REACTION_LABEL[plan.reaction], tone: plan.reaction, intensity: 1, at }));
+    effects.push(feedbackEffect({ kind: FEEDBACK.FLOATER, text: REACTION_LABEL[plan.reaction], tone: plan.reaction, intensity: 1, at, targetId }));
 
     // 属性流 4 人羁绊：每次元素反应全队回能
     const energy = modOf(mods, "energyOnReaction");
-    if (energy > 0) effects.push(energyEffect({ scope: "team", amount: energy, source: sourceId }));
+    if (energy > 0) effects.push(energyEffect({ scope: PARTY_SCOPE.TEAM, amount: energy, source: sourceId }));
 
     if (plan.reaction === REACTION.VAPORIZE) {
       // 蒸发移除冻结
@@ -222,7 +224,7 @@ export function elementEffects(plan, { damage = 0, target = null, position = nul
           excludeIds: targetId != null ? [targetId] : [],
         }),
       );
-      effects.push(feedbackEffect({ kind: "shake", intensity: 0.6, duration: 0.18, at }));
+      effects.push(feedbackEffect({ kind: FEEDBACK.SHAKE, intensity: 0.6, duration: 0.18, at, targetId }));
     }
     return { effects, events };
   }
@@ -273,7 +275,7 @@ export function elementEffects(plan, { damage = 0, target = null, position = nul
         }),
       );
     }
-    effects.push(feedbackEffect({ kind: "element-burst", tone: plan.element, intensity: 0.8, at }));
+    effects.push(feedbackEffect({ kind: FEEDBACK.ELEMENT_BURST, tone: plan.element, intensity: 0.8, at, targetId }));
   }
 
   return { effects, events };

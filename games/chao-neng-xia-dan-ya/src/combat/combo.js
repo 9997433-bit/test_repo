@@ -9,7 +9,7 @@
  */
 
 import { COMBO } from "./constants.js";
-import { buffEffect, comboEffect, explosionEffect, feedbackEffect } from "./effects.js";
+import { COMBO_OP, FEEDBACK, buffEffect, comboEffect, explosionEffect, feedbackEffect } from "./effects.js";
 import { comboBreakEvent, comboBurstEvent, comboGainEvent } from "./events.js";
 import { modOf } from "./modifiers.js";
 
@@ -103,7 +103,7 @@ export function burstEffects({ damage = 0, at = { x: 0, y: 0 }, mods = {}, sourc
   const burstMult = modOf(mods, "burstDamageMult");
   const duration = COMBO.BURST_DURATION;
   const effects = [
-    comboEffect({ op: "burst", value: kept, duration, source: sourceId }),
+    comboEffect({ op: COMBO_OP.BURST, value: kept, duration, source: sourceId }),
     buffEffect({
       id: BURST_BUFF_ID,
       scope: "team",
@@ -120,9 +120,9 @@ export function burstEffects({ damage = 0, at = { x: 0, y: 0 }, mods = {}, sourc
       kind: "combo_burst",
       sourceId,
     }),
-    feedbackEffect({ kind: "hitstop", duration: 0.12, intensity: 1, at }),
-    feedbackEffect({ kind: "shake", duration: 0.35, intensity: 1.4, at }),
-    feedbackEffect({ kind: "floater", text: "爆蛋时刻!", tone: "burst", intensity: 1.4, at }),
+    feedbackEffect({ kind: FEEDBACK.HITSTOP, duration: 0.12, intensity: 1, at, targetId }),
+    feedbackEffect({ kind: FEEDBACK.SHAKE, duration: 0.35, intensity: 1.4, at, targetId }),
+    feedbackEffect({ kind: FEEDBACK.FLOATER, text: "爆蛋时刻!", tone: "burst", intensity: 1.4, at, targetId }),
   ];
   const events = [comboBurstEvent({ targetId, sourceId, threshold: burstThreshold(mods), duration, expiresAt: now + duration, damage: damage * COMBO.BURST_RATIO * burstMult })];
   return { effects, events };
