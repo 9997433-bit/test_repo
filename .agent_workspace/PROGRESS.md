@@ -76,11 +76,12 @@
 
 | 批次 | Agent | 状态 | bcId |
 |---|---|---|---|
-| A | R2-F1 SOTA 复审 | 运行中 | `bc-12976fc6-5973-5c3d-8929-d5a82b6cf9da` |
+| A | R2-F1 SOTA 复审 | 已完成，量规已合入并加 Parent 续评 | `bc-12976fc6-5973-5c3d-8929-d5a82b6cf9da` |
 | A | R2-O1 核心硬化 | 已完成，limits/settle/被动XP 已合入 | `bc-296eba5b-282c-5f4c-9873-253fac73aa28` |
 | A | R2-O3 CSS 接线 | 已完成，main.css token 化已合入 | `bc-3dc5f228-7843-5491-b82c-b6178be28951` |
 | B | R2-O2 小游戏单测 | 运行中 | `bc-3c2aa0f4-0423-5a82-be7e-f71e296136eb` |
 | B | R2-O4 HUD文案接线 | 运行中 | `bc-6d654f68-fc2b-5f5a-9bee-36baaff1801b` |
+| C | R2-G2 模拟脚本 | 运行中 | `bc-ae73f2e8-0ebc-57ea-ad67-2389d991637b` |
 
 ## 已实现基线（Parent 预置）
 
