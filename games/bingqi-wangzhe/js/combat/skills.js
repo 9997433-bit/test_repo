@@ -10,11 +10,16 @@
  *   rng, actor, skill, round, wave,
  *   aliveEnemies(), aliveAllies(),
  *   selectEnemies(count, mode), lowestAlly(), lowestEnemy(),
- *   dealDamage(target, { power, element, pierce, canCrit, critBonus, lifesteal, label, tag, noReflect }),
+ *   dealDamage(target, { power, element, pierce, canCrit, critBonus, lifesteal, label, tag, noReflect,
+ *                        statusId, aoe, multiHit, hitIndex, hitCount }),
  *   heal(target, amount, label), addShield(target, amount, label),
  *   applyStatus(target, status), effAtk(unit), log(type, payload)
  * }
  * ```
+ *
+ * 后五个是 Round 3 的**演出提示**，只写进 timeline，不参与任何数值结算：
+ * 不传时引擎按本次施放的技能特征（`skillCastHints`）自动填，
+ * 传了就以传入值为准——多段技逐段报 `hitIndex / hitCount` 才能让 UI 排开弹道。
  */
 
 import { elementLabel } from './elements.js';
@@ -39,18 +44,35 @@ export const STATUS_ALIASES = Object.freeze({
   thorn: 'thorns',
 });
 
+/**
+ * 状态表。
+ *
+ * `icon` / `color` 是 Round 3 为 UI 补的展示字段：状态条要画图标，
+ * 时间轴与飘字要按状态染色。战斗结算完全不读这两个键，改它们不影响任何数值，
+ * 但 `id / name / kind / bad` 仍是结算与存档认的权威语义，不能动。
+ */
 export const STATUS_INFO = Object.freeze({
-  burn: Object.freeze({ id: 'burn', name: '灼烧', kind: 'dot', bad: true }),
-  chill: Object.freeze({ id: 'chill', name: '冰缓', kind: 'debuff', bad: true }),
-  freeze: Object.freeze({ id: 'freeze', name: '冻结', kind: 'control', bad: true }),
-  shock: Object.freeze({ id: 'shock', name: '感电', kind: 'dot', bad: true }),
-  mark: Object.freeze({ id: 'mark', name: '破绽', kind: 'debuff', bad: true }),
-  weaken: Object.freeze({ id: 'weaken', name: '弱化', kind: 'debuff', bad: true }),
-  atkUp: Object.freeze({ id: 'atkUp', name: '战意', kind: 'buff', bad: false }),
-  guard: Object.freeze({ id: 'guard', name: '铁壁', kind: 'buff', bad: false }),
-  thorns: Object.freeze({ id: 'thorns', name: '棘甲', kind: 'buff', bad: false }),
-  regen: Object.freeze({ id: 'regen', name: '淬体', kind: 'hot', bad: false }),
-  haste: Object.freeze({ id: 'haste', name: '疾风', kind: 'buff', bad: false }),
+  burn: Object.freeze({ id: 'burn', name: '灼烧', kind: 'dot', bad: true, icon: '🔥', color: '#ff6b3d' }),
+  chill: Object.freeze({ id: 'chill', name: '冰缓', kind: 'debuff', bad: true, icon: '❄️', color: '#7cc7ff' }),
+  freeze: Object.freeze({ id: 'freeze', name: '冻结', kind: 'control', bad: true, icon: '🧊', color: '#4a9be8' }),
+  shock: Object.freeze({ id: 'shock', name: '感电', kind: 'dot', bad: true, icon: '⚡', color: '#c99bff' }),
+  mark: Object.freeze({ id: 'mark', name: '破绽', kind: 'debuff', bad: true, icon: '🎯', color: '#ff8fa3' }),
+  weaken: Object.freeze({ id: 'weaken', name: '弱化', kind: 'debuff', bad: true, icon: '🔻', color: '#b07d6a' }),
+  atkUp: Object.freeze({ id: 'atkUp', name: '战意', kind: 'buff', bad: false, icon: '⚔️', color: '#e4b84a' }),
+  guard: Object.freeze({ id: 'guard', name: '铁壁', kind: 'buff', bad: false, icon: '🛡️', color: '#9fb4c7' }),
+  thorns: Object.freeze({ id: 'thorns', name: '棘甲', kind: 'buff', bad: false, icon: '🌵', color: '#6fbf73' }),
+  regen: Object.freeze({ id: 'regen', name: '淬体', kind: 'hot', bad: false, icon: '💚', color: '#7fd6a2' }),
+  haste: Object.freeze({ id: 'haste', name: '疾风', kind: 'buff', bad: false, icon: '💨', color: '#8fe0d8' }),
+});
+
+/** 未登记状态的展示兜底：UI 拿到任何 id 都画得出一个格子，不必判空。 */
+export const DEFAULT_STATUS_INFO = Object.freeze({
+  id: null,
+  name: '未知状态',
+  kind: 'buff',
+  bad: false,
+  icon: '✦',
+  color: '#9a9188',
 });
 
 /** 状态 id 归一化；认不出来原样返回（容错优先，绝不抛错）。 */
@@ -59,6 +81,18 @@ export function normalizeStatusId(id) {
   const key = id.trim();
   if (STATUS_INFO[key]) return key;
   return STATUS_ALIASES[key] ?? STATUS_ALIASES[key.toLowerCase()] ?? key;
+}
+
+/** 状态展示信息（含 icon / color）；未知 id 回落到 `DEFAULT_STATUS_INFO` 并带上原 id。 */
+export function statusInfo(id) {
+  const key = normalizeStatusId(id);
+  return STATUS_INFO[key] ?? Object.freeze({ ...DEFAULT_STATUS_INFO, id: key ?? null });
+}
+
+/** 状态图标；`id` 为空时返回 null，方便 UI 直接 `icon && render(icon)`。 */
+export function statusIcon(id) {
+  if (id == null || id === '') return null;
+  return statusInfo(id).icon;
 }
 
 function status(rawId, turns, value, source, extra = {}) {
@@ -94,7 +128,12 @@ export function resolveBlazeSlash(ctx) {
   const [target] = ctx.selectEnemies(1);
   if (!target) return;
   const element = castElement(ctx, 'fire');
-  const hit = ctx.dealDamage(target, { power: 1.75, element, label: ctx.skill?.name ?? '烈焰斩' });
+  const hit = ctx.dealDamage(target, {
+    power: 1.75,
+    element,
+    label: ctx.skill?.name ?? '烈焰斩',
+    statusId: 'burn',
+  });
   if (hit && target.alive) {
     ctx.applyStatus(target, status('burn', 3, Math.max(1, Math.round(hit.damage * 0.18)), ctx.actor, { element }));
   }
@@ -105,7 +144,12 @@ export function resolveFrostLock(ctx) {
   const [target] = ctx.selectEnemies(1);
   if (!target) return;
   const element = castElement(ctx, 'ice');
-  const hit = ctx.dealDamage(target, { power: 1.45, element, label: ctx.skill?.name ?? '霜锁' });
+  const hit = ctx.dealDamage(target, {
+    power: 1.45,
+    element,
+    label: ctx.skill?.name ?? '霜锁',
+    statusId: 'chill',
+  });
   if (!hit || !target.alive) return;
   ctx.applyStatus(target, status('chill', 2, 0.25, ctx.actor, { element }));
   const hpRatio = target.hp / target.maxHp;
@@ -129,6 +173,10 @@ export function resolveThunderChain(ctx) {
       power,
       element,
       label: i === 0 ? name : `${name}·${i + 1}跳`,
+      statusId: 'shock',
+      multiHit: true,
+      hitIndex: i + 1,
+      hitCount: targets.length,
     });
     if (hit && target.alive && ctx.rng.chance(0.25)) {
       ctx.applyStatus(target, status('shock', 2, Math.max(1, Math.round(hit.damage * 0.12)), ctx.actor, { element }));
@@ -144,9 +192,22 @@ export function resolveWhirlwind(ctx) {
   const power = 1.15 - Math.min(0.3, (targets.length - 1) * 0.09);
   const element = castElement(ctx);
   const label = ctx.skill?.name ?? '旋风斩';
+  // 溅射是「一段打多人」：报 aoe 与溅射序号，但不是多段（multiHit），
+  // 否则 UI 会把横扫演成连击。
+  let index = 0;
   for (const target of targets) {
     if (!target.alive) continue;
-    ctx.dealDamage(target, { power, element, label, tag: 'aoe' });
+    index += 1;
+    ctx.dealDamage(target, {
+      power,
+      element,
+      label,
+      tag: 'aoe',
+      aoe: true,
+      multiHit: false,
+      hitIndex: index,
+      hitCount: targets.length,
+    });
   }
 }
 
@@ -160,6 +221,7 @@ export function resolvePierceShot(ctx) {
     critBonus: 0.2,
     element: castElement(ctx),
     label: ctx.skill?.name ?? '破甲射',
+    statusId: 'mark',
   });
   if (hit && target.alive) {
     ctx.applyStatus(target, status('mark', 2, 0.12, ctx.actor));
@@ -193,10 +255,10 @@ export function resolveDoubleStrike(ctx) {
   if (!first) return;
   const element = castElement(ctx);
   const name = ctx.skill?.name ?? '连环击';
-  ctx.dealDamage(first, { power: 1.05, element, label: `${name}·一` });
+  ctx.dealDamage(first, { power: 1.05, element, label: `${name}·一`, multiHit: true, hitIndex: 1, hitCount: 2 });
   const next = first.alive ? first : ctx.selectEnemies(1)[0];
   if (next && next.alive) {
-    ctx.dealDamage(next, { power: 0.65, element, label: `${name}·二` });
+    ctx.dealDamage(next, { power: 0.65, element, label: `${name}·二`, multiHit: true, hitIndex: 2, hitCount: 2 });
   }
 }
 
@@ -214,6 +276,8 @@ export function resolveSoulResonance(ctx) {
     side: ctx.actor.side,
     element,
     label: ctx.skill?.name ?? '兵魂共鸣',
+    statusId: 'atkUp',
+    icon: statusIcon('atkUp'),
     targets: allies.map((u) => u.uid),
     text: `${ctx.actor.name} 唤醒兵魂，全军攻击 +22%（${elementLabel(element)}共鸣）`,
   });
@@ -264,7 +328,8 @@ export function resolveBasicAttack(ctx) {
   if (hit && ctx.actor.combo > 0 && ctx.rng.chance(ctx.actor.combo)) {
     const follow = target.alive ? target : ctx.selectEnemies(1)[0];
     if (follow && follow.alive) {
-      ctx.dealDamage(follow, { power: 0.5, label: '连击', tag: 'combo' });
+      // 连击是掷骰后才知道的，首段发生时无从预告，只有追击这一段带 multiHit。
+      ctx.dealDamage(follow, { power: 0.5, label: '连击', tag: 'combo', multiHit: true, hitIndex: 2, hitCount: 2 });
     }
   }
 }
@@ -273,6 +338,13 @@ export function resolveBasicAttack(ctx) {
  * 技能表
  * ------------------------------------------------------------------ */
 
+/**
+ * 技能定义。
+ *
+ * `statuses` 是这一技**会挂出来**的状态 id（主状态在前），Round 3 新增：
+ * 引擎据此给 skill / damage 事件填 `statusId`，UI 才能在弹道上预挂状态图标。
+ * 只是演出提示，实际有没有挂上仍由 `resolve` 里的掷骰说了算。
+ */
 function def(entry) {
   return Object.freeze({
     kind: 'active',
@@ -281,6 +353,7 @@ function def(entry) {
     priority: 50,
     targeting: 'enemy',
     tags: Object.freeze([]),
+    statuses: Object.freeze([]),
     ...entry,
   });
 }
@@ -306,6 +379,7 @@ export const SKILL_LIBRARY = Object.freeze({
     priority: 70,
     resolve: resolveBlazeSlash,
     tags: Object.freeze(['fire', 'nuke', 'dot']),
+    statuses: Object.freeze(['burn']),
   }),
   frost_lock: def({
     id: 'frost_lock',
@@ -316,6 +390,7 @@ export const SKILL_LIBRARY = Object.freeze({
     priority: 68,
     resolve: resolveFrostLock,
     tags: Object.freeze(['ice', 'control']),
+    statuses: Object.freeze(['chill', 'freeze']),
   }),
   thunder_chain: def({
     id: 'thunder_chain',
@@ -326,6 +401,7 @@ export const SKILL_LIBRARY = Object.freeze({
     priority: 72,
     resolve: resolveThunderChain,
     tags: Object.freeze(['thunder', 'multi']),
+    statuses: Object.freeze(['shock']),
   }),
   whirlwind: def({
     id: 'whirlwind',
@@ -345,6 +421,7 @@ export const SKILL_LIBRARY = Object.freeze({
     priority: 69,
     resolve: resolvePierceShot,
     tags: Object.freeze(['pierce', 'crit']),
+    statuses: Object.freeze(['mark']),
   }),
   blood_drink: def({
     id: 'blood_drink',
@@ -364,6 +441,7 @@ export const SKILL_LIBRARY = Object.freeze({
     targeting: 'allyAll',
     resolve: resolveGuardStance,
     tags: Object.freeze(['defense', 'shield']),
+    statuses: Object.freeze(['guard']),
   }),
   double_strike: def({
     id: 'double_strike',
@@ -383,6 +461,7 @@ export const SKILL_LIBRARY = Object.freeze({
     targeting: 'allyAll',
     resolve: resolveSoulResonance,
     tags: Object.freeze(['mythic', 'buff']),
+    statuses: Object.freeze(['atkUp']),
   }),
   thorn_armor: def({
     id: 'thorn_armor',
@@ -393,6 +472,7 @@ export const SKILL_LIBRARY = Object.freeze({
     targeting: 'self',
     resolve: resolveThornArmor,
     tags: Object.freeze(['defense', 'thorns']),
+    statuses: Object.freeze(['thorns']),
   }),
   execute: def({
     id: 'execute',
@@ -412,6 +492,7 @@ export const SKILL_LIBRARY = Object.freeze({
     targeting: 'allyLowest',
     resolve: resolveForgeMend,
     tags: Object.freeze(['heal']),
+    statuses: Object.freeze(['regen']),
   }),
   gale_lead: def({
     id: 'gale_lead',
@@ -422,6 +503,7 @@ export const SKILL_LIBRARY = Object.freeze({
     targeting: 'mixed',
     resolve: resolveGaleLead,
     tags: Object.freeze(['speed', 'debuff']),
+    statuses: Object.freeze(['haste', 'weaken']),
   }),
 });
 
@@ -731,6 +813,29 @@ export function getSkill(id) {
 
 export function listSkills() {
   return Object.values(SKILL_LIBRARY);
+}
+
+/**
+ * 一次施放的演出提示（Round 3）：引擎用它给 timeline 的
+ * `aoe` / `multiHit` / `statusId` 填缺省值，resolve 里传的显式值优先。
+ *
+ * 纯读技能定义，不碰战场、不掷骰，因此不影响任何数值与随机流。
+ *
+ * @param {string|object} skill 技能 id 或定义
+ * @returns {{ skillId, aoe: boolean, multiHit: boolean, statusId: string|null, statusIds: string[] }}
+ */
+export function skillCastHints(skill) {
+  const def_ = getSkill(skill);
+  const tags = def_.tags ?? [];
+  const statusIds = Object.freeze((def_.statuses ?? []).map(normalizeStatusId).filter(Boolean));
+  return Object.freeze({
+    skillId: def_.id ?? null,
+    // 群体技 = 打标签的溅射技，或者目标域本就是「敌方全体 / 我方全体」。
+    aoe: tags.includes('aoe') || def_.targeting === 'enemyAll' || def_.targeting === 'allyAll',
+    multiHit: tags.includes('multi'),
+    statusId: statusIds[0] ?? null,
+    statusIds,
+  });
 }
 
 export function isSkillReady(unit, skillId) {

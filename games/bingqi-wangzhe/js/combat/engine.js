@@ -17,6 +17,9 @@
  *  - `timeline[]` 每条事件都带 `type`，取值必在 `EVENT_TYPES`
  *    （`start | action | skill | damage | kill | end`）之内；
  *    更细的语义放在 `subtype`（旧字段 `t` 与之同值，保留给老渲染器）。
+ *  - Round 3 追加：`type` 为 `damage | skill | kill` 的事件恒带 `EVENT_RICH_FIELDS`
+ *    这一组演出字段（`statusId / aoe / multiHit / boss` 等），值可为 null / false，
+ *    但键一定在，UI 不必写 `?.`。老字段一个没动，旧渲染器照跑。
  *  - `playerWeapons[]` 最低只需 `{ id | protoId, atk | baseAtk,
  *    hp | baseHp | maxHp, speed, element, skillId | skills }`，缺字段一律有兜底。
  *  - 空阵容是合法输入：不抛错，winner 依次为
@@ -53,8 +56,11 @@ import {
 } from './lineup.js';
 import {
   BASIC_ATTACK,
+  normalizeStatusId,
   pickSkill,
   resolveSkill,
+  skillCastHints,
+  statusIcon,
   tickCooldowns,
 } from './skills.js';
 
@@ -152,6 +158,38 @@ export const EVENT_TYPE_OF = Object.freeze({
   kill: 'kill',
   end: 'end',
 });
+
+/**
+ * Round 3 演出富字段：`type` 为 `damage | skill | kill` 的事件**恒带**这些键。
+ * 纯展示信息，不参与任何结算，加它们不消耗随机数，历史种子的回放逐字不变。
+ *
+ *  - `statusId`   本次结算关联的状态 id（`STATUS_INFO` 的权威 id）。
+ *                 伤害：这一击会挂/正在挂的状态（灼烧、感电、破绽、棘甲反伤……）；
+ *                 技能：该技的主状态；击破：致命一击所属的状态。无关联时为 null。
+ *  - `statusIcon` 上面这枚状态的图标，等价于 `statusIcon(statusId)`，省一次查表。
+ *  - `aoe`        本次施放是否群体（溅射技，或目标域为敌/我全体）。
+ *  - `multiHit`   本次施放是否**多段**（雷链、连环击、连击追打）。
+ *                 群体溅射不算多段：那是一段打多人，看 `aoe`。
+ *  - `hitIndex`   多段/溅射中的第几下（1 起），单段为 null。
+ *  - `hitCount`   本次施放预计的总段数 / 溅射目标数，单段为 null。
+ *  - `boss`       出手方或承受方任一为 BOSS（UI 的 BOSS 专属镜头看这个）。
+ *  - `bossActor`  出手方是 BOSS。
+ *  - `bossTarget` 承受方是 BOSS。
+ *
+ * 另有两处只在特定事件上出现，不列进这张表：`skill` 事件多一个 `statusIds`
+ * （该技会挂的全部状态），`status` / `dot` 事件多一个 `statusIcon` 配套原有的 `statusId`。
+ */
+export const EVENT_RICH_FIELDS = Object.freeze([
+  'statusId',
+  'statusIcon',
+  'aoe',
+  'multiHit',
+  'hitIndex',
+  'hitCount',
+  'boss',
+  'bossActor',
+  'bossTarget',
+]);
 
 /**
  * 读侧别名：各版规格用过的事件旧名 → 现用子类型。
@@ -401,6 +439,35 @@ export function simulateBattle(input) {
     return event;
   };
 
+  /**
+   * 当前正在结算的施放（`skillCastHints` 的产物），行动结束即清空。
+   * 回合开始的 DOT 结算发生在施放之外，所以那时它是 null——灼烧掉血
+   * 不会被算成「某技能的群体伤害」。
+   */
+  let cast = null;
+
+  /**
+   * damage / skill / kill 事件的富字段（见 `EVENT_RICH_FIELDS`）。
+   * 取值优先级：结算方显式传入 > 当前施放的技能特征 > 中性缺省。
+   */
+  function richFields(actor, target, opts = {}) {
+    const rawStatus = opts.statusId !== undefined ? opts.statusId : cast?.statusId ?? null;
+    const statusId = rawStatus ? normalizeStatusId(rawStatus) : null;
+    const hitIndex = Number.isFinite(opts.hitIndex) ? Math.max(1, Math.trunc(opts.hitIndex)) : null;
+    const hitCount = Number.isFinite(opts.hitCount) ? Math.max(1, Math.trunc(opts.hitCount)) : null;
+    return {
+      statusId,
+      statusIcon: statusIcon(statusId),
+      aoe: opts.aoe !== undefined ? Boolean(opts.aoe) : Boolean(cast?.aoe),
+      multiHit: opts.multiHit !== undefined ? Boolean(opts.multiHit) : Boolean(cast?.multiHit),
+      hitIndex,
+      hitCount,
+      boss: Boolean(actor?.isBoss || target?.isBoss),
+      bossActor: Boolean(actor?.isBoss),
+      bossTarget: Boolean(target?.isBoss),
+    };
+  }
+
   const alive = (list) => list.filter((u) => u.alive && u.hp > 0);
   const aliveOf = (unit) => (unit.side === 'player' ? alive(battle.players) : alive(battle.enemies));
   const foesOf = (unit) => (unit.side === 'player' ? alive(battle.enemies) : alive(battle.players));
@@ -481,6 +548,7 @@ export function simulateBattle(input) {
       : `${damage} 伤害`;
 
     emit('damage', {
+      ...richFields(source, target, opts),
       actorUid: source.uid,
       actor: source.name,
       targetUid: target.uid,
@@ -511,7 +579,9 @@ export function simulateBattle(input) {
       const reflect = Math.max(1, Math.round(damage * thorns));
       source.hp = Math.max(0, source.hp - reflect);
       source.damageTaken += reflect;
+      const reflectCause = { statusId: 'thorns', aoe: false, multiHit: false };
       emit('damage', {
+        ...richFields(target, source, reflectCause),
         actorUid: target.uid,
         actor: target.name,
         targetUid: source.uid,
@@ -529,14 +599,19 @@ export function simulateBattle(input) {
         maxHp: source.maxHp,
         text: `棘甲反伤 · ${target.name} 弹回 ${reflect} 伤害 [${source.name} ${source.hp}/${source.maxHp}]`,
       });
-      checkDeath(source, target);
+      checkDeath(source, target, reflectCause);
     }
 
-    const killed = checkDeath(target, source);
+    const killed = checkDeath(target, source, opts);
     return { damage, absorbed, crit, relation, multiplier: mult, killed };
   }
 
-  function checkDeath(unit, killer) {
+  /**
+   * 死亡判定。
+   * `cause` 是致命那一下的结算参数（伤害 opts / DOT / 反伤），
+   * 只用来给 kill 事件填富字段，不影响判定本身。
+   */
+  function checkDeath(unit, killer, cause = {}) {
     if (unit.alive && unit.hp <= 0) {
       unit.alive = false;
       unit.hp = 0;
@@ -544,6 +619,7 @@ export function simulateBattle(input) {
       unit.shield = 0;
       if (killer && killer !== unit) killer.kills += 1;
       emit('kill', {
+        ...richFields(killer, unit, cause),
         actorUid: killer?.uid ?? null,
         actor: killer?.name ?? '',
         targetUid: unit.uid,
@@ -611,6 +687,7 @@ export function simulateBattle(input) {
       target: unit.name,
       side: unit.side,
       statusId: applied.id,
+      statusIcon: statusIcon(applied.id),
       status: applied.name,
       turns: applied.turns,
       value: applied.value,
@@ -657,7 +734,10 @@ export function simulateBattle(input) {
         const dot = Math.max(1, Math.round(st.value));
         unit.hp = Math.max(0, unit.hp - dot);
         unit.damageTaken += dot;
+        // DOT 也是 `type: 'damage'`，同样得带齐富字段；它不属于任何一次施放。
+        const dotCause = { statusId: st.id, aoe: false, multiHit: false };
         emit('dot', {
+          ...richFields(null, unit, dotCause),
           targetUid: unit.uid,
           target: unit.name,
           side: unit.side,
@@ -669,7 +749,7 @@ export function simulateBattle(input) {
           maxHp: unit.maxHp,
           text: `【${st.name}】${unit.name} 损失 ${dot} 生命 [${unit.hp}/${unit.maxHp}]`,
         });
-        if (checkDeath(unit, null)) return;
+        if (checkDeath(unit, null, dotCause)) return;
       } else if (st.id === 'regen') {
         heal(unit, st.value, '淬体');
       }
@@ -697,6 +777,7 @@ export function simulateBattle(input) {
     const ctxProbe = makeContext(unit, BASIC_ATTACK);
     const skill = pickSkill(ctxProbe);
     const ctx = makeContext(unit, skill);
+    cast = skillCastHints(skill);
 
     emit('action', {
       actorUid: unit.uid,
@@ -713,6 +794,8 @@ export function simulateBattle(input) {
 
     if (skill.id !== BASIC_ATTACK.id) {
       emit('skill', {
+        ...richFields(unit, null),
+        statusIds: cast.statusIds,
         actorUid: unit.uid,
         actor: unit.name,
         side: unit.side,
@@ -727,6 +810,7 @@ export function simulateBattle(input) {
     }
 
     resolveSkill(skill, ctx);
+    cast = null;
 
     tickStatusDurations(unit);
     tickCooldowns(unit);
@@ -824,6 +908,8 @@ export function simulateBattle(input) {
     emit('wave', {
       waveIndex: w,
       name: waves[w].name,
+      // 波次级 BOSS 标记：UI 靠它在敌人登场时就切到 BOSS 镜头，不用等第一次挨打。
+      boss: battle.enemies.some((u) => u.isBoss),
       enemies: battle.enemies.map(unitSnapshot),
       text: `【${waves[w].name}】${battle.enemies.map((u) => `${u.name}(${elementLabel(u.element)})`).join('、')} 登场`,
     });
@@ -1221,6 +1307,15 @@ export {
   elementRelation,
   normalizeElement,
 } from './elements.js';
+export {
+  DEFAULT_STATUS_INFO,
+  STATUS_ALIASES,
+  STATUS_INFO,
+  normalizeStatusId,
+  skillCastHints,
+  statusIcon,
+  statusInfo,
+} from './skills.js';
 export {
   MAX_LINEUP,
   MIN_LINEUP,
