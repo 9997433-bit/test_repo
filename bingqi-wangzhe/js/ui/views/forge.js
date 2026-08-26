@@ -10,6 +10,7 @@ import {
   fmtNum, fmtDuration, pct
 } from '../format.js';
 import { furnaceArt, hammerArt, ridgeArt } from '../art/furnace.js';
+import { assetUrl } from '../art/logo.js';
 import { createSparkField } from '../fx/sparks.js';
 import { flyLoot } from '../fx/flyingLoot.js';
 import { reducedMotion, ripple, haptic, pulse } from '../motion.js';
@@ -357,7 +358,7 @@ export function forgeView(ctx) {
     const w = result.weapon;
     const card = h('.reveal__card', { dataset: { quality: w.quality, element: w.element } },
       h('.reveal__face.reveal__face--back',
-        h('img.reveal__backart', { src: './assets/brand/card-back.svg', alt: '', 'aria-hidden': 'true' })),
+        h('img.reveal__backart', { src: assetUrl('assets/brand/card-back.svg'), alt: '', 'aria-hidden': 'true' })),
       h('.reveal__face.reveal__face--front',
         h('.reveal__aura'),
         h('.reveal__qbanner', { text: qualityCN(w.quality) }),
