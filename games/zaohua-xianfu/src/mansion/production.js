@@ -1,4 +1,4 @@
-import { buildingDef, levelScale } from "./buildings.js";
+import { buildingDef, levelScale, yieldAt } from "./buildings.js";
 import { adjacencyOnGrid, adjacencyDetailOnGrid, mansionLevel, occupancy } from "./layout.js";
 import { yieldMultiplier } from "../disciples/assign.js";
 
@@ -40,17 +40,15 @@ function productionRows(state) {
   const rows = [];
   for (const b of buildings) {
     const def = buildingDef(b.type);
-    if (!def) continue;
-    const keys = Object.keys(def.baseYield);
-    if (!keys.length) continue;
+    if (!def || !Object.keys(def.baseYield).length) continue;
     const level = Math.max(1, b.level ?? 1);
     const worker = disciples.find((d) => d.buildingId === b.id) ?? null;
     const workerMul = yieldMultiplier(worker, b);
     const levelMul = levelScale(level);
     const adjacency = adjacencyOnGrid(grid, b.x, b.y, b.type);
-    const multiplier = workerMul * levelMul * adjacency * aura;
+    const bonus = workerMul * adjacency * aura;
     const perSec = {};
-    for (const k of keys) perSec[k] = def.baseYield[k] * multiplier;
+    for (const [k, v] of Object.entries(yieldAt(b.type, level))) perSec[k] = v * bonus;
     rows.push({
       id: b.id,
       type: b.type,
@@ -63,7 +61,7 @@ function productionRows(state) {
       levelMul,
       adjacency,
       aura,
-      multiplier,
+      multiplier: levelMul * bonus,
       perSec,
     });
   }

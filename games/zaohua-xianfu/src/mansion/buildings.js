@@ -101,20 +101,10 @@ export function buildingName(type) {
   return buildingDef(type)?.name ?? String(type ?? "");
 }
 
-export function buildingTypeIds() {
-  return Object.keys(BUILDING_TYPES);
-}
-
 export function buildingList() {
-  return buildingTypeIds()
+  return Object.keys(BUILDING_TYPES)
     .map((id) => buildingDef(id))
     .filter(Boolean);
-}
-
-export function producerTypes() {
-  return buildingList()
-    .filter((d) => Object.keys(d.baseYield).length > 0)
-    .map((d) => d.id);
 }
 
 export function levelScale(level) {
@@ -188,7 +178,7 @@ export function catalog(mansionLevel = 1, ctx = {}) {
   return buildingList()
     .map((def) => {
       const cost = buildCost(def.id);
-      const unlocked = def.unlockAt <= level;
+      const unlocked = isUnlocked(def.id, level);
       const built = Array.isArray(buildings) ? buildings.filter((b) => b.type === def.id).length : 0;
       const lack = resources ? costShortfall(resources, cost) : {};
       const affordable = Object.keys(lack).length === 0;

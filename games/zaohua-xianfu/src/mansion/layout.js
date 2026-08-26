@@ -1,4 +1,4 @@
-import { GRID_SIZE, buildingDef, mansionCap } from "./buildings.js";
+import { GRID_SIZE, buildingDef, buildingName, mansionCap } from "./buildings.js";
 
 const DIRS = [
   [1, 0],
@@ -40,13 +40,13 @@ export function occupancy(buildings) {
   return grid;
 }
 
-export function canPlace(buildings, x, y) {
-  if (!inBounds(x, y)) return false;
-  return !(buildings ?? []).some((b) => b.x === x && b.y === y);
-}
-
 export function buildingAt(buildings, x, y) {
   return (buildings ?? []).find((b) => b.x === x && b.y === y) ?? null;
+}
+
+export function canPlace(buildings, x, y) {
+  if (!inBounds(x, y)) return false;
+  return buildingAt(buildings, x, y) === null;
 }
 
 export function countType(buildings, type) {
@@ -99,7 +99,7 @@ export function adjacencyDetailOnGrid(grid, x, y, typeHint) {
     sources.push({
       id: n.id,
       type: n.type,
-      name: buildingDef(n.type)?.name ?? n.type,
+      name: buildingName(n.type),
       level,
       label: rule.label,
       value,
@@ -163,8 +163,12 @@ export function bestPlotFor(buildings, type) {
   return { x: best.x, y: best.y, multiplier: best.multiplier };
 }
 
+/** 风水满分对应的平均邻接乘区：全府平均 ×1.35 即视为布局到位。 */
+export const HARMONY_SPAN = 0.35;
+
 /**
- * 布局体检：逐座建筑的邻接乘区，外加 0-100 的风水评分（只看有产出的建筑）。
+ * 布局体检：逐座建筑的邻接乘区，外加 0-100 风水评分。
+ * 评分只看吃邻接的产出建筑；灵脉是喂人的地脉节点，自身不参与打分。
  */
 export function layoutReport(buildings) {
   const list = buildings ?? [];
@@ -175,7 +179,8 @@ export function layoutReport(buildings) {
     return {
       id: b.id,
       type: b.type,
-      name: def?.name ?? b.type,
+      name: buildingName(b.type),
+      role: def?.role ?? "support",
       level: Math.max(1, b.level ?? 1),
       x: b.x,
       y: b.y,
@@ -184,10 +189,8 @@ export function layoutReport(buildings) {
       sources: detail.sources,
     };
   });
-  const producers = rows.filter((r) => r.produces);
-  const average = producers.length
-    ? producers.reduce((sum, r) => sum + r.multiplier, 0) / producers.length
-    : 1;
-  const score = Math.round(Math.min(1, Math.max(0, (average - 1) / 0.45)) * 100);
+  const scored = rows.filter((r) => r.produces && r.role !== "vein");
+  const average = scored.length ? scored.reduce((sum, r) => sum + r.multiplier, 0) / scored.length : 1;
+  const score = Math.round(Math.min(1, Math.max(0, (average - 1) / HARMONY_SPAN)) * 100);
   return { score, average, rows };
 }
