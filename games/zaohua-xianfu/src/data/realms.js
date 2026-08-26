@@ -14,10 +14,11 @@ export const REALMS = [
   { id: "spirit", name: "化神", title: "神游太虚", layers: 9, exp: 760, atk: 120, hp: 1500, def: 62, desc: "以神驭气，一念山河动。", perk: "撑过 30 层后的压力曲线要靠此境打底。" },
   { id: "void", name: "炼虚", title: "虚实相生", layers: 9, exp: 1200, atk: 200, hp: 2400, def: 100, desc: "身融虚空，法则初窥。", perk: "34 层前的主力境界。" },
   { id: "union", name: "合体", title: "三花聚顶", layers: 9, exp: 1850, atk: 330, hp: 3800, def: 160, desc: "神、气、身三者合一，肉身即法宝。", perk: "第四章深层（36+）的门槛。" },
-  { id: "mahayana", name: "大乘", title: "大乘圆满", layers: 9, exp: 2800, atk: 520, hp: 6000, def: 250, desc: "人间无敌，静待天劫。", perk: "40 层章主战的推荐境界。" },
-  { id: "tribulation", name: "渡劫", title: "九重天劫", layers: 9, exp: 4200, atk: 820, hp: 9400, def: 400, desc: "雷劫淬体，一步登天，一步成灰。", perk: "45 层之后仍有压力：天塔无尽环等你。" },
+  { id: "mahayana", name: "大乘", title: "大乘圆满", layers: 9, exp: 2800, atk: 520, hp: 6000, def: 250, desc: "人间无敌，静待天劫。", perk: "36–37 层的主力境界，38 层精英起要渡劫接手。" },
+  { id: "tribulation", name: "渡劫", title: "九重天劫", layers: 9, exp: 4200, atk: 820, hp: 9400, def: 400, desc: "雷劫淬体，一步登天，一步成灰。", perk: "38–42 层（含 40 层章主）的主力境界；43 层起要飞升才接得住。" },
   // 飞升仅 1 层，层内插值停在 70%，故基准值抬高以保证强于渡劫满层。
-  { id: "ascend", name: "飞升", title: "白日飞升", layers: 1, exp: 99999, atk: 1520, hp: 17600, def: 760, desc: "霞举飞升，此界之行至此功成。", perk: "通关立碑：仙府名录留名。" },
+  // 基准另按「43–47 层由飞升接管」校准（R2-8）：45 层护法战三系全胜、48 层起进入无尽环压力墙。
+  { id: "ascend", name: "飞升", title: "白日飞升", layers: 1, exp: 99999, atk: 1660, hp: 19600, def: 850, desc: "霞举飞升，此界之行至此功成。", perk: "43–47 层由此接管，48 层起是无尽环压力墙；通关立碑：仙府名录留名。" },
 ];
 
 export function realmAt(index) {

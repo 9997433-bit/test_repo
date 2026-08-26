@@ -33,6 +33,9 @@ export const ARTIFACTS = [
   // 万魂灯归通用槽（槽型口径 AD-8）：复活是「命数」类容错，不减伤不回血，不占防位；
   // 归防槽则基准四件套（七星灯+万魂灯双防）在 1 攻/1 防/2 通制下非法，进度墙校准作废。
   { id: "wanhun", name: "万魂灯", slot: "util", rarity: "red", desc: "我方上阵者阵亡时各复活一次并回复 33% 生命（每人每场一次）", trigger: "death", effect: { reviveHp: 0.33 }, source: "登天塔 10 层首通" },
+  // 还魂幡是万魂灯的终盘上位（复活不叠加、取后装）：命数类容错对无奶无盾的魔族边际收益最大，
+  // 节点压在 38 层——渡劫满层三系皆可稳过 38，恰好赶在 40 层章主硬墙之前入手（R2-4 缓和件）。
+  { id: "jiuzhuan", name: "九转还魂幡", slot: "util", rarity: "red", desc: "我方上阵者阵亡时各复活两次并回复 40% 生命（每人每场两次，与万魂灯取后装）", trigger: "death", effect: { reviveHp: 0.4, reviveCharges: 2 }, source: "登天塔 38 层首通" },
   { id: "huagu", name: "化骨聚灵樽", slot: "util", rarity: "red", desc: "暴击率 +12%", trigger: "passive", effect: { crit: 0.12 }, source: "兽潮第 20 波首破" },
   { id: "taixu", name: "太虚金丹鼎", slot: "util", rarity: "red", desc: "秘技冷却 -18%", trigger: "passive", effect: { ultHaste: 0.18 }, source: "登天塔 28 层首通" },
   { id: "lundao", name: "论道堪舆图", slot: "util", rarity: "gold", desc: "普攻伤害 +16%", trigger: "passive", effect: { basicMul: 1.16 }, source: "开局所赠" },
@@ -58,8 +61,9 @@ export const STARTER_ARTIFACTS = ["qixing", "lundao"];
  * 图鉴写什么就掉什么，store 不再另留硬编码；regressions 已锁「掉落读 data 表」。
  *
  * 节点位次沿用 GDD 法器总表的既定获取位，并与进度墙对齐：
- * 续航链 阴阳镜(塔20)→定海珠(塔24)→三光神水瓶(塔32) 与 玄龟宝甲(潮12)
- * 全部落在 40+ 硬墙之前——专为补魔族「缺可持续回复」的终盘短板；
+ * 续航链 阴阳镜(塔20)→定海珠(塔24)→三光神水瓶(塔32)→九转还魂幡(塔38) 与 玄龟宝甲(潮12)
+ * 全部落在 40 层章主硬墙之前——专为补魔族「缺可持续回复」的终盘短板（R2-4）：
+ * 渡劫满层过 40 层，魔族没有还魂幡是 0%、入手后 98%；
  * 掉落三系同享，人/神自带奶与盾、续航件边际收益小，不破坏三系平衡（GDD「魔族续航」一节）。
  * 兼容性：只增节点；已发放节点的 id/via/at 不改。
  */
@@ -75,6 +79,7 @@ export const ARTIFACT_DROPS = [
   { id: "hetu", via: "tower", at: 30 },
   { id: "sanguang", via: "tower", at: 32 },
   { id: "zhanxian", via: "tower", at: 35 },
+  { id: "jiuzhuan", via: "tower", at: 38 },
   { id: "qinglong", via: "tower", at: 40 },
   // ─── 兽潮首破 ───
   { id: "canyang", via: "wave", at: 5 },

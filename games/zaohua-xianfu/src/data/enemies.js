@@ -4,7 +4,9 @@
  * 设计目标（与 GDD「登天塔曲线」一节一致）：
  * - 1–20 层线性成长：跟着境界/建筑走位的玩家一路可打；
  * - 21–30 层温和复利（×1.045/层）：需要成型的六人阵与塔掉法器；
- * - 31 层起再叠一段陡峭复利（×1.075/层）：化神以后仍层层有压力。
+ * - 31–40 层双段复利（约 ×1.12/层）：硬墙段，每个大境界只再放行 3–4 层；
+ * - 41 层起飞升段（×1.03/层，精英/首领倍率同步回落）：43–47 层由飞升接管，
+ *   48 层起是无尽环压力墙——境界到顶后压力仍逐层上行（R2-4/R2-8 校准）。
  * - 每章 10 层：3/8 层精英、5 层护法首领、10 层章主；深层敌人数量增多，
  *   拖满 60 秒按存活数判负，耗不过就是输。
  * 兼容性：导出符号与敌人字段（id/name/faction/role/atk/hp/def/boss）不变，只增字段。
@@ -22,13 +24,27 @@ export const TOWER_CHAPTERS = [
   { id: "heifeng", name: "黑风山寨", factions: ["mortal", "demon", "divine"], grunt: "黑风悍匪", elite: "山寨供奉", guard: "黑风二当家", lord: "黑风大王" },
   { id: "youming", name: "幽冥血泽", factions: ["demon", "divine", "mortal"], grunt: "血泽厉鬼", elite: "怨煞骨将", guard: "阴司鬼判", lord: "幽冥鬼帅" },
   { id: "leiyin", name: "雷音废刹", factions: ["divine", "mortal", "demon"], grunt: "堕殿金刚", elite: "伪佛罗汉", guard: "护刹明王", lord: "伪佛金身" },
-  { id: "jiuyou", name: "九幽魔渊", factions: ["demon", "divine", "mortal"], grunt: "魔渊修罗", elite: "噬魂魔将", guard: "渊底狱主", lord: "九幽魔尊" },
+  // 九幽魔渊（41–50 层，飞升冲刺段）轮转序为 demon→mortal→divine：5 人小队里神族只出现一次。
+  // 若沿用 demon→divine→mortal，克魔的神族会重复出现，魔族存档在本章被整章克死（R2-4 实测 45 层 0%）。
+  { id: "jiuyou", name: "九幽魔渊", factions: ["demon", "mortal", "divine"], grunt: "魔渊修罗", elite: "噬魂魔将", guard: "渊底狱主", lord: "九幽魔尊" },
   { id: "tianwai", name: "域外天魔界", factions: ["divine", "demon", "mortal"], grunt: "域外天魔", elite: "天魔啖道者", guard: "魔界镇守", lord: "天魔祖师" },
 ];
 
-/** 塔层压力系数：20 层前为 1，之后两段复利叠乘。 */
+/**
+ * 塔层压力系数：20 层前为 1，21–40 层两段复利叠乘；41 层起双段复利封顶，
+ * 换成 3%/层 的飞升段复利。
+ * 理由（R2-8）：双段复利下 41+ 每层 +12%，一个大境界的三维涨幅只买得回 1–2 层，
+ * 43 层起全阵营 0%，「打到飞升/无尽环」不成立。
+ * 封顶后 1–40 层压力逐层不变（墙表与 stress 基线不动），41+ 每层 +3% 无尽爬升，
+ * 与 towerEnemy 的深层精英/首领倍率回落共同把飞升可打段校准到 43–47 层。
+ */
 export function towerPressure(floor) {
-  return Math.pow(1.045, Math.max(0, floor - 20)) * Math.pow(1.07, Math.max(0, floor - 30));
+  const capped = Math.min(floor, 40);
+  return (
+    Math.pow(1.045, Math.max(0, capped - 20)) *
+    Math.pow(1.07, Math.max(0, capped - 30)) *
+    Math.pow(1.03, Math.max(0, floor - 40))
+  );
 }
 
 /** 本层敌人数：普通层 3→4→5，首领层 4→5→6，随深度增加。 */
@@ -54,7 +70,11 @@ export function towerEnemy(floor) {
   const atkBase = (16 + floor * 6.4) * pressure;
   const hpBase = (240 + floor * 102) * pressure;
   const defBase = (5 + floor * 2.0) * pressure;
-  const eliteMul = elite ? 1.16 : 1;
+  // 41 层起（deep）压力改为 3%/层的平缓复利，精英与首领的额外倍率随之回落：
+  // 40 层前每层 +12%，×1.16 精英 ≈ 1.3 层的坡；平缓段里同一倍率 ≈ 5 层，
+  // 会把章内节奏拧成「精英层反比首领层难」的锯齿（R2-8 实测魔族 43 层 2%、44 层 42%）。
+  const deep = floor > 40;
+  const eliteMul = elite ? (deep ? 1.09 : 1.16) : 1;
 
   const foes = Array.from({ length: n }, (_, i) => {
     const isLord = boss && i === 0;
@@ -64,8 +84,8 @@ export function towerEnemy(floor) {
         ? theme.lord
         : theme.guard
       : `${elite ? theme.elite : theme.grunt}${i + 1}`;
-    const atkMul = isLord ? (lord ? 1.32 : 1.24) : tank ? 0.8 : 1.05;
-    const hpMul = isLord ? (lord ? 2.15 : 1.85) : tank ? 1.4 : 0.95;
+    const atkMul = isLord ? (lord ? (deep ? 1.24 : 1.32) : deep ? 1.16 : 1.24) : tank ? 0.8 : 1.05;
+    const hpMul = isLord ? (lord ? (deep ? 1.85 : 2.15) : deep ? 1.55 : 1.85) : tank ? 1.4 : 0.95;
     const defMul = isLord ? 1.3 : tank ? 1.3 : 1;
     return {
       id: `t-${floor}-${i}`,
