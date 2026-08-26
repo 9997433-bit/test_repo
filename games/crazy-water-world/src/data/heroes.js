@@ -3,24 +3,24 @@
 // 与 RARITY_MULT 被 combat/battle.js、heroes/roster.js、ui 直接消费，禁止改名；
 // 原 7 个 key（sam/yilong/mia/kan/rambo/drunk_dragon/butcher）保持不变。
 //
-// skill 字段完整语义（battle.js 现行实现 + Round 2 应读表的常数）：
-//   kind    taunt 开场嘲讽（star ≥ skill.star 时生效）
-//           multishot 每次普攻分裂（现行写死 ×1.15，应改为 1 + value*0.1 → value=2 时 ×1.2）
-//           heal 每 period 回合治疗血量比例最低的队友，量 = value × star
-//           burst 每 period 回合造成 value 倍伤害
-//           aoe 每 period 回合对敌全体造成本次伤害 × value
-//           hook 首回合把敌方后排钩到前排
-//           buff 每 period 回合自身攻击 ×(1+value)，最多叠 3 层（现行未实现，Round 2 必接）
-//   period  技能触发的回合间隔（与现行 t%4/t%3/t%5 常数对齐；0 = 仅首回合，null = 被动常驻）
+// skill 字段完整语义（与 combat/skills.js 实装一致，勿按旧规格臆改）：
+//   kind    taunt 开场嘲讽（star ≥ skill.star 时生效，减伤 = min(0.35, 0.06×星×value)）
+//           multishot 段数 = clamp(value + (星−1)/2, 2, 4)，后续段 ×0.62（★1 双段 ≈ ×1.62）
+//           heal 每 period 回合治疗血量比例最低的队友，量 = value×(1+(星−1)×0.35)，附 30% 护盾
+//           burst 每 period 回合造成 value 倍伤害 + 破甲 20%（★4 起冷却 −1）
+//           aoe 每 period 回合对敌全体溅射 value 倍并叠削攻减益
+//           hook period=0 开战把敌方后排钩到前排（倍伤 + 减速）
+//           buff 每 period 回合 +value 攻/层，至多 3 层，每层另给 value/12 减伤（封顶 30%）
+//   period  技能触发的回合间隔（0 = 仅首回合，null/缺省 = 按 kind 回落 DEFAULT_PERIOD）
 //   target  self / ally-lowest / enemy / enemy-all / enemy-back
 //   desc    战报与英雄卡展示文案
 //
-// 新增字段（Round 2 接线）：
-//   growth      每星战斗属性成长（battle.js 现行写死 0.18，应改读表）
+// 字段接线状态（Round 2）：
+//   growth      每星战斗属性成长 —— battle.js/lineup.js 已读表（0.18 仅缺省兜底）
 //   assign      委任规格：{ likes: 建筑id, mult: 擅长建筑的加成倍率 }。
 //               现行 sim 写死 1 + star*0.12；应改为 1 + star*ASSIGN_RULES.basePerStar
-//               ×（委任到 likes 建筑时再乘 assign.mult）。
-//   recruitCost 广播站招募成本（null = 剧情赠送/免费；现行 recruit 免费，应改读表）
+//               ×（委任到 likes 建筑时再乘 assign.mult）。仍待接。
+//   recruitCost 广播站招募成本（null = 剧情赠送/免费；现行 recruit 免费，应改读表）。仍待接。
 //   unlockHint  招募入口的引导文案
 
 export const HEROES = {
@@ -107,7 +107,7 @@ export const HEROES = {
     lane: "front",
     base: { hp: 340, atk: 64, def: 20, spd: 94 },
     skill: { name: "酒劲", star: 2, kind: "buff", value: 0.35, period: 3, target: "self",
-      desc: "每 3 回合上头一层，自身攻击 +35%，最多叠 3 层（Round 2 必接）。" },
+      desc: "每 3 回合上头一层，自身攻击 +35%，最多叠 3 层，越喝越猛。" },
     growth: 0.2,
     assign: { likes: "workshop", mult: 2 },
     recruitCost: { badge: 10 },
