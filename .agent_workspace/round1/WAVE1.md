@@ -11,7 +11,7 @@
 | F2 | 美术 UX | `claude-fable-5-thinking-xhigh` | `bc-3831a4a1-d4a2-5367-818f-3992c90b4373` | 隔离 worktree |
 | F3 | 玩法数值 | `claude-fable-5-thinking-xhigh` | `bc-1a9ee529-c247-5a9e-a7d1-834748f50d5b` | 云端 VM |
 | F4 | SOTA 验收 | `claude-fable-5-thinking-xhigh` | `bc-2fa60104-0d6d-5928-b7f7-efcad11b6724` | 隔离 worktree · 已完成并推送 `30ed908` |
-| O1 | 物理弹道 | `claude-opus-5-thinking-high-fast` | `bc-63fafdfa-8a57-5c5d-abc8-f0bcc6f5a950` | 隔离 worktree |
+| O1 | 物理弹道 | `claude-opus-5-thinking-high-fast` | `bc-63fafdfa-8a57-5c5d-abc8-f0bcc6f5a950` | 隔离 worktree · 已完成并合入 `f63b8cd` |
 | O2 | 战斗技能 | `claude-opus-5-thinking-high-fast` | `bc-bf19dc9a-707d-5b7d-8e0d-505b0f465299` | 隔离 worktree · 已完成并合入 `697dc41` |
 | O3 | 英雄养成 | `claude-opus-5-thinking-high-fast` | `bc-de6699f1-d9c3-5a52-b765-ff406d24345f` | 隔离 worktree · 已完成并推送 `ed77320` |
 | O4 | UI 主循环 | `claude-opus-5-thinking-high-fast` | `bc-2d9ca79e-dcde-5144-9199-927a4f8c6bf2` | 隔离 worktree |
