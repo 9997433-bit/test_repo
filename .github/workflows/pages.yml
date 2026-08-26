@@ -10,6 +10,7 @@ on:
       - "games/zhao-yun-adou/**"
       - "games/chao-neng-xia-dan-ya/**"
       - "games/linghuashi/**"
+      - "games/my-garden-world/**"
       - "pages/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -41,6 +42,7 @@ jobs:
             src/games/zhao-yun-adou/package-lock.json
             src/games/chao-neng-xia-dan-ya/package-lock.json
             src/games/linghuashi/package-lock.json
+            src/games/my-garden-world/package-lock.json
 
       - name: Build 赵云与阿斗
         working-directory: src/games/zhao-yun-adou
@@ -60,9 +62,15 @@ jobs:
           npm ci
           npm run build
 
+      - name: Build 我的花园世界
+        working-directory: src/games/my-garden-world
+        run: |
+          npm ci
+          npm run build
+
       - name: Stage subdirectories + catalog
         run: |
-          for game in zhao-yun-adou chao-neng-xia-dan-ya linghuashi; do
+          for game in zhao-yun-adou chao-neng-xia-dan-ya linghuashi my-garden-world; do
             rm -rf "site/$game"
             mkdir -p "site/$game"
             cp -a "src/games/$game/dist/." "site/$game/"
