@@ -1,6 +1,7 @@
 # API 契约（v1.1 · Round 1 复审版）
 
-> 与实现（基线 commit `419f9d7`）逐 action 核对后的精确契约。
+> 与实现逐 action 核对后的精确契约。复审基线 `419f9d7`，并已对照 Round 1 并行提交
+> （`c57957e` 战斗、`db37b39`/`4aad309` 经营、`1148f34` UI）复核更新。
 > **兼容政策**：action 名永不改；payload 字段与存档字段只增不删；新字段一律可选
 > 且带默认值；语义变更必须在 §6「契约偏差与修订清单」立案。
 > 实现与本契约不一致处已在 §6 逐条标注，代码修订由对应模块所有者执行。
@@ -70,14 +71,19 @@ store.subscribe(fn);    // fn(state, action)；返回退订函数
 
 | 模块 | 导出 | 说明 |
 | --- | --- | --- |
-| `mansion/production.js` | `produce(state, dtSec) → YieldMap` | 全建筑每秒产量 × dt；含驻守弟子、等级、灵脉邻接、境界灵气 |
-| | `applyYield(resources, add) → resources'`（补登） | 记账合并（忽略 `loseTax` 键） |
-| | `combatBuildingBonus(buildings) → { atk }`（补登） | 丹房 +4·lv、锻造房 +3·lv |
-| `mansion/layout.js` | `adjacencyBonus(buildings, x, y) → number` ⚠D-5：首参是**建筑数组**，旧文档误写 `grid` | 每条邻接灵脉 +0.15 |
+| `mansion/production.js` | `produce(state, dtSec, opts?) → YieldMap` | 全建筑每秒产量 × dt；含驻守弟子、等级曲线、邻接规则表、府邸光环（+3%/级）、境界灵气；`opts.efficiency` 供离线折算 |
+| | `productionRates(state)`、`produceBreakdown(state, dtSec?, opts?)`（补登） | HUD 速率 / 逐建筑乘区拆解（含邻接来源明细） |
+| | `offlineEfficiency(state)`、`offlineProduce(state, elapsed)`（补登） | 离线折算：底 50%、每级聚灵阵 +6%、封顶 90% ⚠尚未被 BOOT 调用，见 D-15 |
+| | `applyYield(resources, add) → resources'`（补登） | 记账合并（跳过非有限数值） |
+| | `combatBuildingBonus(buildings) → { atk }`、`combatBonusSources(buildings)`（补登） | 丹房 +4·lv、锻造房 +3·lv（读建筑定义 `combatBonus`） |
+| `mansion/layout.js` | `adjacencyBonus(buildings, x, y, typeHint?) → number` ⚠D-5：首参是**建筑数组**，旧文档误写 `grid` | 按 `ADJACENCY_RULES` 规则表：跨类型加成、负面邻接（炉火燎田）、随邻居等级追加、乘区下限 0.5 |
+| | `ADJACENCY_RULES`、`adjacencyDetail`、`adjacencyOnGrid`、`adjacencyDetailOnGrid`（补登） | 规则表与来源明细（UI 解释「为什么这块地产得多」） |
 | | `occupancy(buildings) → grid[y][x]`（补登） | 6×6 占位矩阵 |
-| | `canPlace(buildings, x, y) → bool`、`countType(buildings, type) → number`（补登） | |
+| | `canPlace`、`countType`、`buildingAt`、`inBounds`、`mansionLevel`、`neighbors`、`emptyPlots`、`plotUsage`、`bestPlotFor`、`layoutReport`（补登） | 布局查询 + 0-100 风水评分 |
+| `mansion/buildings.js` | `buildingDef(type)`、`buildingList()`、`yieldAt(type, level)`、`levelScale(level)`、`maxLevelFor`、`canUpgrade`、`cumulativeUpgradeCost`、`canAfford`、`costShortfall`、`isUnlocked`、`catalog(mansionLevel, ctx)`、`MANSION_MAX_LEVEL`（补登） | 数据表归一化包装（冻结 + 缓存）；`catalog` 给营造面板带解锁/预算/拦截原因 |
 | `combat/battle.js` | `simulate(input) → SimResult` | 见 §4 |
-| `combat/artifacts.js` | `applyTriggers(ctx, event) → notes[]` ⚠D-6：**尚未接线**（战斗内核硬编码触发），保留为数据驱动化目标接口 | |
+| `combat/artifacts.js` | `artifactLoadout(equippedIds) → loadout`（补登） | 把佩戴法器解析成战斗只读配置（护盾/减伤/复活/自救/斩杀/灼烧/赌伤/晕眩/被动），战斗内核唯一法器入口 |
+| | `applyTriggers(ctx, event) → notes[]` ⚠D-6：职责已由 `artifactLoadout` 承接，本函数仍无调用方，标注**预留** | |
 | | `collectPassives(equippedIds)`、`hasArtifact(equipped, id)`（补登） | passive 聚合 / 判存 |
 | `combat/tower.js` | `challengeTower(state, now)`、`towerReward(floor, win)`（补登） | store 编排用 |
 | `combat/wave.js` | `challengeWave(state, now)`、`waveReward(wave, win, resources)`（补登） | 败战返回 `{ loseTax }` |
@@ -85,7 +91,7 @@ store.subscribe(fn);    // fn(state, action)；返回退订函数
 | | `canCultivate`、`applyCultivate`、`applyBreakthrough(state, rng)`（补登） | |
 | `disciples/assign.js` | `yieldMultiplier(disciple, building) → number` | 采集看勤勉、工坊看武力、皆吃专业 |
 | `disciples/roster.js` | `makeDisciple`、`trainCost`、`canTrain`、`applyTrain`（补登） | |
-| `disciples/train.js` | `scriptureXp(state, dtSec) → disciples'`（补登） | ⚠语义争议见 AD-17 |
+| `disciples/train.js` | `scriptureXp(state, dtSec) → disciples'`、`xpNeeded(profession)`、`scriptureRate(state)`（补登） | ⚠语义争议见 AD-17 |
 | `core/save.js` | `loadSave`、`writeSave`、`clearSave`、`SAVE_KEY`、`SCHEMA`（补登） | 信封格式见 §5 |
 | `core/engine.js` | `startEngine({ store, render, tickMs=100 }) → stop()`（补登） | |
 | `core/events.js` | `createBus() → { on, emit }`（补登） | ⚠当前无调用方（AD-4），预留 |
@@ -112,17 +118,23 @@ store.subscribe(fn);    // fn(state, action)；返回退订函数
   seed: uint32,            // 回传，便于战报存档复现
   frames: [{
     tick, winner,          // winner 在终局帧前为 null
-    log: [{ t: "hit"|"skill"|"aoe"|"heal"|"shred"|"burn"|"chase",
-            src?, target?, dmg?, crit? }],
+    log: [{ t: "hit"|"skill"|"aoe"|"heal"|"shred"|"burn"|"chase"|"counter"
+             |"taunt"|"blind"|"miss"|"stun"|"revive"|"rescue"|"execute",
+            src?, target?, dmg?, crit?, hits? }],   // hits: aoe 命中的 id 列表
     units: [{ id, name, side, hp, maxHp, shield, alive, boss }],
   }],
 }
 ```
 
-战斗常数（数值归 Fable-3/GDD，此处登记为契约现状）：伤害 `max(1, raw − 0.35·def)`；
-基础暴击 我方 8% / 敌方 6%，暴伤 ×1.5（女娲 ×1.9）；攻速 dps 1.05s / 其余 1.25s；
-技能节奏「每 5 tick、非坦克」（⚠应为 `ultCd/haste`，见 AD-5）；阵营克制
-神→魔、魔→人、人→神 ×1.18，逆向 ×0.92。
+- 未知 `heroIds` 条目被静默过滤（`unitFromHero` 返回 null 即剔除）。
+- 英雄技能语义由 `battle.js` 的 `KITS` 表定义，与 `data/heroes.js` 的 `skillDesc`
+  一一对应；新增英雄必须同时补两处。
+
+战斗常数（数值归 Fable-3/GDD，此处登记为契约现状）：伤害 `max(1, raw − 0.35·def·defMul)`；
+基础暴击 我方 8% / 敌方 6%，暴伤 ×1.5（+ 单位 `critDmgBonus`，如女娲 +0.4）；
+攻速 dps 1.05s / 其余 1.25s；大招独立冷却 治疗与辅助 4s / 其余 6s / 敌方 7s，
+到点顶掉当次普攻，`ultHaste` 开场压缩周期；灼烧为真实伤害（无视防御）；
+阵营克制 神→魔、魔→人、人→神 ×1.18，逆向 ×0.92。
 
 确定性契约：`simulate` 内禁止 `Date.now` / 未播种 `Math.random` / 无序容器遍历；
 `tests/combat.test.js` 以同 seed 双跑断言 `winner`、`ticks`、终帧 HP 全等。
@@ -148,8 +160,8 @@ ARCHITECTURE §9 架构债编号。
 | D-3 | `BREAKTHROUGH` 的 `now` 未被读取；实现另接受 `rng` 注入（原契约未记） | 改文档（`rng` 作为追加字段收编；`now` 保留备用） | — |
 | D-4 | `RESOLVE_COMBAT` / `COLLECT_OFFLINE` 的 `now` 未被读取 | 改文档（字段保留，标注现状） | — |
 | D-5 | `adjacencyBonus` 首参实为 `buildings` 数组，旧文档写 `grid` | 改文档（本版已修正签名） | — |
-| D-6 | `applyTriggers` 在契约中承诺、战斗内核未接线（触发硬编码） | 改代码 | AD-4：战斗事件数据驱动化 |
-| D-7 | `taixu`/玄女的 `ultHaste` 被固定技能节奏覆盖，passive 无效（运行时验证同 seed 结果不变） | 改代码 | AD-5 |
+| D-6 | `applyTriggers` 在契约中承诺、战斗内核未接线（触发硬编码） | 改代码 → **部分完成**：`c57957e` 起法器数值经 `artifactLoadout` 数据驱动；`applyTriggers` 仍无调用方，标注预留 | AD-4 余项 |
+| D-7 | `taixu`/玄女的 `ultHaste` 被固定技能节奏覆盖，passive 无效（运行时验证同 seed 结果不变） | 改代码 → **✅已完成**（`c57957e`：大招独立计时器；HEAD 运行时复验通过） | AD-5 |
 | D-8 | 旧契约漏记大量实际导出（`applyYield`、`occupancy`、`challengeTower`… ） | 改文档（本版 §3 已补登） | — |
 | D-9 | 「返回值不得改输入对象」在 reducer 侧存在豁免（BOOT 读盘、RESET 清盘、pushLog 取 Date.now） | 改文档 + 改代码 | 豁免清单已写入 ARCHITECTURE §8.4；pushLog 时间戳注入化为 AD-3 |
 | D-10 | `TRAIN` 旧描述「消耗丹药」，实际消耗丹药+灵草 | 改文档（本版已按实标注费用公式） | — |
@@ -157,10 +169,15 @@ ARCHITECTURE §9 架构债编号。
 | D-12 | 兽潮败战税基（库存 30%）与 GDD（当波未收取资源 30%）不一致 | 改代码（推荐）或改 GDD | AD-12，Fable-3 定案 |
 | D-13 | `START_TOWER`/`START_WAVE` 缺守卫（空阵容/未选阵营/覆盖未结算战斗） | 改代码 | AD-13 |
 | D-14 | `RECRUIT` 不限阵营（UI 过滤但 reducer 放行）、UI 价格文案与真实费用不符 | 改代码 | AD-15 |
+| D-15 | 离线折算函数（`offlineEfficiency`/`offlineProduce`）已在 mansion 落地，但 BOOT 仍按全效率结算（运行时验证：1.095 vs 0.613 qi/s） | 改代码 | AD-18 |
+| D-16 | 邻接规则已扩为规则表（跨类型、负面、随等级、下限 0.5）+ 府邸光环，GDD 建筑章节未同步 | 改文档（GDD，Fable-3） | AD-19 |
 
 ### 6.1 契约验证探针
 
-- `npm test`：16 项单测覆盖确定性、邻接、扣费、突破补偿等契约点（当前全绿）。
+- `npm test`：24 项单测覆盖确定性（含全量战报逐字段全等）、邻接、扣费、存档拒载、
+  突破跨境等契约点（当前全绿）。
 - `npm run probe`：模块导出与端口 4174 契约。
 - `npm run bench`：200 场 `simulate` < 800ms 性能契约。
 - 修复 §6 任何「改代码」项时，GPT-sol-1 须在 `tests/` 补对应探针后方可勾销。
+- ⚠ `tests/regressions.test.js` 中「法器 FIFO 逐出」与「兽潮 30% 库存税」两条断言
+  固化的是**待修行为**（D-2/AD-8、D-12/AD-12），修复时必须同步更新断言。
