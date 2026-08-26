@@ -391,6 +391,13 @@ function heartRow(n: number): string {
   return `${"❤".repeat(n)}${"♡".repeat(Math.max(0, 5 - n))}`;
 }
 
+/** 离开某家园子：报一句串门小记，回到名录。按钮与 Esc 走同一条道。 */
+function leaveNeighbor(state: GameState, neighborId: string): void {
+  const summary = visitSummary(state, neighborId, visitEntryTally);
+  if (summary) emit({ type: "toast", text: summary, tone: "ok" });
+  visitFocus = null;
+}
+
 function storyHost(sheet: HTMLElement): HTMLElement {
   return sheet.closest<HTMLElement>(".app") ?? document.body;
 }
@@ -458,9 +465,7 @@ function renderNeighborGarden(sheet: HTMLElement, state: GameState, neighborId: 
   if (visitTool === "pick" && !canPick) visitTool = "water";
 
   const goHome = (): void => {
-    const summary = visitSummary(state, def.id, visitEntryTally);
-    if (summary) emit({ type: "toast", text: summary, tone: "ok" });
-    visitFocus = null;
+    leaveNeighbor(state, def.id);
     rerender();
   };
 
@@ -588,7 +593,7 @@ function bindVisitEsc(sheet: HTMLElement, state: GameState, onClose: () => void)
       return;
     }
     if (visitFocus) {
-      visitFocus = null;
+      leaveNeighbor(live.state, visitFocus);
       renderVisit(live.sheet, live.state, live.onClose);
     } else {
       live.onClose();

@@ -179,13 +179,23 @@ describe("邻家园中的活计", () => {
 });
 
 describe("访邻花笺的开合", () => {
-  it("Esc 先从邻家退回名录，再收起花笺", async () => {
+  it("Esc 先从邻家退回名录，再收起花笺；退园同样报小记", async () => {
     const panels = await freshUi();
-    const { host, sheet } = openVisit(panels, openedState());
+    const { onGameEvent } = await import("../../src/engine/events");
+    const state = openedState();
+    const { host, sheet } = openVisit(panels, state);
     sheet.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
     expect(sheet.querySelector(".visit-banner")).not.toBeNull();
+    const thirsty = neighborGarden(state, "sister")!.plots.find((p) => p.thirsty)!;
+    plotBtn(sheet, thirsty.idx).click();
 
+    const said: string[] = [];
+    const off = onGameEvent((e) => {
+      if (e.type === "toast") said.push(e.text);
+    });
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    off();
+    expect(said.at(-1)).toContain("串门小记");
     expect(sheet.querySelector(".visit-banner")).toBeNull();
     expect(sheet.querySelectorAll(".neighbor-card")).toHaveLength(3);
 
