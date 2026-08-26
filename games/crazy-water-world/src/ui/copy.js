@@ -13,7 +13,7 @@ export const SCREEN_LABEL = {
 
 export const SCREEN_KEY = { raft: "Esc", build: "B", fish: "F", dive: "V", heroes: "H", campaign: "C" };
 
-export const RARITY_LABEL = { common: "普通", rare: "稀有", epic: "史诗", legend: "传说" };
+export const RARITY_LABEL = { junk: "杂物", common: "普通", rare: "稀有", epic: "史诗", legend: "传说" };
 
 export const ROLE_LABEL = {
   tank: "前排",

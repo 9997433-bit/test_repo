@@ -74,6 +74,7 @@ export const UI_CSS = `
 .cww-goal button { margin: 0 0 0 auto; padding: 4px 12px; font-size: var(--fs-tiny); }
 
 /* 潜水中切屏的常驻警告：氧气不会因为你换了个屏就不扣 */
+/* .soft 是钓鱼那条：线还在水里，但没到「命要紧」的程度，用琥珀色降一档 */
 .cww-alert {
   display: flex; align-items: center; gap: 8px; margin: 0 0 6px; padding: 7px 10px;
   font-size: var(--fs-small); font-weight: 700; color: #7a0b1c;
@@ -81,6 +82,11 @@ export const UI_CSS = `
   border: 1.5px solid #9c1f2e; border-radius: var(--radius-m);
 }
 .cww-alert button { margin: 0 0 0 auto; padding: 4px 12px; font-size: var(--fs-tiny); }
+.cww-alert.soft {
+  color: #7a4a1e;
+  background: linear-gradient(#ffeec4, #ffd98a);
+  border-color: var(--sun-deep);
+}
 
 /* ---------- 吐司：动作反馈都从这里出 ---------- */
 .cww-toast {
@@ -156,9 +162,36 @@ export const UI_CSS = `
   border: 2px solid var(--ink); border-radius: 4px; box-shadow: 0 0 6px rgba(255,255,255,.7);
 }
 .cww-track.idle .cww-needle { opacity: .35; }
+/* 指针进窗口 / 进完美区时自己变色：gradeCast 判什么，屏幕上就亮什么，
+   老大不用靠像素对齐去猜自己有没有压中。 */
+.cww-needle.good { background: linear-gradient(#3dcc8a 0 48%, #fff 48%); }
+.cww-needle.perfect {
+  background: linear-gradient(var(--sun) 0 48%, #fff 48%);
+  box-shadow: 0 0 12px rgba(255,209,102,.95);
+}
 .cww-catch { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: var(--fs-body); font-weight: 700; }
 .cww-catch.hit { color: var(--kelp-deep); }
 .cww-catch.miss { color: #9c1f2e; }
+
+/* ---------- 鱼类图鉴：没钓上来的只给轮廓，钓上来才给名字与俏皮话 ---------- */
+.cww-dex {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 6px;
+  max-height: 280px; margin: 6px 0; padding: 2px; overflow: auto; overscroll-behavior: contain;
+}
+.cww-dex-cell {
+  padding: 6px 8px;
+  background: linear-gradient(var(--paper), #f7e9cd);
+  border: 1.5px solid rgba(22,50,60,.32); border-radius: var(--radius-s);
+  box-shadow: 0 2px 0 rgba(22,50,60,.16);
+}
+.cww-dex-cell.unknown { background: rgba(22,50,60,.07); border-style: dashed; box-shadow: none; }
+.cww-dex-cell.here { border-color: var(--kelp-deep); box-shadow: 0 2px 0 rgba(21,122,76,.3); }
+.cww-dex-cell b { display: block; font-size: var(--fs-small); font-weight: 700; }
+.cww-dex-cell.unknown b { color: var(--ink-soft); letter-spacing: 2px; }
+.cww-dex-cell span { display: block; font-size: var(--fs-tiny); color: var(--ink-soft); }
+.cww-dex-cell i {
+  display: block; margin-top: 3px; font-size: var(--fs-tiny); font-style: italic; color: var(--ink-soft);
+}
 
 /* ---------- 潜水 HUD ---------- */
 .cww-dive { position: absolute; inset: 0; z-index: 2; display: none; pointer-events: none; }

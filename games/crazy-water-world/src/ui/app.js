@@ -4,7 +4,7 @@
 // 2) 规则一律问领域层（world/explore/heroes/combat 的 can* 与动词），UI 不复刻判定。
 // 3) 天气 / 昼夜 / 减弱动态 只往 documentElement 落 data-* 钩子，样式归 styles/**。
 import { paintSea, pickFlotsam } from "../world/index.js";
-import { collectFlotsam } from "../explore/index.js";
+import { collectFlotsam, diveHud, fishingHud, DEFAULT_ZONE } from "../explore/index.js";
 import { recruit } from "../heroes/index.js";
 import { RESOURCE_KEYS, RESOURCE_META } from "../data/resources.js";
 import { defaultState, loadState } from "../core/store.js";
@@ -162,7 +162,12 @@ function buildShell(root, ctx) {
     h("span", { id: "dive-alert-text" }),
     h("button", { "data-act": "dive-back", text: "回水里" }),
   ]);
-  const sticky = h("div", { class: "cww-sticky", id: "sticky" }, [diveAlert, goal]);
+  // 钓鱼同理：竿子现在挂在 state 上，切走了它还在水里，海啸会替老大做决定。
+  const fishAlert = h("div", { class: "cww-alert soft hidden", id: "fish-alert", role: "status" }, [
+    h("span", { id: "fish-alert-text" }),
+    h("button", { "data-act": "fish-back", text: "回竿边" }),
+  ]);
+  const sticky = h("div", { class: "cww-sticky", id: "sticky" }, [diveAlert, fishAlert, goal]);
   left.append(sticky);
 
   ctx.refs = {
@@ -193,6 +198,8 @@ function buildShell(root, ctx) {
     goalText: goal.querySelector("#goal-text"),
     diveAlert,
     diveAlertText: diveAlert.querySelector("#dive-alert-text"),
+    fishAlert,
+    fishAlertText: fishAlert.querySelector("#fish-alert-text"),
     dock: Object.fromEntries(ORDER.map((id) => [id, game.querySelector(`#dock-${id}`)])),
     panels: {},
     bagRows: {},
@@ -393,6 +400,10 @@ function handleAction(ctx, act, el, ev) {
     ctx.setScreen("dive");
     return;
   }
+  if (act === "fish-back") {
+    ctx.setScreen("fish");
+    return;
+  }
   const screen = SCREEN_BY_ID[s.meta.screen];
   if (screen?.action && screen.action(ctx, act, el, ev)) return;
 }
@@ -492,9 +503,25 @@ function updateScreens(ctx, state) {
   const alerting = under && wanted !== "dive";
   setHidden(ctx.refs.diveAlert, !alerting);
   if (alerting) {
+    const dive = diveHud(ctx.state);
     setText(
       ctx.refs.diveAlertText,
-      `你还在水下：氧气 ${Math.ceil(Math.max(0, session.oxygen))}%、深度 ${Math.round(session.depth)} 米，氧气还在扣。`,
+      `你还在水下：氧气 ${Math.ceil(Math.max(0, session.oxygen))}%、深度 ${Math.round(session.depth)} 米，氧气还在扣。` +
+        (dive.diveO2 > 0 ? `${dive.weather}要是转海啸，会把你强制捞上来。` : `${dive.weather}：这就把你拽上去了。`),
+    );
+  }
+
+  // 钓鱼同理：竿子在 state 上挂着，切屏不会替老大收线，但天气会。
+  const cast = fishScreen.watch(ctx);
+  const fishAlerting = !!cast && wanted !== "fish";
+  setHidden(ctx.refs.fishAlert, !fishAlerting);
+  if (fishAlerting) {
+    const fish = fishingHud(ctx.state);
+    setText(
+      ctx.refs.fishAlertText,
+      fish.fishing > 0
+        ? `线还在水里：${fish.fish}那一杆没收，${fish.weather}一翻脸就是强制收杆。`
+        : `${fish.weather}：这杆钓不成了，回去收线，不算空军。`,
     );
   }
 
@@ -502,8 +529,8 @@ function updateScreens(ctx, state) {
   setText(ctx.refs.goalText, `下一步：${goal.text}`);
   const goalHidden = goal.screen === wanted;
   setHidden(ctx.refs.goal, goalHidden);
-  // 两条都没话说时整块 sticky 头一起收走，别在面板顶上留一条空白。
-  setHidden(ctx.refs.sticky, goalHidden && !alerting);
+  // 三条都没话说时整块 sticky 头一起收走，别在面板顶上留一条空白。
+  setHidden(ctx.refs.sticky, goalHidden && !alerting && !fishAlerting);
 
   const screen = SCREEN_BY_ID[wanted];
   if (screen?.update) screen.update(ctx);
@@ -533,7 +560,10 @@ function createApp(root, store) {
       confirmNew: false,
       toast: { text: "", kind: "", until: 0 },
       build: { type: "hq", rot: 0, mode: "place", hover: null, moveId: null, armedId: null, pending: null },
-      fish: { cast: null, elapsed: 0, sweep: 1.6, pos: 0, perfect: false, cooldown: 0 },
+      // 钓鱼这层只留表演时钟与图鉴开关：cast 本体在 state.explore.fishing.cast，
+      // castRef / seenCatch 只是「上一帧看到的那个对象」，用来发现新竿子和强制收杆。
+      fish: { castRef: null, seenCatch: undefined, elapsed: 0, pos: 0, cooldown: 0, dexOpen: false },
+      dive: { zone: DEFAULT_ZONE },
       // picked: null = 交给 selectLineup 自动配队；数组 = 老大自己勾的出战名单。
       campaign: { stage: 0, report: null, picked: null, tickers: [] },
     },
