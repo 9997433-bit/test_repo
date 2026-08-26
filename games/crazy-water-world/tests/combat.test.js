@@ -5,7 +5,7 @@ import { createStore } from "../src/core/store.js";
 import { placeBuilding } from "../src/world/build.js";
 
 describe("combat + heroes", () => {
-  it("is deterministic for the same seed", () => {
+  it("produces byte-identical JSON snapshots for the same seed", () => {
     const allies = [
       { id: "h-sam", heroKey: "sam", star: 3 },
       { id: "h-yilong", heroKey: "yilong", star: 2 },
@@ -17,7 +17,7 @@ describe("combat + heroes", () => {
     ];
     const a = simulateBattle(42, allies, enemies);
     const b = simulateBattle(42, allies, enemies);
-    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     expect(["ally", "enemy", "draw"]).toContain(a.winner);
   });
 
