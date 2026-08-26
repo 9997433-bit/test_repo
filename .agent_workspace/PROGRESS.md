@@ -50,10 +50,11 @@
 | A | F2 视觉 | fable | 已完成，tokens/motion 已合入 | `bc-624a1464-ae2e-5ace-8575-5a2832916e87` |
 | A | O3 换装家装 | opus-fast | 已完成，fashion/home SVG 已合入 | `bc-80ba6611-a58b-54b0-8aaa-9cb8f1f6fdf0` |
 | B | O1 引擎 | opus-fast | 已完成，core/mall/app/save 测试已合入 | `bc-297ab17d-7197-5747-bdb6-0e0d697eb554` |
-| B | F3 经济 | fable | 运行中 | `bc-bc009e97-1eff-52c1-8457-1354d0e0f597` |
-| B | F4 叙事 | fable | 运行中 | `bc-d59a71a3-ccdc-577d-acf8-1c77b7bb4350` |
+| B | F3 经济 | fable | 已完成，曲线与赏金表已合入 | `bc-bc009e97-1eff-52c1-8457-1354d0e0f597` |
+| B | F4 叙事 | fable | 已完成，copy/a11y/intro 已合入 | `bc-d59a71a3-ccdc-577d-acf8-1c77b7bb4350` |
 | C | O2 小游戏 | opus-fast | 运行中 | `bc-7ceaa17b-4d09-5c3e-9a3f-def313d419d6` |
-| C | O4 伙伴事件 / G1 测试 | 排队 | 待空位 | — |
+| C | O4 伙伴事件 | opus-fast | 运行中 | `bc-6dcadcdd-e4ab-550f-a2f1-dfffcedb3679` |
+| C | G1 测试 | gpt-sol | 运行中 | `bc-9174c37f-cbb9-5717-be48-a835c39f9752` |
 | D | G2 性能边界 | 排队 | 待空位 | — |
 
 ## 已实现基线（Parent 预置）
