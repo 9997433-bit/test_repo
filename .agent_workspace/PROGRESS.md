@@ -93,7 +93,8 @@
 |---|---|---|---|---|
 | A | R3-F1 最终量规 | fable | 运行中 | `bc-88708113-34bb-5d39-9eea-3d81f9a52ad9` |
 | A | R3-O1 豪宅+core文案 | opus-fast | 运行中 | `bc-2434c100-1966-521f-ae74-c4ed76430876` |
-| A | R3-G1 全盘核验脚本 | gpt-sol | 运行中 | `bc-7b0e529c-bafa-57f9-8efd-17ca835ec897` |
+| A | R3-G1 全盘核验脚本 | gpt-sol | 已完成，verify.mjs 已合入 | `bc-7b0e529c-bafa-57f9-8efd-17ca835ec897` |
+| B | R3-O2 README验收 | opus-fast | 运行中 | `bc-5844b91c-68e7-5806-84a9-ab220c537967` |
 
 ## 已实现基线（Parent 预置）
 
