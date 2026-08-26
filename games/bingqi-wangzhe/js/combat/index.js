@@ -10,6 +10,7 @@ export * from './lineup.js';
 export {
   AI_PROFILES,
   ENGINE_VERSION,
+  EVENT_ALIASES,
   EVENT_DURATION,
   EVENT_SUBTYPES,
   EVENT_TYPE_OF,

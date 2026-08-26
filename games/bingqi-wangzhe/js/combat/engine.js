@@ -101,6 +101,9 @@ export const EVENT_DURATION = Object.freeze({
 /**
  * 时间轴事件的**规范类型**（Round 2 统一契约）。
  * 每条 timeline 事件的 `type` 一定落在这 6 个值之内，播放器只需要认这 6 种。
+ *
+ * 注意：R1 时代 `EVENT_TYPES` 装的是下面那 13 个细分名，它们原封不动搬到了
+ * `EVENT_SUBTYPES`（也就是事件的 `subtype` / `t` 取值域），一个都没少。
  */
 export const EVENT_TYPES = Object.freeze([
   'start',
@@ -150,9 +153,23 @@ export const EVENT_TYPE_OF = Object.freeze({
   end: 'end',
 });
 
+/**
+ * 读侧别名：各版规格用过的事件旧名 → 现用子类型。
+ * 只供调用方按旧名筛事件时换算，`emit` 不双写、事件里也不会出现这些名字。
+ */
+export const EVENT_ALIASES = Object.freeze({
+  battleStart: 'start',
+  waveStart: 'wave',
+  turnStart: 'action',
+  battleEnd: 'end',
+  ko: 'kill',
+  shieldGain: 'shield',
+  debuff: 'status',
+});
+
 /** 子类型 → 规范类型；认不出来的一律当作 `action`，保证 type 恒在 EVENT_TYPES 内。 */
 export function canonicalEventType(subtype) {
-  return EVENT_TYPE_OF[subtype] ?? 'action';
+  return EVENT_TYPE_OF[EVENT_ALIASES[subtype] ?? subtype] ?? 'action';
 }
 
 /** AI 性格：影响选目标时元素/威胁/残血三项的权重。 */
@@ -1166,7 +1183,9 @@ const REPORT_PREFIX = Object.freeze({
  */
 export function formatBattleReport(result, opts = {}) {
   if (!result) return '';
-  const allow = opts.types ? new Set(opts.types) : null;
+  const allow = opts.types
+    ? new Set(opts.types.map((name) => EVENT_ALIASES[name] ?? name))
+    : null;
   const lines = [];
   for (const ev of result.timeline ?? []) {
     const subtype = ev.subtype ?? ev.t ?? ev.type;

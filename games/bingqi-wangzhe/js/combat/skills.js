@@ -19,6 +19,26 @@
 
 import { elementLabel } from './elements.js';
 
+/**
+ * 状态 id 的旧名映射（fable-2 规格 §1.2）。
+ * 规格与数据层各自用过一套写法，权威一律取下面 `STATUS_INFO` 的 id。
+ */
+export const STATUS_ALIASES = Object.freeze({
+  atkDown: 'weaken',
+  defDown: 'mark',
+  drUp: 'guard',
+  defUp: 'guard',
+  slow: 'chill',
+  speedDown: 'chill',
+  speedUp: 'haste',
+  stun: 'freeze',
+  paralyze: 'freeze',
+  bleed: 'burn',
+  dot: 'burn',
+  hot: 'regen',
+  thorn: 'thorns',
+});
+
 export const STATUS_INFO = Object.freeze({
   burn: Object.freeze({ id: 'burn', name: '灼烧', kind: 'dot', bad: true }),
   chill: Object.freeze({ id: 'chill', name: '冰缓', kind: 'debuff', bad: true }),
@@ -33,7 +53,16 @@ export const STATUS_INFO = Object.freeze({
   haste: Object.freeze({ id: 'haste', name: '疾风', kind: 'buff', bad: false }),
 });
 
-function status(id, turns, value, source, extra = {}) {
+/** 状态 id 归一化；认不出来原样返回（容错优先，绝不抛错）。 */
+export function normalizeStatusId(id) {
+  if (typeof id !== 'string') return id;
+  const key = id.trim();
+  if (STATUS_INFO[key]) return key;
+  return STATUS_ALIASES[key] ?? STATUS_ALIASES[key.toLowerCase()] ?? key;
+}
+
+function status(rawId, turns, value, source, extra = {}) {
+  const id = normalizeStatusId(rawId);
   return {
     id,
     name: STATUS_INFO[id]?.name ?? id,
@@ -46,6 +75,16 @@ function status(id, turns, value, source, extra = {}) {
   };
 }
 
+/**
+ * 本次施放实际使用的元素。
+ *
+ * 原型的元素是硬编码的（烈焰斩=火），但数据层的技借原型结算时元素由数据说了算，
+ * 否则「火系多段技」借雷链原型会打出雷伤。返回 undefined 表示跟随持有者主元素。
+ */
+function castElement(ctx, fallback) {
+  return ctx?.skill?.element ?? fallback ?? undefined;
+}
+
 /* ------------------------------------------------------------------ *
  * 技能结算函数（≥8）
  * ------------------------------------------------------------------ */
@@ -54,9 +93,10 @@ function status(id, turns, value, source, extra = {}) {
 export function resolveBlazeSlash(ctx) {
   const [target] = ctx.selectEnemies(1);
   if (!target) return;
-  const hit = ctx.dealDamage(target, { power: 1.75, element: 'fire', label: '烈焰斩' });
+  const element = castElement(ctx, 'fire');
+  const hit = ctx.dealDamage(target, { power: 1.75, element, label: ctx.skill?.name ?? '烈焰斩' });
   if (hit && target.alive) {
-    ctx.applyStatus(target, status('burn', 3, Math.max(1, Math.round(hit.damage * 0.18)), ctx.actor, { element: 'fire' }));
+    ctx.applyStatus(target, status('burn', 3, Math.max(1, Math.round(hit.damage * 0.18)), ctx.actor, { element }));
   }
 }
 
@@ -64,13 +104,14 @@ export function resolveBlazeSlash(ctx) {
 export function resolveFrostLock(ctx) {
   const [target] = ctx.selectEnemies(1);
   if (!target) return;
-  const hit = ctx.dealDamage(target, { power: 1.45, element: 'ice', label: '霜锁' });
+  const element = castElement(ctx, 'ice');
+  const hit = ctx.dealDamage(target, { power: 1.45, element, label: ctx.skill?.name ?? '霜锁' });
   if (!hit || !target.alive) return;
-  ctx.applyStatus(target, status('chill', 2, 0.25, ctx.actor, { element: 'ice' }));
+  ctx.applyStatus(target, status('chill', 2, 0.25, ctx.actor, { element }));
   const hpRatio = target.hp / target.maxHp;
   const freezeChance = 0.18 + (1 - hpRatio) * 0.22;
   if (ctx.rng.chance(freezeChance)) {
-    ctx.applyStatus(target, status('freeze', 1, 1, ctx.actor, { element: 'ice' }));
+    ctx.applyStatus(target, status('freeze', 1, 1, ctx.actor, { element }));
   }
 }
 
@@ -78,17 +119,19 @@ export function resolveFrostLock(ctx) {
 export function resolveThunderChain(ctx) {
   const targets = ctx.selectEnemies(3, 'chain');
   if (targets.length === 0) return;
+  const element = castElement(ctx, 'thunder');
+  const name = ctx.skill?.name ?? '雷链';
   let power = 1.32;
   for (let i = 0; i < targets.length; i += 1) {
     const target = targets[i];
     if (!target.alive) continue;
     const hit = ctx.dealDamage(target, {
       power,
-      element: 'thunder',
-      label: i === 0 ? '雷链' : `雷链·${i + 1}跳`,
+      element,
+      label: i === 0 ? name : `${name}·${i + 1}跳`,
     });
     if (hit && target.alive && ctx.rng.chance(0.25)) {
-      ctx.applyStatus(target, status('shock', 2, Math.max(1, Math.round(hit.damage * 0.12)), ctx.actor, { element: 'thunder' }));
+      ctx.applyStatus(target, status('shock', 2, Math.max(1, Math.round(hit.damage * 0.12)), ctx.actor, { element }));
     }
     power *= 0.78;
   }
@@ -99,9 +142,11 @@ export function resolveWhirlwind(ctx) {
   const targets = ctx.aliveEnemies();
   if (targets.length === 0) return;
   const power = 1.15 - Math.min(0.3, (targets.length - 1) * 0.09);
+  const element = castElement(ctx);
+  const label = ctx.skill?.name ?? '旋风斩';
   for (const target of targets) {
     if (!target.alive) continue;
-    ctx.dealDamage(target, { power, label: '旋风斩', tag: 'aoe' });
+    ctx.dealDamage(target, { power, element, label, tag: 'aoe' });
   }
 }
 
@@ -113,7 +158,8 @@ export function resolvePierceShot(ctx) {
     power: 1.55,
     pierce: 0.7,
     critBonus: 0.2,
-    label: '破甲射',
+    element: castElement(ctx),
+    label: ctx.skill?.name ?? '破甲射',
   });
   if (hit && target.alive) {
     ctx.applyStatus(target, status('mark', 2, 0.12, ctx.actor));
@@ -124,13 +170,18 @@ export function resolvePierceShot(ctx) {
 export function resolveBloodDrink(ctx) {
   const [target] = ctx.selectEnemies(1);
   if (!target) return;
-  ctx.dealDamage(target, { power: 1.4, lifesteal: 0.45, label: '饮血' });
+  ctx.dealDamage(target, {
+    power: 1.4,
+    lifesteal: 0.45,
+    element: castElement(ctx),
+    label: ctx.skill?.name ?? '饮血',
+  });
 }
 
 /** 铁壁：自身护盾 + 全队减伤。 */
 export function resolveGuardStance(ctx) {
   const shield = Math.round(ctx.effAtk(ctx.actor) * 1.6 + ctx.actor.maxHp * 0.08);
-  ctx.addShield(ctx.actor, shield, '铁壁');
+  ctx.addShield(ctx.actor, shield, ctx.skill?.name ?? '铁壁');
   for (const ally of ctx.aliveAllies()) {
     ctx.applyStatus(ally, status('guard', 2, ally === ctx.actor ? 0.18 : 0.1, ctx.actor));
   }
@@ -140,35 +191,38 @@ export function resolveGuardStance(ctx) {
 export function resolveDoubleStrike(ctx) {
   const [first] = ctx.selectEnemies(1);
   if (!first) return;
-  ctx.dealDamage(first, { power: 1.05, label: '连环击·一' });
+  const element = castElement(ctx);
+  const name = ctx.skill?.name ?? '连环击';
+  ctx.dealDamage(first, { power: 1.05, element, label: `${name}·一` });
   const next = first.alive ? first : ctx.selectEnemies(1)[0];
   if (next && next.alive) {
-    ctx.dealDamage(next, { power: 0.65, label: '连环击·二' });
+    ctx.dealDamage(next, { power: 0.65, element, label: `${name}·二` });
   }
 }
 
 /** 兵魂共鸣：神话被动主动化，全队攻击力提升并附带元素增伤。 */
 export function resolveSoulResonance(ctx) {
   const allies = ctx.aliveAllies();
+  const element = castElement(ctx) ?? ctx.actor.element;
   for (const ally of allies) {
-    ctx.applyStatus(ally, status('atkUp', 3, 0.22, ctx.actor, { element: ctx.actor.element }));
+    ctx.applyStatus(ally, status('atkUp', 3, 0.22, ctx.actor, { element }));
   }
   // payload 与其他事件对齐：只放可序列化的标量，不要把活的 unit 引用塞进时间轴
   ctx.log('buff', {
     actorUid: ctx.actor.uid,
     actor: ctx.actor.name,
     side: ctx.actor.side,
-    element: ctx.actor.element,
-    label: '兵魂共鸣',
+    element,
+    label: ctx.skill?.name ?? '兵魂共鸣',
     targets: allies.map((u) => u.uid),
-    text: `${ctx.actor.name} 唤醒兵魂，全军攻击 +22%（${elementLabel(ctx.actor.element)}共鸣）`,
+    text: `${ctx.actor.name} 唤醒兵魂，全军攻击 +22%（${elementLabel(element)}共鸣）`,
   });
 }
 
 /** 棘甲：反伤增益 + 自身回复。 */
 export function resolveThornArmor(ctx) {
   ctx.applyStatus(ctx.actor, status('thorns', 3, 0.35, ctx.actor));
-  ctx.heal(ctx.actor, Math.round(ctx.actor.maxHp * 0.08), '棘甲淬炼');
+  ctx.heal(ctx.actor, Math.round(ctx.actor.maxHp * 0.08), ctx.skill?.name ?? '棘甲淬炼');
 }
 
 /** 斩杀：目标血量越低伤害越高，最高 2.6 倍。 */
@@ -179,7 +233,8 @@ export function resolveExecute(ctx) {
   ctx.dealDamage(target, {
     power: 1.2 + missing * 1.4,
     critBonus: 0.1,
-    label: '斩杀',
+    element: castElement(ctx),
+    label: ctx.skill?.name ?? '斩杀',
   });
 }
 
@@ -188,7 +243,7 @@ export function resolveForgeMend(ctx) {
   const target = ctx.lowestAlly();
   if (!target) return;
   const amount = Math.round(ctx.effAtk(ctx.actor) * 1.1 + target.maxHp * 0.1);
-  ctx.heal(target, amount, '炉火淬体');
+  ctx.heal(target, amount, ctx.skill?.name ?? '炉火淬体');
   ctx.applyStatus(target, status('regen', 3, Math.round(target.maxHp * 0.04), ctx.actor));
 }
 
@@ -371,96 +426,115 @@ export const SKILL_LIBRARY = Object.freeze({
 });
 
 /**
- * 数据层 `data/skills.js` 的 `sk_*` id → 战斗层原型。
+ * 数据层 `data/skills.js` 的 `sk_*` 技 → 战斗层结算原型。
  *
- * 数据层按「兵器技」组织（三炉 + 神话 + 敌方），战斗层按结算原型组织，两边不是一一对应；
- * 这里按元素与战术定位挂到最接近的原型上，避免全部落到 `synthesize()` 的哈希兜底
- * ——哈希兜底虽然可复现，但会把治疗技打成斩杀技，数值上说不通。
+ * 数据层按「兵器技」组织（三炉 + 神话 + 敌方，53 条），战斗层按结算原型组织（13 条），
+ * 两边不是一一对应。没有这张表时 `getSkill` 会拿 id 的 FNV 哈希随机挑一个原型，
+ * id 虽然统一了，行为却是在掷骰子——治疗技可能被打成斩杀技。
+ *
+ * 表内条目取自 fable-2《Round 2 战斗规格对齐清单》§1.3；`name / element / cd`
+ * 与 `data/skills.js` 原定义保持一致（战斗层不 import 数据层，只复制这三个
+ * 有结算意义的字段；文案 `desc` 仍用原型的，避免把大段散文抄两遍）。
+ *
+ * 形如 `[原型 id, 名称, 元素, 冷却]`。
  */
-const DATA_SKILL_ALIASES = Object.freeze({
+const DATA_SKILL_TABLE = Object.freeze({
   // 精铁炉
-  sk_liehuo_zhan: 'blaze_slash',
-  sk_hanfeng_ci: 'frost_lock',
-  sk_leiting_tu: 'thunder_chain',
-  sk_hanyu_she: 'execute',
-  sk_pishan: 'pierce_shot',
-  sk_leiming_ji: 'whirlwind',
-  sk_qingfeng_fu: 'forge_mend',
-  sk_liyin_zhen: 'whirlwind',
-  sk_zhepeng: 'thorn_armor',
-  sk_beici: 'execute',
-  sk_hengsao: 'whirlwind',
-  sk_shouye_nu: 'pierce_shot',
+  sk_liehuo_zhan: ['blaze_slash', '烈火斩', 'fire', 3],
+  sk_hanfeng_ci: ['frost_lock', '寒锋刺', 'ice', 3],
+  sk_leiting_tu: ['pierce_shot', '雷霆突', 'thunder', 3],
+  sk_hanyu_she: ['execute', '寒羽射', 'ice', 3],
+  sk_pishan: ['pierce_shot', '劈山', 'fire', 4],
+  sk_leiming_ji: ['whirlwind', '雷鸣击', 'thunder', 4],
+  sk_qingfeng_fu: ['forge_mend', '清风拂', 'ice', 3],
+  sk_liyin_zhen: ['whirlwind', '离音震', 'thunder', 4],
+  sk_zhepeng: ['guard_stance', '遮篷', 'fire', 4],
+  sk_beici: ['execute', '背刺', 'fire', 3],
+  sk_hengsao: ['whirlwind', '横扫', 'fire', 3],
+  sk_shouye_nu: ['double_strike', '守夜弩', 'thunder', 3],
   // 白银炉
-  sk_yanwu_zhan: 'blaze_slash',
-  sk_shuangfeng_lian: 'double_strike',
-  sk_binghe_ci: 'frost_lock',
-  sk_xingluo_ji: 'thunder_chain',
-  sk_liehuo_nu: 'pierce_shot',
-  sk_lianzhu_lei: 'thunder_chain',
-  sk_bingpo_zhan: 'frost_lock',
-  sk_ronghuo_za: 'whirlwind',
-  sk_yanwei_shan: 'soul_resonance',
-  sk_jiuxiao_yin: 'gale_lead',
-  sk_xuemu: 'guard_stance',
-  sk_linguang_ci: 'blood_drink',
-  sk_qiuhong_she: 'double_strike',
+  sk_yanwu_zhan: ['blaze_slash', '焰舞斩', 'fire', 3],
+  sk_shuangfeng_lian: ['frost_lock', '霜锋连', 'ice', 3],
+  sk_binghe_ci: ['whirlwind', '冰河刺', 'ice', 4],
+  sk_xingluo_ji: ['whirlwind', '星落戟', 'thunder', 4],
+  sk_liehuo_nu: ['blaze_slash', '裂火弩', 'fire', 3],
+  sk_lianzhu_lei: ['thunder_chain', '连珠雷', 'thunder', 3],
+  sk_bingpo_zhan: ['frost_lock', '冰魄斩', 'ice', 4],
+  sk_ronghuo_za: ['whirlwind', '熔火砸', 'fire', 4],
+  sk_yanwei_shan: ['whirlwind', '焰尾扇', 'fire', 3],
+  sk_jiuxiao_yin: ['soul_resonance', '九霄引', 'thunder', 4],
+  sk_xuemu: ['guard_stance', '雪幕', 'ice', 4],
+  sk_linguang_ci: ['blood_drink', '鳞光刺', 'ice', 3],
+  sk_qiuhong_she: ['frost_lock', '秋鸿射', 'ice', 3],
   // 黄金炉
-  sk_poxiao_yijian: 'execute',
-  sk_wangchuan_zhan: 'blood_drink',
-  sk_tunri_ci: 'blaze_slash',
-  sk_jiuli_hengsao: 'whirlwind',
-  sk_shechen: 'execute',
-  sk_zhenchao: 'guard_stance',
-  sk_duanlong: 'pierce_shot',
-  sk_fenji: 'whirlwind',
-  sk_zhaohun: 'forge_mend',
-  sk_zhetian: 'thorn_armor',
-  sk_wanji: 'thunder_chain',
-  sk_chanyi: 'double_strike',
+  sk_poxiao_yijian: ['execute', '破晓一剑', 'thunder', 4],
+  sk_wangchuan_zhan: ['blood_drink', '忘川斩', 'ice', 4],
+  sk_tunri_ci: ['blaze_slash', '吞日刺', 'fire', 4],
+  sk_jiuli_hengsao: ['whirlwind', '九黎横扫', 'thunder', 4],
+  sk_shechen: ['execute', '射尘', 'fire', 4],
+  sk_zhenchao: ['guard_stance', '镇潮', 'ice', 5],
+  sk_duanlong: ['pierce_shot', '断龙', 'thunder', 5],
+  sk_fenji: ['whirlwind', '焚寂', 'fire', 4],
+  sk_zhaohun: ['forge_mend', '招魂', 'ice', 5],
+  sk_zhetian: ['guard_stance', '遮天', 'thunder', 5],
+  sk_wanji: ['thunder_chain', '万机', 'thunder', 4],
+  sk_chanyi: ['blood_drink', '蝉翼', 'fire', 3],
   // 神话
-  sk_zhulong_kaimu: 'whirlwind',
-  sk_xuanming_fengyuan: 'frost_lock',
-  sk_leize_tianwen: 'execute',
-  sk_taixu_xingyun: 'thunder_chain',
-  // 羁绊被动（战斗层的羁绊走 lineup.js，这里只保证不炸）
-  bond_type_sword: 'soul_resonance',
-  bond_type_saber: 'double_strike',
-  bond_type_blade: 'double_strike',
-  bond_type_spear: 'pierce_shot',
-  bond_type_halberd: 'guard_stance',
-  bond_type_bow: 'pierce_shot',
-  bond_type_crossbow: 'gale_lead',
-  bond_type_axe: 'execute',
-  bond_type_hammer: 'guard_stance',
-  bond_type_fan: 'forge_mend',
-  bond_type_flute: 'gale_lead',
-  bond_type_umbrella: 'thorn_armor',
-  bond_elem_fire: 'blaze_slash',
-  bond_elem_ice: 'frost_lock',
-  bond_elem_thunder: 'thunder_chain',
-  bond_mythic_soul: 'soul_resonance',
+  sk_zhulong_kaimu: ['whirlwind', '烛龙开目', 'fire', 5],
+  sk_xuanming_fengyuan: ['whirlwind', '玄冥封渊', 'ice', 5],
+  sk_leize_tianwen: ['execute', '雷泽天问', 'thunder', 5],
+  sk_taixu_xingyun: ['thunder_chain', '太虚星陨', 'fire', 5],
   // 敌方
-  sk_e_zaowo_hui: 'blaze_slash',
-  sk_e_suibing: 'whirlwind',
-  sk_e_maidian: 'thunder_chain',
-  sk_e_tiepi: 'guard_stance',
-  sk_e_kuangnu: 'soul_resonance',
-  sk_e_fenshen_zhan: 'whirlwind',
-  sk_e_hanyuan_suo: 'frost_lock',
-  sk_e_leiting_pu: 'thunder_chain',
-  sk_e_taotie_shi: 'blood_drink',
-  sk_e_wuxiang_beng: 'whirlwind',
-  sk_e_jiuyou_fen: 'whirlwind',
-  sk_e_tianwen_ni: 'pierce_shot',
+  sk_e_zaowo_hui: ['blaze_slash', '灶涡回', 'fire', 3],
+  sk_e_suibing: ['whirlwind', '碎冰', 'ice', 3],
+  sk_e_maidian: ['pierce_shot', '埋电', 'thunder', 3],
+  sk_e_tiepi: ['guard_stance', '铁皮', null, 4],
+  sk_e_kuangnu: ['soul_resonance', '狂怒', null, 4],
+  sk_e_fenshen_zhan: ['whirlwind', '焚身斩', 'fire', 4],
+  sk_e_hanyuan_suo: ['whirlwind', '寒渊锁', 'ice', 4],
+  sk_e_leiting_pu: ['whirlwind', '雷霆铺', 'thunder', 4],
+  sk_e_taotie_shi: ['blood_drink', '饕餮食', null, 5],
+  sk_e_wuxiang_beng: ['whirlwind', '无相崩', null, 5],
+  sk_e_jiuyou_fen: ['whirlwind', '九幽焚', 'fire', 5],
+  sk_e_tianwen_ni: ['pierce_shot', '天问·逆', 'thunder', 5],
 });
 
+/** 数据层技 id → `{ archetype, name, element, cd }`，只读视图。 */
+export const DATA_SKILL_ARCHETYPES = Object.freeze(
+  Object.fromEntries(
+    Object.entries(DATA_SKILL_TABLE).map(([id, [archetype, name, element, cd]]) => [
+      id,
+      Object.freeze({ id, archetype, name, element, cd }),
+    ]),
+  ),
+);
+
 /**
- * Round 1 之前各分支用过的旧技能 id（camelCase / 早期命名）。
+ * Round 1 之前各分支与 fable-2 规格 §5 用过的旧技能 id（camelCase / 早期命名）。
  * 统一到 snake_case 之后仍要认这些旧名，否则老存档与老关卡表会掉进哈希兜底。
+ *
+ * `bond_*` 被动**不在**这里：羁绊走 `lineup.js` 的 `computeBonds`，不经 `getSkill`。
+ * `js/ui/mock/data.js` 的 `sk_flame_slash` 一族属于待删 mock，按规格 R0-2 不做映射。
  */
 const LEGACY_SKILL_ALIASES = Object.freeze({
+  // fable-2 规格 §5 十二技
   flameSlash: 'blaze_slash',
+  frostPierce: 'frost_lock',
+  whirlwindAxe: 'whirlwind',
+  quakeHammer: 'pierce_shot',
+  windFanMend: 'forge_mend',
+  warFlute: 'soul_resonance',
+  jadeUmbrella: 'guard_stance',
+  galeArrow: 'double_strike',
+  bladeDance: 'blood_drink',
+  halberdSweep: 'whirlwind',
+  dragonInferno: 'sk_zhulong_kaimu',
+  basicAttack: 'basic_attack',
+  // 规格 §5 备注里的另外三把神话模板
+  frostMythic: 'sk_xuanming_fengyuan',
+  thunderMythic: 'sk_leize_tianwen',
+  neutralMythic: 'soul_resonance',
+  // 其余分支旧名
   flame_slash: 'blaze_slash',
   fireSlash: 'blaze_slash',
   fire_slash: 'blaze_slash',
@@ -511,14 +585,12 @@ const LEGACY_SKILL_ALIASES = Object.freeze({
   windLead: 'gale_lead',
   wind_lead: 'gale_lead',
   hasteLead: 'gale_lead',
-  basicAttack: 'basic_attack',
   normalAttack: 'basic_attack',
   normal_attack: 'basic_attack',
 });
 
-/** data/skills.js 可能采用别名 id，这里做一层容错映射。 */
+/** 旧名 / 中文名 / 早期分支 id → 权威 id（原型库 id 或数据层 `sk_*` id）。 */
 export const SKILL_ALIASES = Object.freeze({
-  ...DATA_SKILL_ALIASES,
   ...LEGACY_SKILL_ALIASES,
   blazeSlash: 'blaze_slash',
   烈焰斩: 'blaze_slash',
@@ -587,6 +659,25 @@ function synthesize(id) {
 }
 
 const synthCache = new Map();
+const dataSkillCache = new Map();
+
+/** 数据层技 → 挂在原型上的派生定义（保留数据层的 id / 名称 / 元素 / CD）。 */
+function dataSkill(id) {
+  if (!dataSkillCache.has(id)) {
+    const spec = DATA_SKILL_ARCHETYPES[id];
+    const archetype = SKILL_LIBRARY[spec.archetype];
+    dataSkillCache.set(id, Object.freeze({
+      ...archetype,
+      id,
+      name: spec.name,
+      element: spec.element ?? archetype.element,
+      cd: spec.cd,
+      archetypeId: archetype.id,
+      fromData: true,
+    }));
+  }
+  return dataSkillCache.get(id);
+}
 
 /** camelCase → snake_case，供别名表之外的旧名兜底。 */
 function toSnakeCase(key) {
@@ -599,40 +690,41 @@ function toSnakeCase(key) {
 function lookup(key) {
   if (!key) return null;
   if (SKILL_LIBRARY[key]) return key;
+  if (DATA_SKILL_ARCHETYPES[key]) return key;
   const alias = SKILL_ALIASES[key];
-  if (alias && SKILL_LIBRARY[alias]) return alias;
+  if (alias && (SKILL_LIBRARY[alias] || DATA_SKILL_ARCHETYPES[alias])) return alias;
   return null;
 }
 
 /**
- * 技能 id 归一化：现用 snake_case id → 原样；旧名 / 别名 / camelCase → 现用 id。
- * 认不出来返回 null（由 getSkill 决定兜底策略）。
+ * 技能 id 归一化：权威 id（原型库 snake_case 或数据层 `sk_*`）原样返回，
+ * 旧名 / 中文名 / camelCase 折到权威 id；认不出来返回 null（由 getSkill 决定兜底）。
+ *
+ * 只剥 `skill_` 前缀：`sk_` 前缀属于数据层的权威命名空间，不能顺手剥掉，
+ * 否则待删 mock 的 `sk_flame_slash` 会被误认成 `flame_slash`（规格 R0-2 禁止）。
  */
 export function normalizeSkillId(id) {
   const raw = typeof id === 'object' && id ? id.id : id;
   if (raw == null || raw === '') return null;
   const key = String(raw).trim();
-  const candidates = [
-    key,
-    key.toLowerCase(),
-    toSnakeCase(key),
-    // `skill_blaze_slash` / `sk_blaze_slash` 这类带前缀的写法
-    toSnakeCase(key).replace(/^(?:skill|sk|s)_/, ''),
-  ];
-  for (const candidate of candidates) {
+  const snake = toSnakeCase(key);
+  for (const candidate of [key, key.toLowerCase(), snake, snake.replace(/^skill_/, '')]) {
     const hit = lookup(candidate);
     if (hit) return hit;
   }
   return null;
 }
 
-/** 取技能定义；未知 id 走稳定兜底，永不返回 null。 */
+/**
+ * 取技能定义；未知 id 走稳定兜底，永不返回 null。
+ * 解析顺序：SKILL_LIBRARY → SKILL_ALIASES → DATA_SKILL_ARCHETYPES → synthesize。
+ */
 export function getSkill(id) {
   if (!id) return BASIC_ATTACK;
   if (typeof id === 'object' && typeof id.resolve === 'function') return id;
   const key = typeof id === 'object' ? id.id : id;
   const resolved = normalizeSkillId(key);
-  if (resolved) return SKILL_LIBRARY[resolved];
+  if (resolved) return SKILL_LIBRARY[resolved] ?? dataSkill(resolved);
   if (!synthCache.has(key)) synthCache.set(key, synthesize(key));
   return synthCache.get(key);
 }
