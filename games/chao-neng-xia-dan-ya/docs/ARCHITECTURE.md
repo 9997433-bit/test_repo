@@ -1,13 +1,16 @@
-# 超能下蛋鸭 · 系统架构（Round 2 契约 v1.1）
+# 超能下蛋鸭 · 系统架构（Round 3 契约 v1.2）
 
 - 所有者：Fable-1（架构）。配套：`docs/API_CONTRACT.md`（签名/事件/存档）、`docs/OWNERSHIP.md`（文件所有权）。
 - 地位：本文件与 API_CONTRACT 是全体代理的**编码依据**。实现与契约冲突时，先改契约（走变更流程，见 API_CONTRACT §0），再改代码。
 - 基线事实：本文档与仓库现有代码及 G1 已合入测试（`tests/*.test.js`）逐条核对过，不与任何已锁定断言冲突。
 - v1.1 修订（按实码核对，Round 2 BRIEF 四项）：
-  1. **单一物理源**（§4.0）：`src/physics` 为唯一权威积分器，`core/sim.js` 定为过渡实现并给出退役路线；
+  1. **单一物理源**（§4.0）：`src/physics` 为唯一权威积分器（v1.2 已落地定稿，见下）；
   2. **BONDS = SYNERGIES 别名**（§5.4）：羁绊权威数据表为 `data/synergies.js` 的 `SYNERGIES`，`data/index.js` 须追加 `BONDS` 别名导出；
   3. **18 英雄权威表**（§6）：`data/heroes.js` 落地 18 只为权威口径，云朵雀 / 倒霉鸭进 `RESERVED_HERO_IDS` 预留；
   4. **存档字段**（§8）：schema 按 `core/store.js` + `progression/save.js` 实码重写，settings 双键 + `pref()` 缺省即开启语义。
+- v1.2 修订（Round 3，按 O4 已合入的物理切换实码定稿）：
+  1. **单一物理源落地**（§4.0）：战斗已切到 `src/physics`（预测/实弹 9308 采样点误差 0），`core/sim.js` 重铸为其**游戏侧适配层**（零积分代码）；v1.1 的「过渡实现 / 冻结 / 对拍先行 / 退役路线」表述全部删除；
+  2. §3 / §4.1–§4.7 按实码勘误：两级步进管线、敌人碰撞盒为 AABB、NaN 蛋就地修复不回收、分裂走世界内建随机、事件词汇更新（详见 API_CONTRACT §14 v1.2）。
 
 ## 1. 设计原则（六条铁律）
 
@@ -43,100 +46,122 @@ L0  data（纯常量表）      core（events / rng / store / loop —— 全层
 | heroes | √ | √ | —(注1) | √(类型) | 内部 | — | — | — | — |
 | progression | √ | √ | — | — | — | 内部 | — | — | — |
 | modes | √ | √ | √ | √ | √ | √ | 内部 | — | — |
-| ui | √(展示) | √ | √(仅 predictTrajectory) | — | — | √(只读查询) | √ | 内部 | — |
+| ui | √(展示) | √ | —(注4) | — | — | √(只读查询) | √ | 内部 | — |
 | audio | — | √(events) | — | — | — | — | — | — | 内部 |
 | main.js | 组合根：可 import 所有 index.js |
 
 注 1：heroes 不直接改 `world`；生成蛋、造伤等能力全部经 `HeroApi`（modes 注入的能力面），见 API_CONTRACT §8。
 注 2：`core` 是零游戏逻辑的底座（总线/随机/存档/主循环驱动），不 import 任何上层。
 注 3：physics 完全自包含（自带常量与数学），保证可单文件夹拷走复用。
+注 4：实码定案（v1.2）：battle / ui / modes 对物理的一切访问统一经 `core/sim.js` 适配层（含弹道预测与发射台常量），不直接 import `src/physics`——见 §4.0 铁律 1。
 
-## 3. 一帧的生命周期（主管线）
+## 3. 一帧的生命周期（主管线，v1.2 按实码）
 
 ```
 requestAnimationFrame(t):
-  dtFrame = clamp((t - last)/1000, 0, 1/30)        // 掉帧上限，防积分螺旋
-  acc += dtFrame
-  steps = 0
-  while acc >= FIXED_DT && steps < MAX_STEPS_PER_FRAME(4):
-    session.step(FIXED_DT)                          // ← 唯一推进游戏状态的地方
-    acc -= FIXED_DT; steps++
-  alpha = acc / FIXED_DT
-  renderer.render(session.getSnapshot(), alpha)     // 蛋按 prevX/prevY↔x/y 插值
+  dtFrame = clamp((t - last)/1000, 0, 0.05)         // 掉帧上限，防积分螺旋
+  battle.update(dtFrame)                             // ← 唯一推进游戏状态的地方
+    └─ stepWorld(world, dtFrame, hooks)              //   core/sim.js：内部按 FIXED_DT=1/120
+                                                     //   累积固定步，≤8 步/帧
+  renderer.render(battle, alpha)                     // 蛋按 prevX/prevY↔x/y 插值
 ```
 
-`session.step` 内部顺序（战斗类模式）：
+`battle.update` 内部顺序（战斗类模式，实码 `core/battle.js`）：
 
-1. 消费输入指令队列（fire / castUltimate / switchHero —— UI 只入队，不直接改状态）；
-2. `stepWorld(world, FIXED_DT)`（物理推进，产出 `world.events`）；
-3. 排空 `world.events` → 战斗桥接：contact→`resolveHit`→应用伤害/状态→英雄 hook→总线事件；
-4. 状态 DoT tick、连击计时、能量回复、模式计时（讨伐 60s 等）；
-5. 回合/波次/胜负状态机迁移（见 §7.1）。
+1. 消费输入指令（fire / castUltimate / switchHero —— UI 只入队/调公开方法，不直接改状态）；
+2. 顿帧闸门：`hitStop > 0` 时本帧只衰减特效不推物理（手感契约，上限 0.16s）；
+3. `stepWorld(world, dt, hooks)`（`core/sim.js`）：每个固定步内部完成「实体镜像 → 预步力 →
+   `physics.stepWorld` → 停滞回收 → 排空 `world.events` 并翻译成命中钩子」；
+4. 钩子内战斗结算：`onEnemy` → `adapters.baseHit`（上游 `combat.resolveHit`）→ 扣血/元素/
+   连击/能量 → 英雄 hook → UI/音频通知；
+5. 状态 DoT tick、连击计时、敌人漂移、模式计时（讨伐 60s 等）；
+6. 回合/波次/胜负状态机迁移（见 §7.1）。
 
-**顺序即契约**：渲染永远读快照 + 插值，绝不在 rAF 里直接推物理；总线事件在第 3 步集中发出，同一固定步内先物理后战斗后 UI 通知。
+**顺序即契约**：渲染永远读状态 + 插值，绝不在 rAF 里直接推物理；同一固定步内先物理后战斗后 UI 通知（命中钩子在第 3–4 步集中翻译与结算）。
 
 ## 4. 物理架构（`src/physics`，Opus-1）
 
-### 4.0 单一物理源（v1.1 铁律）
+### 4.0 单一物理源（v1.2 定稿：切换已完成）
 
-仓库当前存在两套积分器，Round 2 必须收敛为一套：
+Round 2 的「双物理收敛」P0 已落地（O4 合入）：**全仓只剩一套积分器**。
 
-| 实现 | 所有者 | 现状（实码） | 契约地位 |
-| --- | --- | --- | --- |
-| `src/physics/**` | O1 | 完整可用：固定步 1/120、CCD、圆-线段/AABB/圆、力场、分裂/爆炸、幽灵蛋预测 | **唯一权威积分器**。本节 §4.1–§4.7 全部描述此实现 |
-| `src/core/sim.js` | O4 | 战斗实际在跑：`core/battle.js` 从它 import `createWorld/stepWorld/predictTrajectory`，主菜单标注「内置积分器」 | **过渡实现，已冻结**。只准修 bug，禁止加特性 |
+| 模块 | 所有者 | 角色（实码） |
+| --- | --- | --- |
+| `src/physics/**` | O1 | **唯一权威积分器**：积分 / 碰撞 / CCD / 力场 / 传送门 / 睡眠与回收全在这里；本节 §4.1–§4.7 全部描述此实现 |
+| `core/sim.js` | O4 | **游戏侧适配层（非积分器）**：自身零积分代码，全部物理能力 import 自 `physics/index.js`。职责：① 关卡实体（钉/砖/敌人/斜面/风扇/冰面/传送门）镜像成物理静态体与力场（`syncStage`）；② 物理事件翻译成战斗命中钩子（`onWall/onSlope/onPeg/onBrick/onEnemy/onPortal/onRecycle`）；③ 施加实弹与预测共用的预步力（冰面阻力、追踪转向）；④ 游戏节奏裁决（停滞回收 45px/s×0.6s、蛋寿命 12s、每帧 ≤8 固定步）；⑤ 承载发射台常量。契约见 API_CONTRACT §6.4 |
+| `core/adapters.js` | O4 | 能力探测与如实报告（`describeCaps`）。物理链路**无降级分支**——探测只用于菜单标注真实链路；combat 仍是「上游可用则用、异常时内置兜底」 |
 
-收敛规则（依据 BRIEF Round 2 P0「对拍后战斗改用 `src/physics`，预测与实弹同源」）：
+定稿铁律（取代 v1.1 的切换计划）：
 
-1. **唯一切换点**：战斗侧对物理的一切访问必须经 `core/adapters.js`（O4）。切换 = adapters 把 `createWorld/stepWorld/predictTrajectory` 的实现指向 `src/physics`，`core/battle.js`、`ui/render.js`、`ui/screens/battle.js` 不得再直接 import `core/sim.js`。
-2. **对拍先行**：切换前 O4 + O1 用同一 `(seed, 发射序列)` 对拍两套积分器的落点 / 反弹序列，抽样误差在验收阈值内才准切换；对拍脚本归 G2（`scripts/`）。
-3. **预测与实弹同源**：任何时刻，瞄准虚线（预测）与实弹必须走**同一套**积分与碰撞代码。`src/physics/trajectory.js` 用幽灵蛋复用 `stepEgg` 满足此性质；`core/sim.js` 内部预测与实跑共用 step 也满足。**禁止**预测走一套、实弹走另一套的混搭。
-4. **退役**：切换验收（G1 摘 skip + G2 真物理基准过线）后，`core/sim.js` 删除或缩减为纯常量文件；它承载的发射台常量（`LAUNCH_X/LAUNCH_Y/NEST_Y/MAX_AIM_DEG/MIN_SPEED/MAX_SPEED`）迁往 `src/data`（数值，F3）并由 adapters 转发（见 API_CONTRACT §6.0）。
-5. `core/adapters.js` 的 `CAPS` 探测与 `describeCaps()` 必须如实报告「实际在用」的实现，不得在仍跑内置时报「上游」。
+1. **唯一消费入口**：battle / ui / modes 对物理的一切访问经 `core/sim.js`（`core/battle.js`、`ui/render.js`、`ui/screens/battle.js` 均从它 import 常量与函数）；除 `core/sim.js` 与 `core/adapters.js` 外，`src/core`、`src/ui`、`src/modes` 不得直接 import `src/physics`。
+2. **预测与实弹同源**：`stepWorld` 与弹道预测都只经 physics 的 `advanceEgg` 推进（幽灵蛋与实弹同一份积分/碰撞/冷却代码）；sim 层预步力（冰面/追踪）也由 `prepareEgg` 双路共用。**禁止**任何一侧另起积分分支。
+3. **禁止第二积分器**：任何目录不得再出现自带的 step / 碰撞实现；积分与碰撞的行为改动只准发生在 `src/physics`（O1），sim 层只准做镜像、翻译与游戏裁决（OWNERSHIP §3.6）。
+4. 对拍与桥接工具（`physics/compat.js` 的 `createSimBridge` / `compareTrajectories`）保留为 O1 的回归工具；Round 2 对拍结论：同 `(seed, 发射序列)` 9308 采样点误差 0。
+5. v1.1 的过渡条款（sim 冻结、退役路线、发射台常量迁往 `src/data`）**全部作废**——`core/sim.js` 是长期存在的游戏侧适配层，发射台常量（`LAUNCH_X/LAUNCH_Y/NEST_Y/MAX_AIM_DEG/MIN_SPEED/MAX_SPEED/MAX_EGG_SPEED`）定居于此（O4 所有）。
 
 ### 4.1 坐标与单位
 
 - 逻辑世界 480×800，原点左上，x 向右，y 向下（与 Canvas 一致）；单位 px、秒。重力 `GRAVITY = 1680 px/s²` 向下。
-- 发射台位于 (240, 92)（实码 `LAUNCH_X = WORLD_W/2`、`LAUNCH_Y = 92`；巢/回收线 `NEST_Y = 648`）；瞄准角以正下方为 0，左负右正，钳制 ±70°；初速 220–720 px/s（蓄力线性映射）。
+- 发射台位于 (240, 92)（`core/sim.js` 的 `LAUNCH_X = WORLD_W/2`、`LAUNCH_Y = 92`；巢/回收线 `NEST_Y = 648`）；瞄准角以正下方为 0，左负右正，钳制 ±70°（物理层收弧度，游戏层 `aimVector` 收角度制）；初速 220–720 px/s（蓄力线性映射）。
+- 飞行限速：物理默认 `MAX_SPEED = 2600`，游戏世界建为 `MAX_EGG_SPEED = 1900`（sim 的 `createWorld` 覆盖）。
 
 ### 4.2 实体
 
-- **Egg（动态圆）**：半径字段 `r`（v1.1 勘误：实码是 `r` 非 `radius`），合法域 10–14（默认 12）；`restitution` 0.78–0.92（默认 0.85），空气阻力极低（`EGG_DRAG = 0.02/s`）。带 `prevX/prevY` 供渲染插值、`generation`（0 主蛋，分裂 +1，**上限 2**）、`bounces` 累计反弹数（碰撞流读取）、`pierce` 剩余穿透。字段全表见 API_CONTRACT §6.2。
-- **StaticBody（静态体）**：`shape ∈ {segment, circle, aabb}` 描述几何，`kind` 描述玩法材质（wall/ramp/brick/peg/bomb-brick/ice/portal/pad/enemy…）。segment 为胶囊线段（`x1,y1,x2,y2,radius=半厚,oneWay`），aabb 以中心 + 半宽高（`x,y,hw,hh`），circle 为 `x,y,r`。`sensor:true` 只触发事件不反弹（传送门/触发区）。敌人以 `kind:'enemy'` 的 circle 挂进 statics，经 `entityId` 关联战斗实体——蛋飞行期间敌人不动，回合间隔才移动。
-- **Field（力场）**：不参与碰撞，积分前按区域叠加加速度/阻尼：风扇、磁铁（朝最近敌人加速）、减速区。
+- **Egg（动态圆）**：半径字段 `r`（v1.1 勘误：实码是 `r` 非 `radius`），合法域 10–14（默认 12）；`restitution` 0.78–0.92（默认 0.85，物理夹取 0..1.4 以容 bumper），空气阻力极低（`EGG_DRAG = 0.02/s`，冰面上 sim 切到 0.006）。带 `prevX/prevY` 供渲染插值、`generation`（0 主蛋，分裂 +1）、`splitsLeft` 分裂预算、`pierce` 剩余穿透、`bounces` 累计反弹 + `wallHits/pegHits/brickHits/eggHits/portalUses` 分类计数，以及**接触账本**（`contacts/enemyContacts/firstContact/firstEnemyContact/lastContact/hitLog`——一律在 reflect **之前**落账，见 §4.3）。字段全表见 API_CONTRACT §6.2。
+- **StaticBody（静态体）**：`shape ∈ {segment, circle, aabb}` 描述几何，`kind` 描述玩法材质（wall/ramp/brick/peg/bumper/ice/rubber/portal/enemy…，缺省物性取 `MATERIAL[kind]`）。segment 为胶囊线段（`x1,y1,x2,y2`，半厚字段 `halfThickness`——v1.2 勘误：非 `radius`；`oneWay` 单向），aabb 以中心 + 半宽高（`x,y,hw,hh`；工厂可收 `anchor:'topleft'` 构造期转换一次），circle 为 `x,y,r`。`sensor:true` 只触发事件不反弹。传送门 = sensor 圆对（`link` 指向另一端、`facing` 旋转出射、`exitSpeed` 出口保底速度）；关卡单向门由 sim 把出口端降级为 `portalExit` 纯出口。**敌人以 `kind:'enemy'` 的 AABB 挂进 statics**（v1.2 勘误：非 circle），`body.data` 反向指回战斗实体；敌人可在蛋飞行期间漂移——sim 每固定步把物理体拉回实体位置并刷新宽相（`followBox`）。
+- **Field（力场）**：不参与碰撞，积分前按区域叠加加速度/阻尼，判别字段 `type`：`fan`（区域恒定加速度，带沿风向线性衰减 `falloff`）、`wind`（全图恒定）、`gravity`（区域覆盖世界重力）、`slow`（区域阻尼）。追踪转向（磁铁语义）不是物理力场，是 sim 层预步力（`egg.homing`）。
 
-### 4.3 固定步进管线（`stepWorld` 内部，顺序固定）
+### 4.3 步进管线（v1.2 按实码：两级步进，顺序固定）
+
+**游戏帧层**（`core/sim.stepWorld(world, dtFrame, hooks)`，battle 每帧调一次）：按 1/120 累积固定步（≤8 步/帧；场上无蛋时清零余量，防止下一发首帧多跑）。每个固定步依次：
 
 ```
-0. 清空 world.events（上一步事件必须已被调用方排空）
-1. 力场采样：对每蛋叠加 field 加速度 + 重力
-2. 半隐式欧拉：v += a·dt → 阻尼/限速(MAX_SPEED=2600) → 位移
-3. 子步 CCD：单子步位移 > radius×0.5 时细分（最多 MAX_SUBSTEPS=8），防高速穿隧
-4. 碰撞：蛋 vs 静态（宽相网格→窄相 圆vs线段/AABB/圆）→ 位置修正 + 反射
-5. 蛋 vs 蛋：≤24 蛋两两（≤276 对）暴力检测，等质量弹性交换
-6. 事件入队：contact / egg-egg / sensor（含命中点、法线、冲击速度）
-7. 睡眠：|v| < 8 px/s 连续 0.6s（发射后 0.2s 保护期内不判）→ sleep 事件
-8. 回收：y > 820 或越侧界或 sleep → 从 world.eggs 移除、对象回池、recycle 事件
+1. syncStage      关卡实体增删改镜像到物理体（新建/移除/followBox 跟随），有移动即重建宽相
+2. prepareEgg     对每枚活蛋施加预步力：冰面阻力切换、追踪转向（实弹与幽灵蛋共用同一函数）
+3. physics.stepWorld   ← 物理固定步，见下
+4. reapStalled    游戏侧停滞回收：|v| < 45px/s 持续 0.6s（发射 0.25s 保护期），reason:'stalled'
+5. dispatch       drainEvents 排空 world.events → 翻译成命中钩子（同蛋对同敌 0.08s 去重）
+6. pushTrails     拖尾采样（渲染用）
 ```
 
-防御：任何蛋出现非有限坐标/速度 → 立即按 `reason:'oob'` 回收，世界时钟保持有限（已被 `tests/physics.test.js` 锁定）。
+**物理固定步**（`physics.stepWorld(world, dt)`，每次调用恰推进一步）：
+
+```
+1. 逐蛋 advanceEgg：数值兜底（sanitizeEgg）→ 记录 prevX/prevY 插值起点 →
+   stepEgg 子步 CCD（单子步位移 > r×0.5 细分，≤ MAX_SUBSTEPS=8，防高速穿隧）：
+   半隐式欧拉（力场+重力 → 阻尼 → 限速 → 位移）
+   → 蛋 vs 静态（网格宽相 → 窄相 圆vs线段/AABB/圆；noteContact 在 reflect **之前**落账
+     → 位置修正 + 反射；传送门 / 传感器 / 穿透走各自分支）
+   → 蛋 vs 解析式边界（左右墙 / 顶板反弹；底部默认开放用于回收）
+2. 蛋 vs 蛋：两两暴力检测，质量加权弹性冲量（≤24 蛋由 battle 投放策略保证，≤276 对）
+3. finalizeStep：出界（y > 820 / 越侧界 / 越顶界，reason:'out'）、
+   睡眠（|v| < 8px/s 持续 0.6s，发射 0.2s 保护期，reason:'sleep'）、
+   寿命到期（reason:'expired'）→ recycle 事件 → compactEggs 从 world.eggs 移除
+```
+
+事件统一经 `emit` 入 `world.events`（盖 `time/step` 戳，上限 512 丢最旧），词汇见 API_CONTRACT §6.2。
+
+防御（v1.2 勘误，`tests/physics.test.js` 锁定）：蛋出现非有限坐标/速度 → **就地修复**（速度归零、坐标回退 prev/发射台），**不删蛋**；世界时钟保持有限。v1.1「按 `reason:'oob'` 回收」表述作废。
 
 ### 4.4 宽相
 
-静态体 ≤80：入世界时登记进均匀网格（实码 `GRID_CELL = 48`px，480×800 → 10×17），砖破碎调 `removeStatic` 时增量摘除；蛋查询自身包围盒覆盖的 cell。蛋 vs 蛋不进网格（数量小，暴力更快且零维护）。每个 body 缓存 `aabb{minX..maxX}`，改坐标必须调 `computeAABB`。
+静态体 ≤80（battle 层投放策略）：惰性建均匀网格（实码 `GRID_CELL = 48`px，480×800 → 10×17）；增删或移动静态体后 `markStaticsDirty(world)`，下一次查询整体重建。蛋按扫掠包围盒查询覆盖的 cell。蛋 vs 蛋不进网格（数量小，暴力更快且零维护）。每个 body 缓存 `aabb{minX..maxX}`，改坐标用 `moveBody`（内部重算）或改后手调 `computeAABB`。
 
 ### 4.5 分裂蛋
 
-`splitEgg(world, parent, {count, spread, rng})`（v1.1 勘误：实码导出名为 `splitEgg`，非 `spawnSplitEggs`）：子蛋继承父蛋 **0.7 倍速度**（`SPLIT_SPEED_SCALE`）、`generation+1`（≥2 不再分裂）、扇形展开角 `spread`（默认 `SPLIT_SPREAD = π/3`）；同屏 24 蛋硬上限由 battle 层投放策略把守——超额直接不生成并记统计（不排队、不报错）。分裂只由 heroes/combat 层经 HeroApi 触发，物理不自发分裂。
+`splitEgg(world, egg, opts)`（v1.1 勘误：实码导出名为 `splitEgg`，非 `spawnSplitEggs`）：默认 `count` 2、扇形张角 `spread`（默认 `SPLIT_SPREAD = π/3`）、子蛋继承父蛋 **0.7 倍速度**（`SPLIT_SPEED_SCALE`，下限 120px/s）、半径 ×0.8、`power` ×0.6、`generation+1`；分裂预算走 `egg.splitsLeft`（≤0 不分裂，`force` 可越过）；散布抖动走世界内建确定性随机 `nextRandom(world)`（v1.2 勘误：不再由调用方传 `rng`）。同屏 24 蛋硬上限由 battle 层投放策略把守——超额直接不生成并记统计（不排队、不报错）。分裂只由 heroes/combat/battle 层触发（`splitBudget/splitOnHit` 语义），物理不自发分裂。
 
 ### 4.6 弹道预测
 
-`predictTrajectory(origin, velocity, world, steps, opts)`：与 `stepWorld` **共用同一套积分与碰撞代码**（预览必须与实弹轨迹逐像素一致），但：纯函数不写 world、忽略动态蛋、跳过一切随机抖动、命中敌人或达 `maxBounces`（默认 3）提前截断。每固定步一个采样点，空世界恰好返回 `steps` 个（Round 2 解锁测试锁定）。预算 ≤0.6ms/次；UI 瞄准时每帧最多调用一次（节流）。
+- 权威实现是 `physics.predictTrajectoryDetailed`：幽灵蛋**不入 `world.eggs`**，经与实弹完全相同的 `advanceEgg` 推进（同一份积分/碰撞/冷却代码，虚线与落点逐像素一致）；自带独立时间轴，穿透/命中冷却与实弹同节奏；命中点取 reflect 之前的接触账本（`firstEnemyHit`）；对 world **零副作用**（`structuredClone` 相等已被测试锁定）。
+- `predictTrajectory(origin, velocity, world, stepsOrOpts)` 为稳定契约版，只返回点序列：第 4 参为数字 = 逐步采样，空世界恰好返回 `steps` 个（Round 2 解锁测试锁定）；为对象 = 瞄准 UI 抽稀形态（`maxSteps=360, maxBounces=3, sampleEvery=3`）。
+- 游戏侧 `core/sim.predictTrajectory` 复用同一 `prepareEgg`（冰面/追踪）+ `physics.stepEgg`，返回准星所需的 `{points, bounces, hitsEnemy, impact, target}`；停滞截断与实弹 `reapStalled` 同参数。battle 用「这一发真的会射出去的蛋」的参数（半径/弹性/穿透/追踪）做探针，瞄准变化时调用（每帧至多一次）。
+- 预算 ≤0.6ms/次；`aimAssist` 关闭时 `maxBounces` 降为 1。
 
 ### 4.7 确定性与测试接缝
 
-- body 自增 id 提供 `resetBodyIds()` 供测试复位；
-- `stepWorld` 自身零随机；需要随机的行为（分裂散布）由调用方传 `rng`；
+- 玩法随机走注入的 `createRng(seed)`（契约 §3）；物理内部随机走 `world.seed → world.rngState` 的 `nextRandom(world)`（无闭包 mulberry32，分裂散布用）——随机状态是纯数据，跟着世界一起快照/比对；
+- `stepWorld` 步进自身零随机、不读挂钟；蛋/body 自增 id 提供 `resetEggIds()` / `resetBodyIds()` 供测试与回放复位；
 - 同一 `(seed, 输入序列)` 在任何机器上产生相同世界状态——回放与基准的根基。
 
 ## 5. 战斗管线（`src/combat`，Opus-2）
@@ -305,11 +330,12 @@ intro → aiming ⇄ paused
 - Round 2 解锁测试即契约排期。当前状态（实码）：物理积分回收、预测逐点采样、18 英雄全员**已解锁**（`tests/physics.test.js`、`tests/heroes.test.js`）；`power:0→0` 行为**已实现**但对应 `describe.skip` 尚未摘除（`tests/combat.test.js`，见 §12.6），G1 摘除即可转绿。
 - probe/bench 只允许 import 各模块 `index.js`（出口即契约的自动校验）。
 
-## 12. 已知开放项（Round 2 期间维护）
+## 12. 已知开放项（Round 3 期间维护）
 
-1. 传送门配对与风扇力场曲线：契约只定形状（sensor circle / Field），参数由 O1 实测校准后回填 API_CONTRACT §6.1。
+1. ~~传送门配对与风扇力场曲线~~ **已实现**（`makePortalPair` 的 `link/facing/exitSpeed` 旋转出射、`makeFan` 的 `falloff` 线性衰减、单向门由 sim 出口降级）；Round 3 O1 继续按契约收口克隆安全与传送门语义（内部实现，出口面不变）。
 2. BOSS 技能脚本：behavior id 枚举已定，逐 BOSS 的行动表由 F3 落 `data/enemies.js` 后 O4 消费。
 3. ~~`defaultSave().settings` 扩展~~ **已定案**：settings 双键 + `pref()` 缺省即开启（§8），G1 断言无需再动。
 4. 降级阶梯阈值（§9.3）待 G2 真机基准回填修正。
-5. 物理切换（§4.0）：对拍 → adapters 切到 `src/physics` → `core/sim.js` 退役 + 发射台常量迁移；完成后删除本条与 §4.0 的过渡行。
-6. `power === 0 → damage === 0`：**实码已实现**（O2 Round 2 合入：`baseAttack` 尊重显式 0，`computeDamage` 对非正值出 0）；`tests/combat.test.js` 对应 `describe.skip` 只欠 G1 摘除。
+5. ~~物理切换~~ **已结案（v1.2）**：O4 已把 `core/sim.js` 重铸为 `src/physics` 之上的游戏侧适配层，预测/实弹同源（9308 采样点误差 0）；发射台常量定居 `core/sim.js`，v1.1 的迁表方案作废（§4.0）。
+6. `power === 0 → damage === 0`：**实码已实现**（O2 Round 2 合入：`baseAttack` 尊重显式 0，`computeDamage` 对非正值出 0）；`tests/combat.test.js` 对应 `describe.skip` 只欠 G1 摘除（Round 3 排期）。
+7. 战斗侧目前只消费 `resolveHit().damage`（经 `adapters.baseHit`），`effects/comboDelta` 未接——Round 3 O4 焦点项，接入后按 §5.1 管线补验收。

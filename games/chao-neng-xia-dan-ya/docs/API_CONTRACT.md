@@ -1,8 +1,9 @@
-# 超能下蛋鸭 · API 契约（v1.1）
+# 超能下蛋鸭 · API 契约（v1.2）
 
 - 所有者：Fable-1。读者：全体子代理。类型用 JSDoc 风格伪码表述，实现为原生 ESM JavaScript。
 - **凡标「已锁定」= 现有代码/测试已固化，改动必须先过变更流程；其余为定稿接口，实现者按此落地。**
 - v1.1 按实码修订四项（详见 §14）：§6.0 单一物理源、§9 `BONDS = SYNERGIES` 别名、§8.3 十八英雄权威表、§5 存档字段。
+- v1.2（Round 3）：物理切换已落地——§6 全节按 `src/physics` + `core/sim.js` 适配层实码定稿，删除双物理过渡表述；新增 §6.4 游戏侧适配层契约（详见 §14）。
 
 ## 0. 契约变更流程
 
@@ -32,7 +33,7 @@
 /** @typedef {'minion'|'elite'|'boss'} EnemyTier */
 ```
 
-角度约定：瞄准角 `angle` 为弧度，0 = 正下方，左负右正，钳制 `[-70°, +70°]`（`MAX_AIM_DEG = 70`）；蓄力 `power01 ∈ [0,1]` → 初速 `MIN_SPEED 220 + 500 × power01` px/s（`MAX_SPEED = 720`）。
+角度约定：0 = 正下方，左负右正，钳制 `[-70°, +70°]`（`MAX_AIM_DEG = 70`）。物理层（`launchEgg/aimToVelocity/predictAim`）收**弧度**；游戏侧 `core/sim.js` 的 `aimVector(angleDeg, speed)` 与 UI 用**角度制**（见 §6.4）。蓄力 `power01 ∈ [0,1]` → 初速 `MIN_SPEED 220 + 500 × power01` px/s（`MAX_SPEED = 720`）。
 
 ## 2. core/events —— 总线与事件目录
 
@@ -68,7 +69,7 @@ createBus() → {
 | `egg:spawn` | `{eggId, heroId, generation, x, y}` |
 | `egg:bounce` | `{eggId, bodyId, kind, x, y, nx, ny, speed}` |
 | `egg:split` | `{parentId, childIds:string[]}` |
-| `egg:recycle` | `{eggId, reason:'oob'|'sleep'|'consumed'}` |
+| `egg:recycle` | `{eggId, reason:'out'|'sleep'|'expired'|'stalled'|'consumed'}`（v1.2：对齐物理与 sim 实码回收词汇，`'oob'` 作废） |
 
 **战斗结算（battle 应用 HitResult 后发出）**
 
@@ -233,13 +234,16 @@ pref(save, key) → boolean                     // 「缺省即开启」读取�
 
 ## 6. physics（`src/physics/index.js`）
 
-### 6.0 单一物理源（v1.1，上位条款见 ARCHITECTURE §4.0）
+### 6.0 单一物理源（v1.2 定稿：切换已完成，上位条款见 ARCHITECTURE §4.0）
 
-- `src/physics/**`（O1）是**唯一权威积分器**；本节描述其真实导出。
-- `core/sim.js`（O4）为过渡实现，**已冻结**：战斗当前仍从它取 `createWorld/stepWorld/predictTrajectory` 与发射台常量（`LAUNCH_X=240, LAUNCH_Y=92, NEST_Y=648, MAX_AIM_DEG=70, MIN_SPEED=220, MAX_SPEED=720`）。对拍通过后由 `core/adapters.js` 统一切到 `src/physics`，`core/sim.js` 退役、发射台常量迁往 `src/data`。
-- 铁律：预测虚线与实弹必须同一套积分与碰撞代码；同一构建禁止两套积分器同时驱动战斗；战斗侧只准经 `core/adapters.js` 访问物理。
+- `src/physics/**`（O1）是**唯一权威积分器**；§6.1–§6.3 描述其真实导出面。
+- `core/sim.js`（O4）是其**游戏侧适配层**（非积分器，自身零积分代码）：实体镜像、事件→命中钩子翻译、预步力、停滞回收，并承载发射台常量（`LAUNCH_X=240, LAUNCH_Y=92, NEST_Y=648, MAX_AIM_DEG=70, MIN_SPEED=220, MAX_SPEED=720, MAX_EGG_SPEED=1900`）。battle / ui / modes 对物理的一切访问经它进行（契约见 §6.4）。v1.1 的「冻结 / 对拍先行 / 退役 / 常量迁往 `src/data`」过渡条款全部作废。
+- `core/adapters.js`（O4）只做能力探测与如实报告（`describeCaps`）；物理链路**无降级分支**，combat 仍是「上游可用则用、异常时内置兜底」。
+- 铁律：预测虚线与实弹必须同一套积分与碰撞代码（实码：两者都只经 `advanceEgg` 推进，sim 预步力由 `prepareEgg` 双路共用）；任何目录禁止再出现第二套积分器。
 
-### 6.1 常量（实码导出，`src/physics/constants.js`）
+### 6.1 常量（v1.2 按 `physics/index.js` 实际出口）
+
+经 `index.js` 导出（外部可依赖）：
 
 | 常量 | 值 | 说明 |
 | --- | --- | --- |
@@ -247,127 +251,235 @@ pref(save, key) → boolean                     // 「缺省即开启」读取�
 | `GRAVITY` | 1680 | px/s²，向下 |
 | `FIXED_DT` | 1/120 | 已锁定（`tests/physics.test.js` 世界时钟采样） |
 | `EGG_RADIUS` | 12 | 默认半径（合法域 10–14） |
-| `EGG_RESTITUTION` | 0.85 | 默认弹性（合法域 0.78–0.92） |
-| `EGG_DRAG` | 0.02 | 每秒速度衰减比例（内部，未出 index） |
-| `MAX_SPEED` | 2600 | px/s 限速 |
-| `MAX_SUBSTEPS` / `SUBSTEP_TRAVEL_RATIO` | 8 / 0.5 | CCD 细分（内部） |
-| `SLEEP_SPEED` / `SLEEP_TIME` / `SPAWN_GRACE` | 8 / 0.6 / 0.2 | 睡眠判定 |
-| `OUT_MARGIN_BOTTOM/SIDE/TOP` | 20 / 64 / 240 | 出界余量；底部即 y > 820 回收（测试已解锁） |
-| `EGG_LIFETIME` | 24 | 蛋最长存活秒数，防永动球 |
+| `EGG_RESTITUTION` | 0.85 | 默认弹性（GDD 域 0.78–0.92；物理夹取 0..1.4） |
+| `MAX_SPEED` | 2600 | px/s 限速默认；游戏世界建为 1900（sim `MAX_EGG_SPEED` 覆盖） |
+| `SLEEP_SPEED` / `SLEEP_TIME` | 8 / 0.6 | 睡眠判定（保护期 `SPAWN_GRACE = 0.2` 为内部值） |
+| `MIN_CONTACT_IMPACT` | 24 | 低于此法向冲击只修正位置：不计反弹、不发事件 |
+| `CONTACT_COOLDOWN` | 0.08 | 同蛋对同体重复命中的 `fresh` 冷却窗口 |
 | `SPLIT_SPEED_SCALE` | 0.7 | 分裂蛋速度继承比例 |
-| `PREDICT_MAX_BOUNCES` / `PREDICT_MAX_STEPS` / `PREDICT_SAMPLE_EVERY` | 3 / 360 / 3 | 弹道预测默认值 |
-| `GRID_CELL` | 48 | 宽相网格边长（内部） |
-| `MATERIAL` | 表 | wall/brick/peg/bumper/ramp/ice/rubber 材质预设 |
+| `PREDICT_MAX_BOUNCES` | 3 | 弹道预测默认反弹上限 |
+| `MATERIAL` | 表 | wall/brick/peg/bumper/ramp/ice/rubber/enemy 材质预设 |
 
-蛋 / 静态体的**数量硬上限（24 / 80）不是物理导出**：physics 不设限，上限是 battle 层（modes/O4）的投放策略，超额静默不生成并记统计——v1.0 把 `MAX_EGGS/MAX_STATICS/KILL_Y` 列为 physics 冻结导出名系笔误，作废。
+内部常量（未出 `index.js`，值仅供理解，**禁止外部依赖**）：`EGG_DRAG 0.02`、`EGG_FRICTION 0.06`、`MAX_SUBSTEPS 8`、`SUBSTEP_TRAVEL_RATIO 0.5`、`SPAWN_GRACE 0.2`、`OUT_MARGIN_BOTTOM/SIDE/TOP 20/64/240`（底部即 y > 820 回收，测试锁定）、`EGG_LIFETIME 24`、`RESTING_VELOCITY 42`、`SPLIT_SPREAD π/3`、`PORTAL_COOLDOWN 0.12`、`HIT_LOG_SIZE 8`、`GRID_CELL 48`、`MAX_EVENTS 512`、`PREDICT_MAX_STEPS 360`、`PREDICT_SAMPLE_EVERY 3`。
 
-### 6.2 类型
+蛋 / 静态体的**数量硬上限（24 / 80）不是物理导出**：physics 不设限，上限是 battle 层（O4）的投放策略，超额静默不生成并记统计——v1.0 把 `MAX_EGGS/MAX_STATICS/KILL_Y` 列为 physics 冻结导出名系笔误，作废。
+
+### 6.2 类型（v1.2 按实码重写）
 
 ```js
 /** @typedef Egg —— 实码 createEgg(opts) 产物（字段名以此为准）
  *  id:string, kind:'egg', x,y,vx,vy:number,
- *  prevX,prevY:number,             // 渲染插值用，stepWorld 每步开头快照
- *  r:number,                       // 半径。【v1.1 勘误】实码字段是 r，不是 radius；
- *                                  // v1.0「radius 已被测试锁定」声明作废（core/sim 同用 r）
- *  mass,invMass:number, restitution:number, friction:number,
+ *  prevX,prevY:number,             // 渲染插值用，advanceEgg 每步开头快照
+ *  r:number,                       // 半径。【v1.1 勘误】实码字段是 r，不是 radius
+ *                                  //（normalizeEgg 兼容 radius 别名的鸭子类型蛋）
+ *  mass,invMass:number, restitution:number(夹取 0..1.4), friction:number,
  *  drag:number, gravityScale:number,
  *  alive:boolean, sleeping:boolean, restTimer:number, age:number, lifetime:number,
  *  bounces:number,                 // 累计反弹（碰撞流读取）；另有 wallHits/pegHits/
  *                                  // brickHits/eggHits/portalUses 分类计数
- *  splitsLeft:number, pierce:number,
+ *  // —— 接触账本（v1.2 新增契约，一律在 reflect 之前落账）——
+ *  contacts:number, enemyContacts:number,
+ *  firstContact:Contact|null, firstEnemyContact:Contact|null, lastContact:Contact|null,
+ *  hitLog:Array<{id,time}>,        // 最近命中记录（定长 8），供 fresh 冷却判定
+ *  splitsLeft:number,              // 分裂预算（splitEgg 消耗，≤0 不再分裂）
+ *  pierce:number,                  // 剩余穿透：>0 时穿过可碎体不反弹
  *  power:number,                   // 战斗层伤害载荷，物理只透传（见 §7.2）
  *  element:Element, team:'player'|'enemy', heroId:string|null,
- *  generation:number,              // 0 主蛋，分裂 +1，上限 2
- *  tags:object, data:any, angle:number, spin:number
+ *  generation:number,              // 0 主蛋，分裂 +1
+ *  tags:object, data:any, angle:number, spin:number, portalCooldown:number
+ */
+
+/** @typedef Contact —— noteContact 快照（reflect 之前的入射帧）
+ *  seq, eggId, bodyId, kind, team, enemy:boolean,
+ *  x,y:number,                     // 接触点（碰撞盒表面）
+ *  nx,ny:number, depth:number,     // 出射法线（指向把蛋推离物体的方向）
+ *  ex,ey:number, vx,vy,speed:number,  // 蛋心与入射速度（reflect 前）
+ *  impact:number,                  // 法向接近速度；分离中为负
+ *  time, step, fresh:boolean, pierced:boolean, ghost:boolean
+ *  // 命中判定契约：反弹会把蛋推出碰撞盒，事后重叠检测必然 miss——
+ *  // 「打没打中」一律读 egg.enemyContacts / firstEnemyContact 或 contact 事件
  */
 
 /** @typedef StaticBody —— 与 O1 工厂字段一致
  *  id:string,
  *  shape:'segment'|'circle'|'aabb',
- *  kind:'wall'|'ramp'|'brick'|'peg'|'bomb-brick'|'ice'|'portal'|'pad'|'enemy',
- *  active:boolean, sensor:boolean,
- *  restitution:number, friction:number,
+ *  kind:'wall'|'ramp'|'brick'|'peg'|'bumper'|'ice'|'rubber'|'portal'|'enemy'|…,
+ *  active:boolean, sensor:boolean,  // sensor 只发事件不反弹
+ *  restitution:number, friction:number,   // 缺省取 MATERIAL[kind]
  *  breakable:boolean, hp:number, maxHp:number,
- *  explosive:boolean, blastRadius:number, blastPower:number,
+ *  explosive:boolean, blastRadius:number, blastPower:number,   // 炸弹砖
  *  element:Element|null, team:'neutral'|'enemy',
- *  entityId?:string,               // kind='enemy'|'brick' 时关联战斗实体
- *  tags:object, data:any,
+ *  tags:object, data:any,          // data 反向指回游戏实体（sim 层约定）
  *  hits:number, lastHitTime:number,
- *  aabb:{minX,minY,maxX,maxY},     // 缓存包围盒，改坐标后调 computeAABB(body)
- *  // shape==='segment': x1,y1,x2,y2, radius(半厚), oneWay, nx,ny, length, angle
- *  // shape==='circle':  x,y,r
- *  // shape==='aabb':    x,y(中心), hw,hh, w,h
+ *  aabb:{minX,minY,maxX,maxY},     // 缓存包围盒；移动用 moveBody，或改坐标后调 computeAABB
+ *  // shape==='segment': x1,y1,x2,y2, halfThickness(半厚——v1.2 勘误：非 radius),
+ *  //                    oneWay, nx,ny, length, angle
+ *  // shape==='circle':  x,y,r（bumper 另有 boost：命中沿法线附加速度）
+ *  // shape==='aabb':    x,y(中心), hw,hh, w,h（工厂可收 anchor:'topleft'，构造期转换一次）
+ *  // kind==='portal'：sensor 圆，link(另一端 id), facing(朝向|null), exitSpeed(出口保底速度)
+ *  // 敌人 = kind:'enemy' 的 AABB（v1.2 勘误：非 circle），经 body.data 关联战斗实体
  */
 
-/** @typedef Field
- *  id:string, kind:'fan'|'magnet'|'slow',
- *  x,y,w,h:number,                 // 作用区（AABB，中心式）
- *  ax,ay:number,                   // fan：恒定加速度
- *  strength?:number                // magnet/slow 系数
+/** @typedef Field —— 不参与碰撞，积分前贡献加速度/阻尼；判别字段 type（v1.2 勘误：非 kind）
+ *  { id, type:'fan',  x,y,w,h,hw,hh, angle, power, ax,ay, falloff }  // 区域恒定加速度，
+ *                                        // falloff∈[0,1] 沿风向线性衰减
+ *  { id, type:'wind', ax,ay }            // 全图恒定风
+ *  { id, type:'gravity', x,y,w,h,hw,hh, gravity }   // 区域内覆盖世界重力
+ *  { id, type:'slow', x,y,w,h,hw,hh, keep }         // 区域内额外阻尼（每秒保留比例）
+ *  // 磁铁('magnet')未实现：追踪转向是 sim 层预步力（egg.homing），不是物理力场
  */
 
-/** @typedef PhysicsEvent —— world.events 元素（对象池化）
- *  {type:'contact', eggId, bodyId, kind, x, y, nx, ny, speed}
- *  {type:'egg-egg', aId, bId, x, y, speed}
- *  {type:'sensor',  eggId, bodyId, kind, x, y}
- *  {type:'sleep',   eggId, x, y}
- *  {type:'recycle', eggId, reason:'oob'|'sleep'|'consumed'}
+/** @typedef PhysicsEvent —— world.events 元素；emit 统一盖 time/step 戳；
+ *  缓冲上限 512 丢最旧；用 drainEvents(world) 取走并清空。
+ *  事件携带对象引用（egg/body），不是裸 id（v1.2 勘误 v1.0 形状）：
+ *  {type:'spawn',   egg, x, y}
+ *  {type:'contact', egg, body, contact:Contact}      // reflect 前的接触账本
+ *  {type:'bounce',  egg, body|null, surface, x, y, nx, ny, impact}  // body=null 为解析式边界
+ *  {type:'pierce',  egg, body, surface, x, y, nx, ny, impact}
+ *  {type:'sensor',  egg, body, x, y}
+ *  {type:'portal',  egg, body, to, fromX, fromY, x, y}
+ *  {type:'eggHit',  egg, other, x, y, nx, ny, impact}
+ *  {type:'break',   body, x, y, source}              // damageStatic 打碎
+ *  {type:'split',   egg, children, x, y}
+ *  {type:'explode', x, y, radius, power, source, eggs, statics, destroyed}
+ *  {type:'recycle', egg, reason:'out'|'sleep'|'expired'|'consumed'|'split'|…}
+ *  // v1.0 的 'egg-egg'/'sleep' 事件名与 'oob' 回收 reason 作废
  */
 
-/** @typedef World
- *  { time:number, eggs:Egg[], statics:StaticBody[], fields:Field[],
- *    events:PhysicsEvent[] }       // eggs 只含活跃蛋；回收即移除（已锁定）
+/** @typedef World —— createWorld(opts) 产物
+ *  { eggs:Egg[], statics:StaticBody[], fields:Field[], time:number,  // 脚手架契约字段
+ *    dt:number(1/120), gravity:number, maxSpeed:number,
+ *    bounds:{left,top,right,bottom},
+ *    boundsMode:{left,right,top:'bounce', bottom:'open'},  // 边界解析式处理，底部开放回收
+ *    wallRestitution:number, wallFriction:number,
+ *    stepIndex:number, accumulator:number,
+ *    events:PhysicsEvent[], pendingBlasts:Blast[],
+ *    stats:{bounces,wallHits,pegHits,brickHits,eggHits,portalUses,breaks,recycled,spawned},
+ *    launch:{x,y},                  // 发射台（sim 层覆盖为 240,92）
+ *    contactSeq:number, contactCooldown:number,
+ *    seed:number, rngState:number } // 世界内建确定性随机（nextRandom）
+ *  // eggs 只含活跃蛋；回收即移除（已锁定）。statics 只放关卡自定义体，
+ *  // 左右墙/顶板由 bounds 解析式反弹（addArenaWalls 可改显式线段）。
+ *  // 预测零副作用以 structuredClone 深比较锁定（tests/physics.test.js）。
  */
 ```
 
-### 6.3 函数（v1.1 按 `src/physics/index.js` 实码导出面）
+### 6.3 函数（v1.2 按 `src/physics/index.js` 实码导出面）
 
 ```js
-// 世界与步进（已锁定：createWorld 空数组 + time 0；stepWorld(world, dt=FIXED_DT)）
-createWorld(opts?) → World
+// 世界与步进（已锁定：createWorld 空数组 + time 0；stepWorld 每调恰推进一步）
+createWorld(opts?) → World       // opts: gravity/dt/seed/maxSpeed/bounds/boundsMode/
+                                 //       statics/fields/walls
 stepWorld(world, dt = world.dt ?? FIXED_DT) → world
-resetWorld(world) / advanceWorld(world, seconds)
+advanceWorld(world, elapsed, maxSteps = 8) → {steps, alpha}   // 变帧累积驱动，alpha 供插值
+resetWorld(world) → world                      // 清空到空场（保留参数与种子）
 drainEvents(world) → PhysicsEvent[]            // 取走并清空事件缓冲（上限 512，溢出丢最旧）
 drainBlasts(world) → Blast[]                   // 取走待结算爆炸
-isSettled(world) → boolean                     // 全蛋回收/静止（回合推进判据）
+isSettled(world) → boolean                     // 全蛋回收（回合推进判据）
 activeEggCount(world) → number
+emit(world, event) → event                     // 入队并盖 time/step 戳
+nextRandom(world) → [0,1)                      // 世界内建确定性随机（rngState 推进）
 
 // 蛋
-createEgg(opts) → Egg / normalizeEgg(egg)      // 见 §6.2；非有限坐标防御（测试锁定）
-spawnEgg(world, opts) → Egg                    // 入场并发 spawn 事件；数量上限归 battle 层
+createEgg(opts) → Egg / normalizeEgg(egg)      // 见 §6.2；鸭子类型补齐，兼容 radius 别名
+spawnEgg(world, opts|egg) → Egg                // 入场并发 spawn 事件；数量上限归 battle 层
 launchEgg(world, {aim, speed, x?, y?, ...}) → Egg   // aim 弧度 0=正下；speed 220–720
-aimToVelocity(aim, speed, out?) → Vec2         // UI 预览与发射共用
+aimToVelocity(aim, speed, out?) → Vec2         // UI 预览与发射共用（弧度）
 recycleEgg(world, egg, reason='consumed')
-splitEgg(world, parent, {count?, spread?, rng?}) → Egg[]  // 继承 0.7 速度、generation+1（≤2）
-resetEggIds()
+renderPosition(egg, alpha, out?) → Vec2        // prev↔now 渲染插值
+resetEggIds() / resetEggContacts(egg) / lastHitTimeOf(egg, bodyId) → time|-1
+
+// 步进内核（sim 适配层 / 测试用接缝；普通调用方走 stepWorld 即可）
+advanceEgg(world, egg, dt, ctx) → hits     // 兜底→prev 快照→stepEgg；
+                                           // stepWorld 与预测的唯一共同推进点（同源保证）
+stepEgg(world, egg, dt, ctx) → hits        // 子步 CCD + 碰撞
+createStepContext(emit?) / resetStepContext(ctx, time?)   // ghost 上下文（预测用）
+noteContact(world, egg, body, manifold, ctx, pierced?) → Contact|null
+//  接触账本：必须在 reflect / 位置修正之前调用（命中判定契约，见 §6.2 Contact）
 
 // 静态体与力场
-addStatic(world, body) / removeStatic(world, bodyId) / getStatic(world, bodyId)
-damageStatic(world, bodyId, dmg) / markStaticsDirty(world) / syncStatics(world)
-addField(world, field) / removeField(world, fieldId)
-addArenaWalls(world)
+addStatic(world, body|body[]) / removeStatic(world, body|id) / getStatic(world, id)
+damageStatic(world, body, amount, ctx?) → {destroyed, hp, body}
+//  物理只管生死与拓扑；破碎发 break 事件、炸弹砖爆炸入 pendingBlasts
+markStaticsDirty(world) / syncStatics(world)
+addField(world, field|field[]) / removeField(world, field)
+addArenaWalls(world, opts?)                // 边界改显式线段，对应解析边转 open
 
 // 工厂（shapes）
 makeWall / makeSegment / makeRamp / makeBrick / makeBrickField / makeBombBrick
-makePeg / makePegGrid / makeBumper / makeIce / makePortalPair
+makePeg / makePegGrid / makeBumper / makeIce / makePortalPair / makeEnemy
 makeFan / makeWind / makeSlowField / makeGravityField
+moveBody(body, x, y, anchor?) → boolean    // 敌人漂移/下压用，内部重算 AABB
 normalizeBody(body) / computeAABB(body) / resetBodyIds()
+fieldContains(field, x, y) / isEnemyBody(body)
 
 // 查询与范围结算
 queryCircle / queryAABB / nearestEgg / bodyCenter / distanceToBody
-explode(world, {x,y,radius,power}) / resolveBlasts(world)
+overlapCircleBody / enemiesOverlapping / eggEnemyOverlaps / enemyBodies
+//  注意：eggEnemyOverlaps 只答「当前几何重叠」；「打没打中」读接触账本（§6.2）
+explode(world, {x, y, radius, power, damage?, falloff?, ...}) → {eggs, statics, destroyed}
+resolveBlasts(world, opts?) → results[]    // 炸弹砖连锁统一展开（防深递归）
+splitEgg(world, egg, {count=2, spread=π/3, speedScale=0.7, radiusScale=0.8,
+                      powerScale=0.6, minSpeed=120, jitter?, consume?, force?}) → Egg[]
+//  分裂预算走 egg.splitsLeft（force 可越过）；子蛋 generation+1；散布抖动走
+//  nextRandom(world)——v1.1「由调用方传 rng」作废（v1.2 勘误）
 
-// 弹道预测（纯函数不写 world，测试锁定；与 stepEgg 共用同一积分/碰撞路径）
+// 弹道预测（纯函数零副作用：structuredClone 深比较已锁定；与实弹共用 advanceEgg）
 predictTrajectory(origin:Vec2, velocity:Vec2, world, optsOrSteps?) → Array<{x,y}>
 //  第 4 参两种形态（实码 normalizeArgs）：
-//  · number = steps：每固定步 1 个采样，空世界恰返回 steps 个（测试已解锁）
+//  · number = steps：逐步采样，空世界恰返回 steps 个（测试锁定）
 //  · object：{ maxSteps=360, maxBounces=3, sampleEvery=3, includeOrigin=true,
-//              dt?, r?, restitution?, pierce? } —— 瞄准 UI 用的抽稀形态
+//              stopOnEnemy?, dt?, r?, restitution?, friction?, drag?, pierce? }
 predictTrajectoryDetailed(origin, velocity, world, opts?) →
   { points, bouncePoints, bounces, steps, duration, end,
-    reason:'bounces'|'out'|'steps'|'sensor'|'empty' }
-predictAim(world, aim, speed, opts?)           // 发射台语义的便捷封装
+    reason:'bounces'|'out'|'steps'|'enemy'|'empty',
+    contacts, contactCount, enemyContacts, hitsEnemy,
+    firstHit, firstEnemyHit, impact }      // 命中点 = reflect 前的接触账本
+predictAim(world, aim, speed, opts?)       // 发射台语义的便捷封装（弧度）
+
+// 对拍与桥接（O1 回归工具，compat.js）
+createSimBridge(simWorld, opts?) / compareTrajectories / normalizePoints / toSimPrediction
+
+// 碰撞与数学（供 sim / 关卡 / 测试复用）
+circleVsSegment / circleVsAABB / circleVsCircle / collideCircleBody / createManifold
+resolveStaticContact / resolveEggPair
+TAU / clamp / closestPointOnSegment / distance / lerp / mulberry32 / normalizeAngle / reflect
 ```
+
+### 6.4 游戏侧适配层 `core/sim.js`（O4；v1.2 新增——battle / ui 消费物理的唯一入口）
+
+自身零积分代码（全部 import 自 `physics/index.js`），对战斗与渲染提供游戏语义：
+
+```js
+// 常量（定居于此，O4 所有；v1.1「迁往 src/data」方案作废）
+LAUNCH_X = 240 (WORLD_W/2), LAUNCH_Y = 92, NEST_Y = 648
+MAX_AIM_DEG = 70, MIN_SPEED = 220, MAX_SPEED = 720
+MAX_EGG_SPEED = 1900               // 游戏世界飞行限速（覆盖物理默认 2600）
+FIXED_DT / GRAVITY / WORLD_W / WORLD_H     // physics 再导出
+
+createWorld(opts?) → GameWorld     // physics 世界 + 游戏实体视图：
+//  pegs/bricks/enemies/slopes/fans/ice/portals + nestY——渲染与战斗读实体；
+//  物理体挂在实体 ._body 上、body.data 反向指回实体（syncStage 派生）
+syncStage(world)                   // 实体增删改 → 物理体镜像（每固定步自动调用）
+makeEgg(opts) → Egg                // 物理蛋 + 战斗层字段（owner/palette/damageMul/growth/
+                                   // homing/splitBudget/splitOnHit/crit/…）
+aimVector(angleDeg, speed) → {vx, vy}      // 注意：角度制（physics.aimToVelocity 是弧度）
+aimFromDrag(dx, dy) → {angle, power, speed}   // 拖拽位移 → 瞄准参数
+stepWorld(world, dtFrame, hooks) → world
+//  按 1/120 累积固定步（≤8/帧；场上无蛋清零余量），每步：syncStage → 预步力
+//  （冰面阻力 0.02→0.006、追踪转向——实弹与预测共用）→ physics.stepWorld →
+//  停滞回收（|v|<45px/s 持续 0.6s）→ 事件翻译成命中钩子：
+//  hooks = { onWall(egg, side), onSlope(egg, slope, ev), onPeg(egg, peg, ev),
+//            onBrick(egg, brick, ev),
+//            onEnemy(egg, enemy, ev),     // 同蛋对同敌 0.08s 去重
+//            onPortal(egg, portal), onRecycle(egg, reason) }
+predictTrajectory(origin, velocity, world, opts?) →
+  { points:[[x,y]], bounces, hitsEnemy, impact:[x,y]|null, target }
+//  幽灵蛋走 physics.stepEgg + 同一份预步力；跑完还原事件/统计/命中计数，对外零副作用
+nextId() → number                  // 游戏实体自增 id
+```
+
+关卡单向传送门语义：sim 把出口端 `kind` 降级为 `portalExit`（纯出口，不再回传）。
 
 ## 7. combat（`src/combat/index.js`）
 
@@ -749,3 +861,8 @@ initAudio(bus, settings) → {setEnabled(sfx, music), suspend(), resume()}
   3. **§8.3 十八英雄权威表**：18 只（4/4/5/5）+ `RESERVED_HERO_IDS = ["lark","unlucky_duck"]`；v1.0 的 20 只表与旧 skill id 作废，历史别名由 `heroes/skills.js` `SKILL_ALIASES` 容错；§1 枚举同步修订（School 四流派、Race 权威写法 `chicken`、Rarity `r|sr|ssr`、Element data 层用 `null` / combat 层用 `physical`）。
   4. **§5 存档字段**：schema 按 `core/store.js` + `progression/save.js` 实码重写——settings 恒双键 + `pref()` 缺省即开启；`FishBuff = {kind,value,name,battles}`（v1.0 `BattleBuff` 形状作废）；新增 §5.3 养成扩展命名空间（`progressionVersion/dexEntries/fishing/rogue`）；`writeSave` 不发总线事件；`normalizeSave` 保留未知字段（非「丢弃」）。
   5. **§7 战斗**：`HitResult` 按实码补全（`comboDelta` 恒 1 作废：1 / 连击流 2 / 无效目标 0；正伤害下限 1）；伤害公式改为 `computeDamage` 实码段序；`power===0 → damage===0` **已实现**（O2 Round 2 收紧），对应 skip 测试待 G1 摘除。
+- v1.2（Round 3，双物理表述定稿，Fable-1）：
+  1. **§6.0 单一物理源已落地**：战斗全链路切到 `src/physics`（Round 2 O4 合入，预测/实弹 9308 采样点误差 0）；`core/sim.js` 重铸为其**游戏侧适配层**（零积分代码，实体镜像 + 事件翻译 + 预步力 + 停滞回收）；v1.1 的「冻结 / 对拍先行 / 退役路线 / 发射台常量迁往 `src/data`」过渡条款全部作废——发射台常量定居 `core/sim.js`（O4 所有）。新增 **§6.4** 记录适配层契约（游戏形态 `createWorld/syncStage/makeEgg/aimVector(角度制)/aimFromDrag/stepWorld(world,dt,hooks)/predictTrajectory`、命中钩子词汇表、`MAX_EGG_SPEED = 1900`）。
+  2. **§6.1–§6.3 按实码导出面重写**：常量表对齐 `physics/index.js` 实际出口（内部常量单列，禁止外部依赖）；新增**接触账本契约**（`noteContact` 在 reflect 之前落账、`Contact` 快照 typedef、`firstEnemyHit` 命中判定——事后重叠检测必然 miss）；事件词汇更新为 `spawn/contact/bounce/pierce/sensor/portal/eggHit/break/split/explode/recycle`，事件携带对象引用并盖 `time/step` 戳（v1.0 `egg-egg`/`sleep` 事件与 `'oob'` 回收 reason 作废）；导出面新增 `advanceEgg/stepEgg/createStepContext/renderPosition/nextRandom/makeEnemy/moveBody/eggEnemyOverlaps/compat 对拍工具/碰撞与数学原语`。
+  3. **破坏性勘误**（v1.2）：敌人碰撞盒为 `kind:'enemy'` 的 **AABB**（v1.1 的 circle 作废）；segment 半厚字段为 `halfThickness`（非 `radius`）；`Field` 判别字段为 `type`（`fan/wind/gravity/slow`，磁铁未实现——追踪是 sim 预步力）；NaN/非有限蛋**就地修复不回收**（v1.1「按 oob 回收」作废，`tests/physics.test.js` 锁定）；`splitEgg` 散布走 `nextRandom(world)` 且分裂预算走 `egg.splitsLeft`（「调用方传 rng」「generation 上限 2 停止分裂」作废）；世界内建确定性随机（`seed/rngState`）。
+  4. 其余章节（§5 存档、§7 战斗、§8 英雄、§9 数据、§10–§13）沿用 v1.1，本轮未变更。

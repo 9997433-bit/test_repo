@@ -1,6 +1,6 @@
-# 超能下蛋鸭 · 文件所有权（Round 2 修订 v1.1）
+# 超能下蛋鸭 · 文件所有权（Round 3 修订 v1.2）
 
-上位契约：`.agent_workspace/ARCHITECTURE.md`（角色 → 目录）。本文件细化到文件粒度并补充边界裁决，冲突时以本文件为准（由 Fable-1 维护）。v1.1 追加 §3.6–§3.9 四条 Round 2 裁决（单一物理源 / BONDS 别名 / 18 英雄口径 / 存档字段）。
+上位契约：`.agent_workspace/ARCHITECTURE.md`（角色 → 目录）。本文件细化到文件粒度并补充边界裁决，冲突时以本文件为准（由 Fable-1 维护）。v1.1 追加 §3.6–§3.9 四条 Round 2 裁决（单一物理源 / BONDS 别名 / 18 英雄口径 / 存档字段）；v1.2（Round 3）把 §3.6 由切换计划改写为已落地的适配层定稿。
 
 ## 1. 所有权总表
 
@@ -35,7 +35,11 @@
 3. **敌人实体**：物理侧 `kind:'enemy'` 静态体由 O1 提供工厂；敌人 HP/元素状态等战斗实体归 battle 控制器（O4 持有、调用 O2 纯函数结算）；数值定义归 F3（`data/enemies.js`）。
 4. **`defaultSave()` 扩展**：~~O3 落新字段时 G1 须同步更新 settings 断言~~ **已结案（v1.1）**：settings 恒双键 + `pref()` 缺省即开启，`defaultSave()` 快照不再变化，G1 断言保持原样；后续规则见 §3.9。
 5. **`heroes/skills/` 实现 vs `combat` 结算**：技能 hook 实现归 O3（heroes 目录），hook 触发时机与 HeroApi 由 O4 的 battle 提供，元素/伤害计算一律回调 O2 的纯函数——三方都不得内联复制对方公式。
-6. **单一物理源（Round 2 P0，上位条款 ARCHITECTURE §4.0）**：`src/physics/**` 归 O1，为唯一权威积分器；`core/sim.js` 归 O4，**冻结**（只修 bug）。对拍脚本归 G2（`scripts/`）；切换动作（`core/adapters.js` 改指向 + `core/battle.js`、`ui/render.js`、`ui/screens/battle.js` 摘除对 `sim.js` 的直接 import）归 O4，验收标准归 O1 + G1。切换验收后：`core/sim.js` 由 O4 删除或缩减为纯常量；发射台常量（`LAUNCH_X/LAUNCH_Y/NEST_Y/MAX_AIM_DEG/MIN_SPEED/MAX_SPEED`）迁入 `src/data/**`（F3 落表、O4 消费）。过渡期任何人不得给 `core/sim.js` 加特性。
+6. **单一物理源（Round 2 P0 → v1.2 已定稿，上位条款 ARCHITECTURE §4.0）**：切换已完成——`src/physics/**`（O1）是唯一积分器；`core/sim.js`（O4）重铸为其**游戏侧适配层**（实体镜像 `syncStage`、物理事件→命中钩子翻译、预步力、停滞回收、发射台常量），**其中不得再出现任何积分 / 碰撞实现**。裁决细则：
+   - 积分、碰撞、CCD、回收语义的行为改动只准发生在 `src/physics`（O1）；sim 层的镜像 / 翻译 / 游戏节奏裁决归 O4；两侧以 API_CONTRACT §6.3 / §6.4 的签名为界。
+   - 发射台常量（`LAUNCH_X/LAUNCH_Y/NEST_Y/MAX_AIM_DEG/MIN_SPEED/MAX_SPEED/MAX_EGG_SPEED`）**定居 `core/sim.js`（O4 所有）**；v1.1 的「迁往 `src/data`」方案作废，再迁移须走契约变更（API_CONTRACT §0）。
+   - battle / ui / modes 只准经 `core/sim.js` 访问物理，不得直接 import `src/physics`；`core/adapters.js`（O4）只做能力探测与 combat 兜底，`describeCaps()` 必须如实报告在用链路。
+   - 对拍 / 桥接工具（`physics/compat.js` 的 `createSimBridge/compareTrajectories`）归 O1；基准脚本归 G2（`scripts/`）。
 7. **BONDS = SYNERGIES 投影别名（Round 2 P0，已落地，契约 API_CONTRACT §9.1）**：`data/synergies.js` 同文件维护 `SYNERGIES`（设计语汇）与 `BONDS`（combat 投影 `{schools, races}`）+ `BOND_TABLE` 别名，归 F3——两表数值同源，同步维护是 F3 责任；`combat/bonds.js` 的 `synergyBondTable()` / `translateSynergyMod` 翻译链归 O2；`heroes/squad.js` 的 `buildBonds()`（主读 `BONDS.schools`）归 O3。**羁绊数值只准改 `data/synergies.js`**；改 combat/heroes 内置兜底表数值 = 越权。
 8. **18 英雄口径（Round 2 P1）**：`data/heroes.js` 的 18 只 + `RESERVED_HERO_IDS` 是唯一名册（F3 所有）；`core/catalog.js`（O4）与 `progression/catalog.js`（O3）只做表现归一化与注册，不得自增自删英雄或改数值；技能 id 以 `data/skills.js` 为准，旧名映射只准写进 `heroes/skills.js` 的 `SKILL_ALIASES`（O3）。文案/注释/测试中的「20 英雄」一律按 18 修正，修正随各自所有文件走。
 9. **存档字段（契约 API_CONTRACT §5）**：`core/store.js`（O4）独占 `defaultSave()` 基础字段与 `settings` 双键快照——扩展布尔设置走 `pref()` 模式，禁止改快照（G1 `toEqual` 断言依赖）；O3 的扩展字段只准经 `progression/save.js` 的 `ensureProgression` 以独立命名空间（`dexEntries/fishing/rogue/progressionVersion`）只增补齐；其他所有者需要新存档字段时向 O4（基础字段）或 O3（养成命名空间）提诉求，不得自写。
