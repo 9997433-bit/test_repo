@@ -5,7 +5,7 @@ import { createCells } from "../board/grid.js";
 import { canMerge, mergeUnits, applyShenbing } from "../board/merge.js";
 import { scanAwaken, applyAwaken } from "../board/awaken.js";
 import { HAND_LIMIT, START_HEARTS, START_MANTOU, recruitCost } from "../data/units.js";
-import { CURRICULUM_ROLLS, RECRUIT_WEIGHTS, resetRecruitRolls, rollRecruit, setRecruitRolls } from "../data/recruit.js";
+import { resetRecruitRolls, rollRecruit, setRecruitRolls } from "../data/recruit.js";
 import { enqueueWave, tickSideCombat, maybeAdvanceWave, checkWinner } from "../combat/sim.js";
 
 export const SIDE_IDS = ["player", "ai"];
@@ -200,20 +200,6 @@ export function createGame(opts = {}) {
       if (Number.isFinite(count) && count > 0) total += Math.floor(count);
     }
     return total;
-  }
-
-  /**
-   * `rollRecruit` 自己的课程计数挂在模块级 WeakMap 上、以 rng 实例为键：
-   * restart 复用同一个 rng 不清零，load 换了实例又接不上，掉落表阶段会漂移。
-   * 这里每抽递给它一个一次性宿主（它因此恒定停在「第 1 抽 = 教程权重」），
-   * 阶段改由 `recruitRolls()` 判定，过了课程期就把完整权重表递回去。
-   */
-  function drawRecruitCard(nth) {
-    const host = {
-      weighted: (table) => state.rng.weighted(nth > CURRICULUM_ROLLS ? RECRUIT_WEIGHTS : table),
-      pick: (items) => state.rng.pick(items),
-    };
-    return rollRecruit(host);
   }
 
   function recruit(sideId = "player") {
