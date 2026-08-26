@@ -110,7 +110,7 @@ const skillCases = [
   },
 ];
 
-function skillBattle(skill, star) {
+function skillBattle(skill, star, targetLane = "front") {
   return simulateBattle(
     314159,
     [
@@ -136,7 +136,7 @@ function skillBattle(skill, star) {
         atk: 15,
         def: 0,
         spd: 80,
-        lane: skill?.kind === "hook" ? "back" : "front",
+        lane: targetLane,
       },
     ],
   );
@@ -145,9 +145,10 @@ function skillBattle(skill, star) {
 describe("all skill kinds honor their star gate", () => {
   it.each(skillCases)("$kind: 达标有数值后果，差一星完全不生效", ({ kind, value, assertEffect }) => {
     const skill = { name: `${kind}-gate-probe`, kind, value, star: 2 };
-    const active = skillBattle(skill, 2);
-    const belowGate = skillBattle(skill, 1);
-    const noSkill = skillBattle(null, 1);
+    const targetLane = kind === "hook" ? "back" : "front";
+    const active = skillBattle(skill, 2, targetLane);
+    const belowGate = skillBattle(skill, 1, targetLane);
+    const noSkill = skillBattle(null, 1, targetLane);
 
     expect(JSON.stringify(belowGate)).toBe(JSON.stringify(noSkill));
     assertEffect(active, belowGate);
