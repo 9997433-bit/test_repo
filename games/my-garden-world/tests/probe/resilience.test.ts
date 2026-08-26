@@ -28,6 +28,7 @@ describe("order timeout storm probe", () => {
     try {
       const state = createInitialState(0);
       state.level = 12;
+      state.storyChapter = 5;
       spawnOrders(state);
       const orderCap = 5;
       expect(state.orders).toHaveLength(orderCap);
@@ -173,6 +174,7 @@ describe("duplicate active-order probe", () => {
     try {
       const state = createInitialState(0);
       state.level = 12;
+      state.storyChapter = 5;
       spawnOrders(state);
 
       for (let refill = 0; refill < DUPLICATE_ORDER_REFILLS; refill += 1) {

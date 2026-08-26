@@ -102,6 +102,8 @@ export interface GameState {
   /** 最后一次套用的装扮主题；驱动根节点 [data-theme] 令牌，未套用则为 null。 */
   decorTheme: DecorTheme | null;
   social: SocialState;
+  /** 已交付的「百花盛会」折数（0–5），旧档按 0 回填。 */
+  storyChapter: number;
   activeSpirit: string | null;
   unlockedSpirits: string[];
   tutorialStep: number;
@@ -155,6 +157,7 @@ export function createInitialState(now = Date.now()): GameState {
     placedDecor: [],
     decorTheme: null,
     social: createSocialState(),
+    storyChapter: 0,
     activeSpirit: null,
     unlockedSpirits: [],
     tutorialStep: 0,

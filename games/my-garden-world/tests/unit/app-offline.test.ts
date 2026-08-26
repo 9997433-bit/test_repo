@@ -105,7 +105,8 @@ describe("app: resume from a stale save", () => {
     expect(save.plots[0].stage).toBe("sprout");
     // 盛放的花等着主人回来，不在离园期间凋零；订单也整体顺延
     expect(save.plots[1].stage).toBe("bloom");
-    expect(save.orders[0].dueAt).toBe(SAVED_NOW + 120_000 + 2 * HOUR);
+    const kept = save.orders.find((o: { uid: string }) => o.uid === "o1");
+    expect(kept?.dueAt).toBe(SAVED_NOW + 120_000 + 2 * HOUR);
   });
 
   it("writes far less often than the old fixed cadence and flushes when hidden", () => {

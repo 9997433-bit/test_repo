@@ -1,5 +1,5 @@
 import { FLOWER_MAP } from "../data/flowers";
-import { ORDER_TEMPLATES, pickWeighted, type OrderTemplate } from "../data/orders";
+import { ORDER_TEMPLATES, STORY_CHAIN, nextStoryChapter, pickWeighted, type OrderTemplate } from "../data/orders";
 import { currentBeat } from "../data/story";
 import { emit } from "../engine/events";
 import { WATER_CAP, type ActiveOrder, type Arrangement, type GameState } from "../engine/state";
@@ -34,11 +34,17 @@ function instantiate(state: GameState, t: OrderTemplate, timeMul = 1): ActiveOrd
  */
 export function spawnOrders(state: GameState, avoidTemplateId?: string): void {
   const cap = 3 + Math.min(2, Math.floor(state.level / 4));
+  const story = nextStoryChapter(state.storyChapter ?? 0, state.level);
+  const hasStory = Boolean(story && state.orders.some((o) => o.templateId === story.id));
+  const reserve = story && !hasStory ? 1 : 0;
   const eligible = ORDER_TEMPLATES.filter((t) => t.minLevel <= state.level);
-  if (eligible.length === 0) return;
+  if (eligible.length === 0) {
+    ensureStoryOrder(state);
+    return;
+  }
   const taken = new Set(state.orders.map((o) => o.templateId));
   if (avoidTemplateId) taken.add(avoidTemplateId);
-  while (state.orders.length < cap) {
+  while (state.orders.length < cap - reserve) {
     let pool = eligible.filter((t) => !taken.has(t.id));
     if (pool.length === 0) pool = eligible.filter((t) => t.id !== avoidTemplateId);
     if (pool.length === 0) pool = eligible;
@@ -47,6 +53,14 @@ export function spawnOrders(state: GameState, avoidTemplateId?: string): void {
     taken.add(t.id);
     state.orders.push(instantiate(state, t));
   }
+  ensureStoryOrder(state);
+}
+
+function ensureStoryOrder(state: GameState): void {
+  const next = nextStoryChapter(state.storyChapter ?? 0, state.level);
+  if (!next) return;
+  if (state.orders.some((o) => o.templateId === next.id)) return;
+  state.orders.unshift(instantiate(state, next, 1.4));
 }
 
 /** 教程"交单"步骤期间，保证列表里始终有一张雏菊订单，避免新手卡关。 */
@@ -134,6 +148,9 @@ export function fulfillOrder(state: GameState, uid: string, arrangementId?: stri
   state.reputation = Math.min(100, state.reputation + 1);
   state.stats.ordersDone += 1;
   state.orders.splice(idx, 1);
+  if (STORY_CHAIN.some((t) => t.id === order.templateId)) {
+    state.storyChapter = Math.min(5, (state.storyChapter ?? 0) + 1);
+  }
   bumpQuest(state, "order1");
   emit({ type: "orderDone", title: order.title });
   emit({ type: "toast", text: `交付成功 · +${order.coin}金`, tone: "ok" });
@@ -146,6 +163,11 @@ export function cancelOrder(state: GameState, uid: string, expired = false): voi
   const order = state.orders[idx];
   if (idx < 0 || !order) return;
   state.orders.splice(idx, 1);
+  if (STORY_CHAIN.some((t) => t.id === order.templateId)) {
+    emit({ type: "toast", text: "盛会之约暂且顺延，客人并未离去", tone: "ok" });
+    spawnOrders(state);
+    return;
+  }
   state.reputation = Math.max(30, state.reputation - 4);
   state.stats.cancelled += 1;
   emit({ type: "toast", text: expired ? "订单超时，客人失望离去" : "客人离去，口碑微损", tone: "warn" });

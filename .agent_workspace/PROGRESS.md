@@ -23,7 +23,7 @@ SOTA 验收条：
 |-------|------|----------|
 | 1 初始构建与基线探索 | 完成 | 见下方《Round 1 结论简报》 |
 | 2 靶向重构与深度优化 | 完成 | 见下方《Round 2 结论简报》 |
-| 3 SOTA 打磨与最终验收 | 进行中 | — |
+| 3 SOTA 打磨与最终验收 | 完成 | 见下方《Round 3 / 全局总结》 |
 
 ---
 
@@ -145,3 +145,27 @@ SOTA 验收条：
 ### 验证
 
 `tsc --noEmit` 干净；`vitest run` 25 文件 **214 测全绿**（含 tutorial 6 例、round3-final 契约 7 例、round3-social 18 例、decor-anchors/place-mode/visit-ui/neighbor-scene）。
+
+---
+
+## 《Round 3 / 全局总结》
+
+主调度器终验：`npx tsc --noEmit` 干净，**217 测全绿**（26 文件），`vite build` 通过（JS gzip ≈40.8KB）。
+
+### Round 3 收敛
+
+- 邻家花园可玩（访邻 / 帮浇 / 借花 / 小结 / 番外）。
+- 八锚位摆放，落位入档。
+- `pickWeighted` + 色系/章法评分已接线。
+- `dataset.theme`、静音偏好持久化。
+- 主调度器补接线：**百花盛会五折剧情单**（超时顺延、不伤口碑）。
+- 文档 README / GDD / UX / VISUAL 与代码对齐。
+
+### 已知轻量缺口（不挡验收）
+
+- 云端平行实现未并入（避免双实现）。
+- `neighbor-view.ts` 为场景备件，玩法走 `engine/neighbors.ts` + 访邻花笺。
+- `settle` 番外仍建议在首次摆放时点一次。
+- 包体略超早期 40KB gzip 预算。
+
+归档分支：`agent/my-garden-world`。

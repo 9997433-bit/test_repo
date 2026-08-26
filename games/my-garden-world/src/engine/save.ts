@@ -198,6 +198,7 @@ export function migrate(raw: unknown, now = Date.now()): GameState {
   // v3 两段：主题只认目录内的 id，邻里状态缺则补空、有则体检
   merged.decorTheme = normalizeTheme(s.decorTheme);
   merged.social = normalizeSocial(s.social);
+  merged.storyChapter = clampInt(s.storyChapter, 0, 0, 5);
   return merged;
 }
 
