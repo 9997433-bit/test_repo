@@ -1,6 +1,0 @@
-{
-  "name": "bqwz-combat",
-  "private": true,
-  "type": "module",
-  "description": "兵器王者·炉火 战斗层：ESM 声明，保证 Node 18/20 下也能直接 import（浏览器忽略此文件）。"
-}
