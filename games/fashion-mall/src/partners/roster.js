@@ -40,6 +40,10 @@ function paintClass(node, className) {
   return node;
 }
 
+function setDisabled(node, disabled) {
+  if (node && node.disabled !== disabled) node.disabled = disabled;
+}
+
 /** `.fm-post` 是 display:block，光靠 hidden 属性藏不住，语义与显隐一起给。 */
 function setShown(node, shown) {
   if (!node || node.hidden === !shown) return;
@@ -236,7 +240,7 @@ export function renderRoster(root, state, ctx = {}) {
           : "待岗中",
       );
 
-      train.disabled = state.gold < cost;
+      setDisabled(train, state.gold < cost);
       paintText(
         train,
         `培训 ${formatGold(cost)} 金 → Lv.${p.level + 1}${trainLift > 0 ? ` · ${signed(trainLift)}/秒` : ""}`,
@@ -247,8 +251,10 @@ export function renderRoster(root, state, ctx = {}) {
         const match = p.specialty === slot.shop.specialty;
         const here = p.assigned === slot.shop.id;
         paintClass(slot.btn, `fm-post${match ? " match" : ""}${here ? " on" : ""}`);
-        if (here) slot.btn.setAttribute("aria-current", "true");
-        else slot.btn.removeAttribute("aria-current");
+        if (!here) slot.btn.removeAttribute("aria-current");
+        else if (slot.btn.getAttribute("aria-current") !== "true") {
+          slot.btn.setAttribute("aria-current", "true");
+        }
         const delta = here
           ? base - rateIf(state, p, { assigned: null })
           : rateIf(state, p, { assigned: slot.shop.id }) - base;
@@ -305,7 +311,7 @@ export function renderRoster(root, state, ctx = {}) {
       paintText(count, `${state.shards} / ${PARTNER_SHARD_COST}`);
       paintText(hint, need ? ` · 还差 ${need} 枚，去盲盒或占卜转转` : " · 可以签了");
 
-      sign.disabled = need > 0;
+      setDisabled(sign, need > 0);
       paintText(sign, need > 0 ? `还差 ${need} 枚碎片` : `消耗 ${PARTNER_SHARD_COST} 碎片签约`);
 
       const preview = matchingShops(p.specialty).filter((s) => state.shops?.[s.id]?.unlocked)[0];

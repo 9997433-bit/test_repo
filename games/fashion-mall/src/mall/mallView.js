@@ -16,6 +16,11 @@ function paintText(node, text) {
   return node;
 }
 
+/** 反复写同一个 disabled 也会记一条属性变更，稳态下能省则省。 */
+function setDisabled(node, disabled) {
+  if (node && node.disabled !== disabled) node.disabled = disabled;
+}
+
 /** `.row` 自带 display:flex，光靠 hidden 属性盖不住，语义与显隐要一起给。 */
 function setShown(node, shown) {
   if (!node || node.hidden === !shown) return;
@@ -43,8 +48,9 @@ function goalLine(state, now = Date.now()) {
 function paintGoal(node, text) {
   if (!node) return;
   paintText(node, text);
-  if (text) node.setAttribute("aria-label", A11Y.goal(text));
-  else node.removeAttribute("aria-label");
+  const label = text ? A11Y.goal(text) : null;
+  if (label === null) node.removeAttribute("aria-label");
+  else if (node.getAttribute("aria-label") !== label) node.setAttribute("aria-label", label);
 }
 
 export function renderMall(root, state, ctx = {}) {
@@ -157,8 +163,8 @@ export function renderMall(root, state, ctx = {}) {
       maxed ? `满级 Lv.${SHOP_LEVEL_MAX}` : `升级 ${formatGold(shopUpgradeCost(shop, s.level))}`,
     );
     paintText(entry.hire, full ? "已满员" : `招聘 ${formatGold(shopHireCost(shop, s.staff))}`);
-    entry.up.disabled = maxed;
-    entry.hire.disabled = full;
+    setDisabled(entry.up, maxed);
+    setDisabled(entry.hire, full);
   }
 
   /** 全表体检一遍，但每处都走 diff：稳态下一个 DOM 写操作都不发生。 */
