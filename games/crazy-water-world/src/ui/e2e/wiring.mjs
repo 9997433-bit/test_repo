@@ -113,6 +113,12 @@ check("可招募区里不再混「已在船上」按钮", !(await page.textConte
 check("可招募人数 = 名单总数 − 在船", (await page.$$("#hero-pool [data-act=\"recruit\"]")).length === Object.keys(HEROES).length - 6);
 check("英雄卡上挂了养伤标记", (await page.textContent("#hero-roster")).includes("养伤"), (await page.textContent("#hero-roster")).slice(0, 60));
 check("养伤的人不能委任", await page.isDisabled('[data-assign="h-rambo"]'));
+await page.evaluate(() => {
+  const left = document.querySelector("#left");
+  const title = document.querySelector("#hero-aboard-title");
+  left.scrollTop += title.getBoundingClientRect().top - left.getBoundingClientRect().top - 210;
+});
+await page.waitForTimeout(300);
 await page.screenshot({ path: `${OUT}/23_recruit_split.png` });
 
 // 指引横幅 sticky：把左面板滚下去，横幅还钉在顶上

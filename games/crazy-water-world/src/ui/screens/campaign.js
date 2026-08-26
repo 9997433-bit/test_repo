@@ -110,16 +110,15 @@ export const campaignScreen = {
         h("span", { class: "cww-tag", id: "camp-team-count" }),
         h("span", { class: "cww-tag", id: "camp-seed" }),
       ]),
+      h("p", { class: "cww-hint", id: "camp-team" }),
+      // 主行动排在选人之前：面板是滚动容器，「出战」不能被阵容列表挤到看不见的地方。
       h("div", { class: "cww-row" }, [
+        h("button", { "data-act": "fight", id: "camp-fight", text: "出战" }),
+        h("button", { "data-act": "skip", id: "camp-skip", text: "跳过战报" }),
         h("button", { "data-act": "lineup-auto", id: "camp-auto", text: "自动配队" }),
         h("button", { "data-act": "lineup-clear", id: "camp-clear", text: "全部下场" }),
       ]),
       h("div", { id: "camp-lineup" }),
-      h("p", { class: "cww-hint", id: "camp-team" }),
-      h("div", { class: "cww-row" }, [
-        h("button", { "data-act": "fight", id: "camp-fight", text: "出战" }),
-        h("button", { "data-act": "skip", id: "camp-skip", text: "跳过战报" }),
-      ]),
       h("div", { class: "cww-banner", id: "camp-banner", style: { display: "none" } }),
       h("div", { class: "cww-side", id: "camp-side" }),
       h("div", { class: "cww-report", id: "camp-report" }),
@@ -325,9 +324,10 @@ function heroChip(hero, slot, auto) {
       title: `${def.skill?.name || "无技能"}：${def.skill?.desc || "—"}`,
     },
     [
-      h("b", { text: `${on ? `${slot}. ` : ""}${def.name} ${stars(hero.star)}` }),
+      // 勾选态不只靠底色：名字前面直接写「✓序号」，灰度截图里也分得出谁上场。
+      h("b", { text: `${on ? `✓${slot} ` : "＋ "}${def.name} ${stars(hero.star)}` }),
       h("span", {
-        text: `${LANE_LABEL[laneOf(hero.heroKey)]} · 战力 ${Math.round(heroPower(hero.heroKey, hero.star))}${on && auto ? " · 自动入选" : ""}`,
+        text: `${LANE_LABEL[laneOf(hero.heroKey)]} · 战力 ${Math.round(heroPower(hero.heroKey, hero.star))}${on && auto ? " · 自动" : ""}`,
       }),
     ],
   );
@@ -350,6 +350,15 @@ function updateReport(ctx, c, r) {
   }
 
   r.banner.style.display = "block";
+  // 新战报第一次露面时把面板滚到横幅上：战报排在阵容下面，不滚就得让老大自己找。
+  if (rep.scrollPending) {
+    rep.scrollPending = false;
+    const panel = ctx.refs.left;
+    if (panel) {
+      panel.scrollTop +=
+        r.banner.getBoundingClientRect().top - panel.getBoundingClientRect().top - 44;
+    }
+  }
   setClass(r.banner, "win", rep.result.winner === "ally");
   setClass(r.banner, "lose", rep.result.winner === "enemy");
   setClass(r.banner, "draw", rep.result.winner === "draw");
@@ -451,6 +460,7 @@ function fight(ctx, c) {
         : `${def.name} 失守。第 ${next.campaign.attempts} 次尝试`,
     shown: 0,
     rendered: 0,
+    scrollPending: true,
     maxHp: hpTable(def, allies, result),
   };
   ctx.toast(

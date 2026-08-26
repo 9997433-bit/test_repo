@@ -253,17 +253,17 @@ export const UI_CSS = `
   margin: 12px 0 4px; font-family: var(--font-display); font-size: var(--fs-body); color: var(--ink);
 }
 .cww-lane {
-  display: flex; flex-wrap: wrap; align-items: stretch; gap: 5px;
-  margin: 5px 0; padding: 6px 8px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 4px;
+  margin: 4px 0; padding: 5px 7px;
   background: rgba(22,50,60,.05);
   border: 1.5px dashed rgba(22,50,60,.3); border-radius: var(--radius-m);
 }
 .cww-lane.hurt { background: rgba(239,71,111,.08); border-color: rgba(156,31,46,.45); }
 .cww-lane-tag {
-  flex: 0 0 100%; font-size: var(--fs-tiny); font-weight: 700; color: var(--ink-soft);
+  grid-column: 1 / -1; font-size: var(--fs-tiny); font-weight: 700; color: var(--ink-soft);
 }
 .cww-pickhero {
-  margin: 0 !important; padding: 5px 10px !important; text-align: left;
+  margin: 0 !important; padding: 4px 8px !important; min-height: 0; text-align: left;
   color: var(--ink) !important; text-shadow: none !important;
   background: linear-gradient(var(--paper), #f7e9cd) !important;
   border: 1.5px solid rgba(22,50,60,.4) !important; border-radius: var(--radius-s) !important;
@@ -273,12 +273,8 @@ export const UI_CSS = `
   background: linear-gradient(#ffe9ae, var(--sun)) !important;
   border-color: var(--ink) !important; box-shadow: 0 3px 0 var(--ink) !important;
 }
-.cww-pickhero.on::after {
-  content: "✓ 出战"; display: block;
-  font-size: var(--fs-tiny); font-weight: 700; color: var(--kelp-deep);
-}
 .cww-pickhero.hurt { opacity: .7; }
-.cww-pickhero b { display: block; font-size: var(--fs-small); font-weight: 700; }
+.cww-pickhero b { display: block; font-size: var(--fs-small); font-weight: 700; line-height: 1.35; }
 .cww-pickhero span, .cww-pickhero i {
   display: block; font-size: var(--fs-tiny); font-style: normal; font-weight: 500; color: var(--ink-soft);
 }
