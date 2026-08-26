@@ -10,6 +10,25 @@
  * 世界结构保持脚手架契约：`{ eggs, statics, fields, time }`。
  * 左右墙与顶板由 `world.bounds` 解析式处理，底部默认开放用于回收，
  * 因此 `statics` 只放关卡自定义的砖 / 钉 / 斜面 / 传送门。
+ *
+ * ## 固定步确定性
+ *
+ * 世界的演化只由「初始状态 + 步长序列 + 外部调用序列」决定：
+ *   - 时钟只在 `stepWorld` 里走；模块内不读 `Date` / `performance`；
+ *   - 随机只走 `nextRandom(world)`（状态是 `world.rngState` 整数，进快照）；
+ *   - 进世界的蛋 id 由 `world.eggSeq` 分配，不吃模块级自增计数器；
+ *   - 变帧驱动一律经 `advanceWorld`，它把 elapsed 钳进 `MAX_FRAME_TIME`
+ *     再切成固定步，掉帧只影响补几步、不影响每步的结果。
+ * 校验工具见 `determinism.js`（`hashWorld` / `checkDeterminism`）。
+ *
+ * ## 克隆安全
+ *
+ * 宽相网格 `grid`、id 索引 `staticById`、步进上下文 `_ctx` 这些派生结构全部挂成
+ * **不可枚举**属性：`structuredClone(world)` / `expect(world).toEqual(...)` 只看
+ * 自有可枚举属性，于是快照里既没有 Map、也没有随查询次数变化的去重戳。
+ * 克隆回来的纯数据世界可以直接继续 `stepWorld`——所有读取点都走
+ * `ensureIndex` / `ensureGrid` / `ensureCtx` 惰性重建，`reviveWorld` 则是
+ * 一次性把它们补齐的显式入口。
  */
 
 import {
@@ -24,13 +43,14 @@ import {
   GRID_CELL,
   HIT_LOG_SIZE,
   MAX_EVENTS,
+  MAX_FRAME_STEPS,
+  MAX_FRAME_TIME,
   MAX_SPEED,
   MAX_SUBSTEPS,
   MIN_CONTACT_IMPACT,
   OUT_MARGIN_BOTTOM,
   OUT_MARGIN_SIDE,
   OUT_MARGIN_TOP,
-  PORTAL_COOLDOWN,
   RESTING_VELOCITY,
   SLEEP_SPEED,
   SLEEP_TIME,
@@ -48,15 +68,66 @@ import {
   resolveStaticContact,
 } from "./collide.js";
 import { fieldContains, isEnemyBody, makeSegment, normalizeBody } from "./shapes.js";
+import {
+  computePortalExit,
+  createPortalExit,
+  isPortalBody,
+  isPortalEntry,
+  portalDestination,
+} from "./portals.js";
 import { clamp, damp, normalizeAngle } from "./math.js";
 
 export { WORLD_W, WORLD_H, GRAVITY, FIXED_DT } from "./constants.js";
 
 let nextEggId = 1;
 
-/** 供确定性回放/测试使用 */
+/**
+ * 复位「脱离世界构造的蛋」的自增 id。
+ *
+ * 经 `spawnEgg` / `launchEgg` / `splitEgg` 入场的蛋走的是世界自己的
+ * `world.eggSeq`（见 `allocEggId`），天然可复现；这个模块级计数器只服务
+ * 直接调 `createEgg()` 再自行 push 的调用方，回放前复位一次即可对齐。
+ */
 export function resetEggIds(value = 1) {
   nextEggId = value;
+}
+
+/**
+ * 内部派生结构挂成不可枚举属性：快照 / 深比较只看自有可枚举属性，
+ * 于是 Map、宽相网格、步进上下文都不会进入 `structuredClone(world)`。
+ */
+function defineHidden(target, key, value) {
+  Object.defineProperty(target, key, {
+    value,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+  return value;
+}
+
+/** 属性存在但还是可枚举的（老世界 / 手搓世界）就地改成隐藏 */
+function hide(target, key, fallback) {
+  const desc = Object.getOwnPropertyDescriptor(target, key);
+  if (desc && !desc.enumerable) return target[key];
+  return defineHidden(target, key, desc ? target[key] : fallback);
+}
+
+/** 静态体 id 索引；缺失（如刚从快照恢复）时重建 */
+function ensureIndex(world) {
+  let index = world.staticById;
+  if (!(index instanceof Map)) {
+    index = defineHidden(world, "staticById", new Map());
+    world.staticsDirty = true;
+  }
+  return index;
+}
+
+/** 步进上下文；缺失时重建 */
+function ensureCtx(world) {
+  const ctx = world._ctx;
+  if (ctx && ctx.manifold && Array.isArray(ctx.candidates)) return ctx;
+  return defineHidden(world, "_ctx", createStepContext());
 }
 
 /* ------------------------------------------------------------------ *
@@ -123,6 +194,8 @@ export function createWorld(opts = {}) {
 
     /** 接触流水号，供战斗层去重（幽灵蛋不消耗） */
     contactSeq: 0,
+    /** 入场蛋的 id 流水号，保证同种子回放拿到同样的 id */
+    eggSeq: 0,
     /** 同一枚蛋重复命中同一物体的最小间隔（s） */
     contactCooldown: opts.contactCooldown ?? CONTACT_COOLDOWN,
 
@@ -132,13 +205,14 @@ export function createWorld(opts = {}) {
      * 的纯数据」，UI / 测试才能直接快照比对。取值走 `nextRandom(world)`。
      */
     rngState: (opts.seed ?? 20260826) >>> 0,
-    grid: null,
     gridCell: opts.gridCell ?? GRID_CELL,
     staticsDirty: true,
-    staticById: new Map(),
-    _gridLength: -1,
-    _ctx: createStepContext(),
   };
+  // 派生结构不进快照：宽相网格、id 索引、步进上下文
+  defineHidden(world, "grid", null);
+  defineHidden(world, "staticById", new Map());
+  defineHidden(world, "_gridLength", -1);
+  defineHidden(world, "_ctx", createStepContext());
   if (opts.statics) addStatic(world, opts.statics);
   if (opts.fields) addField(world, opts.fields);
   if (opts.walls) addArenaWalls(world, opts.walls === true ? {} : opts.walls);
@@ -175,8 +249,46 @@ export function resetStepContext(ctx, time = 0) {
   return ctx;
 }
 
+/**
+ * 把一份纯数据世界（`structuredClone` / JSON 快照的产物）补成可步进的世界。
+ *
+ * 幂等：对正常世界调用只是重新确认隐藏属性。恢复后 `stepWorld` 与原世界
+ * 逐位一致——所有派生结构都会按当前 `statics` 重建，不依赖克隆前的内容。
+ */
+export function reviveWorld(world) {
+  if (!world || typeof world !== "object") return world;
+  if (!Array.isArray(world.eggs)) world.eggs = [];
+  if (!Array.isArray(world.statics)) world.statics = [];
+  if (!Array.isArray(world.fields)) world.fields = [];
+  if (!Array.isArray(world.events)) world.events = [];
+  if (!Array.isArray(world.pendingBlasts)) world.pendingBlasts = [];
+  if (!Number.isFinite(world.time)) world.time = 0;
+  if (!Number.isFinite(world.stepIndex)) world.stepIndex = 0;
+  if (!Number.isFinite(world.accumulator)) world.accumulator = 0;
+  if (!Number.isFinite(world.dt) || world.dt <= 0) world.dt = FIXED_DT;
+  if (!Number.isFinite(world.eggSeq)) world.eggSeq = 0;
+  if (!Number.isFinite(world.contactSeq)) world.contactSeq = 0;
+  if (!Number.isFinite(world.rngState)) world.rngState = (world.seed ?? 0) >>> 0;
+
+  hide(world, "grid", null);
+  hide(world, "_gridLength", -1);
+  hide(world, "_ctx", createStepContext());
+  hide(world, "staticById", new Map());
+  ensureIndex(world);
+  ensureCtx(world);
+
+  // 快照里没有 `_norm` / `_stamp`，这一遍把静态体重新规范化并装回隐藏槽位
+  for (let i = 0; i < world.statics.length; i++) normalizeBody(world.statics[i]);
+  for (let i = 0; i < world.eggs.length; i++) normalizeEgg(world.eggs[i]);
+  world.staticsDirty = true;
+  world._gridLength = -1;
+  world.grid = null;
+  return world;
+}
+
 /** 重置世界到空场（保留参数与种子） */
 export function resetWorld(world) {
+  reviveWorld(world);
   world.eggs.length = 0;
   world.statics.length = 0;
   world.fields.length = 0;
@@ -188,8 +300,10 @@ export function resetWorld(world) {
   world.accumulator = 0;
   world.staticsDirty = true;
   world._gridLength = -1;
+  world.grid = null;
   world.rngState = world.seed >>> 0;
   world.contactSeq = 0;
+  world.eggSeq = 0;
   for (const key of Object.keys(world.stats)) world.stats[key] = 0;
   return world;
 }
@@ -215,7 +329,7 @@ export function addStatic(world, body) {
   }
   normalizeBody(body);
   world.statics.push(body);
-  world.staticById.set(body.id, body);
+  ensureIndex(world).set(body.id, body);
   world.staticsDirty = true;
   return body;
 }
@@ -225,30 +339,32 @@ export function addStatic(world, body) {
  * 只在拓扑发生变化时执行完整扫描。
  */
 export function syncStatics(world) {
+  const index = ensureIndex(world);
   if (!world.staticsDirty && world._gridLength === world.statics.length) return false;
   const list = world.statics;
-  world.staticById.clear();
+  index.clear();
   for (let i = 0; i < list.length; i++) {
     const body = list[i];
     normalizeBody(body);
-    world.staticById.set(body.id, body);
+    index.set(body.id, body);
   }
   return true;
 }
 
 export function removeStatic(world, body) {
-  const target = typeof body === "string" ? world.staticById.get(body) : body;
+  const index = ensureIndex(world);
+  const target = typeof body === "string" ? index.get(body) : body;
   if (!target) return false;
   const i = world.statics.indexOf(target);
   if (i >= 0) world.statics.splice(i, 1);
-  world.staticById.delete(target.id);
+  index.delete(target.id);
   target.active = false;
   world.staticsDirty = true;
   return true;
 }
 
 export function getStatic(world, id) {
-  return world.staticById.get(id) || null;
+  return ensureIndex(world).get(id) || null;
 }
 
 export function addField(world, field) {
@@ -481,9 +597,36 @@ function sanitizeEgg(world, egg) {
   return true;
 }
 
+function hasEggId(world, id) {
+  const eggs = world.eggs;
+  for (let i = 0; i < eggs.length; i++) if (eggs[i].id === id) return true;
+  return false;
+}
+
+/**
+ * 世界内自增蛋 id。
+ *
+ * 用世界自己的流水号而不是模块级计数器，同一份初始状态跑两遍才会拿到同样的
+ * id（回放、对拍、快照比对都依赖这一点）。战斗层若另有直接 `createEgg()` 再
+ * push 的老路径，这里的重名检查保证两条路不会撞车。
+ */
+function allocEggId(world) {
+  let n = Number.isFinite(world.eggSeq) ? world.eggSeq : 0;
+  for (let guard = 0; guard < 4096; guard++) {
+    const id = `egg${++n}`;
+    if (!hasEggId(world, id)) {
+      world.eggSeq = n;
+      return id;
+    }
+  }
+  world.eggSeq = n;
+  return `egg${n}`;
+}
+
 /** 创建并加入世界；传入已构造的蛋（含 invMass 字段）则直接入场 */
 export function spawnEgg(world, opts = {}) {
-  const egg = opts.invMass !== undefined && opts.alive !== undefined ? opts : createEgg(opts);
+  const ready = opts.invMass !== undefined && opts.alive !== undefined;
+  const egg = ready ? opts : createEgg({ ...opts, id: opts.id || allocEggId(world) });
   world.eggs.push(egg);
   world.stats.spawned++;
   emit(world, { type: "spawn", egg, x: egg.x, y: egg.y });
@@ -848,19 +991,24 @@ function onBounce(world, egg, body, surface, x, y, nx, ny, impact, ctx) {
 }
 
 function ensureGrid(world) {
-  if (world.grid === null) {
-    world.grid = createGrid(
-      world.gridCell,
+  let grid = world.grid;
+  if (!grid || !Array.isArray(grid.cells)) {
+    grid = createGrid(
+      world.gridCell ?? GRID_CELL,
       Math.max(world.bounds.right, WORLD_W),
       Math.max(world.bounds.bottom, WORLD_H),
     );
+    hide(world, "grid", null);
+    world.grid = grid;
+    world.staticsDirty = true;
   }
   if (syncStatics(world)) {
-    rebuildGrid(world.grid, world.statics);
+    rebuildGrid(grid, world.statics);
     world.staticsDirty = false;
+    hide(world, "_gridLength", -1);
     world._gridLength = world.statics.length;
   }
-  return world.grid;
+  return grid;
 }
 
 /** 与静态体求解，返回反弹次数 */
@@ -886,15 +1034,15 @@ export function collideWithStatics(world, egg, ctx, fromX, fromY) {
     collideCircleBody(egg, body, m, fromX, fromY);
     if (!m.hit) continue;
 
-    if (body.kind === "portal") {
+    if (isPortalBody(body)) {
+      // 入口吃蛋后本子步不再与别的静态体求解（蛋已经不在这儿了）
       if (handlePortal(world, egg, body, ctx)) break;
+      // 出口端 / 断链的门退化成纯传感器
+      if (!isPortalEntry(body)) fireSensor(world, egg, body, m, ctx);
       continue;
     }
     if (body.sensor) {
-      if (ctx.emit) {
-        emit(world, { type: "sensor", egg, body, x: m.px, y: m.py });
-        body.hits++;
-      }
+      fireSensor(world, egg, body, m, ctx);
       continue;
     }
     // 穿透：可碎砖 / 敌人直接穿过，只记一次接触
@@ -933,50 +1081,43 @@ export function collideWithStatics(world, egg, ctx, fromX, fromY) {
   return hits;
 }
 
-/** 传送门：把蛋搬到链接端并旋转速度。成功返回 true。 */
+function fireSensor(world, egg, body, m, ctx) {
+  if (!ctx.emit) return;
+  emit(world, { type: "sensor", egg, body, x: m.px, y: m.py });
+  body.hits++;
+}
+
+const portalExit = createPortalExit();
+
+/**
+ * 传送门落地：解算交给 `portals.js`，这里只负责搬蛋、记账与发事件。
+ *
+ * 传送不是碰撞——不落接触账本、不计反弹、不吃伤害，只发一条 `portal` 事件。
+ * @returns {boolean} 蛋是否被这道门吃掉
+ */
 function handlePortal(world, egg, body, ctx) {
+  if (!isPortalEntry(body)) return false;
   if (egg.portalCooldown > 0) return false;
-  const dest = world.staticById.get(body.link);
-  if (!dest || dest.active === false) return false;
+  const dest = portalDestination(world, body);
+  if (!dest) return false;
 
-  let vx = egg.vx;
-  let vy = egg.vy;
-  if (body.facing !== null && dest.facing !== null) {
-    // 入口朝向 → 出口朝向的旋转（出口方向取 dest.facing 的正面）
-    const delta = normalizeAngle(dest.facing - body.facing + Math.PI);
-    const c = Math.cos(delta);
-    const s = Math.sin(delta);
-    const nvx = vx * c - vy * s;
-    const nvy = vx * s + vy * c;
-    vx = nvx;
-    vy = nvy;
-  }
-  let speed = Math.hypot(vx, vy);
-  if (dest.exitSpeed > 0 && speed < dest.exitSpeed) {
-    const k = speed > 1e-6 ? dest.exitSpeed / speed : 0;
-    if (k > 0) {
-      vx *= k;
-      vy *= k;
-    } else if (dest.facing !== null) {
-      vx = Math.cos(dest.facing) * dest.exitSpeed;
-      vy = Math.sin(dest.facing) * dest.exitSpeed;
-    }
-    speed = dest.exitSpeed;
-  }
-  const dirX = speed > 1e-6 ? vx / speed : 0;
-  const dirY = speed > 1e-6 ? vy / speed : 1;
-
+  const exit = computePortalExit(egg, body, dest, portalExit);
   const fromX = egg.x;
   const fromY = egg.y;
-  egg.vx = vx;
-  egg.vy = vy;
-  egg.x = dest.x + dirX * (dest.r + egg.r + 1);
-  egg.y = dest.y + dirY * (dest.r + egg.r + 1);
-  egg.portalCooldown = PORTAL_COOLDOWN;
+  egg.x = exit.x;
+  egg.y = exit.y;
+  // 瞬移要把插值起点一起搬走，否则渲染层会在这一帧画出一条横跨全场的拖影
+  egg.prevX = exit.x;
+  egg.prevY = exit.y;
+  egg.vx = exit.vx;
+  egg.vy = exit.vy;
+  egg.portalCooldown = exit.cooldown;
   egg.portalUses++;
+  egg.restTimer = 0;
   if (ctx.emit) {
     world.stats.portalUses++;
     body.hits++;
+    dest.lastHitTime = world.time;
     emit(world, {
       type: "portal",
       egg,
@@ -986,6 +1127,9 @@ function handlePortal(world, egg, body, ctx) {
       fromY,
       x: egg.x,
       y: egg.y,
+      vx: egg.vx,
+      vy: egg.vy,
+      cooldown: exit.cooldown,
     });
   }
   return true;
@@ -1087,19 +1231,27 @@ export function advanceEgg(world, egg, dt, ctx) {
 
 /**
  * 推进一个固定步。
+ *
+ * 除了 `world` 自身的状态与 `dt`，这个函数不读任何外部信息（没有时钟、没有
+ * `Math.random`），因此同一份初始状态配同一串 `dt` 必然给出同一个结果。
+ * 非有限 / 非正的 `dt` 一律回落到 `world.dt`，防止一次坏输入把时钟污染成 NaN。
+ *
  * @param {object} world
  * @param {number} [dt] 步长，默认 world.dt（1/120）
  * @returns {object} world
  */
 export function stepWorld(world, dt = world.dt ?? FIXED_DT) {
-  const h = Number.isFinite(dt) && dt > 0 ? dt : world.dt ?? FIXED_DT;
+  const fallback = Number.isFinite(world.dt) && world.dt > 0 ? world.dt : FIXED_DT;
+  const h = Number.isFinite(dt) && dt > 0 ? dt : fallback;
+  if (!Number.isFinite(world.time)) world.time = 0;
+  if (!Number.isFinite(world.stepIndex)) world.stepIndex = 0;
   world.time += h;
   world.stepIndex++;
 
   const eggs = world.eggs;
   if (eggs.length === 0) return world;
 
-  const ctx = world._ctx;
+  const ctx = ensureCtx(world);
   ctx.emit = true;
   ctx.ghost = false;
   ctx.time = world.time;
@@ -1163,18 +1315,27 @@ function compactEggs(world) {
 
 /**
  * 变帧时间推进：内部按固定步累积。
+ *
+ * 这是「渲染帧率」与「模拟步长」的唯一交界处。elapsed 先被钳进
+ * `MAX_FRAME_TIME`（切后台 / 断点续跑会给出几秒的间隔），再切成整数个
+ * `world.dt`；掉帧只改变本帧补几步，每一步的解算与 60fps 时逐位相同。
+ * 追不上时（steps === maxSteps）丢弃多余累积，避免死亡螺旋。
+ *
  * @returns {{ steps: number, alpha: number }} alpha 供渲染插值
  */
-export function advanceWorld(world, elapsed, maxSteps = 8) {
-  const h = world.dt;
-  world.accumulator += Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
+export function advanceWorld(world, elapsed, maxSteps = MAX_FRAME_STEPS) {
+  const h = Number.isFinite(world.dt) && world.dt > 0 ? world.dt : FIXED_DT;
+  const limit = Number.isFinite(maxSteps) && maxSteps > 0 ? Math.floor(maxSteps) : MAX_FRAME_STEPS;
+  if (!Number.isFinite(world.accumulator)) world.accumulator = 0;
+  const fed = Number.isFinite(elapsed) && elapsed > 0 ? Math.min(elapsed, MAX_FRAME_TIME) : 0;
+  world.accumulator += fed;
   let steps = 0;
-  while (world.accumulator >= h && steps < maxSteps) {
+  while (world.accumulator >= h && steps < limit) {
     stepWorld(world, h);
     world.accumulator -= h;
     steps++;
   }
-  if (steps === maxSteps) world.accumulator = Math.min(world.accumulator, h);
+  if (steps === limit) world.accumulator = Math.min(world.accumulator, h);
   return { steps, alpha: clamp(world.accumulator / h, 0, 1) };
 }
 

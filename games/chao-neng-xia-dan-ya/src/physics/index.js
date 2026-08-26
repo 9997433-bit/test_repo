@@ -11,6 +11,8 @@
  *     一律在 reflect **之前**落账，事后重叠检测必然 miss
  *   - 敌人：`makeEnemy` / `enemyBodies` / `eggEnemyOverlaps`
  *   - 对拍：`createSimBridge` / `compareTrajectories`（见 compat.js）
+ *   - 确定性：`hashWorld` / `cloneWorld` / `checkDeterminism`（见 determinism.js）
+ *   - 传送门：`makePortalPair(a, b, { oneWay })`、`isPortalEntry`（见 portals.js）
  */
 
 export {
@@ -52,10 +54,32 @@ export {
   resetEggIds,
   resetStepContext,
   resetWorld,
+  reviveWorld,
   spawnEgg,
   stepEgg,
   syncStatics,
 } from "./world.js";
+
+export {
+  checkCloneSafety,
+  checkDeterminism,
+  cloneWorld,
+  hashWorld,
+  hydrateWorld,
+  restoreWorld,
+  runSteps,
+  snapshotWorld,
+  worldDigest,
+} from "./determinism.js";
+
+export {
+  computePortalExit,
+  createPortalExit,
+  isPortalBody,
+  isPortalEntry,
+  portalCooldownOf,
+  portalDestination,
+} from "./portals.js";
 
 export { predictAim, predictTrajectory, predictTrajectoryDetailed } from "./trajectory.js";
 
@@ -121,8 +145,12 @@ export {
   EGG_RADIUS,
   EGG_RESTITUTION,
   MATERIAL,
+  MAX_FRAME_STEPS,
+  MAX_FRAME_TIME,
   MAX_SPEED,
   MIN_CONTACT_IMPACT,
+  PORTAL_COOLDOWN,
+  PORTAL_EXIT_CLEARANCE,
   PREDICT_MAX_BOUNCES,
   SLEEP_SPEED,
   SLEEP_TIME,

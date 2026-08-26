@@ -28,6 +28,14 @@ export const MAX_SUBSTEPS = 8;
 /** 子步位移不得超过半径的该比例，超过则继续细分 */
 export const SUBSTEP_TRAVEL_RATIO = 0.5;
 
+/** `advanceWorld` 单帧最多补的固定步数（防止卡顿后的死亡螺旋） */
+export const MAX_FRAME_STEPS = 8;
+/**
+ * `advanceWorld` 单次喂入的时间上限（s）。切后台 / 断点续跑会给出巨大的
+ * elapsed，钳住它才能保证「同样的步数序列 = 同样的世界」这条确定性前提。
+ */
+export const MAX_FRAME_TIME = 0.25;
+
 /** 睡眠判定速度阈值（px/s，GDD：<8px/s） */
 export const SLEEP_SPEED = 8;
 /** 睡眠持续时间阈值（s，GDD：连续 0.6s） */
@@ -72,6 +80,11 @@ export const SPLIT_SPREAD = Math.PI / 3;
 
 /** 传送门传送后的冷却（s），避免来回抖动 */
 export const PORTAL_COOLDOWN = 0.12;
+/**
+ * 出口外推余量（px）。蛋落在 `dest.r + egg.r + 该值` 处，
+ * 保证出生点在门圆之外，同一子步不会被出口再吃一次。
+ */
+export const PORTAL_EXIT_CLEARANCE = 1;
 
 /** 宽相网格的单元边长（px） */
 export const GRID_CELL = 48;

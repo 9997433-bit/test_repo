@@ -41,7 +41,8 @@ function brickKind(kind) {
  *
  * @param {object} sim  core/sim.js 的 world（只读，不会被修改）
  * @param {object} [opts]
- * @param {boolean} [opts.portals] 是否映射传送门（默认 true，映射成双向门）
+ * @param {boolean} [opts.portals] 是否映射传送门（默认 true）
+ * @param {boolean} [opts.twoWayPortals] 传送门是否双向（默认 false，对齐 sim 的单向语义）
  * @returns {{
  *   world: object,
  *   sync: () => boolean,
@@ -147,9 +148,14 @@ export function createSimBridge(sim, opts = {}) {
 
   if (opts.portals !== false) {
     for (const p of sim.portals ?? []) {
-      // sim 的传送门是单向的（x,y → tx,ty）；物理门成对存在，
-      // 这里映射成双向，出口也能接蛋。行为差异在对拍报告里会显现。
-      const pair = makePortalPair({ x: p.x, y: p.y, r: p.r ?? 18 }, { x: p.tx, y: p.ty, r: p.r ?? 18 });
+      // sim 的传送门是单向的（x,y → tx,ty）。物理门本身可双向，这里显式建成
+      // 单向：出口端 `entry === false`，只发 sensor 不吃蛋，两侧语义一致。
+      // 需要双向门的关卡传 `{ twoWayPortals: true }`。
+      const pair = makePortalPair(
+        { x: p.x, y: p.y, r: p.r ?? 18, facing: p.facing },
+        { x: p.tx, y: p.ty, r: p.r ?? 18, facing: p.exitFacing },
+        { oneWay: opts.twoWayPortals !== true, exitSpeed: p.exitSpeed ?? 0 },
+      );
       addStatic(world, pair);
       link(p, pair[0]);
     }

@@ -9,10 +9,34 @@
  * 力场（world.fields）不参与碰撞，只在积分前贡献加速度：风扇、风、重力区、减速区。
  */
 
-import { GRAVITY, MATERIAL, WORLD_H, WORLD_W } from "./constants.js";
+import { GRAVITY, MATERIAL, PORTAL_COOLDOWN, WORLD_H, WORLD_W } from "./constants.js";
 import { TAU, normalizeAngle } from "./math.js";
 
 let nextBodyId = 1;
+
+/**
+ * 内部字段一律不可枚举：`structuredClone` / `toEqual` 只看自有可枚举属性，
+ * 因此宽相戳 `_stamp` 与规范化标记 `_norm` 不会污染快照，也不会让两份
+ * 语义相同的世界因为查询次数不同而比对失败。快照恢复后 `normalizeBody`
+ * 会把它们重新装回来（`_norm` 缺失 = 重跑一次幂等的字段补齐）。
+ */
+function defineHidden(target, key, value) {
+  Object.defineProperty(target, key, {
+    value,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+  return value;
+}
+
+/** 给静态体装上不可枚举的宽相戳槽位（已存在则保持原值） */
+export function ensureStampSlot(body) {
+  const desc = Object.getOwnPropertyDescriptor(body, "_stamp");
+  if (desc && !desc.enumerable) return body;
+  defineHidden(body, "_stamp", desc ? body._stamp : 0);
+  return body;
+}
 
 /** 供测试/回放使用：重置自增 id，保证多次构造结果可比对 */
 export function resetBodyIds(value = 1) {
@@ -25,7 +49,7 @@ function bodyId(prefix) {
 
 function baseBody(shape, kind, opts) {
   const mat = MATERIAL[kind] || MATERIAL.wall;
-  return {
+  const body = {
     id: opts.id || bodyId(kind.slice(0, 2)),
     shape,
     kind,
@@ -49,11 +73,11 @@ function baseBody(shape, kind, opts) {
     hits: 0,
     lastHitTime: -1,
     aabb: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
-    /** 宽相查询去重戳，内部使用 */
-    _stamp: 0,
-    /** 已是规范形态，`normalizeBody` 可跳过字段补齐 */
-    _norm: 1,
   };
+  /** 宽相查询去重戳 + 规范化标记，均为内部字段，不进快照 */
+  defineHidden(body, "_stamp", 0);
+  defineHidden(body, "_norm", 1);
+  return body;
 }
 
 /** 重算包围盒（改坐标或尺寸后必须调用） */
@@ -99,26 +123,29 @@ export function normalizeBody(body) {
     if (!body.kind) {
       body.kind =
         body.material ||
-        (body.type === "enemy"
-          ? "enemy"
-          : body.shape === "circle"
-            ? "peg"
-            : body.shape === "segment"
-              ? "wall"
-              : "brick");
+        (body.type === "portal"
+          ? "portal"
+          : body.type === "enemy"
+            ? "enemy"
+            : body.shape === "circle"
+              ? "peg"
+              : body.shape === "segment"
+                ? "wall"
+                : "brick");
     }
     const mat = MATERIAL[body.kind] || MATERIAL.brick;
     body.id = body.id ?? bodyId(body.kind.slice(0, 2));
     body.restitution = num(body.restitution, mat.restitution);
     body.friction = num(body.friction, mat.friction);
     body.active = body.active !== false;
-    body.sensor = body.sensor === true;
+    // 传送门恒为传感器：外部直接 push 的鸭子类型门也不能变成实心球
+    body.sensor = body.sensor === true || body.kind === "portal" || body.kind === "portalExit";
     body.breakable = body.breakable === true;
     body.explosive = body.explosive === true;
     body.hp = num(body.hp, 0);
     body.hits = num(body.hits, 0);
     body.lastHitTime = num(body.lastHitTime, -1);
-    body._stamp = num(body._stamp, 0);
+    if (body.kind === "portal" || body.kind === "portalExit") normalizePortal(body);
 
     if (body.shape === "aabb") {
       const w = num(body.w, num(body.width, 40));
@@ -154,9 +181,27 @@ export function normalizeBody(body) {
       body.length = len;
       body.oneWay = body.oneWay === true;
     }
-    body._norm = 1;
+    defineHidden(body, "_norm", 1);
   }
+  ensureStampSlot(body);
   return computeAABB(body);
+}
+
+/**
+ * 补齐传送门语义字段（见 `portals.js` 头注）。
+ * `link` 兼容 `to` / `target` 别名；没有链接的一端自动降级为出口。
+ */
+function normalizePortal(body) {
+  if (typeof body.link !== "string" || body.link.length === 0) {
+    const alias = body.to ?? body.target ?? body.linkId;
+    body.link = typeof alias === "string" && alias.length > 0 ? alias : null;
+  }
+  const hasLink = typeof body.link === "string" && body.link.length > 0;
+  body.entry = body.kind === "portalExit" ? false : body.entry !== false && hasLink;
+  body.facing = Number.isFinite(body.facing) ? normalizeAngle(body.facing) : null;
+  body.exitSpeed = num(body.exitSpeed, 0);
+  body.cooldown = num(body.cooldown, PORTAL_COOLDOWN);
+  return body;
 }
 
 /**
@@ -342,28 +387,36 @@ export function makeBumper(x, y, opts = {}) {
 }
 
 /**
- * 传送门：一对圆形传感器。
- * 出口速度按两端朝向差旋转；未指定朝向时保持原速度方向。
+ * 传送门：一对圆形传感器。完整语义见 `portals.js` 头注。
+ *
+ * @param {{x,y,r?,facing?,exitSpeed?,cooldown?}} a 入口端
+ * @param {{x,y,r?,facing?,exitSpeed?,cooldown?}} b 另一端
+ * @param {object} [opts]
+ * @param {boolean} [opts.oneWay] true = B 端只出不进（关卡单向门）
+ * @param {number}  [opts.exitSpeed] 出口最小速度，避免传送后原地下坠
+ * @param {number}  [opts.cooldown]  传送冷却（s）
+ * @returns {[object, object]} `[入口, 另一端]`
  */
 export function makePortalPair(a, b, opts = {}) {
   const r = opts.r ?? 18;
   const idA = opts.idA || bodyId("po");
   const idB = opts.idB || bodyId("po");
-  const build = (p, id, link, facing) => {
+  const oneWay = opts.oneWay === true;
+  const build = (p, id, link, entry) => {
     const body = baseBody("circle", "portal", { ...opts, id, sensor: true });
     body.x = p.x;
     body.y = p.y;
     body.r = p.r ?? r;
-    body.link = link;
-    body.facing = facing === undefined ? null : normalizeAngle(facing);
-    /** 出口最小速度，避免传送后原地下坠 */
-    body.exitSpeed = opts.exitSpeed ?? 0;
+    /** 本端吃蛋后送往的另一端 id；出口端为 null */
+    body.link = entry ? link : null;
+    /** false = 只出不进 */
+    body.entry = entry;
+    body.facing = Number.isFinite(p.facing) ? normalizeAngle(p.facing) : null;
+    body.exitSpeed = p.exitSpeed ?? opts.exitSpeed ?? 0;
+    body.cooldown = p.cooldown ?? opts.cooldown ?? PORTAL_COOLDOWN;
     return computeAABB(body);
   };
-  return [
-    build(a, idA, idB, a.facing),
-    build(b, idB, idA, b.facing),
-  ];
+  return [build(a, idA, idB, true), build(b, idB, idA, !oneWay)];
 }
 
 /** 风扇力场：矩形区域内施加恒定加速度 */
