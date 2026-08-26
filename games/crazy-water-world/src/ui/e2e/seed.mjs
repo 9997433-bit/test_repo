@@ -1,5 +1,6 @@
 // 构造一份「中期存档」，用真实的 store/placeBuilding 生成，走真实读档路径。
 import { defaultState } from "../../core/store.js";
+import { stepSim } from "../../core/engine.js";
 import { placeBuilding } from "../../world/build.js";
 import { recruit } from "../../heroes/index.js";
 
@@ -52,6 +53,40 @@ export function richSave() {
   s.log = ["存档载入：木筏还在，恭喜老大。"];
   s.meta.savedAt = Date.now();
   return s;
+}
+
+function withLevel(state, type, level) {
+  return { ...state, buildings: state.buildings.map((b) => (b.type === type ? { ...b, level } : b)) };
+}
+
+/** 指定潜水船坞等级与关卡进度：给海区解锁面板做「一片开、一片锁」的样本。 */
+export function diveSave({ dockLevel = 2, bestStage = 19 } = {}) {
+  const s = withLevel(richSave(), "dive_dock", dockLevel);
+  s.campaign = { ...s.campaign, stage: Math.min(30, bestStage + 1), bestStage, attempts: 0 };
+  s.log = [`存档载入：${dockLevel} 级潜水船坞，最佳第 ${bestStage} 关。`];
+  s.meta.savedAt = Date.now();
+  return s;
+}
+
+/**
+ * 一份「马上要转海啸」的存档：天气由 (seed, tick) 决定，所以直接拿真实 stepSim
+ * 把种子筛一遍，挑一个在 minTick..maxTick 之间翻脸的。海啸只在 3 级指挥中心
+ * 以上的天气档里出现（data/weather.js WEATHER_SCHEDULE），所以 HQ 先垫到 3 级。
+ * 返回 { save, tick }：tick 是海啸落地的那一量子，脚本据此估算等待时间。
+ */
+export function tsunamiSave({ atTick = 80, seeds = 6000 } = {}) {
+  // 天气计时器每量子减 0.1s：把它设成 atTick×0.1 − 半格，第一次翻牌就落在第 atTick 个量子。
+  const timer = atTick * 0.1 - 0.05;
+  for (let seed = 1; seed <= seeds; seed += 1) {
+    const save = withLevel(richSave(), "hq", 3);
+    save.meta = { ...save.meta, seed, tick: 0, savedAt: Date.now() };
+    save.world = { ...save.world, weather: "clear", weatherTimer: timer };
+    save.log = ["存档载入：天要变了，老大。"];
+    let s = save;
+    for (let tick = 1; tick <= atTick; tick += 1) s = stepSim(s);
+    if (s.world.weather === "tsunami") return { save, tick: atTick };
+  }
+  throw new Error("seed: 没找到会在指定量子转海啸的种子");
 }
 
 /** 六人队 + 指定关卡进度的存档：给「5v5 取舍 / 伤病 / 首通奖励」这三条线做样本。 */
