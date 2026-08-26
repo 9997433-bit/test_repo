@@ -16,6 +16,9 @@ const requiredFiles = [
   "src/progression/realm.js",
   "src/disciples/assign.js",
   "src/ui/app.js",
+  "scripts/bench.mjs",
+  "scripts/probe.mjs",
+  "scripts/stress.mjs",
   "tests/economy.test.js",
   "tests/combat.test.js",
   "tests/progression.test.js",
@@ -29,6 +32,7 @@ const requiredExports = {
   "src/combat/tower.js": ["challengeTower", "towerReward"],
   "src/progression/realm.js": ["breakthroughChance", "canCultivate", "applyCultivate", "applyBreakthrough"],
   "src/disciples/assign.js": ["yieldMultiplier"],
+  "scripts/stress.mjs": ["TOWER_STRESS_CONFIG", "runTowerStress"],
 };
 
 const requiredActions = [
