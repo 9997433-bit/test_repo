@@ -1,4 +1,13 @@
-import { ITEM_NAMES, WISH_POOL } from "../../data/wishes.js";
+import {
+  ITEM_NAMES,
+  WISH_POOL,
+  WISH_PEARL_DROP,
+  WISH_REFRESH_MIN,
+  WISH_TOOL_DROP,
+  TOOL_DROP_WEIGHTS,
+  TOOL_PITY_DROUGHT,
+  TOOL_PITY_ORDER,
+} from "../../data/wishes.js";
 import { GUESTS, guestById } from "../../data/guests.js";
 import { BUILDINGS, buildingById } from "../../data/buildings.js";
 import { recipeById, recipesByBuilding } from "../../data/recipes.js";
@@ -6,10 +15,14 @@ import { dishById, dishByOutput, dishByRecipe } from "../../data/dishes.js";
 import { FURNITURE, furnitureById } from "../../data/furniture.js";
 import { priceOf, stallPrice, STALL_MARKUP } from "../../data/items.js";
 import { addInv, spendInv } from "../../core/store.js";
+import { furnitureWarmth, isPlaced, placedFurniture } from "../../core/furniture.js";
 import { pickWeighted, rollWith } from "./rng.js";
 
+const MINUTES_PER_HOUR = 60;
+
 export const WISH_SLOTS = 3;
-export const WISH_REFRESH_HOURS = 2;
+/** 数值事实源是 data/wishes.js 的 WISH_REFRESH_MIN（120 游戏分钟），这里只换算成游戏时。 */
+export const WISH_REFRESH_HOURS = WISH_REFRESH_MIN / MINUTES_PER_HOUR;
 export const WISH_EXPIRE_DAYS = 3;
 export const PET_COOLDOWN_MS = 20_000;
 
@@ -24,8 +37,6 @@ const FAVORITE_WARMTH = 8;
 const GUEST_BASE_STAY_DAYS = 2;
 const GUEST_MAX_STAY_DAYS = 4;
 const GUEST_STAY_PER_WARMTH = 20;
-const WISH_TOOL_CHANCE = 0.35;
-const WISH_PEARL_CHANCE = 0.04;
 const CAP_POP_PER_BUILDING = 4;
 const LOG_MAX = 40;
 // docs/GDD.md「家具与温馨」的两级阈值：一屋子暖气换一格心愿位、换一次加倍出菜。
@@ -35,11 +46,6 @@ const WISH_BONUS_SLOT_WARMTH = 100;
 const MIN_BUFF_FACTOR = 0.5;
 const MAX_BUFF_FACTOR = 2;
 
-const TOOL_WEIGHTS = [
-  ["shovel", 0.4],
-  ["axe", 0.35],
-  ["saw", 0.25],
-];
 const TOOL_NAMES = { shovel: "一把锹", axe: "一把斧子", saw: "一把锯子", pearl: "一颗珍珠" };
 
 function pushLog(state, line) {
@@ -54,6 +60,9 @@ function villageMeta(state) {
     cooked: v.cooked || 0,
     darkDishes: v.darkDishes || 0,
     lastDay: v.lastDay || state.meta?.day || 1,
+    // 工具保底的两个计数：pityStep = 开局必掉序列走到第几步，drought = 连续几单没见工具。
+    pityStep: v.pityStep || 0,
+    drought: v.drought || 0,
   };
 }
 
@@ -92,9 +101,9 @@ export function guestCapacity(state) {
 
 /**
  * 在座嘉宾里所有 buff.target 命中的系数连乘，钳在 [0.5, 2]。
- * 契约 §8 只允许 4 个应用点，村落这边占两个：wish（灯哥 0.85 缩短刷新间隔）、
- * stall（茶婆婆 1.1 抬售价）。kitchen（灶台叔叔 0.8）作用在 production.enqueueJob
- * 的厨房工单上，cook 是瞬时动作、没有时长可缩，故不在此消费。
+ * 契约 §8 的应用点里村落占三个：wish（灯哥 0.85 缩短补位间隔）、stall（茶婆婆 1.1 抬售价）、
+ * kitchen（灶台叔叔 0.8 压低 cook 翻车率）；kitchen 的另一半——厨房工单时长——在
+ * production.enqueueJob 上消费，两处互不重叠。
  */
 export function guestBuffFactor(state, target) {
   let factor = 1;
@@ -116,23 +125,13 @@ function guestUntil(seat, day) {
 
 /* ---------------------------------------------------------------- 家具 */
 
-export function placedFurniture(state) {
-  return (state.furniture || []).filter(Boolean);
-}
-
-export function hasFurniture(state, furnitureId) {
-  return placedFurniture(state).some((f) => (typeof f === "string" ? f : f.id) === furnitureId);
-}
-
-/** 摆出来的家具是温馨度的保底盘：每日回落不会把屋子掏空到这条线以下。 */
-export function furnitureWarmth(state) {
-  let total = 0;
-  for (const item of placedFurniture(state)) {
-    const def = furnitureById(typeof item === "string" ? item : item.id);
-    if (def) total += def.warmth;
-  }
-  return total;
-}
+/**
+ * 家具的规范实现在 core/furniture.js（契约 §5.9）：落盘是家具 id 的字符串数组，
+ * 买家具走 core 的 placeFurniture。村落这边只借读取端算温馨保底盘（rolloverDays 日衰减），
+ * 导出名保留给读过旧版的调用方。
+ */
+export { placedFurniture, furnitureWarmth };
+export { isPlaced as hasFurniture };
 
 /* ---------------------------------------------------------------- 心愿 */
 
@@ -241,6 +240,28 @@ export function acceptWish(state, { wishId } = {}) {
   return { ok: true, wish: accepted, state: { ...state, wishes } };
 }
 
+/**
+ * 锹 / 斧 / 锯只有心愿屋会掉，没有它们后面的作坊根本盖不起来，所以掉率带两级保底
+ * （口径与常量都在 data/wishes.js）：
+ * 1) 新档前三单按 TOOL_PITY_ORDER 必掉 斧 → 锯 → 锹，正好解锁磨坊 / 饲料厂 / 鸡舍；
+ * 2) 之后基础 WISH_TOOL_DROP，连续 TOOL_PITY_DROUGHT 单空手则下一单按权重必掉。
+ * 有效掉率 ≈ 0.29，通关 70–90 单期望 23–29 件，对上全程工具需求。
+ */
+function drawTool(state, wish, rng) {
+  const { pityStep, drought } = villageMeta(state);
+  const byWeight = () =>
+    pickWeighted(TOOL_DROP_WEIGHTS, rollWith(rng, "wish-tool", wish.wishId, wish.id));
+
+  if (pityStep < TOOL_PITY_ORDER.length) {
+    return { tool: TOOL_PITY_ORDER[pityStep], pityStep: pityStep + 1, drought: 0 };
+  }
+  if (drought >= TOOL_PITY_DROUGHT) return { tool: byWeight(), pityStep, drought: 0 };
+  if (rollWith(rng, "wish-gift", wish.wishId, wish.id, wish.coin) < WISH_TOOL_DROP) {
+    return { tool: byWeight(), pityStep, drought: 0 };
+  }
+  return { tool: null, pityStep, drought: drought + 1 };
+}
+
 export function deliverWish(state, { wishId, rng } = {}) {
   const wish = findWish(state, wishId);
   if (!wish) return { ok: false, reason: "心愿不见了", state };
@@ -255,14 +276,13 @@ export function deliverWish(state, { wishId, rng } = {}) {
     happiness: (spent.state.resources.happiness || 0) + 1,
   };
 
-  // 锹 / 斧 / 锯只有心愿屋会掉，没有它们后面的作坊根本盖不起来。
   const gifts = [];
-  if (rollWith(rng, "wish-gift", wish.wishId, wish.id, wish.coin) < WISH_TOOL_CHANCE) {
-    const tool = pickWeighted(TOOL_WEIGHTS, rollWith(rng, "wish-tool", wish.wishId, wish.id));
-    resources[tool] = (resources[tool] || 0) + 1;
-    gifts.push(TOOL_NAMES[tool]);
+  const drawn = drawTool(state, wish, rng);
+  if (drawn.tool) {
+    resources[drawn.tool] = (resources[drawn.tool] || 0) + 1;
+    gifts.push(TOOL_NAMES[drawn.tool]);
   }
-  if (rollWith(rng, "wish-pearl", wish.wishId, wish.id, wish.xp) < WISH_PEARL_CHANCE) {
+  if (rollWith(rng, "wish-pearl", wish.wishId, wish.id, wish.xp) < WISH_PEARL_DROP) {
     resources.pearl = (resources.pearl || 0) + 1;
     gifts.push(TOOL_NAMES.pearl);
   }
@@ -277,7 +297,14 @@ export function deliverWish(state, { wishId, rng } = {}) {
       `心愿达成：${wish.name}，收入 ${coins} 金币${gifts.length ? `，还捎来${gifts.join("、")}` : ""}`,
     ),
   };
-  return { ok: true, coins, gifts, state: refreshWishes(next) };
+  // 交完不当场补满：空出来的格子留给 tickVillage 每 2 游戏时补 1 位的节拍（契约 §5.1），
+  // 否则灯哥的补位 buff 与整个节奏设计都只在过期/换单路径上生效。
+  return {
+    ok: true,
+    coins,
+    gifts,
+    state: withVillage(next, { pityStep: drawn.pityStep, drought: drawn.drought }),
+  };
 }
 
 /* ---------------------------------------------------------------- 待客 */
@@ -359,7 +386,8 @@ export function cook(state, { recipeId, dishId, guestId, rng } = {}) {
   const warmth = Math.max(0, state.resources?.warmth || 0);
   // 没有注入 rng 时，翻车与否由存档自身决定，同一状态永远得到同一锅菜。
   const seed = [recipe.id, guestId || "-", state.meta?.day || 1, Math.floor(state.meta?.gameMinutes || 0), meta.cooked];
-  const dark = rollWith(rng, "cook", ...seed) < BASE_DARK_CHANCE;
+  // 灶台叔叔坐镇时翻车率 8% → 6.4%（契约 §8 的 kitchen 应用点，工时那半边在 enqueueJob）。
+  const dark = rollWith(rng, "cook", ...seed) < BASE_DARK_CHANCE * guestBuffFactor(state, "kitchen");
   const crit =
     !dark && warmth >= COOK_CRIT_WARMTH && rollWith(rng, "cook-crit", ...seed) < COOK_CRIT_CHANCE;
   const guest = guestById(guestId);
@@ -453,39 +481,6 @@ export function build(state, { buildingId } = {}) {
   };
 }
 
-/** 买家具：钱货两清后直接摆进屋，永久抬温馨（data/furniture.js 即价目表）。 */
-export function place(state, { furnitureId } = {}) {
-  const def = furnitureById(furnitureId);
-  if (!def) return { ok: false, reason: "没有这件家具", state };
-  if (hasFurniture(state, furnitureId)) return { ok: false, reason: "这件已经摆上了", state };
-  if ((state.meta?.level || 1) < def.unlockLevel) return { ok: false, reason: "小镇等级不够", state };
-
-  const { resCost, invCost } = splitCost(state, def.cost);
-  for (const [k, v] of Object.entries(resCost)) {
-    if ((state.resources?.[k] || 0) < v) return { ok: false, reason: "金币或材料不够", state };
-  }
-  const spent = Object.keys(invCost).length ? spendInv(state, invCost) : { ok: true, state };
-  if (!spent.ok) return { ok: false, reason: "库存不够", state };
-
-  const resources = { ...spent.state.resources };
-  for (const [k, v] of Object.entries(resCost)) resources[k] -= v;
-  resources.warmth = (resources.warmth || 0) + def.warmth;
-
-  const day = state.meta?.day || 1;
-  return {
-    ok: true,
-    warmth: def.warmth,
-    state: {
-      ...spent.state,
-      resources: normalizeMood(resources),
-      furniture: [...placedFurniture(spent.state), { id: def.id, room: def.room, day }],
-      log: pushLog(spent.state, `${def.name}摆好了，${def.desc}`),
-    },
-  };
-}
-
-export { place as placeFurniture };
-
 /* ---------------------------------------------------------------- 萌宠 */
 
 export function petPlay(state, { petId, now = Date.now() } = {}) {
@@ -572,9 +567,13 @@ function rolloverDays(state) {
 
 function refillWishSlot(state, nowMs) {
   const open = (state.wishes || []).filter(isActiveWish);
-  if (open.length >= wishSlots(state)) return state;
-  if (!open.length) return refreshWishes(state, nowMs);
   const meta = villageMeta(state);
+  // 板满时把计时器停掉。不停的话它会在满板期间一路走过期，交完单的下一帧就立刻补位，
+  // 等于把刚拆掉的「交付即补满」又装了回去；停表后每个空位都从空出来的那一刻起算 2 游戏时。
+  if (open.length >= wishSlots(state)) {
+    return meta.nextWishAt ? withVillage(state, { nextWishAt: 0 }) : state;
+  }
+  if (!open.length) return refreshWishes(state, nowMs);
   if (!meta.nextWishAt) return withVillage(state, { nextWishAt: nowMs + wishIntervalMs(state) });
   if (nowMs < meta.nextWishAt) return state;
   return fillWishes(state, 1, nowMs);
