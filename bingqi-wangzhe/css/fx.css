@@ -1,0 +1,694 @@
+/* 战斗舞台与飞行资源的视觉层
+   —— 弹道本体画在 canvas 上（js/ui/fx/ballistics.js），
+      这里只管牌面、闪白、慢动作滤镜、印章与飞币。 */
+
+/* ================= 战斗舞台 ================= */
+
+.bstage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bstage__field {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  gap: 6px;
+  min-height: 232px;
+  padding: 12px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--ink-line);
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(194, 58, 43, 0.16), transparent 62%),
+    radial-gradient(120% 80% at 50% 100%, rgba(228, 184, 74, 0.13), transparent 62%),
+    linear-gradient(180deg, #14100c, #0b0a09 70%);
+  overflow: hidden;
+  transition: filter var(--t-mid) var(--ease-out);
+}
+
+.bstage__grain {
+  position: absolute;
+  inset: 0;
+  background-image: var(--tex-noise);
+  background-size: 220px;
+  opacity: 0.3;
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+}
+
+/* KO 慢动作：画面压暗 + 轻微放大，让「那一下」被看见 */
+.bstage__field.is-ko {
+  filter: saturate(0.72) contrast(1.16) brightness(0.86);
+}
+
+.bstage__field.is-ko::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(60% 52% at 50% 50%, transparent 40%, rgba(0, 0, 0, 0.62));
+  animation: ko-vignette 560ms var(--ease-out) both;
+}
+
+.bstage__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bstage__row {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+}
+
+.bstage__row--enemy {
+  align-items: flex-start;
+}
+
+.bstage__row--player {
+  align-items: flex-end;
+}
+
+.bstage__mid {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  min-height: 18px;
+}
+
+.bstage__mid::before,
+.bstage__mid::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--ink-line-strong), transparent);
+}
+
+.bstage__banner {
+  font-family: var(--font-serif);
+  font-size: 11.5px;
+  letter-spacing: 0.24em;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.bstage__banner.is-in {
+  animation: banner-in 420ms var(--ease-snap) both;
+}
+
+.bstage__round {
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  color: var(--paper-4);
+  border: 1px solid var(--ink-line);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+/* —— 单位牌 —— */
+
+.bunit {
+  position: relative;
+  width: 62px;
+  padding: 5px 4px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid color-mix(in srgb, var(--el, var(--gold)) 42%, var(--ink-line));
+  background: linear-gradient(180deg, rgba(30, 24, 18, 0.94), rgba(11, 10, 9, 0.94));
+  text-align: center;
+  overflow: hidden;
+  transition: transform var(--t-fast) var(--ease-snap), opacity var(--t-mid);
+}
+
+.bunit.is-boss {
+  width: 78px;
+  border-color: var(--cinnabar-lit);
+  box-shadow: 0 0 18px -6px var(--cinnabar-lit);
+}
+
+.bunit__sigil {
+  display: grid;
+  place-items: center;
+  height: 26px;
+}
+
+.bunit__sigil .icon {
+  width: 22px;
+  height: 22px;
+  color: var(--el, var(--gold));
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--el, var(--gold)) 70%, transparent));
+}
+
+.bunit__name {
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--paper-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bunit__hp {
+  margin-top: 4px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(243, 230, 197, 0.14);
+  overflow: hidden;
+}
+
+.bunit__hp > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ok), color-mix(in srgb, var(--ok) 40%, var(--gold)));
+  transition: width 220ms var(--ease-out);
+}
+
+.bunit.is-low .bunit__hp > i {
+  background: linear-gradient(90deg, var(--cinnabar), var(--cinnabar-lit));
+}
+
+.bunit[data-side="enemy"] .bunit__hp > i {
+  background: linear-gradient(90deg, var(--cinnabar-lit), var(--gold-deep));
+}
+
+/* —— 状态图标 ——
+   高度恒定占位，免得战斗中挂上 / 掉落状态时整排牌跳一下 */
+.bunit__st {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  min-height: 15px;
+  margin-top: 4px;
+}
+
+.bunit__stchip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--st, var(--gold)) 55%, transparent);
+  background: color-mix(in srgb, var(--st, var(--gold)) 16%, rgba(11, 10, 9, 0.9));
+  color: var(--st, var(--gold));
+}
+
+.bunit__stchip .icon {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+
+.bunit__stchip[data-bad="true"] {
+  border-style: dashed;
+}
+
+.bunit__stchip[data-tone="fire"] {
+  --st: var(--el-fire);
+}
+.bunit__stchip[data-tone="ice"] {
+  --st: var(--el-ice);
+}
+.bunit__stchip[data-tone="thunder"] {
+  --st: var(--el-thunder);
+}
+.bunit__stchip[data-tone="gold"] {
+  --st: var(--gold);
+}
+.bunit__stchip[data-tone="ok"] {
+  --st: var(--ok);
+}
+.bunit__stchip[data-tone="bad"] {
+  --st: var(--bad);
+}
+
+.bunit__stturn {
+  position: absolute;
+  right: -3px;
+  bottom: -5px;
+  font-family: var(--font-num);
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1;
+  color: var(--paper);
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+}
+
+.bunit__stchip.is-in {
+  animation: status-pop 280ms var(--ease-snap) both;
+}
+
+.bunit__flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 受击闪白：白闪 + 抖一下 */
+.bunit.is-hit .bunit__flash {
+  animation: hit-flash 240ms var(--ease-out) both;
+}
+
+.bunit.is-hit {
+  animation: hit-shake 240ms var(--ease-out) both;
+}
+
+.bunit.is-acting {
+  animation: unit-lunge 240ms var(--ease-snap) both;
+}
+
+.bunit[data-side="enemy"].is-acting {
+  animation-name: unit-lunge-down;
+}
+
+.bunit.is-dying {
+  animation: unit-ko 620ms var(--ease-out) both;
+}
+
+.bunit.is-dead {
+  opacity: 0.34;
+  filter: grayscale(1);
+}
+
+.bunit__floats {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.dmgfloat {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-num);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--paper);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  animation: float-up 900ms var(--ease-out) both;
+}
+
+.dmgfloat.is-crit {
+  font-size: 17px;
+  color: var(--gold-lit);
+  text-shadow: 0 0 12px rgba(247, 217, 138, 0.85), 0 1px 3px #000;
+}
+
+.dmgfloat.is-heal {
+  color: var(--ok);
+}
+
+.dmgfloat.is-dot {
+  color: var(--cinnabar-lit);
+  font-size: 11px;
+}
+
+.dmgfloat.is-shield,
+.dmgfloat.is-status {
+  color: var(--ice);
+  font-size: 11px;
+}
+
+.dmgfloat.is-buff {
+  color: var(--gold-lit);
+  font-size: 11px;
+}
+
+/* —— 控制条 —— */
+
+.bstage__bar {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.bstage__btn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-line);
+  background: rgba(11, 10, 9, 0.5);
+  color: var(--paper-2);
+  font-size: 11px;
+  transition: transform var(--t-fast) var(--ease-snap), color var(--t-fast);
+}
+
+.bstage__btn:active {
+  transform: scale(0.94);
+  color: var(--gold);
+}
+
+.timeline--live {
+  max-height: 24vh;
+  scroll-behavior: smooth;
+}
+
+.tl--ally {
+  border-left-color: var(--gold-deep);
+}
+
+.tl--kill {
+  border-left-color: var(--cinnabar-lit);
+  background: rgba(194, 58, 43, 0.12);
+}
+
+/* ================= 胜负印章 ================= */
+
+/* 盖章时把身后的战场压暗，印章才读得出来 */
+.bstage__field.is-sealed .bstage__row,
+.bstage__field.is-sealed .bstage__mid {
+  filter: brightness(0.42) saturate(0.6);
+  transition: filter 420ms var(--ease-out);
+}
+
+.seal {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  transform: translate(-50%, -50%) scale(2.6) rotate(-16deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seal__stamp {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 12px;
+  border: 3px solid currentColor;
+  background: rgba(11, 10, 9, 0.62);
+  box-shadow: 0 0 26px -6px currentColor, inset 0 0 18px -8px currentColor;
+}
+
+.seal__char {
+  font-family: var(--font-kai);
+  font-size: 46px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: currentColor;
+  text-shadow: 0 0 18px currentColor;
+}
+
+.seal__caption {
+  position: relative;
+  z-index: 2;
+  max-width: 82vw;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-line);
+  background: rgba(11, 10, 9, 0.82);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  color: var(--paper-2);
+}
+
+.seal__grade {
+  position: absolute;
+  right: -12px;
+  top: -10px;
+  z-index: 3;
+  font-family: var(--font-num);
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: rgba(11, 10, 9, 0.92);
+}
+
+.seal__ink {
+  position: absolute;
+  left: 50%;
+  top: 42px;
+  width: 132px;
+  height: 132px;
+  margin: -66px 0 0 -66px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 52% 48%, color-mix(in srgb, currentColor 34%, transparent), transparent 66%);
+  opacity: 0;
+}
+
+.seal.is-win {
+  color: var(--cinnabar-lit);
+}
+
+.seal.is-lose {
+  color: var(--paper-3);
+}
+
+.seal.is-draw {
+  color: var(--gold);
+}
+
+.seal.is-stamped {
+  animation: seal-stamp 520ms cubic-bezier(0.2, 1.4, 0.34, 1) forwards;
+}
+
+.seal.is-stamped .seal__ink {
+  animation: seal-ink 720ms var(--ease-out) 160ms forwards;
+}
+
+.seal.is-instant.is-stamped,
+.seal.is-instant.is-stamped .seal__ink {
+  animation: none;
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1) rotate(-6deg);
+}
+
+.seal.is-instant.is-stamped .seal__ink {
+  transform: none;
+  opacity: 0.5;
+}
+
+/* ================= 飞行资源 ================= */
+
+.flyloot {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  pointer-events: none;
+}
+
+.flyloot__coin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--res-color, var(--gold)) 62%, transparent);
+  background: radial-gradient(circle at 40% 34%, rgba(255, 246, 214, 0.9), rgba(11, 10, 9, 0.9) 74%);
+  box-shadow: 0 0 12px -2px var(--res-color, var(--gold));
+}
+
+.flyloot__coin .icon {
+  width: 13px;
+  height: 13px;
+  color: var(--res-color, var(--gold));
+}
+
+/* ================= 关键帧 ================= */
+
+@keyframes hit-flash {
+  0% {
+    opacity: 0.86;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes hit-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  60% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes unit-lunge {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px) scale(1.04);
+  }
+}
+
+@keyframes unit-lunge-down {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(6px) scale(1.04);
+  }
+}
+
+@keyframes unit-ko {
+  0% {
+    transform: translateY(0) rotate(0);
+    filter: brightness(2.2);
+  }
+  30% {
+    transform: translateY(-4px) rotate(-4deg);
+    filter: brightness(1.6);
+  }
+  100% {
+    transform: translateY(10px) rotate(9deg);
+    filter: grayscale(1) brightness(0.7);
+    opacity: 0.34;
+  }
+}
+
+@keyframes float-up {
+  0% {
+    transform: translate(-50%, 6px) scale(0.7);
+    opacity: 0;
+  }
+  22% {
+    transform: translate(-50%, -8px) scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -34px) scale(0.94);
+    opacity: 0;
+  }
+}
+
+@keyframes status-pop {
+  0% {
+    transform: scale(0.2) rotate(-16deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.22) rotate(3deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+
+@keyframes banner-in {
+  0% {
+    opacity: 0;
+    letter-spacing: 0.6em;
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: 0.24em;
+  }
+}
+
+@keyframes ko-vignette {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes seal-stamp {
+  0% {
+    transform: translate(-50%, -50%) scale(2.6) rotate(-16deg);
+    opacity: 0;
+  }
+  55% {
+    transform: translate(-50%, -50%) scale(0.92) rotate(-4deg);
+    opacity: 1;
+  }
+  72% {
+    transform: translate(-50%, -50%) scale(1.06) rotate(-7deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1) rotate(-6deg);
+    opacity: 1;
+  }
+}
+
+@keyframes seal-ink {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+}
+
+/* ================= 降级 ================= */
+
+.reduce-motion .bunit,
+.reduce-motion .bunit__flash,
+.reduce-motion .bunit__stchip,
+.reduce-motion .bstage__banner,
+.reduce-motion .dmgfloat,
+.reduce-motion .seal,
+.reduce-motion .seal__ink {
+  animation: none !important;
+}
+
+.reduce-motion .bunit__hp > i {
+  transition: none;
+}
+
+.reduce-motion .dmgfloat {
+  opacity: 1;
+  transform: translate(-50%, -22px);
+}
+
+.reduce-motion .seal {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1) rotate(-6deg);
+}
+
+.reduce-motion .bstage__field.is-ko {
+  filter: none;
+}
+
+.reduce-motion .timeline--live {
+  scroll-behavior: auto;
+}
