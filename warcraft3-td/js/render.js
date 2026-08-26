@@ -240,18 +240,20 @@
     const c = cv.getContext("2d");
     c.scale(SS, SS);
 
-    /* 1) mottled grass tiles: hue drifts with fbm noise, no visible grid */
-    for (let ty = 0; ty < game.mapH; ty++) {
-      for (let tx = 0; tx < game.mapW; tx++) {
-        const n = fbm(tx * 0.34, ty * 0.34);
-        const dry = fbm(tx * 0.72 + 37.2, ty * 0.72 + 11.8);
-        let cr = 52 + n * 26, cg = 92 + n * 46, cb = 30 + n * 14;
-        if (dry > 0.62) { /* sun-bleached patch */
-          const k = (dry - 0.62) * 2.4;
-          cr += 42 * k; cg += 14 * k; cb += 4 * k;
+    /* 1) mottled grass wash sampled at half-tile cells so no grid shows */
+    const SUB = 2;
+    const cell = TILE / SUB;
+    for (let sy = 0; sy < game.mapH * SUB; sy++) {
+      for (let sx = 0; sx < game.mapW * SUB; sx++) {
+        const n = fbm(sx * 0.17, sy * 0.17);
+        const dry = fbm(sx * 0.31 + 37.2, sy * 0.31 + 11.8);
+        let cr = 55 + n * 22, cg = 96 + n * 38, cb = 32 + n * 11;
+        if (dry > 0.6) { /* sun-bleached patch, soft-edged */
+          const k = Math.min(1, (dry - 0.6) * 5);
+          cr += 30 * k; cg += 9 * k; cb += 3 * k;
         }
         c.fillStyle = "rgb(" + (cr | 0) + "," + (cg | 0) + "," + (cb | 0) + ")";
-        c.fillRect(tx * TILE, ty * TILE, TILE + 1, TILE + 1);
+        c.fillRect(sx * cell, sy * cell, cell + 1, cell + 1);
       }
     }
     /* 2) painterly blobs to break tile edges */
