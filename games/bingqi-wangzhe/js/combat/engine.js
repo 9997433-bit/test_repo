@@ -390,7 +390,10 @@ export function simulateBattle(input = {}) {
     const marks = [];
     if (relation) marks.push(relation);
     if (crit) marks.push('暴击');
-    if (absorbed > 0) marks.push(`护盾吸收${absorbed}`);
+    if (absorbed > 0 && damage > 0) marks.push(`护盾吸收${absorbed}`);
+    const hitText = damage === 0 && absorbed > 0
+      ? `被护盾吸收 ${absorbed}`
+      : `${damage} 伤害`;
 
     emit('damage', {
       actorUid: source.uid,
@@ -408,7 +411,7 @@ export function simulateBattle(input = {}) {
       multiplier: mult,
       hp: target.hp,
       maxHp: target.maxHp,
-      text: `${opts.label ?? '攻击'} · ${source.name} → ${target.name} ${damage} 伤害`
+      text: `${opts.label ?? '攻击'} · ${source.name} → ${target.name} ${hitText}`
         + `${marks.length ? `（${marks.join(' · ')}）` : ''}`
         + ` [${target.name} ${target.hp}/${target.maxHp}]`,
     });
