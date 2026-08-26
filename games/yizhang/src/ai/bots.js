@@ -271,12 +271,10 @@ function bruteBrain(ctx) {
   return {
     mx,
     mz,
-    yaw: seek,
     slap: wantSlap,
     skill: wantSkill,
     dash: wantDash,
     jump: mem.timers.jump <= 0 && (num(target.y) - num(me.y) > 1.4 || rng() < 0.015),
-    aggression: 1,
   };
 }
 
@@ -307,12 +305,10 @@ function foxBrain(ctx) {
   return {
     mx,
     mz,
-    yaw: seek,
     slap: wantSlap,
     skill: wantSkill,
     dash: wantDash,
     jump: mem.timers.jump <= 0 && rng() < 0.01,
-    aggression: mem.committing ? 0.9 : 0.6,
   };
 }
 
@@ -339,12 +335,10 @@ function bullyBrain(ctx) {
   return {
     mx,
     mz,
-    yaw: seek,
     slap: wantSlap,
     skill: wantSkill,
     dash: wantDash,
     jump: mem.timers.jump <= 0 && rng() < 0.008,
-    aggression: 0.95,
   };
 }
 
