@@ -14,32 +14,59 @@
     ctx.restore();
   }
 
-  function box(ctx, x, y, w, h, top, colTop, colLeft, colRight) {
-    // isometric-ish block: left face, right face, top face
-    const gl = ctx.createLinearGradient(x - w, y - h, x, y);
-    gl.addColorStop(0, colLeft); gl.addColorStop(1, 'rgba(0,0,0,0.42)');
-    const gr = ctx.createLinearGradient(x, y - h, x + w, y);
-    gr.addColorStop(0, colRight); gr.addColorStop(1, 'rgba(0,0,0,0.12)');
-    ctx.fillStyle = gl;
-    ctx.beginPath();
-    ctx.moveTo(x - w, y); ctx.lineTo(x - w, y - h); ctx.lineTo(x, y - h + top); ctx.lineTo(x, y + top);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = gr;
-    ctx.beginPath();
-    ctx.moveTo(x + w, y); ctx.lineTo(x + w, y - h); ctx.lineTo(x, y - h + top); ctx.lineTo(x, y + top);
-    ctx.closePath(); ctx.fill();
-    const gt = ctx.createLinearGradient(x - w, y - h - top, x + w, y - h + top);
-    gt.addColorStop(0, colTop); gt.addColorStop(1, 'rgba(255,255,255,0.10)');
-    ctx.fillStyle = gt;
-    ctx.beginPath();
-    ctx.moveTo(x, y - h + top); ctx.lineTo(x - w, y - h); ctx.lineTo(x, y - h - top); ctx.lineTo(x + w, y - h);
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,240,200,0.28)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+  /* Fill a path with an opaque base colour, then wash a translucent gradient
+   * over it. Putting the alpha only in the wash keeps the block solid — a
+   * gradient that ends on a transparent stop would make the wall see-through. */
+  function face(ctx, path, base, gx0, gy0, gx1, gy1, from, to) {
+    ctx.fillStyle = base;
+    path(); ctx.fill();
+    const g = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+    g.addColorStop(0, from); g.addColorStop(1, to);
+    ctx.fillStyle = g;
+    path(); ctx.fill();
   }
 
-  function platform(ctx, x, y, r, color, edge) {
+  function box(ctx, x, y, w, h, top, colTop, colLeft, colRight) {
+    // isometric-ish block: left face, right face, top face
+    face(ctx, () => {
+      ctx.beginPath();
+      ctx.moveTo(x - w, y); ctx.lineTo(x - w, y - h); ctx.lineTo(x, y - h + top); ctx.lineTo(x, y + top);
+      ctx.closePath();
+    }, colLeft, x - w, y - h, x, y, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.45)');
+
+    face(ctx, () => {
+      ctx.beginPath();
+      ctx.moveTo(x + w, y); ctx.lineTo(x + w, y - h); ctx.lineTo(x, y - h + top); ctx.lineTo(x, y + top);
+      ctx.closePath();
+    }, colRight, x, y - h, x + w, y, 'rgba(255,255,255,0.14)', 'rgba(0,0,0,0.30)');
+
+    const topPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(x, y - h + top); ctx.lineTo(x - w, y - h); ctx.lineTo(x, y - h - top); ctx.lineTo(x + w, y - h);
+      ctx.closePath();
+    };
+    face(ctx, topPath, colTop, x - w, y - h - top, x + w, y - h + top,
+         'rgba(255,255,255,0.20)', 'rgba(0,0,0,0.18)');
+
+    ctx.strokeStyle = 'rgba(255,240,200,0.28)';
+    ctx.lineWidth = 1;
+    topPath(); ctx.stroke();
+    // silhouette so the block reads against dark terrain
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.moveTo(x - w, y); ctx.lineTo(x - w, y - h); ctx.lineTo(x, y - h - top);
+    ctx.lineTo(x + w, y - h); ctx.lineTo(x + w, y); ctx.lineTo(x, y + top);
+    ctx.closePath(); ctx.stroke();
+  }
+
+  function platform(ctx, x, y, r, color, edge, depth) {
+    const d = depth === undefined ? 5 : depth;
+    // stone skirt, so the building sits on a pedestal instead of floating
+    ctx.fillStyle = edge;
+    ctx.beginPath();
+    ctx.moveTo(x - r, y); ctx.lineTo(x, y + r * 0.5); ctx.lineTo(x + r, y);
+    ctx.lineTo(x + r, y + d); ctx.lineTo(x, y + r * 0.5 + d); ctx.lineTo(x - r, y + d);
+    ctx.closePath(); ctx.fill();
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(x, y - r * 0.5); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r * 0.5); ctx.lineTo(x - r, y);

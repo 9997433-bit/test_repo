@@ -25,7 +25,7 @@
     const w = Math.max(1, this.game.wave);
     const phase = ((w - 1) % 8) / 8; // 0..1 across two 4-wave cycles
     const night = 0.5 - 0.5 * Math.cos(phase * TAU);
-    return { a: night * 0.42, r: 20, g: 30, b: 70, night };
+    return { a: night * 0.30, r: 20, g: 30, b: 70, night };
   };
 
   Renderer.prototype.draw = function () {
@@ -124,13 +124,16 @@
     const tn = this.tint();
     if (tn.a > 0.02) {
       ctx.save();
+      // Dim every channel — leaving blue at 255 would wash the board violet
+      // instead of reading as dusk.
       ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = 'rgba(' + (255 - tn.a * 180) + ',' + (255 - tn.a * 160) + ',255,1)';
+      ctx.fillStyle = 'rgb(' + Math.round(255 - tn.a * 165) + ',' +
+        Math.round(255 - tn.a * 150) + ',' + Math.round(255 - tn.a * 70) + ')';
       ctx.fillRect(0, 0, w, h);
       ctx.restore();
       ctx.save();
-      ctx.globalAlpha = tn.a * 0.5;
-      ctx.fillStyle = 'rgba(30,40,110,1)';
+      ctx.globalAlpha = tn.a * 0.28;
+      ctx.fillStyle = 'rgb(18,26,70)';
       ctx.fillRect(0, 0, w, h);
       ctx.restore();
     }
