@@ -28,7 +28,7 @@
 | Round 1 | 完成 | 见 `round1/BRIEF.md`：四层实现 + 规格合流，UI 仍 mock |
 | Round 2 | 完成 | 见 `round2/BRIEF.md`：真实存档闭环、测试全绿；经济 60min 仅到 9 关 |
 | Round 3 | 完成 | 见 `round3/BRIEF.md`：10/10 单测，57 分钟到 20 关 |
-| 归档合并 | 进行中 | 结构化 PR 更新中 |
+| 归档合并 | 完成 | PR #3 已标为可审；父编排器无 gh 写权限故未代为合并 |
 
 ## 目标验收（SOTA）
 
