@@ -1,160 +1,855 @@
 @import "./tokens.css";
 
+/* ============================================================
+   0 · 基础
+   ============================================================ */
+
 * { box-sizing: border-box; }
+
 html, body, #app { margin: 0; height: 100%; }
+#app { height: 100dvh; }
+
 body {
   font-family: var(--font-body);
-  color: var(--ink);
-  background: #1c1410;
+  color: var(--text);
+  background: #171208;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
+
+::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+
+:where(button) {
+  font: inherit;
+  touch-action: manipulation;
+}
+
+:where(button):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   1 · 场景骨架：天空 / 远山 / 纸纹
+   .app 自身画天空与四角暗角；
+   ::before 画月、雾带与三重远山（z 最低，永远垫底）；
+   ::after 画全局宣纸纹理（z 最高，不拦截指针）。
+   ============================================================ */
 
 .app {
+  position: relative;
   height: 100%;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  isolation: isolate;
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(255, 230, 180, 0.25), transparent 50%),
-    linear-gradient(180deg, #6b8f7a 0%, #c9b48a 38%, #8a6a45 100%);
-  position: relative;
+    radial-gradient(140% 100% at 50% 28%, transparent 55%, var(--vignette) 100%),
+    radial-gradient(120% 58% at 50% -12%, var(--sky-glow), transparent 56%),
+    linear-gradient(180deg, var(--sky-hi) 0%, var(--sky-mid) 46%, var(--sky-lo) 100%);
 }
 
-.app[data-season="summer"] { background: linear-gradient(180deg, #6aa8c2 0%, #d7e3a4 42%, #6d8b4e 100%); }
-.app[data-season="autumn"] { background: linear-gradient(180deg, #d08b4c 0%, #e7c27a 40%, #7a3e2b 100%); }
-.app[data-season="winter"] { background: linear-gradient(180deg, #8aa4b8 0%, #e8eef4 40%, #9aa7b2 100%); }
-.app.is-night { filter: saturate(0.85); }
+.app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-scene);
+  pointer-events: none;
+  background:
+    radial-gradient(92px 92px at 79% 15%, var(--moon-core) 0 30%, var(--moon-halo) 46%, transparent 68%),
+    linear-gradient(180deg, transparent 44%, var(--mist) 57%, transparent 72%),
+    radial-gradient(46% 30% at 12% 56%, var(--mtn-far) 0 61%, transparent 62%),
+    radial-gradient(54% 26% at 86% 58%, var(--mtn-far) 0 61%, transparent 62%),
+    radial-gradient(38% 24% at 46% 61%, var(--mtn-mid) 0 61%, transparent 62%),
+    radial-gradient(58% 20% at 108% 68%, var(--mtn-near) 0 61%, transparent 62%),
+    radial-gradient(52% 19% at -8% 70%, var(--mtn-near) 0 61%, transparent 62%);
+}
+
+.app::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-grain);
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: var(--grain-blend);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* ============================================================
+   2 · HUD：题字 + 印章 + 卷签
+   ============================================================ */
 
 .hud {
+  position: relative;
+  z-index: var(--z-chrome);
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 14px 6px;
   align-items: center;
-}
-.brand {
-  font-family: var(--font-display);
-  font-size: 28px;
-  letter-spacing: 0.08em;
-  text-shadow: 0 2px 0 rgba(255,255,255,0.25);
-}
-.pills { display: flex; flex-wrap: wrap; gap: 6px; }
-.pill {
-  background: color-mix(in srgb, var(--paper) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--ink) 10%);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 13px;
-  box-shadow: 0 2px 0 var(--shadow);
+  gap: 10px;
+  padding: calc(8px + var(--safe-t)) 16px 6px;
 }
 
-.stage { position: relative; overflow: hidden; padding: 8px 16px 0; }
-.garden {
-  height: 100%;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: clamp(21px, 3.2vw, 29px);
+  letter-spacing: 0.1em;
+  color: var(--text);
+  text-shadow: 0 1px 0 var(--edge-hi);
+}
+
+/* 落款印章 */
+.brand::after {
+  content: "園";
+  flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-  gap: 14px;
+  place-items: center;
+  width: 1.05em;
+  height: 1.05em;
+  font-size: 0.62em;
+  letter-spacing: 0;
+  color: #f8ead2;
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 4px;
+  transform: rotate(-4deg) translateY(-0.08em);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 240, 214, 0.4),
+    0 2px 5px var(--shadow-soft);
+  text-shadow: none;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pill {
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  padding: 4px 11px;
+  background: linear-gradient(180deg, var(--surface-hi), var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    0 2px 6px var(--shadow-soft);
+}
+
+/* ============================================================
+   3 · 舞台与花园
+   ============================================================ */
+
+.stage {
+  position: relative;
+  z-index: var(--z-stage);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  padding: 6px clamp(12px, 3vw, 22px) 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.garden {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(clamp(106px, 17vw, 148px), 1fr));
+  gap: clamp(10px, 1.8vw, 16px);
   align-content: center;
-  max-width: 980px;
+  max-width: 1000px;
   margin: 0 auto;
 }
+
+/* ------------------------------------------------------------
+   3.1 地块：垒起的泥圃
+   状态钩子（契约见 VISUAL.md §状态钩子）：
+   - 干土：默认
+   - 含水：.is-wet 或 [data-wet="1"]
+   - 施肥：[data-fert="1"]
+   - 选中：.is-selected
+   - 阶段：[data-stage="…"]；盛开另有 :has(.bloom) 兜底
+   ------------------------------------------------------------ */
+
 .plot {
-  aspect-ratio: 1.05;
-  border-radius: 22px 22px 16px 16px;
-  background:
-    radial-gradient(circle at 50% 70%, #6d4b2d 0%, #3e2a18 70%);
-  box-shadow: 0 10px 0 rgba(0,0,0,0.18), inset 0 0 0 3px rgba(80, 50, 24, 0.4);
+  /* 可被状态覆写的局部变量 */
+  --soil-hi: var(--soil-dry-hi);
+  --soil-lo: var(--soil-dry-lo);
+  --sheen: transparent;
+  --halo: transparent;
+  --ring: 0 0 rgba(0, 0, 0, 0);
+
+  appearance: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  user-select: none;
+  aspect-ratio: 1.02;
   position: relative;
   cursor: pointer;
-  transform: perspective(400px) rotateX(12deg);
-  transition: transform 0.18s ease, filter 0.18s;
+  border-radius: 21px 21px 15px 15px;
+  background:
+    radial-gradient(70% 46% at 50% 30%, var(--halo), transparent 72%),
+    linear-gradient(160deg, var(--sheen), transparent 58%),
+    radial-gradient(130% 55% at 50% 4%, rgba(255, 250, 235, 0.12), transparent 46%),
+    repeating-linear-gradient(0deg, transparent 0 10px, var(--soil-row) 10px 12px),
+    radial-gradient(circle at 50% 64%, var(--soil-hi) 0%, var(--soil-lo) 78%);
+  box-shadow:
+    var(--ring),
+    0 8px 0 -1px var(--soil-edge),
+    0 14px 22px var(--shadow-soft),
+    inset 0 2px 3px rgba(255, 250, 235, 0.14),
+    inset 0 -10px 16px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 2px var(--soil-rim);
+  transform: perspective(520px) rotateX(8deg);
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
-.plot:hover { transform: perspective(400px) rotateX(8deg) translateY(-4px); }
-.plot.is-selected { outline: 3px solid var(--gold); }
-.sprout, .bloom {
-  position: absolute; inset: 12% 18% 28%;
-  display: grid; place-items: center;
-  font-size: 42px; filter: drop-shadow(0 6px 0 rgba(0,0,0,0.15));
+
+@media (hover: hover) {
+  .plot:hover {
+    transform: perspective(520px) rotateX(5deg) translateY(-3px);
+  }
 }
+
+.plot:active {
+  transform: perspective(520px) rotateX(8deg) translateY(1px) scale(0.99);
+}
+
+.plot:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* 选中：宣纸留白 + 朱砂双环 + 右上「选」印 */
+.plot.is-selected {
+  --ring:
+    0 0 0 2.5px var(--surface),
+    0 0 0 5px var(--accent),
+    0 6px 22px color-mix(in srgb, var(--accent) 42%, transparent);
+  transform: perspective(520px) rotateX(6deg) translateY(-2px);
+}
+
+.plot.is-selected::after {
+  content: "选";
+  position: absolute;
+  top: -7px;
+  right: -6px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: #f8ead2;
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 6px;
+  transform: rotate(6deg);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 240, 214, 0.4),
+    0 3px 6px var(--shadow-deep);
+}
+
+/* 含水：土色转深、表面起釉光、左上挂一滴水 */
+.plot.is-wet,
+.plot[data-wet="1"] {
+  --soil-hi: var(--soil-wet-hi);
+  --soil-lo: var(--soil-wet-lo);
+  --sheen: var(--soil-sheen);
+}
+
+.plot.is-wet::before,
+.plot[data-wet="1"]::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 9px;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px 50% 50% 50%;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, var(--water-drop-hi), var(--water-drop-lo));
+  box-shadow:
+    inset 1px 1px 1.5px rgba(255, 255, 255, 0.65),
+    0 2px 4px rgba(20, 40, 60, 0.4);
+}
+
+/* 已栽种但缺水：淡描一滴空水（提示要浇） */
+.plot[data-wet="0"][data-stage]:not([data-stage="empty"])::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 9px;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px 50% 50% 50%;
+  transform: rotate(45deg);
+  background: transparent;
+  border: 1.5px dashed color-mix(in srgb, var(--soil-text) 75%, transparent);
+  box-shadow: none;
+}
+
+/* 施肥：进度行前缀一枚金「肥」字 */
+.plot[data-fert="1"] .meta::before {
+  content: "肥 ";
+  color: var(--c-gold-hi);
+  font-weight: 700;
+}
+
+/* 盛开：暖金光晕自土面升起 */
+.plot:has(.bloom),
+.plot[data-stage="bloom"] {
+  --halo: var(--bloom-halo);
+}
+
+/* 枯萎：墨色褪尽 */
+.plot[data-stage="wilt"] {
+  --soil-hi: color-mix(in srgb, var(--soil-dry-hi) 70%, #555);
+  --soil-lo: color-mix(in srgb, var(--soil-dry-lo) 75%, #333);
+}
+
+.plot[data-stage="wilt"] :is(.sprout, .bloom) {
+  filter: grayscale(0.8) opacity(0.72) drop-shadow(0 3px 3px rgba(0, 0, 0, 0.3));
+}
+
+/* 3.2 苗/花字牌 */
+
+.sprout,
+.bloom {
+  position: absolute;
+  inset: 8% 14% 30%;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-family: var(--font-display);
+  line-height: 1;
+}
+
+.sprout {
+  font-size: clamp(26px, 5.6vmin, 38px);
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.35));
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.bloom {
+  font-size: clamp(34px, 7vmin, 50px);
+  /* currentColor 取自 TS 内联的花种主色，光晕随花色变化 */
+  filter:
+    drop-shadow(0 4px 5px rgba(0, 0, 0, 0.28))
+    drop-shadow(0 0 13px currentColor);
+  animation: bloom-breathe 3.4s var(--ease-out) infinite;
+}
+
+/* 首帧为原位：即使宿主每帧重建、动画停在 0% 也不出错 */
+@keyframes bloom-breathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.06) rotate(2deg); }
+}
+
+/* 3.3 地块铭牌与进度 */
+
 .plot .meta {
-  position: absolute; left: 8px; right: 8px; bottom: 8px;
-  font-size: 11px; text-align: center; color: #f3e6c8;
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: 7px;
+  padding: 3px 6px 5px;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--soil-text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  background: linear-gradient(180deg, rgba(22, 13, 6, 0.05), rgba(22, 13, 6, 0.42) 45%, rgba(22, 13, 6, 0.5));
+  border-radius: 8px;
 }
-.bar { height: 4px; background: #2a1c10; border-radius: 4px; margin-top: 4px; overflow: hidden; }
-.bar > i { display: block; height: 100%; background: linear-gradient(90deg, #7ec8a3, #e7c56b); }
+
+.bar {
+  height: 5px;
+  margin-top: 4px;
+  overflow: hidden;
+  background: rgba(15, 8, 3, 0.55);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--c-jade-soft), var(--c-gold-pale));
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+
+/* ============================================================
+   4 · Dock：工具签
+   ============================================================ */
 
 .dock {
-  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
-  padding: 10px 12px 16px;
+  position: relative;
+  z-index: var(--z-chrome);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px clamp(10px, 3vw, 18px) calc(12px + var(--safe-b));
 }
-.dock button, .panel button, .sheet button {
-  font-family: var(--font-body);
-  border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--ink));
-  background: var(--paper);
-  color: var(--ink);
-  border-radius: 12px;
-  padding: 8px 12px;
-  cursor: pointer;
-  box-shadow: 0 3px 0 var(--shadow);
-}
-.dock button.is-on, .chip.is-on { background: var(--vermilion); color: #fff8e8; }
 
-.panel, .sheet, .modal {
-  position: absolute;
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  border: 1px solid var(--gold);
-  border-radius: var(--radius);
-  box-shadow: 0 16px 40px var(--shadow);
-  padding: 14px;
-  backdrop-filter: blur(8px);
+/* 面板/浮层内按钮共用底座（:where 压零特异度，便于 .card 等覆写） */
+:where(.dock, .panel, .sheet, .modal) :where(button) {
+  font-family: var(--font-body);
+  font-size: 14px;
+  min-height: 40px;
+  padding: 8px 14px;
+  color: var(--text);
+  cursor: pointer;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: linear-gradient(180deg, var(--surface-hi), var(--surface));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    0 2px 0 var(--line-ghost),
+    0 3px 9px var(--shadow-soft);
+  transition:
+    transform var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
 }
-.sheet { left: 12px; right: 12px; bottom: 72px; max-height: 46%; overflow: auto; }
+
+:where(.dock, .panel, .sheet, .modal) :where(button):active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    0 1px 0 var(--line-ghost),
+    0 1px 4px var(--shadow-soft);
+}
+
+:where(.dock, .panel, .sheet, .modal) :where(button):disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  filter: grayscale(0.55);
+  box-shadow: none;
+}
+
+.dock button { flex: 0 0 auto; }
+
+/* 当前工具/面板：朱砂签 */
+.dock button.is-on,
+.chip.is-on {
+  color: var(--on-accent);
+  border-color: color-mix(in srgb, var(--seal-red) 75%, var(--c-ink-nong));
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 205, 0.35),
+    0 2px 0 color-mix(in srgb, var(--seal-red) 60%, black),
+    0 3px 10px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ============================================================
+   5 · 花笺面板（sheet / panel / modal 共用纸底）
+   ============================================================ */
+
+.panel,
+.sheet,
 .modal {
-  inset: 12% 10%;
-  z-index: 5;
+  position: absolute;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-l);
+  background:
+    radial-gradient(90% 70% at 100% 100%, var(--wash-warm), transparent 62%),
+    radial-gradient(80% 60% at 0% 0%, var(--wash-cool), transparent 56%),
+    linear-gradient(180deg, var(--surface-hi), var(--surface));
+  /* 内衬一道 1px 描金细框（花笺双框），inset 阴影不随内容滚动 */
+  box-shadow:
+    inset 0 0 0 4px var(--surface),
+    inset 0 0 0 5px var(--line),
+    0 6px 14px var(--shadow-soft),
+    0 18px 44px var(--shadow-deep);
+}
+
+.sheet {
+  left: max(12px, var(--safe-l));
+  right: max(12px, var(--safe-r));
+  bottom: calc(var(--dock-clear) + var(--safe-b));
+  z-index: var(--z-sheet);
+  margin-inline: auto;
+  max-width: 720px;
+  max-height: min(54vh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+:is(.sheet, .modal) h3,
+:is(.sheet, .modal) h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 21px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+/* 标题下一笔朱砂扫尾 */
+.sheet h3::after {
+  content: "";
+  display: block;
+  width: 58px;
+  height: 3px;
+  margin-top: 6px;
+  border-radius: 3px 1px 3px 1px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 30%, transparent) 78%, transparent);
+}
+
+.sheet p { margin: 6px 0; line-height: 1.65; }
+
+.grid {
   display: grid;
-  align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 10px;
 }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+
+/* 5.1 笺上小卡 */
+
 .card {
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, var(--gold));
-  border-radius: 12px;
-  padding: 8px;
-  background: color-mix(in srgb, var(--paper-deep) 70%, white);
-}
-.card h4 { margin: 0 0 4px; font-size: 14px; }
-.muted { color: var(--ink-soft); font-size: 12px; }
-.toast-wrap {
-  position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
-  display: grid; gap: 6px; z-index: 8; pointer-events: none;
-}
-.toast {
-  background: #2b2118; color: #f4e6c8; padding: 6px 12px; border-radius: 999px;
-  font-size: 13px; opacity: 0.95;
-}
-.toast.rare { background: var(--plum); }
-.toast.warn { background: #6b3a1f; }
-
-.petals { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.petal {
-  position: absolute; width: 10px; height: 14px; border-radius: 10px 2px;
-  opacity: 0.75; animation: fall 12s linear infinite;
-}
-@keyframes fall {
-  to { transform: translateY(110vh) rotate(240deg); }
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 11px;
+  text-align: left;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: linear-gradient(180deg, var(--surface-2-hi), var(--surface-2));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    0 2px 7px var(--shadow-soft);
 }
 
-.decor-row { display: flex; gap: 8px; justify-content: center; min-height: 36px; margin-bottom: 6px; }
-.decor-chip {
-  background: color-mix(in srgb, var(--paper) 70%, #fff);
-  border: 1px dashed var(--gold);
-  border-radius: 8px;
-  padding: 4px 8px;
+@media (hover: hover) {
+  .card:not(:disabled):hover {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 var(--edge-hi),
+      0 5px 13px var(--shadow-soft);
+  }
+}
+
+.card:disabled {
+  border-style: dashed;
+  transform: none;
+}
+
+.card h4 {
+  margin: 0 0 4px;
   font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0.04em;
 }
 
-@media (max-width: 640px) {
-  .brand { font-size: 22px; }
-  .modal { inset: 8% 4%; }
-  .garden { gap: 10px; }
+.card.is-on {
+  border-color: var(--c-jade);
+  outline: 1.5px solid var(--c-jade);
+  outline-offset: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c-jade) 14%, var(--surface-2-hi)), color-mix(in srgb, var(--c-jade) 8%, var(--surface-2)));
+}
+
+.muted {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* 5.2 花材/花器/主题捡取行 */
+
+.bag,
+.vases,
+.themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+:is(.bag, .vases, .themes) button {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: var(--radius-pill);
+}
+
+.bag button.is-on {
+  color: var(--on-accent);
+  border-color: color-mix(in srgb, var(--c-jade) 80%, black);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c-jade) 88%, white), var(--c-jade));
+}
+
+/* ============================================================
+   6 · 卷轴告示（教程 modal）
+   ============================================================ */
+
+.modal {
+  inset: 0;
+  margin: auto;
+  z-index: var(--z-modal);
+  width: min(520px, calc(100% - 44px));
+  height: fit-content;
+  max-height: 74%;
+  overflow-y: auto;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 20px 22px 18px;
+  text-align: center;
+  border-top: 7px solid var(--c-wood);
+  border-bottom: 7px solid var(--c-wood);
+  border-radius: var(--radius-m);
+  /* 追加一层四合暗幕，聚焦卷轴 */
+  box-shadow:
+    inset 0 0 0 4px var(--surface),
+    inset 0 0 0 5px var(--line),
+    0 18px 44px var(--shadow-deep),
+    0 0 0 100vmax var(--backdrop-dim);
+}
+
+.modal p {
+  margin: 0;
+  max-width: 42ch;
+  line-height: 1.75;
+  color: var(--text-soft);
+}
+
+.modal button {
+  min-width: 132px;
+  color: var(--on-accent);
+  border-color: color-mix(in srgb, var(--seal-red) 75%, var(--c-ink-nong));
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 205, 0.35),
+    0 2px 0 color-mix(in srgb, var(--seal-red) 60%, black),
+    0 4px 12px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ============================================================
+   7 · 提示（toast）：墨签
+   ============================================================ */
+
+.toast-wrap {
+  position: absolute;
+  top: calc(64px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  width: max-content;
+  max-width: min(92vw, 480px);
+  pointer-events: none;
+}
+
+.toast {
+  max-width: 100%;
+  padding: 7px 16px;
+  font-size: 13px;
+  color: #f6edd6;
+  background: linear-gradient(180deg, #3b3223, var(--c-ink-nong));
+  border: 1px solid color-mix(in srgb, var(--c-gold) 55%, transparent);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+  /* toast 只挂载一次，入场动画安全 */
+  animation: toast-in var(--dur-base) var(--ease-pop) both;
+}
+
+.toast::before {
+  content: "✿ ";
+  color: var(--c-gold-pale);
+}
+
+.toast.rare {
+  background: linear-gradient(180deg, #a34a67, var(--c-plum));
+  border-color: color-mix(in srgb, var(--c-gold-hi) 70%, transparent);
+}
+
+.toast.rare::before { content: "✦ "; }
+
+.toast.warn {
+  background: linear-gradient(180deg, #8a5326, #6b3a1a);
+}
+
+.toast.warn::before { content: "⚠ "; color: #ffd98f; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-9px) scale(0.95); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ============================================================
+   8 · 花瓣层：只作景，不拦点
+   ============================================================ */
+
+.petals {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-petals);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.petal {
+  position: absolute;
+  top: -24px;
+  width: 10px;
+  height: 14px;
+  border-radius: 100% 6px 100% 6px;
+  opacity: var(--petal-opacity);
+  pointer-events: none;
+  will-change: transform;
+  animation: fall 12s linear infinite;
+}
+
+.petal:nth-child(2n) { width: 8px; height: 11px; }
+.petal:nth-child(3n) { border-radius: 6px 100% 6px 100%; }
+
+/* 保持关键帧名 fall：TS 只覆写时长与延迟 */
+@keyframes fall {
+  0%   { transform: translate3d(0, -4vh, 0) rotate(0deg); }
+  25%  { transform: translate3d(4vw, 24vh, 0) rotate(70deg); }
+  50%  { transform: translate3d(-3vw, 52vh, 0) rotate(140deg); }
+  75%  { transform: translate3d(3.5vw, 80vh, 0) rotate(205deg); }
+  100% { transform: translate3d(-2vw, 108vh, 0) rotate(280deg); }
+}
+
+/* ============================================================
+   9 · 庭院摆件签
+   ============================================================ */
+
+.decor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  min-height: 36px;
+  margin-bottom: 6px;
+}
+
+.decor-chip {
+  padding: 4px 11px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  background: linear-gradient(180deg, var(--surface-hi), var(--surface-2));
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-s);
+  box-shadow: 0 2px 6px var(--shadow-soft);
+}
+
+/* ============================================================
+   10 · 响应式
+   ============================================================ */
+
+/* dock 单行横滑（避免多行挤压舞台/溢出屏幕） */
+@media (max-width: 1020px) {
+  .dock {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  }
+
+  .dock::-webkit-scrollbar { display: none; }
+
+  /* 内容不足一屏时依旧居中 */
+  .dock::before,
+  .dock::after {
+    content: "";
+    flex: 0 0 1px;
+    margin: auto;
+  }
+}
+
+@media (max-width: 700px) {
+  .hud {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-inline: 12px;
+  }
+
+  .brand { font-size: 20px; }
+
+  .pills {
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+    padding-bottom: 2px;
+  }
+
+  .pills::-webkit-scrollbar { display: none; }
+
+  .stage { padding: 4px 10px 8px; }
+
+  .garden {
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    gap: 10px;
+  }
+
+  .sprout { font-size: 27px; }
+  .bloom { font-size: 36px; }
+
+  .dock { gap: 7px; padding-top: 8px; }
+  .dock button { font-size: 13px; padding: 7px 12px; }
+
+  :root { --dock-clear: 78px; }
+
+  .sheet {
+    left: max(8px, var(--safe-l));
+    right: max(8px, var(--safe-r));
+    max-height: 56vh;
+  }
+
+  .modal { width: calc(100% - 28px); }
+
+  .grid { grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); }
+}
+
+/* ============================================================
+   11 · 无动效偏好
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .petals { display: none; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
