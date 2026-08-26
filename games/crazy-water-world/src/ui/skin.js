@@ -58,14 +58,29 @@ export const UI_CSS = `
 .panel button:disabled { filter: grayscale(.75) brightness(.94); opacity: .6; cursor: not-allowed; }
 .panel button:disabled:hover { transform: none; }
 
-/* 目标指引：一直挂在左面板顶部，告诉老大下一步该干嘛 */
+/* 目标指引 + 潜水警告：钉死在左面板顶部（面板自己是滚动容器），滚多远都看得见。
+   面板内边距 14/16px，用负 margin 把 sticky 头顶到边，底下再补一条分隔阴影。 */
+.cww-sticky {
+  position: sticky; top: -14px; z-index: 4;
+  margin: -14px -16px 8px; padding: 14px 16px 6px;
+  background: linear-gradient(var(--card-solid) 82%, rgba(255,247,232,0));
+}
 .cww-goal {
-  display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 7px 10px;
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 7px 10px;
   font-size: var(--fs-small); font-weight: 600; color: var(--ink);
-  background: rgba(255,209,102,.24);
+  background: rgba(255,209,102,.34);
   border: 1.5px dashed var(--sun-deep); border-radius: var(--radius-m);
 }
 .cww-goal button { margin: 0 0 0 auto; padding: 4px 12px; font-size: var(--fs-tiny); }
+
+/* 潜水中切屏的常驻警告：氧气不会因为你换了个屏就不扣 */
+.cww-alert {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 6px; padding: 7px 10px;
+  font-size: var(--fs-small); font-weight: 700; color: #7a0b1c;
+  background: linear-gradient(#ffdede, #ffc0c0);
+  border: 1.5px solid #9c1f2e; border-radius: var(--radius-m);
+}
+.cww-alert button { margin: 0 0 0 auto; padding: 4px 12px; font-size: var(--fs-tiny); }
 
 /* ---------- 吐司：动作反馈都从这里出 ---------- */
 .cww-toast {
@@ -195,6 +210,15 @@ export const UI_CSS = `
   box-shadow: 0 0 10px rgba(255,255,255,.45);
 }
 .cww-node.rare { box-shadow: 0 0 0 4px rgba(255,209,102,.45), 0 0 16px rgba(255,209,102,.8); }
+.cww-node.wreck { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-width: 3px; }
+/* 补氧气泡：会话里一直有，之前没人画 */
+.cww-bubble {
+  position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px;
+  background: radial-gradient(circle at 34% 30%, #fff, rgba(76,201,240,.9) 60%, rgba(20,120,160,.85));
+  border: 2px solid rgba(216,246,244,.9); border-radius: 50%;
+  box-shadow: 0 0 10px rgba(76,201,240,.7);
+}
+.cww-shark.aggro { filter: brightness(1.15) saturate(1.3); }
 .cww-surface {
   position: absolute; left: 0; right: 0; top: 0; height: 8.8%;
   background: repeating-linear-gradient(90deg, rgba(216,246,244,.34) 0 14px, rgba(216,246,244,.15) 14px 28px);
@@ -224,7 +248,45 @@ export const UI_CSS = `
 .cww-dpad button.wide { grid-column: 1 / -1; font-size: var(--fs-small); }
 .cww-dpad .spacer { visibility: hidden; }
 
+/* ---------- 出战阵容：前后排两栏 + 勾选 ---------- */
+.cww-sub {
+  margin: 12px 0 4px; font-family: var(--font-display); font-size: var(--fs-body); color: var(--ink);
+}
+.cww-lane {
+  display: flex; flex-wrap: wrap; align-items: stretch; gap: 5px;
+  margin: 5px 0; padding: 6px 8px;
+  background: rgba(22,50,60,.05);
+  border: 1.5px dashed rgba(22,50,60,.3); border-radius: var(--radius-m);
+}
+.cww-lane.hurt { background: rgba(239,71,111,.08); border-color: rgba(156,31,46,.45); }
+.cww-lane-tag {
+  flex: 0 0 100%; font-size: var(--fs-tiny); font-weight: 700; color: var(--ink-soft);
+}
+.cww-pickhero {
+  margin: 0 !important; padding: 5px 10px !important; text-align: left;
+  color: var(--ink) !important; text-shadow: none !important;
+  background: linear-gradient(var(--paper), #f7e9cd) !important;
+  border: 1.5px solid rgba(22,50,60,.4) !important; border-radius: var(--radius-s) !important;
+  box-shadow: 0 2px 0 rgba(22,50,60,.22) !important;
+}
+.cww-pickhero.on {
+  background: linear-gradient(#ffe9ae, var(--sun)) !important;
+  border-color: var(--ink) !important; box-shadow: 0 3px 0 var(--ink) !important;
+}
+.cww-pickhero.on::after {
+  content: "✓ 出战"; display: block;
+  font-size: var(--fs-tiny); font-weight: 700; color: var(--kelp-deep);
+}
+.cww-pickhero.hurt { opacity: .7; }
+.cww-pickhero b { display: block; font-size: var(--fs-small); font-weight: 700; }
+.cww-pickhero span, .cww-pickhero i {
+  display: block; font-size: var(--fs-tiny); font-style: normal; font-weight: 500; color: var(--ink-soft);
+}
+.cww-pickhero.hurt i { color: #9c1f2e; font-weight: 700; }
+
 /* ---------- 英雄 ---------- */
+.cww-card.hurt { border-color: rgba(156,31,46,.5); background: #fff1f1; }
+.cww-card.aboard { padding: 5px 10px; opacity: .85; }
 .cww-card {
   margin: 6px 0; padding: 8px 10px;
   background: var(--paper); border: 1.5px solid rgba(22,50,60,.32);
