@@ -86,6 +86,16 @@ export function raceName(id) {
 }
 
 export function screenHeader(app, title, subtitle, onBack) {
+  const gold = el("b", { text: String(Math.round(app.save.gold)) });
+  // 金币在同屏内也会变动（扫荡、升级、钓鱼），订阅存档事件实时刷新；
+  // 节点随屏幕卸载后自动退订。
+  const off = app.bus.on("save", () => {
+    if (!gold.isConnected) {
+      off();
+      return;
+    }
+    gold.textContent = String(Math.round(app.save.gold));
+  });
   return el("header", { class: "screen-head" }, [
     onBack === false
       ? null
@@ -94,6 +104,6 @@ export function screenHeader(app, title, subtitle, onBack) {
       el("h2", { text: title }),
       subtitle ? el("p", { class: "muted small", text: subtitle }) : null,
     ]),
-    el("div", { class: "screen-head-gold" }, [el("span", { class: "coin", text: "🪙" }), el("b", { text: String(Math.round(app.save.gold)) })]),
+    el("div", { class: "screen-head-gold" }, [el("span", { class: "coin", text: "🪙" }), gold]),
   ]);
 }

@@ -1,5 +1,18 @@
-import { HERO_CATALOG, SCHOOLS, computeBonds, getHero } from "../../core/catalog.js";
-import { heroAtk, heroLevel, heroStar, levelUpCost, starUpCost, tryLevelUp, tryStarUp } from "../../core/progress.js";
+import { ACTIVE_SCHOOLS, HERO_CATALOG, SCHOOLS, computeBonds, getHero } from "../../core/catalog.js";
+import {
+  MAX_LEVEL,
+  MAX_STAR,
+  heroAtk,
+  heroLevel,
+  heroStar,
+  levelCapForStar,
+  levelUpCost,
+  starGoldCost,
+  starLevelRequirement,
+  starUpCost,
+  tryLevelUp,
+  tryStarUp,
+} from "../../core/progress.js";
 import { button, clear, el, stars } from "../dom.js";
 import { bondList, elementTag, heroCanvas, heroCard, raceName, schoolTag, screenHeader } from "../widgets.js";
 
@@ -45,6 +58,9 @@ export const teamScreen = {
           const lv = heroLevel(save, hero.id);
           const star = heroStar(save, hero.id);
           const shards = save.shards?.[hero.id] ?? 0;
+          const cap = levelCapForStar(star);
+          const atCap = lv >= cap;
+          const nextPerk = hero.starPerks?.find((p) => p.star === star + 1) ?? null;
           clear(box).append(
             el("div", { class: "detail-head" }, [
               heroCanvas(hero, 96, "full"),
@@ -55,19 +71,21 @@ export const teamScreen = {
               ]),
             ]),
             el("div", { class: "detail-stats" }, [
-              el("div", {}, [el("span", { text: "等级" }), el("b", { text: `${lv}/40` })]),
-              el("div", {}, [el("span", { text: "星级" }), stars(star, 5)]),
+              el("div", {}, [el("span", { text: "等级" }), el("b", { text: `${lv}/${cap}`, class: atCap ? "capped" : "" })]),
+              el("div", {}, [el("span", { text: "星级" }), stars(star, MAX_STAR)]),
               el("div", {}, [el("span", { text: "攻击" }), el("b", { text: heroAtk(save, hero.id).toFixed(1) })]),
               el("div", {}, [el("span", { text: "碎片" }), el("b", { text: String(shards) })]),
             ]),
             el("div", { class: "skill-box" }, [
-              el("h4", { text: "被动" }),
+              el("h4", { text: `被动 · ${hero.skillName ?? "招牌技"}` }),
               el("p", { text: hero.passive ?? "—" }),
               el("h4", { text: `大招 · ${hero.ult?.name ?? "—"}（${hero.ult?.cost ?? 100} 能量）` }),
               el("p", { text: hero.ult?.desc ?? "—" }),
+              nextPerk ? el("h4", { text: `${star + 1} 星词条` }) : null,
+              nextPerk ? el("p", { class: "muted", text: nextPerk.desc }) : null,
             ]),
             el("div", { class: "detail-actions" }, [
-              button(`升级 (${levelUpCost(lv)} 金)`, () => {
+              button(atCap && star < MAX_STAR ? `等级已满 (需升星)` : `升级 (${levelUpCost(lv)} 金)`, () => {
                 const r = tryLevelUp(app.save, hero.id);
                 if (!r.ok) return app.toast(r.reason, "warn");
                 app.persist();
@@ -75,8 +93,8 @@ export const teamScreen = {
                 app.toast(`${hero.name} 升到 Lv.${r.level}`);
                 draw();
                 render();
-              }, { variant: "primary", disabled: lv >= 40 }),
-              button(`升星 (${starUpCost(star)} 碎片)`, () => {
+              }, { variant: "primary", disabled: lv >= MAX_LEVEL || atCap }),
+              button(`升星 (${starUpCost(star)} 碎片 + ${starGoldCost(star)} 金)`, () => {
                 const r = tryStarUp(app.save, hero.id);
                 if (!r.ok) return app.toast(r.reason, "warn");
                 app.persist();
@@ -84,7 +102,7 @@ export const teamScreen = {
                 app.toast(`${hero.name} 升到 ${r.star} 星`);
                 draw();
                 render();
-              }, { disabled: star >= 5 }),
+              }, { disabled: star >= MAX_STAR, title: `需 Lv.${starLevelRequirement(star + 1)}` }),
               button("上阵", () => {
                 assign(hero.id);
                 close();
@@ -115,7 +133,7 @@ export const teamScreen = {
         }),
       );
 
-      const filters = ["all", ...Object.keys(SCHOOLS)];
+      const filters = ["all", ...ACTIVE_SCHOOLS];
       const filterRow = el("div", { class: "filter-row" },
         filters.map((f) =>
           el("button", {

@@ -113,6 +113,22 @@ export function createRenderer(canvas) {
     const last = pts[pts.length - 1];
     ctx.globalAlpha = 0.6 + Math.sin(t * 8) * 0.3;
     circle(ctx, last[0], last[1], 6, battle.prediction.hitsEnemy ? "#ff6b9d" : "#f6f0e6");
+    // 首个命中点画准星，让「这一发会打到谁」比整条虚线更好读
+    const impact = battle.prediction.impact;
+    if (impact) {
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "#ff6b9d";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(impact[0], impact[1], 13 + Math.sin(t * 8) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(impact[0] - 18, impact[1]);
+      ctx.lineTo(impact[0] - 8, impact[1]);
+      ctx.moveTo(impact[0] + 8, impact[1]);
+      ctx.lineTo(impact[0] + 18, impact[1]);
+      ctx.stroke();
+    }
     ctx.restore();
 
     // 角度扇形与力度条

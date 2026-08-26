@@ -547,7 +547,7 @@ li { margin: 3px 0; font-size: 0.86rem; color: var(--muted); }
 
 .aim-hint {
   position: absolute;
-  top: 128px;
+  bottom: 106px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(10, 8, 16, 0.72);

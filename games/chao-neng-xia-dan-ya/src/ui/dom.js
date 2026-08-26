@@ -26,7 +26,13 @@ export function clear(node) {
 export function button(label, onClick, opts = {}) {
   return el(
     "button",
-    { class: `btn ${opts.variant ? `btn-${opts.variant}` : ""} ${opts.class ?? ""}`.trim(), type: "button", onclick: onClick, disabled: opts.disabled },
+    {
+      class: `btn ${opts.variant ? `btn-${opts.variant}` : ""} ${opts.class ?? ""}`.trim(),
+      type: "button",
+      onclick: onClick,
+      disabled: opts.disabled,
+      title: opts.title,
+    },
     opts.icon ? [el("span", { class: "btn-icon", text: opts.icon }), el("span", { text: label })] : [label],
   );
 }

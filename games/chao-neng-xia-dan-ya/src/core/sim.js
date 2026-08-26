@@ -71,6 +71,8 @@ export function makeEgg(opts = {}) {
     age: 0,
     slowTime: 0,
     hitCount: 0,
+    /** 与敌人碰撞盒接触的次数（影子蛋也累加，供预测线判定命中）。 */
+    enemyContacts: 0,
     lastHit: new Map(),
     trail: [],
   };
@@ -295,6 +297,9 @@ export function stepEgg(egg, world, dt, hooks = NOOP_HOOKS, ghost = false) {
     const last = egg.lastHit.get(key) ?? -1;
     const fresh = egg.age - last > 0.08;
     const pierced = !ghost && egg.pierce > 0;
+    // 命中标记要在 reflect 之前记，因为 reflect 会把蛋推出敌人碰撞盒，
+    // 步进结束后再做重叠检测就永远是 false（预测线的「会命中」提示依赖它）。
+    egg.enemyContacts++;
     if (!pierced) {
       const strength = reflect(egg, hit, en.restitution ?? 0.72);
       if (strength > 15) collisions++;
@@ -381,25 +386,22 @@ export function predictTrajectory(origin, velocity, world, opts = {}) {
   ghost.homing = 0;
   const points = [[ghost.x, ghost.y]];
   let bounces = 0;
-  let hitsEnemy = false;
+  let impact = null;
   for (let i = 0; i < maxSteps; i++) {
+    const before = ghost.enemyContacts;
     const c = stepEgg(ghost, world, dt, NOOP_HOOKS, true);
+    if (!impact && ghost.enemyContacts > before) impact = [ghost.x, ghost.y];
     if (c > 0) {
       bounces += c;
       points.push([ghost.x, ghost.y]);
     } else if (i % 3 === 0) {
       points.push([ghost.x, ghost.y]);
     }
-    if (!hitsEnemy) {
-      for (const en of world.enemies) {
-        if (en.alive && circleBox(ghost, en)) { hitsEnemy = true; break; }
-      }
-    }
     if (bounces >= maxBounces) break;
     if (ghost.y - ghost.r > world.h + 10) break;
     if (Math.hypot(ghost.vx, ghost.vy) < 40 && ghost.age > 0.4) break;
   }
-  return { points, bounces, hitsEnemy };
+  return { points, bounces, hitsEnemy: ghost.enemyContacts > 0, impact };
 }
 
 export const geometry = { circleBox, circleCircle, circleSegment, pointInBox };
