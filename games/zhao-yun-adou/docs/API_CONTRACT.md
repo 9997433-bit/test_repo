@@ -260,7 +260,7 @@ classifyDrop(source, target, opts?: { from?: "hand" | "board" }):
   // 【已实现·R3】新增 {from:"hand"}：手牌拖出的牌不能换座（游戏没有「收回手牌」），
   //   本该判 swap 的情形改判 invalid；缺省 board 与旧行为逐字一致。
   // ⚠ 仍无运行时消费者：game.place/merge 与 main.js 的 refuseReason 各写了一份判定
-  //   （drop.test.js 48 例对拍证明等价，含两处已知不同调：棋盘符分支不可达、
+  //   （drop.test.js 39 例对拍证明等价，含两处已知不同调：棋盘符分支不可达、
   //    未知 kind 本模块拒收/引擎照收）。接入见 §10 第 4 条。
 
 // board/awaken.js
@@ -338,6 +338,9 @@ tickSideCombat(side, dt, emit): void
   //   枪 pierce=1 打衰减序前 2 个。
   // 死亡：赏金+kills+"kill"；split 分裂 2×卒（速×1.15）；notePressureKill → "pressure"。
   // 漏怪：hearts 钳 0、leaks+1、补偿 leakCompensation(side.wave)、"leak"。
+  // 【已实现·R3 9e152b4】脏档卫生：null/垃圾敌人·格子·出兵条目跳过，缺 spec 的
+  //   队列条目直接丢（战线不会永远 busy）；非有限 hp 当已出局、非有限 t 归 0；
+  //   兵种 id 只认自有键（原型链键打不出伤害）；出兵间隔夹下限、攻速 rate>0 才有 CD。
 maybeAdvanceWave(state, emit): void   // 每帧 linkArena；双侧全清才推波；≥MAX_WAVE 转 finishByHearts
 checkWinner(state, emit): void        // 每帧 linkArena；开局清过期 tie/reason；
                                       // 任一侧 0 心 → gameOver（写 state.tie/reason，发 "game-over"）
@@ -369,8 +372,10 @@ distanceToProgress(index, t): number
 inReach(index, t, range): boolean
 hitFactorAt(distance, range): number  // 核心圈 1，外沿线性衰减到 0
 hitFactor(index, t, range): number
-falloffFor(range): { reach, outer, outer2, factor(distance) }   // 热循环预计算
-coverageWindows(index, range, samples=96): {from, to}[]   // 该格覆盖的路线区间（可多段）
+falloffFor(range): { reach, outer, outer2, factor(distance) }   // 热循环预计算；
+                                      // factor 对非有限距离给 0（坏坐标不白送满伤）
+coverageWindows(index, range, samples=96): {from, to}[]   // 该格覆盖的路线区间（可多段）；
+                                      // samples 非法时回 96、夹到 ≥1 整数
 coverageRatio(index, range, samples=96): number            // 0..1
 // 【已实现·R2】coverage 系列现有运行时消费者：ai/opponent.seatValue（§7）；
 //   placement.js 也消费但自身仍无人接（§5）
@@ -387,11 +392,12 @@ pressureSpec(wave, opts?): WaveSpec   // 弱化版当前波：无 boss、interva
 sendPressure(side, otherSide?, opts?: {count?, cap?, force?, hpMul?, rewardMul?, speedMul?, glyph?, interval?}):
   { from, to, count, wave, hp } | null   // 未触发（禁用/封顶/无对手）为 null
 notePressureKill(side, enemy): 同上 | null   // 击杀回调：攒满自动施压；压力兵之死不充能
-// 充能与台账都在 side 上（pressureCharge/pressure），随快照迁移——读档续跑照常施压
+// 充能与台账都在 side 上（pressureCharge/pressure），随快照迁移——读档续跑照常施压；
+// 台账被脏档还原成非对象时按空账重建（脏档卫生）
 
 // combat/skills.js —— 大招层，全部伤害走 damage.js
 castSkill(side, heroUnit, enemies /*调用方传全部存活敌军*/, ctx?: {cellIndex?, reach?}): SkillResult
-  // 结束置 heroUnit.cooldown = skill.cd。
+  // 结束置 heroUnit.cooldown = skill.cd。无技能行的英雄返回 blank 结果不抛（脏档卫生）。
   // ⚠ ctx.reach 六个 handler 均未消费：大招按「全路线」结算是现行事实语义（缺口，§10 第 7 条）。
 interface SkillResult {
   id; name; fx: string;               // fx 稳定演出标识（= SKILL_FX[id]）
@@ -408,9 +414,10 @@ SKILL_FX: Record<skillId, fx>
 
 // combat/path.js —— 纯几何；ui/lane.js 与 geometry.js 消费
 pathPoints(width, height, flipY): {x,y}[]      // 「几」字 6 点折线
-measurePath(pts): {pts, seg, cum, total}       // 预计算，热循环复用
+measurePath(pts): {pts, seg, cum, total}       // 预计算，热循环复用；
+                                               // 非有限坐标的坏点在此剔除（不污染全线距离）
 pathLength(pts): number
-pointOn(measured, t) / pointAt(pts, t): {x, y}
+pointOn(measured, t) / pointAt(pts, t): {x, y}  // 非有限 t 夹回起点
 nearestOn(measured, x, y) / nearestPathT(pts, x, y): {t, dist}   // nearestPathT 无运行时调用方
 ```
 
@@ -552,5 +559,5 @@ Round 2 清单处置：~~胜率窗口~~（0.4722，bench 自带 0.40–0.60 闸�
 6. **place.unit 事件活引用改快照**；`useShovel` 接 `canShovel` 连通性。
 7. **`castSkill` 的 `ctx.reach` 语义定稿**：删参或让大招吃射程。
 8. **UI 层测试**：启用 jsdom（devDeps 已装），覆盖 morphChildren diff、拖拽手势、signature 跳帧。
-9. **小卫生**：删 `game.js` 里无人调用的 `drawRecruitCard`；HUD 馒头文案改成 `8+5n`；字体自托管 woff2（可选，系统字栈兜底已达标）。
-10. 【在途·R3】战斗层读档 NaN 卫生（damage/geometry/path/pressure/sim/skills）提交后，由文档负责人回签 §6 并把本条销项。
+9. **小卫生**：HUD 馒头文案改成 `8+5n`；字体自托管 woff2（可选，系统字栈兜底已达标）。~~删 `drawRecruitCard` 死代码~~ 已随 `7da2994` 完成。
+10. ~~战斗层读档 NaN 卫生~~ **已落地并回签**（`9e152b4` + `robustness.test.js` 24 例，见 §3/§6），本条销项。
