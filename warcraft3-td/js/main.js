@@ -287,6 +287,7 @@
     app.game.buildGhost = null;
     app.game.cam.x = app.game.hero.x;
     app.game.cam.y = app.game.hero.y;
+    clampCam();
   }
 
   /* ----------------------------------------------------------------- input */
@@ -345,7 +346,10 @@
       }
       app.game.selected = app.game.pickAt(w.x, w.y);
     });
-    on(window, "mouseup", function () { app.panning = false; });
+    on(window, "mouseup", function () {
+      app.panning = false;
+      app.miniDrag = false;
+    });
     on(canvas, "mousemove", function (e) {
       if (!app.game) return;
       const w = toWorld(e);
@@ -354,6 +358,7 @@
         app.game.cam.y -= (e.clientY - app.panY) / app.game.cam.z;
         app.panX = e.clientX;
         app.panY = e.clientY;
+        clampCam();
         app.hud.hideTip();
         return;
       }
@@ -381,6 +386,18 @@
       e.preventDefault();
       app.game.cam.z = SimCore.clamp(app.game.cam.z * (e.deltaY > 0 ? 0.92 : 1.08), 0.65, 1.8);
     }, { passive: false });
+
+    const mini = $("minimap");
+    on(mini, "contextmenu", function (e) { e.preventDefault(); });
+    on(mini, "mousedown", function (e) {
+      if (e.button !== 0 || !app.game) return;
+      e.preventDefault();
+      app.miniDrag = true;
+      lookAtMinimap(e);
+    });
+    on(mini, "mousemove", function (e) {
+      if (app.miniDrag) lookAtMinimap(e);
+    });
 
     const cmd = $("cmd");
     on(cmd, "click", function (e) {
@@ -421,6 +438,25 @@
 
     on(window, "keydown", onKeyDown);
     on(window, "blur", function () { app.panning = false; });
+  }
+
+  function clampCam() {
+    const g = app.game;
+    if (!g) return;
+    g.cam.x = SimCore.clamp(g.cam.x, 0, g.mapW * g.tile);
+    g.cam.y = SimCore.clamp(g.cam.y, 0, g.mapH * g.tile);
+  }
+
+  /** Classic RTS minimap navigation: click or drag to move the camera. */
+  function lookAtMinimap(e) {
+    const mini = $("minimap");
+    const g = app.game;
+    if (!mini || !g) return;
+    const r = mini.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    g.cam.x = ((e.clientX - r.left) / r.width) * g.mapW * g.tile;
+    g.cam.y = ((e.clientY - r.top) / r.height) * g.mapH * g.tile;
+    clampCam();
   }
 
   function cmdIndex(btn) {
