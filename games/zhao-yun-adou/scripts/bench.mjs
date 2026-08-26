@@ -5,6 +5,10 @@ import { cellDistToPath, neighbors } from "../src/board/grid.js";
 import { findHeroByGlyphs } from "../src/data/heroes.js";
 import { HAND_LIMIT, recruitCost, UNIT_TABLE } from "../src/data/units.js";
 import { collectInvariantViolations } from "./invariants.mjs";
+import {
+  createMatchTelemetry,
+  summarizeMatchMetrics,
+} from "./metrics.mjs";
 
 const MATCHES = 36;
 const MAX_TICKS = 12_000;
@@ -105,6 +109,7 @@ const benchStartedAt = performance.now();
 for (let index = 0; index < MATCHES; index += 1) {
   const seed = 1000 + index * 17;
   const g = createGame({ seed });
+  const telemetry = createMatchTelemetry(g);
   g.start();
   const matchStartedAt = performance.now();
   let ticks = 0;
@@ -123,18 +128,23 @@ for (let index = 0; index < MATCHES; index += 1) {
   for (const violation of collectInvariantViolations(g.state)) {
     invariantViolations.push({ seed, tick: ticks, ...violation });
   }
+  const matchTelemetry = telemetry.report();
+  telemetry.dispose();
   results.push({
     seed,
     settled: g.state.phase === "over",
     winner: g.state.winner,
     durationSeconds: g.state.time,
+    maxWave: g.state.wave,
     ticks,
     simTimeMs: performance.now() - matchStartedAt,
+    telemetry: matchTelemetry,
   });
 }
 
 const settled = results.filter((result) => result.settled);
 const playerWins = settled.filter((result) => result.winner === "player").length;
+const matchMetrics = summarizeMatchMetrics(results);
 const simTimes = results.map((result) => result.simTimeMs);
 const totalDuration = results.reduce(
   (sum, result) => sum + result.durationSeconds,
@@ -156,7 +166,12 @@ const report = {
   winRate: Number(
     (settled.length === 0 ? 0 : playerWins / settled.length).toFixed(4),
   ),
+  leaksByWave: matchMetrics.leaksByWave,
+  avgAwakenedHeroes: matchMetrics.avgAwakenedHeroes,
+  avgAwakenedHeroesBySide: matchMetrics.avgAwakenedHeroesBySide,
+  avgAwakenedHeroesTotal: matchMetrics.avgAwakenedHeroesTotal,
   avgDurationSeconds: Number((totalDuration / MATCHES).toFixed(2)),
+  durationDistributionSeconds: matchMetrics.durationDistributionSeconds,
   avgTicks: Number((totalTicks / MATCHES).toFixed(2)),
   totalSimTimeMs: Number(totalSimTimeMs.toFixed(2)),
   avgSimTimeMs: Number((totalSimTimeMs / MATCHES).toFixed(2)),
