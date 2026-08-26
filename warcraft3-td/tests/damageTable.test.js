@@ -11,7 +11,7 @@ module.exports = function (t, WC3) {
     });
   });
 
-  t.test('canonical WC3 multipliers', function () {
+  t.test('canonical attack-vs-armor multipliers', function () {
     t.eq(D.factor('pierce', 'light'), 2.00, 'pierce vs light');
     t.eq(D.factor('pierce', 'fortified'), 0.35, 'pierce vs fortified');
     t.eq(D.factor('siege', 'fortified'), 1.50, 'siege vs fortified');
@@ -41,7 +41,7 @@ module.exports = function (t, WC3) {
     t.eq(D.factor('pierce', 'bogus'), 1, 'unknown armor');
   });
 
-  t.test('armor reduction matches the WC3 formula', function () {
+  t.test('armor reduction matches the classic RTS formula', function () {
     t.eq(D.armorMultiplier(0), 1, 'zero armor');
     t.close(D.armorMultiplier(5), 1 - (0.3 / 1.3), 1e-9, 'armor 5');
     t.close(D.armorMultiplier(10), 1 - (0.6 / 1.6), 1e-9, 'armor 10');

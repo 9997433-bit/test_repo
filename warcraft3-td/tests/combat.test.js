@@ -193,7 +193,7 @@ module.exports = function (t, WC3) {
     t.gt(lb, lc, 'falloff after two jumps');
   });
 
-  t.test('the meat-wagon line gets its bonus versus heavy and fortified', function () {
+  t.test('the corpse-lob line gets its bonus versus heavy and fortified', function () {
     var g = newGame();
     var def = WC3.TowerData.get('blight_lob_t1');
     t.ok(def.bonus, 'bonus table present');

@@ -1,4 +1,4 @@
-/* Hover tooltip with the WC3-style 250ms delay. */
+/* Hover tooltip with the classic RTS 250ms delay. */
 (function (global) {
   'use strict';
 

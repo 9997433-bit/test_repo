@@ -512,7 +512,7 @@
       }
     }
 
-    // Health bar (WC3 style: black frame, green fill, red when hurt).
+    // Health bar: black frame, green fill, red when hurt.
     if (opts && opts.showBars !== false) {
       var bw = Math.max(16, r * 2.2);
       var bh = Math.max(3, 3.2 * s);

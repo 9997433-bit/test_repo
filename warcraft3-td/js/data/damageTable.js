@@ -34,7 +34,7 @@
   }
 
   /**
-   * WC3 armor reduction. Positive armor reduces, negative armor amplifies.
+   * Armor reduction. Positive armor reduces, negative armor amplifies.
    *   reduction = (k * armor) / (1 + k * armor)
    */
   function armorMultiplier(armor) {
