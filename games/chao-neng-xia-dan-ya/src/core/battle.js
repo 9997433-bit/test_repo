@@ -1,8 +1,26 @@
 /**
- * 战斗控制器：回合状态机 + 伤害/元素/连击结算 + 特效队列。
+ * 战斗控制器：回合状态机 + 特效队列 + 效果指令执行。
+ *
+ * 伤害 / 元素反应 / 连击 / 爆蛋时刻**不在这里实现**：全部由
+ * `combat.resolveHit(egg, target, ctx)` 结算，本文件只负责
+ *   1. 把战场实体翻译成契约要求的蛋 / 目标 / 上下文；
+ *   2. 消费返回的 `damage` / `comboDelta` / `effects`。
+ * 因此爆蛋时刻、元素反应、暴击各只有一套实现，全部在 `src/combat`。
+ *
  * 渲染层只读这里的状态，不反向改动。
  */
-import { baseHit } from "./adapters.js";
+import {
+  BURST_BUFF_ID,
+  COMBO,
+  EFFECT,
+  ELEMENT,
+  ELEMENTS,
+  STATUS,
+  burstThreshold,
+  expandAreaEffects,
+  isBurstActive,
+} from "../combat/index.js";
+import { resolveStrike } from "./adapters.js";
 import { makeEnemy } from "./bestiary.js";
 import { createRng, hashSeed } from "./rng.js";
 import { callHook, hasUlt } from "./skills.js";
@@ -40,7 +58,33 @@ export const BATTLE_STATE = {
   LOST: "lost",
 };
 
-const ELEMENT_TINT = { fire: "#ff8a3d", ice: "#8fd3ff", thunder: "#ffe566", none: "#ffd447" };
+const ELEMENT_TINT = { fire: "#ff8a3d", ice: "#8fd3ff", thunder: "#ffe566", none: "#ffd447", physical: "#ffd447" };
+
+/** 游戏侧元素写法 ↔ combat 契约写法（契约用 physical 表示「无附着」）。 */
+const COMBAT_ELEMENT = {
+  none: ELEMENT.PHYSICAL,
+  physical: ELEMENT.PHYSICAL,
+  fire: ELEMENT.FIRE,
+  ice: ELEMENT.ICE,
+  thunder: ELEMENT.THUNDER,
+};
+
+/** 飘字 tone → 颜色。tone 可能是元素、反应名、crit 或 burst。 */
+const TONE_COLOR = {
+  crit: "#ff6b9d",
+  burst: "#ffd447",
+  vaporize: "#ffb36b",
+  superconduct: "#8fd3ff",
+  overload: "#ff6b9d",
+  fire: "#ff8a3d",
+  ice: "#8fd3ff",
+  thunder: "#ffe566",
+  physical: "#ffd447",
+  none: "#ffd447",
+};
+
+const toneColor = (tone) => TONE_COLOR[tone] ?? "#ffd447";
+const tintOf = (element) => ELEMENT_TINT[element] ?? "#ffd447";
 
 export function createBattle(config) {
   const rng = createRng(hashSeed(config.seed ?? config.level?.id ?? "cnyd"));
@@ -70,6 +114,15 @@ export function createBattle(config) {
     comboWindow: 1.6,
     comboFreeze: 0,
     comboPeak: 0,
+    /** 引爆门槛，HUD 用来判断「快到爆蛋时刻了」。数值来自 combat 契约。 */
+    comboThreshold: burstThreshold(),
+    bursts: 0,
+    /** 爆蛋窗口结束时间（秒，与 battle.elapsed 同一时钟）。 */
+    burstUntil: 0,
+    /** 元素附着：targetId → { element, stacks, power, expiresAt }，喂给 resolveHit 的 ctx.auras。 */
+    auras: {},
+    /** 限时增益（爆蛋窗口等），由 buff 指令写入，resolveHit 直接读。 */
+    buffs: [],
 
     turn: 1,
     eggsFired: 0,
@@ -98,6 +151,11 @@ export function createBattle(config) {
     particles: [],
     ripples: [],
     beams: [],
+    /**
+     * 表现层指令队列（震屏 / 停顿 / 连击）。
+     * UI 每帧取空并翻译成 fx.css 的 juice 类，战斗层不碰 DOM。
+     */
+    fx: [],
     shakeAmt: 0,
     hitStop: 0,
     banner: null,
@@ -135,9 +193,27 @@ export function createBattle(config) {
     battle.log.push(text);
     if (battle.log.length > 40) battle.log.shift();
   };
-  battle.shake = (amt) => {
+  /** 表现层指令入队。队列有上限，UI 掉帧也不会把内存堆爆。 */
+  function pushFx(entry) {
+    battle.fx.push(entry);
+    if (battle.fx.length > 32) battle.fx.shift();
+  }
+  /** UI 每帧调用：取走并清空表现层队列。 */
+  battle.takeFx = () => {
+    if (!battle.fx.length) return [];
+    const out = battle.fx;
+    battle.fx = [];
+    return out;
+  };
+  /**
+   * 震屏。`intensity` 是 combat 反馈事件的口径（<0.8 小 / <1.2 中 / ≥1.2 大），
+   * 指令自带强度时原样透传，避免「像素量 → 强度」来回换算掉档。
+   */
+  battle.shake = (amt, intensity = amt / 10) => {
+    if (amt <= 0) return;
     if (config.settings?.shake === false || config.settings?.reduceMotion) return;
     battle.shakeAmt = Math.min(22, battle.shakeAmt + amt);
+    pushFx({ kind: "shake", intensity });
   };
   /**
    * 命中反馈：震屏与命中停顿一起给。
@@ -148,7 +224,9 @@ export function createBattle(config) {
     battle.shake(amt);
     if (stop <= 0) return;
     const scale = config.settings?.reduceMotion ? 0.45 : 1;
-    battle.hitStop = Math.min(MAX_HIT_STOP, Math.max(battle.hitStop, stop * scale));
+    const duration = Math.min(MAX_HIT_STOP, stop * scale);
+    battle.hitStop = Math.max(battle.hitStop, duration);
+    pushFx({ kind: "hitstop", duration });
   };
   battle.float = (x, y, text, color, size = 18) => {
     battle.floats.push({ x, y, text, color, size, life: 0.9, vy: -46 });
@@ -206,74 +284,279 @@ export function createBattle(config) {
     if (before < hero.maxEnergy && hero.energy >= hero.maxEnergy) audio.play("charged");
   };
 
-  // ——— 状态与反应 ———
-  battle.applyStatus = (enemy, kind, stacks = 1) => {
-    if (!enemy?.alive) return;
-    const st = enemy.status;
-    if (kind === "fire" || kind === "burn") {
-      if (st.freeze > 0) {
-        st.freeze = 0;
-        battle.reaction(enemy, "蒸发", "#ffb36b");
-        battle.rawDamage(enemy, Math.max(6, enemy.maxHp * 0.06), "#ffb36b");
-      }
-      st.burn = Math.min(6, st.burn + stacks);
-    } else if (kind === "ice" || kind === "freeze") {
-      st.freeze = Math.min(4, st.freeze + stacks + battle.freezeBonus);
-    } else if (kind === "shock") {
-      if (st.freeze > 0) {
-        enemy.armor = Math.max(0, enemy.armor - 8);
-        battle.reaction(enemy, "超导", "#8fd3ff");
-      }
-      if (st.burn > 0) {
-        battle.reaction(enemy, "超载", "#ff6b9d");
-        for (const n of battle.nearestEnemies(enemy, 3, 130)) {
-          battle.rawDamage(n, Math.max(5, enemy.maxHp * 0.05), "#ff6b9d");
-        }
-        battle.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, "#ff6b9d", 16, 220);
-        battle.shake(6);
-      }
-      st.shock = Math.min(6, st.shock + stacks);
-    }
-  };
-  battle.reaction = (enemy, name, color) => {
-    battle.float(enemy.x + enemy.w / 2, enemy.y - 6, name, color, 18);
-    battle.ripple(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, color, 44);
-    audio.play("reaction");
-  };
-  battle.rawDamage = (enemy, amount, color = "#ffd447") => {
+  // ——— combat 契约桥接 ———
+  const enemyById = (id) => (id == null ? null : world.enemies.find((e) => e.id === id) ?? null);
+
+  /**
+   * 敌人 → 契约要求的目标视图（只读）。
+   * 坐标取中心点（爆炸半径判定按中心算），冻结转成契约的 vulnerable 语义，
+   * 护甲 / 抗性直接交给 `computeDamage`，控制器自己不再算一遍减伤。
+   */
+  function targetView(enemy) {
+    const st = enemy.status ?? {};
+    const statuses = {};
+    if (st.freeze > 0) statuses[STATUS.FREEZE] = { potency: ELEMENTS.FREEZE.damageTakenMult, stacks: 1 };
+    return {
+      id: enemy.id,
+      hp: enemy.hp,
+      maxHp: enemy.maxHp,
+      armor: enemy.armor,
+      resist: enemy.resist,
+      x: enemy.x + enemy.w / 2,
+      y: enemy.y + enemy.h / 2,
+      statuses,
+    };
+  }
+
+  const targetViews = () => battle.aliveEnemies().map(targetView);
+
+  /**
+   * 结算上下文。连击、爆蛋窗口、附着、限时增益都从战斗状态取，
+   * 所以「这一击算多少」永远只有一个真源。
+   */
+  function hitContext(hero, extra = {}) {
+    return {
+      now: battle.elapsed,
+      combo: battle.combo,
+      burstUntil: battle.burstUntil,
+      auras: battle.auras,
+      buffs: battle.buffs,
+      hero: hero ? { id: hero.id, atk: hero.atk, school: hero.school } : null,
+      // 弹球手感需要比契约默认 5% 更高的暴击底噪
+      critChance: 0.08,
+      mods: {
+        atkMult: battle.teamAtkBuff ? battle.teamAtkBuff.mul : 1,
+        critChance: battle.critBonus,
+      },
+      rng: rng.next,
+      ...extra,
+    };
+  }
+
+  /** 已结算伤害落到敌人身上：不再叠护甲 / 抗性 / 暴击，飘字由 feedback 指令负责。 */
+  battle.applyDamage = (enemy, amount) => {
     if (!enemy?.alive) return 0;
-    const dmg = Math.max(1, Math.round(amount));
+    const dmg = Math.max(0, Math.round(amount));
+    if (dmg <= 0) return 0;
     enemy.hp -= dmg;
     enemy.flash = 0.18;
     battle.damageDealt += dmg;
-    battle.float(enemy.x + enemy.w / 2 + rng.range(-8, 8), enemy.y + 8, String(dmg), color, 17);
     if (enemy.hp <= 0) battle.killEnemy(enemy);
     return dmg;
   };
 
+  /** 无飘字来源的伤害（持续伤害 / 范围指令）自带一个数字。 */
+  battle.rawDamage = (enemy, amount, color = "#ffd447") => {
+    if (!enemy?.alive) return 0;
+    const dmg = Math.max(1, Math.round(amount));
+    battle.float(enemy.x + enemy.w / 2 + rng.range(-8, 8), enemy.y + 8, String(dmg), color, 17);
+    return battle.applyDamage(enemy, dmg);
+  };
+
+  function beamBetween(fromId, enemy) {
+    const from = enemyById(fromId);
+    if (!from) return;
+    battle.beams.push({
+      x1: from.x + from.w / 2, y1: from.y + from.h / 2,
+      x2: enemy.x + enemy.w / 2, y2: enemy.y + enemy.h / 2,
+      color: "#ffe566", life: 0.28,
+    });
+  }
+
+  /** 连击只从 `resolveHit().comboDelta` 推进，控制器不自己数层数、也不自己判引爆。 */
+  function advanceCombo(result) {
+    const delta = Number.isFinite(result.comboDelta) ? result.comboDelta : 0;
+    if (delta === 0) return;
+    const before = battle.combo;
+    battle.combo = Math.max(0, before + delta);
+    battle.comboTimer = battle.comboWindow;
+    battle.comboPeak = Math.max(battle.comboPeak, result.burst ? (result.comboBefore ?? before) + 1 : battle.combo);
+    if (delta > 0 && battle.combo > 0 && battle.combo % 5 === 0) {
+      battle.float(LAUNCH_X, 150, `${battle.combo} 连击!`, "#ff6b9d", 24);
+      audio.play("combo", { rate: comboRate(Math.floor(battle.combo / 5)) });
+      battle.punch(2 + battle.combo * 0.2, 0.035);
+      pushFx({ kind: "combo-flash" });
+    }
+    pushFx({ kind: "combo", value: battle.combo, burst: !!result.burst });
+  }
+
+  function applyStatusEffect(fx) {
+    const enemy = enemyById(fx.targetId);
+    if (!enemy?.alive) return;
+    const st = enemy.status;
+    const stacks = Math.max(1, Math.round(fx.stacks ?? 1));
+    if (fx.status === STATUS.BURN) st.burn = Math.min(6, st.burn + stacks);
+    else if (fx.status === STATUS.FREEZE) st.freeze = Math.min(4, st.freeze + stacks + battle.freezeBonus);
+    else if (fx.status === STATUS.SHOCK) st.shock = Math.min(6, st.shock + stacks);
+    else if (fx.status === STATUS.ARMOR_BREAK) {
+      const shred = Math.min(0.95, Math.max(0, fx.potency ?? ELEMENTS.SUPERCONDUCT.armorShred));
+      enemy.armor = Math.max(0, Math.round(enemy.armor * (1 - shred)));
+    }
+  }
+
+  function applyComboEffect(fx) {
+    if (fx.op === "burst") {
+      // 爆蛋时刻唯一入口：层数、窗口、爆炸伤害全部由 combat 的 burstEffects 指定
+      battle.combo = Math.max(0, Math.round(fx.value ?? 0));
+      battle.comboTimer = battle.comboWindow;
+      battle.burstUntil = Math.max(battle.burstUntil, battle.elapsed + (fx.duration ?? COMBO.BURST_DURATION));
+      battle.bursts++;
+      battle.announce("爆蛋时刻！全场引爆");
+      audio.play("boom");
+      battle.onEvent("combo-burst", { wave: battle.wave, at: battle.elapsed });
+      pushFx({ kind: "combo", value: battle.combo, burst: true });
+      pushFx({ kind: "combo-flash" });
+      return;
+    }
+    if (fx.op === "add") battle.combo = Math.max(0, battle.combo + (fx.value ?? 0));
+    else if (fx.op === "set") battle.combo = Math.max(0, Math.round(fx.value ?? 0));
+    else if (fx.op === "reset") battle.combo = 0;
+  }
+
+  function applyFeedback(fx) {
+    const at = fx.at ?? { x: LAUNCH_X, y: 200 };
+    if (fx.kind === "floater") {
+      const size = fx.tone === "crit" ? 23 : (fx.intensity ?? 1) >= 1.2 ? 24 : 17;
+      battle.float(at.x + rng.range(-8, 8), at.y, String(fx.text ?? ""), toneColor(fx.tone), size);
+      if (fx.tone === "vaporize" || fx.tone === "superconduct" || fx.tone === "overload") {
+        battle.ripple(at.x, at.y, toneColor(fx.tone), 44);
+        audio.play("reaction");
+      }
+      return;
+    }
+    if (fx.kind === "hitstop") {
+      battle.punch(0, fx.duration ?? 0.03);
+      return;
+    }
+    if (fx.kind === "shake") {
+      const intensity = fx.intensity ?? 1;
+      battle.shake(intensity * 8, intensity);
+      return;
+    }
+    if (fx.kind === "element-burst") {
+      battle.burst(at.x, at.y, toneColor(fx.tone), 12, 200);
+    }
+  }
+
+  function dispatchEffect(fx) {
+    switch (fx?.type) {
+      case EFFECT.DAMAGE: {
+        const enemy = enemyById(fx.targetId);
+        if (!enemy?.alive) return;
+        if (fx.kind === "chain") beamBetween(fx.source, enemy);
+        battle.rawDamage(enemy, fx.amount, tintOf(fx.element));
+        return;
+      }
+      case EFFECT.STATUS:
+        applyStatusEffect(fx);
+        return;
+      case EFFECT.CLEAR_STATUS: {
+        const enemy = enemyById(fx.targetId);
+        if (!enemy?.status) return;
+        if (fx.status === STATUS.FREEZE) enemy.status.freeze = 0;
+        else if (fx.status === STATUS.BURN) enemy.status.burn = 0;
+        else if (fx.status === STATUS.SHOCK) enemy.status.shock = 0;
+        return;
+      }
+      case EFFECT.AURA: {
+        const enemy = enemyById(fx.targetId);
+        if (!fx.element || !(fx.stacks > 0)) {
+          delete battle.auras[fx.targetId];
+          if (enemy) enemy.aura = null;
+          return;
+        }
+        const aura = { element: fx.element, stacks: fx.stacks, power: fx.power, expiresAt: fx.expiresAt };
+        battle.auras[fx.targetId] = aura;
+        if (enemy) enemy.aura = aura;
+        return;
+      }
+      case EFFECT.BUFF: {
+        const expiresAt = battle.elapsed + (fx.duration ?? 0);
+        battle.buffs = battle.buffs.filter((b) => b.id !== fx.id);
+        battle.buffs.push({ id: fx.id, mods: fx.mods, stacks: fx.stacks ?? 1, expiresAt });
+        if (fx.id === BURST_BUFF_ID) battle.burstUntil = Math.max(battle.burstUntil, expiresAt);
+        return;
+      }
+      case EFFECT.COMBO:
+        applyComboEffect(fx);
+        return;
+      case EFFECT.ENERGY: {
+        if (fx.scope === "team") for (const h of battle.heroes) battle.grantEnergy(h, fx.amount ?? 0);
+        else battle.grantEnergy(battle.activeHero(), fx.amount ?? 0);
+        return;
+      }
+      case EFFECT.HEAL: {
+        const ratio = fx.ratio > 0 ? fx.ratio : (fx.amount ?? 0) / Math.max(1, battle.playerMaxHp);
+        if (ratio > 0) battle.healPlayer(ratio);
+        return;
+      }
+      case EFFECT.SHIELD:
+        battle.shields += Math.max(1, Math.round(fx.blocks || 1));
+        return;
+      case EFFECT.FEEDBACK:
+        applyFeedback(fx);
+        return;
+      default:
+    }
+  }
+
+  /**
+   * 消费一批效果指令。这是战斗层唯一的效果执行口：
+   * 爆炸 / 链击先按当前存活敌人展开成已结算的直接伤害，其余按域分派。
+   */
+  battle.consumeEffects = (effects) => {
+    if (!effects?.length) return;
+    for (const fx of effects) {
+      if (fx?.type !== EFFECT.EXPLOSION) continue;
+      const big = fx.kind === "combo_burst";
+      battle.ripple(fx.x, fx.y, tintOf(fx.element), fx.radius ?? 60);
+      battle.burst(fx.x, fx.y, tintOf(fx.element), big ? 36 : 12, big ? 320 : 200);
+    }
+    const { effects: flat } = expandAreaEffects(effects, targetViews(), { now: battle.elapsed });
+    for (const fx of flat) dispatchEffect(fx);
+  };
+
+  /**
+   * 直接施加状态（技能 / 神器 / 关卡修饰用）。
+   * 元素反应只有一套实现（`combat/elements.js`），这里不判蒸发 / 超导 / 超载。
+   */
+  battle.applyStatus = (enemy, kind, stacks = 1) => {
+    if (!enemy?.alive) return;
+    const st = enemy.status;
+    if (kind === "fire" || kind === "burn") st.burn = Math.min(6, st.burn + stacks);
+    else if (kind === "ice" || kind === "freeze") st.freeze = Math.min(4, st.freeze + stacks + battle.freezeBonus);
+    else if (kind === "thunder" || kind === "shock") st.shock = Math.min(6, st.shock + stacks);
+  };
+
+  /**
+   * 技能 / 大招 / 场地机关的直接伤害，同样走 `resolveHit`——全局只有一套伤害权威。
+   * 技能不叠连击（`comboGain: 0`），但会吃当前连击层数与爆蛋窗口的加成。
+   */
   battle.damageEnemy = (enemy, amount, opts = {}) => {
     if (!enemy?.alive) return 0;
-    const element = opts.element ?? "none";
-    let dmg = amount;
-    dmg *= 1 - enemy.armor / (enemy.armor + 70);
-    dmg *= 1 - (enemy.resist?.[element] ?? 0);
-    if (enemy.status.freeze > 0) dmg *= 1.2;
-    if (battle.teamAtkBuff) dmg *= battle.teamAtkBuff.mul;
-    const crit = opts.crit || rng.chance(0.08 + battle.critBonus + battle.combo * 0.004);
-    if (crit) dmg *= 1.6 + battle.combo * 0.06;
-    const color = crit ? "#ff6b9d" : ELEMENT_TINT[element] ?? "#ffd447";
-    const dealt = battle.rawDamage(enemy, dmg, color);
-    if (crit) {
-      battle.ripple(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, "#ff6b9d", 40);
-      battle.shake(4);
-    }
-    if (element !== "none") battle.applyStatus(enemy, element, 1);
+    const hero = opts.hero ?? battle.activeHero();
+    const strike = {
+      id: opts.source ?? "skill",
+      power: amount,
+      element: COMBAT_ELEMENT[opts.element ?? "none"] ?? ELEMENT.PHYSICAL,
+      isMain: false,
+      noCombo: true,
+      ownerId: hero?.id ?? null,
+      ...(opts.crit ? { forceCrit: true } : {}),
+    };
+    // hero: null —— 技能伤害不吃流派主蛋倍率，那是发射出去的蛋才有的身份加成
+    const result = resolveStrike(strike, targetView(enemy), hitContext(hero, { hero: null, comboGain: 0 }));
+    const dealt = battle.applyDamage(enemy, result.damage);
+    battle.consumeEffects(result.effects);
+    if (result.crit) battle.ripple(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, "#ff6b9d", 40);
     return dealt;
   };
 
   battle.killEnemy = (enemy) => {
     if (!enemy.alive) return;
     enemy.alive = false;
+    enemy.aura = null;
+    delete battle.auras[enemy.id];
     battle.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, enemy.color, enemy.boss ? 40 : 16, enemy.boss ? 300 : 200);
     battle.goldEarned += enemy.boss ? 60 : enemy.elite ? 24 : 6;
     audio.play(enemy.boss ? "bossDown" : "pop");
@@ -422,29 +705,43 @@ export function createBattle(config) {
     onEnemy(egg, enemy) {
       egg.hitCount++;
       const hero = battle.heroes.find((h) => h.id === egg.owner) ?? battle.activeHero();
-      bumpCombo();
 
       let mul = egg.damageMul;
       mul *= 1 + (egg.bounceScaling ?? 0) * Math.min(10, egg.wallBounces);
       mul *= callHook(hero, "damageMul", egg, enemy, battle) ?? 1;
-      const crit = egg.crit || (egg.firstHitCrit && egg.hitCount === 1);
+      const forceCrit = egg.crit || (egg.firstHitCrit && egg.hitCount === 1);
 
-      const scaled = baseHit(
-        { ...egg, power: egg.power * mul },
-        enemy,
-        { combo: battle.combo, element: egg.element },
+      // 蛋 → 契约视图：威力、倍率、元素、流派身份、碰撞次数都由 combat 消化
+      const strike = {
+        id: egg.id,
+        power: egg.power,
+        damageMult: mul,
+        element: COMBAT_ELEMENT[egg.element] ?? ELEMENT.PHYSICAL,
+        isMain: egg.isMain,
+        collisions: egg.collisions,
+        ownerId: hero?.id ?? null,
+        ...(forceCrit ? { forceCrit: true } : {}),
+      };
+      const result = resolveStrike(
+        strike,
+        targetView(enemy),
+        hitContext(hero, { hitIndex: egg.hitCount, hitPoint: { x: egg.x, y: egg.y } }),
       );
-      const dealt = battle.damageEnemy(enemy, scaled.damage, { element: egg.element, crit });
+
+      // 唯一伤害权威：护甲 / 抗性 / 暴击 / 连击 / 爆蛋窗口都已经在 resolveHit 里算过
+      const dealt = battle.applyDamage(enemy, result.damage);
+      advanceCombo(result);
+      battle.consumeEffects(result.effects);
 
       battle.grantEnergy(hero, 6);
-      battle.burst(egg.x, egg.y, ELEMENT_TINT[egg.element] ?? "#ffd447", 8, 180);
+      battle.burst(egg.x, egg.y, tintOf(result.element), 8, 180);
       // 这一下削掉了目标多少血 → 停顿多久、震多狠
       const lethal = clamp(dealt / Math.max(1, enemy.maxHp), 0, 1);
-      battle.punch(3 + lethal * 12 + (crit ? 3 : 0), 0.03 + lethal * 0.08 + (crit ? 0.02 : 0));
-      audio.play("hit", { rate: comboRate(battle.combo - 1) });
+      battle.punch(3 + lethal * 12 + (result.crit ? 3 : 0), 0.03 + lethal * 0.08);
+      audio.play("hit", { rate: comboRate(Math.max(0, battle.combo - 1)) });
       if (battle.modifiers.shockOnHit) battle.applyStatus(enemy, "shock", 1);
       if (battle.modifiers.burnOnHit) battle.applyStatus(enemy, "burn", 1);
-      callHook(hero, "onEnemyHit", egg, enemy, battle, scaled);
+      callHook(hero, "onEnemyHit", egg, enemy, battle, result);
 
       if (egg.splitOnHit > 0) {
         const n = egg.splitOnHit;
@@ -458,22 +755,6 @@ export function createBattle(config) {
       battle.ripple(egg.x, world.h - 20, "#ffd447", 24);
     },
   };
-
-  function bumpCombo() {
-    battle.combo++;
-    battle.comboTimer = battle.comboWindow;
-    battle.comboPeak = Math.max(battle.comboPeak, battle.combo);
-    if (battle.combo > 0 && battle.combo % 5 === 0) {
-      battle.float(LAUNCH_X, 150, `${battle.combo} 连击!`, "#ff6b9d", 24);
-      audio.play("combo", { rate: comboRate(Math.floor(battle.combo / 5)) });
-      battle.punch(2 + battle.combo * 0.2, 0.035);
-    }
-    if (battle.combo === 20) {
-      battle.announce("爆蛋时刻！全场引爆");
-      battle.punch(14, 0.14);
-      for (const en of battle.aliveEnemies()) battle.damageEnemy(en, battle.activeHero().atk * 1.6, { element: "fire" });
-    }
-  }
 
   // ——— 发射 ———
   battle.setAim = (angle, power) => {
@@ -721,10 +1002,16 @@ export function createBattle(config) {
       return;
     }
 
+    if (battle.buffs.length) battle.buffs = battle.buffs.filter((b) => b.expiresAt > battle.elapsed);
+
+    // 爆蛋窗口内连击不衰减（契约里同一条规则写成 comboDecayMult: 0）
     if (battle.comboFreeze > 0) battle.comboFreeze -= dt;
-    else if (battle.combo > 0) {
+    else if (battle.combo > 0 && !isBurstActive({ burstUntil: battle.burstUntil }, battle.elapsed)) {
       battle.comboTimer -= dt;
-      if (battle.comboTimer <= 0) battle.combo = 0;
+      if (battle.comboTimer <= 0) {
+        battle.combo = 0;
+        pushFx({ kind: "combo", value: 0 });
+      }
     }
     decay(dt);
   };
@@ -762,7 +1049,14 @@ export function createBattle(config) {
     }
     for (const p of world.pegs) if (p.hitFlash > 0) p.hitFlash -= dt;
     for (const b of world.bricks) if (b.flash > 0) b.flash -= dt;
-    for (const e of world.enemies) if (e.flash > 0) e.flash -= dt;
+    for (const e of world.enemies) {
+      if (e.flash > 0) e.flash -= dt;
+      // 附着过期：contract 侧 readAura 已按 expiresAt 过滤，这里同步清掉渲染用的镜像
+      if (e.aura && typeof e.aura.expiresAt === "number" && e.aura.expiresAt <= battle.elapsed) {
+        e.aura = null;
+        delete battle.auras[e.id];
+      }
+    }
   }
 
   battle.respawnRaidBoss = () => {
