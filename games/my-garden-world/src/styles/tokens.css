@@ -1,26 +1,263 @@
+/* ============================================================
+   我的花园世界 · 国风设计令牌（纸本设色）
+   规范详见 docs/VISUAL.md。命名分三层：
+   1) 颜料层  --c-*    传统色原料，不直接在组件里使用
+   2) 语义层  --text/--surface/--line/--accent/...  组件只用这层
+   3) 场景层  --sky-*/--mtn-*/--soil-*  由季节与昼夜属性驱动
+   兼容别名（--ink/--paper/--vermilion 等）保留给旧代码与内联样式。
+   ============================================================ */
+
 :root {
-  --ink: #2b2118;
-  --ink-soft: #5a4636;
-  --paper: #f4e6c8;
-  --paper-deep: #e7d3a8;
-  --vermilion: #c23b2e;
-  --gold: #c9a227;
-  --jade: #3d6b5a;
-  --jade-soft: #7ea392;
-  --plum: #8b3a4a;
-  --sky: #9eb7c8;
-  --night: #1b2430;
-  --shadow: rgba(43, 33, 24, 0.28);
+  /* ---- 颜料 · 墨分五色（焦浓重淡清） ---- */
+  --c-ink-jiao: #201a12;
+  --c-ink-nong: #2d251a;
+  --c-ink-zhong: #4c3e2d;
+  --c-ink-dan: #71614c;
+  --c-ink-qing: #9c8b70;
+
+  /* ---- 颜料 · 纸绢 ---- */
+  --c-paper: #f6eed8;      /* 宣纸 */
+  --c-paper-deep: #ecdcb6; /* 绢本 */
+  --c-paper-edge: #dfca9c; /* 卷边 */
+
+  /* ---- 颜料 · 设色 ---- */
+  --c-vermilion: #b23a2c;  /* 朱砂 */
+  --c-vermilion-hi: #d0503a; /* 朱磦 */
+  --c-seal: #9e2f23;       /* 印泥 */
+  --c-azure: #33587e;      /* 石青 */
+  --c-lapis: #3c5f96;      /* 青金 */
+  --c-jade: #4f8068;       /* 玉色 */
+  --c-jade-soft: #8db4a0;
+  --c-celadon: #c2d6c8;    /* 青瓷 */
+  --c-gold: #b3822e;       /* 泥金 */
+  --c-gold-hi: #d8a63f;    /* 藤黄 */
+  --c-gold-pale: #e9cf8a;
+  --c-plum: #8c3550;       /* 胭脂 */
+  --c-ochre: #8a5a2b;      /* 赭石 */
+  --c-wood: #6b4a33;       /* 檀木（卷轴轴头） */
+
+  /* ---- 语义 · 文字与纸面 ---- */
+  --text: var(--c-ink-nong);
+  --text-soft: var(--c-ink-zhong);
+  --text-faint: var(--c-ink-dan);
+  --surface: #f7efdb;                 /* 面板纸 */
+  --surface-hi: #fbf5e6;              /* 面板纸受光 */
+  --surface-2: #f1e4c4;               /* 卡片纸 */
+  --surface-2-hi: #f7edd4;
+  --wash-warm: rgba(178, 58, 44, 0.05);  /* 花笺右下淡朱晕 */
+  --wash-cool: rgba(79, 128, 104, 0.07); /* 花笺左上淡玉晕 */
+
+  /* ---- 语义 · 描线 ---- */
+  --line: #cdb488;         /* 淡金描边 */
+  --line-strong: #a98c54;  /* 深金描边 */
+  --line-ghost: rgba(45, 37, 26, 0.14);
+  --edge-hi: rgba(255, 253, 244, 0.5); /* 纸面受光内沿 */
+
+  /* ---- 语义 · 强调 ---- */
+  --accent: var(--c-vermilion);
+  --accent-hi: var(--c-vermilion-hi);
+  --on-accent: #fdf3dd;
+  --focus: var(--c-gold-hi);
+  --seal-red: var(--c-seal);
+
+  /* ---- 语义 · 投影 ---- */
+  --shadow-soft: rgba(43, 33, 20, 0.16);
+  --shadow-deep: rgba(32, 24, 13, 0.34);
+  --backdrop-dim: rgba(30, 21, 10, 0.34);
+
+  /* ---- 场景 · 天空（默认春 · 昼） ---- */
+  --sky-hi: #a3cabc;
+  --sky-mid: #e9e3c6;
+  --sky-lo: #9db786;
+  --sky-glow: rgba(255, 244, 212, 0.55);
+  --vignette: rgba(58, 40, 20, 0.2);
+  --mtn-far: rgba(90, 120, 105, 0.32);
+  --mtn-mid: rgba(70, 100, 88, 0.42);
+  --mtn-near: rgba(54, 82, 68, 0.52);
+  --mist: rgba(250, 247, 235, 0.5);
+  --moon-core: rgba(255, 255, 255, 0);
+  --moon-halo: rgba(255, 255, 255, 0);
+
+  /* ---- 场景 · 泥土 ---- */
+  --soil-dry-hi: #7d5531;
+  --soil-dry-lo: #46301b;
+  --soil-wet-hi: #5b3d22;
+  --soil-wet-lo: #2e1e0f;
+  --soil-edge: #33220f;       /* 花圃厚度（前立面） */
+  --soil-rim: rgba(62, 40, 18, 0.6);
+  --soil-row: rgba(32, 20, 9, 0.22); /* 垄沟细线 */
+  --soil-sheen: rgba(148, 190, 214, 0.18); /* 含水反光 */
+  --soil-text: #f2e7cd;
+  --water-drop-hi: #a9d3ee;
+  --water-drop-lo: #4a7fae;
+  --bloom-halo: rgba(255, 214, 118, 0.24);
+
+  /* ---- 场景 · 花瓣与纸纹 ---- */
+  --petal-opacity: 0.8;
+  --grain-opacity: 0.05;
+  --grain-blend: multiply;
+
+  /* ---- 刻度 · 圆角 ---- */
+  --radius-s: 9px;
+  --radius-m: 13px;
+  --radius-l: 20px;
+  --radius-pill: 999px;
+
+  /* ---- 刻度 · 层级 ---- */
+  --z-scene: 0;
+  --z-stage: 1;
+  --z-chrome: 2;
+  --z-petals: 3;
+  --z-sheet: 5;
+  --z-modal: 7;
+  --z-toast: 9;
+  --z-grain: 11;
+
+  /* ---- 刻度 · 动效（规范见 VISUAL.md §动效） ---- */
+  --dur-quick: 110ms;
+  --dur-base: 200ms;
+  --dur-slow: 340ms;
+  --ease-out: cubic-bezier(0.25, 0.7, 0.25, 1);
+  --ease-brush: cubic-bezier(0.6, 0.05, 0.28, 0.99);
+  --ease-pop: cubic-bezier(0.3, 1.5, 0.55, 1);
+
+  /* ---- 刻度 · 布局 ---- */
+  --dock-clear: 86px; /* sheet 底部避让 dock 的高度 */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+
+  /* ---- 兼容别名（旧代码/内联样式仍在引用） ---- */
+  --ink: var(--text);
+  --ink-soft: var(--text-soft);
+  --paper: var(--c-paper);
+  --paper-deep: var(--c-paper-deep);
+  --vermilion: var(--c-vermilion);
+  --gold: var(--c-gold);
+  --jade: var(--c-jade);
+  --jade-soft: var(--c-jade-soft);
+  --plum: var(--c-plum);
+  --sky: var(--sky-hi);
+  --night: #141c29;
+  --shadow: var(--shadow-deep);
   --radius: 16px;
-  --font-display: "Ma Shan Zheng", "STKaiti", serif;
-  --font-body: "Noto Serif SC", "Songti SC", serif;
+  --font-display: "Ma Shan Zheng", "STKaiti", "KaiTi", serif;
+  --font-body: "Noto Serif SC", "Songti SC", "SimSun", serif;
   color-scheme: light;
 }
 
+/* ============================================================
+   四季 · 昼（属性挂在 #app 根元素上）
+   ============================================================ */
+
+[data-season="summer"] {
+  --sky-hi: #74aabf;
+  --sky-mid: #d9e5b4;
+  --sky-lo: #7c9c60;
+  --sky-glow: rgba(255, 250, 220, 0.5);
+  --mtn-far: rgba(58, 98, 110, 0.34);
+  --mtn-mid: rgba(46, 84, 94, 0.44);
+  --mtn-near: rgba(36, 70, 78, 0.54);
+  --mist: rgba(245, 250, 240, 0.42);
+}
+
+[data-season="autumn"] {
+  --sky-hi: #c78e50;
+  --sky-mid: #e9cf95;
+  --sky-lo: #9d6a3e;
+  --sky-glow: rgba(255, 236, 194, 0.55);
+  --mtn-far: rgba(122, 74, 44, 0.34);
+  --mtn-mid: rgba(104, 60, 36, 0.44);
+  --mtn-near: rgba(86, 46, 28, 0.54);
+  --mist: rgba(250, 240, 220, 0.46);
+  --soil-dry-hi: #82552c;
+  --soil-dry-lo: #4a2f17;
+}
+
+[data-season="winter"] {
+  --sky-hi: #96a9ba;
+  --sky-mid: #eaeff3;
+  --sky-lo: #a9b5be;
+  --sky-glow: rgba(255, 255, 255, 0.6);
+  --mtn-far: rgba(72, 88, 104, 0.3);
+  --mtn-mid: rgba(58, 74, 92, 0.4);
+  --mtn-near: rgba(44, 58, 76, 0.5);
+  --mist: rgba(255, 255, 255, 0.6);
+  --soil-dry-hi: #6e4e30;
+  --soil-dry-lo: #3d2b19;
+}
+
+/* ============================================================
+   夜 · 磁青纸泥金（覆盖任何季节，声明在后以取胜）
+   ============================================================ */
+
 [data-night="1"] {
-  --paper: #2a3038;
-  --paper-deep: #1f242b;
-  --ink: #f0e6d2;
-  --ink-soft: #cbbfa8;
-  --shadow: rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+
+  --text: #efe5c9;
+  --text-soft: #cdbfa0;
+  --text-faint: #a3977e;
+  --surface: #2c3547;
+  --surface-hi: #333e53;
+  --surface-2: #242d3e;
+  --surface-2-hi: #2b354a;
+  --wash-warm: rgba(200, 90, 69, 0.07);
+  --wash-cool: rgba(141, 180, 160, 0.06);
+
+  --line: #59543f;
+  --line-strong: #8a7a4d;
+  --line-ghost: rgba(0, 0, 0, 0.4);
+  --edge-hi: rgba(255, 244, 214, 0.12);
+
+  --accent: #c2503c;
+  --accent-hi: #d8654c;
+  --on-accent: #fff4dc;
+  --focus: #d9b356;
+  --seal-red: #a83a2c;
+
+  --shadow-soft: rgba(0, 0, 0, 0.3);
+  --shadow-deep: rgba(0, 0, 0, 0.55);
+  --backdrop-dim: rgba(4, 7, 13, 0.5);
+
+  --sky-hi: #0d1420;
+  --sky-mid: #1b2839;
+  --sky-lo: #131b29;
+  --sky-glow: rgba(120, 152, 202, 0.14);
+  --vignette: rgba(0, 0, 4, 0.42);
+  --mtn-far: rgba(58, 76, 106, 0.4);
+  --mtn-mid: rgba(46, 62, 90, 0.5);
+  --mtn-near: rgba(33, 46, 70, 0.6);
+  --mist: rgba(150, 172, 206, 0.09);
+  --moon-core: #ecdfae;
+  --moon-halo: rgba(236, 223, 174, 0.16);
+
+  --soil-dry-hi: #55402a;
+  --soil-dry-lo: #251a0f;
+  --soil-wet-hi: #3c2c1a;
+  --soil-wet-lo: #191209;
+  --soil-edge: #1c1309;
+  --soil-rim: rgba(26, 17, 8, 0.7);
+  --soil-row: rgba(0, 0, 0, 0.3);
+  --soil-sheen: rgba(148, 190, 224, 0.14);
+  --soil-text: #e8dcc0;
+  --bloom-halo: rgba(255, 214, 118, 0.16);
+
+  --petal-opacity: 0.42;
+  --grain-opacity: 0.08;
+  --grain-blend: soft-light;
+
+  /* 夜里的泥金与玉 */
+  --c-gold: #c1953e;
+  --c-gold-hi: #d0a94e;
+  --c-gold-pale: #e3c87e;
+  --c-jade: #628f77;
+  --c-jade-soft: #7fa48f;
+
+  /* 兼容别名同步翻夜色 */
+  --ink: var(--text);
+  --ink-soft: var(--text-soft);
+  --paper: #2c3547;
+  --paper-deep: #222b3b;
+  --shadow: var(--shadow-deep);
 }
