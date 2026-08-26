@@ -13,6 +13,7 @@
   const HERO_DOWN_TIME = 22;
   const HERO_HIT_FLASH = 0.16;
   const HERO_HIT_FX_GAP = 0.12;
+  const CYCLONE_FX_GAP = 0.18;
 
   /* Effect kinds render.js knows how to paint. Anything else is dropped. */
   const FX_KINDS = { spark: true, ring: true, text: true };
@@ -149,6 +150,7 @@
       respawn: 0,
       _hitFlash: 0,
       _hitFxAt: -1,
+      _cycloneFxAt: -1,
     };
   };
 
@@ -724,12 +726,12 @@
         this._hitCreep(near[i], def.dmg || 240, "spells", { canHitFlying: true });
       }
       if (def.fullHeal) this._healHero(h, h.maxHp);
-      this.ring(h.x, h.y, "#ffe082", 0.9, def.radius || 220);
+      this._ultFx(h, "#ffe082", def.radius || 220);
     } else if (id === "blademaster") {
       // Steel Cyclone: immune spin that replaces normal attacks with AoE dps.
       h.cycloneUntil = this.time + (def.dur || 6);
       h.invulnUntil = Math.max(h.invulnUntil, h.cycloneUntil);
-      this.ring(h.x, h.y, "#ff7043", 0.8, def.radius || 96);
+      this._ultFx(h, "#ff7043", def.radius || 96);
     } else if (id === "demonhunter") {
       // Chaos Rift: chaos-type burst — ignores armor type and spell immunity.
       const near = this.hash.queryRadius(h.x, h.y, def.radius || 180);
@@ -741,13 +743,20 @@
           c.shredAmt = Math.max(c.shredAmt || 0, def.shred);
         }
       }
-      this.ring(h.x, h.y, "#7e57c2", 0.9, def.radius || 180);
+      this._ultFx(h, "#7e57c2", def.radius || 180);
     } else if (id === "deathknight") {
       // Legion of the Dead: a bigger, longer Animate Dead.
       const n = def.count || 6;
       for (let i = 0; i < n; i++) this._summonSkeleton(h, i, n, def);
-      this.ring(h.x, h.y, "#90caf9", 0.9, 60);
+      this._ultFx(h, "#90caf9", 60);
     }
+  };
+
+  /** Shared ultimate flourish: outer shockwave, inner ring, core spark. */
+  Game.prototype._ultFx = function (h, color, radius) {
+    this.fxEmit("heroUlt", "ring", h.x, h.y, { color: color, life: 0.9, r: radius });
+    this.fxEmit("heroUlt", "ring", h.x, h.y, { color: "#fff3c4", life: 0.55, r: radius * 0.5 });
+    this.fxEmit("heroUlt", "spark", h.x, h.y - 8, { color: color, life: 0.45, r: 11 });
   };
 
   Game.prototype._healHero = function (h, amount) {
@@ -1188,10 +1197,14 @@
   /** Steel Cyclone: continuous hero-type AoE while spinning. */
   Game.prototype._heroCyclone = function (h, dt) {
     const def = h.def.r || {};
-    const near = this.hash.queryRadius(h.x, h.y, def.radius || 96);
+    const radius = def.radius || 96;
+    const near = this.hash.queryRadius(h.x, h.y, radius);
     for (let i = 0; i < near.length; i++) {
       this._hitCreep(near[i], (def.dps || 90) * dt, "hero", HERO_SOURCE);
     }
+    if (this.time - (h._cycloneFxAt == null ? -1 : h._cycloneFxAt) < CYCLONE_FX_GAP) return;
+    h._cycloneFxAt = this.time;
+    this.fxEmit("heroCyclone", "ring", h.x, h.y, { color: "#ff7043", life: 0.28, r: radius });
   };
 
   Game.prototype._heroAttack = function (h) {
