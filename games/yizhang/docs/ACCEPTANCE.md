@@ -208,6 +208,7 @@ npm run build          # 构建 + 体积预算
 - 被验分支/commit：`cursor/yizhang-db8d`。**首验** @ `160122a`（Round 2 合入态，R3 执行代理工作未落地时的诚实基线）；**复验** @ `8dff71e`（合入 R3 修复：probe 静态接线与硬断言、CSS 字体外链拔除、出盘判死口径、技能 id 定稿、测试对齐）。
 - 验收人/日期：Fable-4 / 2026-08-26（两轮均实测重跑：`npm ci` → 静态检查 → `npm test` → `npm run probe` → `npm run build` → 裸 `step` 八掌矩阵）
 - 结论：**REJECT（@ `8dff71e`，收窄至两项）** —— RG-01 余 2 红 + 1 文件加载失败（全为测试/数据侧）；RG-04 余 `index.html` 两行死 preconnect（R-13 红线字面命中，按 §4 规则 1 即时否决）。其余 4/6 门绿。
+- **三验补记 @ `af10784`**（全套命令重跑）：木棉 `skillId` 定稿空串（`2807a9f`）连带 `glove-data` schema 转绿——测试 **157/158（1 红）** + 同一文件加载失败；probe PASS（kills=1、`wiredCombat:true`）、build 过、`rg googleapis` 仅余 index.html/dist/index.html 各 2 行 preconnect、裸矩阵 8/8 均无回退。**R3 签发 PASS 仅剩三处**：`sim-integration.test.js` 死 import（GPT-sol-1）、`wiring` data 装表期望（GPT-sol-1）、`index.html` 17–18 两行 preconnect（Opus-4）。判定维持 REJECT。
 
 | 门（SOTA_CHECKLIST §9.1） | 首验 `160122a` | 复验 `8dff71e` | 复验一句话证据 |
 |---|---|---|---|
@@ -220,5 +221,5 @@ npm run build          # 构建 + 体积预算
 
 - L2/L3/M：本轮 stretch，不记分不否决（重定标声明 SOTA §9.0）；**L3 不签字**。
 - WARNING 清单（复验后）：技能 id 四处别名表仍并存（data 侧 id 已定稿，运行时靠桥正确；`data/skills.js`、`sim/combat-bridge.js`、`core/modules.js`、`combat/skills.js`）；bloom 三档常开（0.9/0.8/0.7）low 不可关（R-03 检查点）；probe 单 seed（T-07 规格 3 seed）；`sim/deps.js` 头注仍引已删除的 fallback-combat（注释级）。
-- 剩余修复（R3 签发 PASS 的全部工作，约 4 个文件）：① `index.html` 删 17–18 两行 preconnect（Opus-4）；② `sim-integration.test.js` 改写对照组去掉死 import（GPT-sol-1）；③ awakenModifiers schema 定稿对齐 `tests/glove-data`（Fable-3 + GPT-sol-1）；④ `wiring` data 装表期望更新（GPT-sol-1）。修完复跑 §2 全流程即可签发。
+- 剩余修复（复验 `8dff71e` 时点，约 4 个文件；三验后 ③ 已结，见补记）：① `index.html` 删 17–18 两行 preconnect（Opus-4）；② `sim-integration.test.js` 改写对照组去掉死 import（GPT-sol-1）；③ awakenModifiers schema 定稿对齐 `tests/glove-data`（Fable-3 + GPT-sol-1）；④ `wiring` data 装表期望更新（GPT-sol-1）。修完复跑 §2 全流程即可签发。
 - 证据包：两轮 `npm test` 输出（145/152 → 156/158 + FAIL 清单）、两轮 probe JSON 原文（首验 `{…,"kills":3,…,"usingRealCombat":false}`；复验 `{"status":"pass","steps":3600,…,"kills":1,"p99StepMs":0.1114,"ai":"think","botThinkCalls":10800,"botSlapAttempts":4884,"wiredCombat":true}`）、build 输出与体积、`rg googleapis src dist index.html` 命中行（复验仅余 index.html/dist/index.html 各 2 行）、裸 step 八掌矩阵输出（两轮均 8/8 PASS）——随本轮验收 commit 提交于 PR 描述。

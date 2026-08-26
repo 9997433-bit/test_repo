@@ -248,21 +248,23 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 **判定（@ `8dff71e`）：REJECT——但只差两口气。** 4/6 门绿；RG-01 余 2 红 + 1 加载失败（全是测试侧，见 §9.4），RG-04 余 `index.html` 两行死 preconnect（同时是 R-13 红线字面命中，按规则仍即时否决）。两项修复合计约 3 个文件的小改；修完复跑本表即可签发 R3 PASS。绿项终验时只需复跑防回退。
 
-### 9.4 RG-01 红项分解（首验七红一载 → 复验余二红一载）
+**补记（三验 @ `af10784`，全套命令重跑）**：木棉 `skillId` 定稿为空串（同时满足字符串契约与 falsy 契约，`2807a9f`）连带 `glove-data` schema 转绿——测试 **157/158（1 红）** + 同一文件加载失败；probe PASS（kills=1、`wiredCombat:true`）、build 过、裸矩阵 8/8、p0 零命中均复跑无回退。**R3 签发 PASS 只剩三处**：① `sim-integration.test.js` 死 import（§9.4 #0）；② `wiring` data 装表期望（§9.4 #5）；③ `index.html` 17–18 两行 preconnect（RG-04）。判定维持 REJECT。
+
+### 9.4 RG-01 红项分解（首验七红一载 → 复验二红一载 → 三验一红一载）
 
 首验 7 红中 **6 条是测试陈旧**（ADR-19 静态接线 / schema 冻结 / 技能哨兵之后没跟上），**1 条疑似实现 bug**；另有 1 个文件加载失败。修测试或修实现均可，**禁止空 expect**（§4 造假条款照常适用）。复验（@ `8dff71e`）后状态如下：
 
 | # | 红项 | 根因 | 复验状态 | 指派 |
 |---|---|---|---|---|
 | 0 | `src/combat/sim-integration.test.js`（整文件加载失败） | import 已删除的 `sim/fallback-combat.js` | **仍红** —— 文件第 11 行原样，8 条用例仍不进分母 | GPT-sol-1（改写对照组） |
-| 1 | `tests/glove-data` schema | 测试期望 `awakenModifiers:{slapRangeMul,…,special}` 形状，F3 实表已是 `{params:{…}}` 形状 | **仍红** —— 期望形状未定稿 | Fable-3 + GPT-sol-1 定稿一种形状 |
+| 1 | `tests/glove-data` schema | 测试期望 `awakenModifiers:{slapRangeMul,…,special}` 形状，F3 实表已是 `{params:{…}}` 形状 | **已绿（三验 @ `af10784`）** —— F3 数据侧定稿（含木棉 `skillId:""`，`2807a9f`） | 已结（Fable-3） |
 | 2 | `tests/match-lifecycle` 出台缘 | 摆位后第 1 步 `alive` 即 false——判死时机与测试口径分裂 | **已绿** —— sim 出盘判死跟随新口径（`173ab5d`/`0148af8`） | 已结（Opus-1） |
 | 3–4 | `tests/skills` spring/magnet | `beforeEach` `installCombat(原生 combat)` 压掉静态桥 → 混合方言技能哑（§9.2）；裸路径 8/8 绿 | **已绿** —— 测试删掉 `install*` 改走裸路径 | 已结（GPT-sol-1） |
 | 5 | `wiring` data 装表 | 期望 install 后掌表数值变化；ADR-19 后静态默认就是真表（1.15 = 1.15，无从「变」） | **仍红** —— 期望未更新 | GPT-sol-1 |
 | 6 | `wiring` usingRealCombat | 期望 install 后为 true；旧语义 install ⇒ false | **已绿** —— deps.js 真身识别落地（§9.2 勘定后续） | 已结（Opus-1/GPT-sol-2） |
 | 7 | `wiring` alignSkillIds | 期望 `cotton.skillId` 为假值；与当时的 `"none"` 哨兵冲突 | **已绿** —— F3 定稿 `skillId:null`（`97cf017`），假值成立 | 已结（Fable-3） |
 
-**剩余清单（RG-01 转绿的全部工作）**：#0 改写 sim-integration 对照组、#1 awakenModifiers schema 定稿、#5 更新 wiring 装表期望——三处全在测试/数据侧，无实现改动。
+**剩余清单（RG-01 转绿的全部工作，三验后）**：#0 改写 sim-integration 对照组、#5 更新 wiring 装表期望——两处全在测试侧，无实现改动。
 
 ### 9.5 Stretch 与遗留（不否决，入报告 · 复验后更新）
 
