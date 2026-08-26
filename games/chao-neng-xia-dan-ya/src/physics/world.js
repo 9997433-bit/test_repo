@@ -284,11 +284,12 @@ export function reviveWorld(world) {
   ensureCtx(world);
 
   // 快照里没有 `_norm` / `_stamp`，这一遍把静态体重新规范化并装回隐藏槽位
-  for (let i = 0; i < world.statics.length; i++) normalizeBody(world.statics[i]);
   for (let i = 0; i < world.eggs.length; i++) normalizeEgg(world.eggs[i]);
   world.staticsDirty = true;
   world._gridLength = -1;
   world.grid = null;
+  // 立刻重建 id 索引：`getStatic` / 传送门链接不该等到第一次步进才可用
+  syncStatics(world);
   return world;
 }
 
