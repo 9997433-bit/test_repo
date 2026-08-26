@@ -54,8 +54,7 @@ const CSS = `
 #${LAYER_ID} .zy-ftue-head { margin: 12px 0 0; font-family: var(--font-brush, serif); font-size: clamp(24px, 5vw, 32px); font-weight: 400; line-height: 1.2; }
 #${LAYER_ID} .zy-ftue-step { display: grid; grid-template-columns: 38px 1fr; gap: 12px; align-items: start; margin: 16px 0 0; padding-left: 10px; border-left: 2px solid rgba(var(--cinnabar-rgb, 178, 58, 47), 0.3); }
 #${LAYER_ID} .zy-ftue-mark { font-family: var(--font-brush, serif); font-size: 30px; line-height: 1.1; color: var(--cinnabar, #b23a2f); }
-#${LAYER_ID} .zy-ftue-title { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
-#${LAYER_ID} .zy-ftue-body { margin: 0; font-size: 13px; line-height: 1.95; color: var(--ink-soft, #4a4033); }
+#${LAYER_ID} .zy-ftue-body { margin: 0; font-size: 13.5px; line-height: 2; color: var(--ink-soft, #4a4033); }
 #${LAYER_ID} .zy-ftue-hint { margin: 14px 0 0; padding: 7px 10px; background: var(--ink-wash, rgba(33, 26, 18, 0.055)); font-size: 12px; line-height: 1.7; color: var(--ink-faint, #8b8071); }
 #${LAYER_ID} .zy-ftue-foot { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
 #${LAYER_ID} .zy-ftue-dots { margin-right: auto; font-size: 13px; letter-spacing: 5px; color: var(--ink-faint, #8b8071); }
@@ -134,11 +133,8 @@ function panelHtml() {
     <span class="zy-ftue-seal">新兵操典</span>
     <h2 class="zy-ftue-head" id="zy-ftue-head">第${esc(s.mark)}步 · ${esc(s.title)}</h2>
     <div class="zy-ftue-step">
-      <b class="zy-ftue-mark">${esc(s.mark)}</b>
-      <div>
-        <strong class="zy-ftue-title">${esc(s.title)}</strong>
-        <p class="zy-ftue-body">${esc(s.body)}</p>
-      </div>
+      <b class="zy-ftue-mark" aria-hidden="true">${esc(s.mark)}</b>
+      <p class="zy-ftue-body">${esc(s.body)}</p>
     </div>
     <p class="zy-ftue-hint">${esc(s.hint)}</p>
     <div class="zy-ftue-foot">
