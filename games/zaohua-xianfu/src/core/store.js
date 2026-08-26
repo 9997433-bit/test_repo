@@ -4,7 +4,7 @@ import { ARTIFACTS, ARTIFACT_DROPS, artifactById } from "../data/artifacts.js";
 import { canPlace, countType } from "../mansion/layout.js";
 import { produce } from "../mansion/production.js";
 import { makeDisciple, trainCost, canTrain, applyTrain } from "../disciples/roster.js";
-import { scriptureXp } from "../disciples/train.js";
+import { grantScriptureXp } from "./study.js";
 import { breakthroughChance, applyCultivate, applyBreakthrough, canCultivate } from "../progression/realm.js";
 import { challengeTower, towerReward } from "../combat/tower.js";
 import { challengeWave, waveReward } from "../combat/wave.js";
@@ -76,6 +76,16 @@ function coord(value) {
   if (!Number.isFinite(n)) return -1;
   const i = Math.trunc(n);
   return i >= 0 && i < GRID_SIZE ? i : -1;
+}
+
+/**
+ * 弟子资质与 BREAKTHROUGH 同规矩：`action.rng` 可注入，缺省仍走 `Math.random`（AD-21）。
+ * 掷点在 reducer 里做完再交给 `makeDisciple`，同一 action 序列重放不会再漂移资质。
+ */
+function rollAptitude(rng) {
+  const roll = typeof rng === "function" ? rng : Math.random;
+  const unit = () => clamp(num(roll(), 0), 0, 0.999999);
+  return { diligent: 12 + Math.floor(unit() * 8), force: 10 + Math.floor(unit() * 10) };
 }
 
 function grantArtifacts(owned, table, best) {
@@ -184,7 +194,8 @@ export function reduce(state, action) {
       return {
         ...state,
         resources: addRes(state.resources, produce(state, dt)),
-        disciples: scriptureXp(state, dt),
+        // 修业只涨 xp：满条即「可晋阶」，升 profession 仍须 TRAIN 付丹药灵草（AD-17）。
+        disciples: grantScriptureXp(state, dt),
         meta: { ...state.meta, lastTick: now },
       };
     }
@@ -247,7 +258,8 @@ export function reduce(state, action) {
       const cost = { jade: 6 + (hero.role === "dps" ? 2 : 0), stone: 40 };
       const paid = pay(state.resources, cost);
       if (!paid) return pushLog(state, "仙玉或灵石不足，仙友未至。", action.now);
-      const disciples = [...state.disciples, makeDisciple(hero.id, { id: `d-${hero.id}` })];
+      const recruit = makeDisciple(hero.id, { id: `d-${hero.id}`, ...rollAptitude(action.rng) });
+      const disciples = [...state.disciples, recruit];
       const unlockedHeroes = [...state.unlockedHeroes, hero.id];
       const party = normalizeParty([...state.party, hero.id], unlockedHeroes, state.meta.faction);
       return pushLog(

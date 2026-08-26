@@ -1,4 +1,4 @@
-import { BUILDING_TYPES, GRID_SIZE } from "../data/buildings.js";
+import { BUILDING_TYPES, GRID_SIZE, mansionCap } from "../data/buildings.js";
 import { FACTIONS, heroById } from "../data/heroes.js";
 import { STARTER_ARTIFACTS, artifactById } from "../data/artifacts.js";
 import { REALMS } from "../data/realms.js";
@@ -199,6 +199,17 @@ function normalizeResources(raw, fallback) {
   return out;
 }
 
+/**
+ * 「非洞府建筑等级 ≤ 洞府仙居」这条不变式在读档路径同样成立（AD-22）：
+ * 篡改档里的 Lv.99 灵田在此收敛到洞府上限，产量不会按超限等级结算。
+ * UPGRADE 路径本就守着同一个上限，正常存档过此函数是恒等变换。
+ */
+function capBuildingLevels(buildings) {
+  const mansion = buildings.find((b) => b.type === "mansion");
+  const cap = Math.max(1, int(mansionCap(mansion ? mansion.level : 1).maxBuildingLevel, 1));
+  return buildings.map((b) => (b.type !== "mansion" && b.level > cap ? { ...b, level: cap } : b));
+}
+
 function normalizeBuildings(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
@@ -226,7 +237,7 @@ function normalizeBuildings(raw) {
     ids.add(id);
     out.push({ id, type: b.type, level: clamp(int(b.level, 1), 1, maxLevel), x, y });
   }
-  return out;
+  return capBuildingLevels(out);
 }
 
 function normalizeDisciples(raw, buildings) {
