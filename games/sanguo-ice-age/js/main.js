@@ -106,7 +106,21 @@ const bridgeReady = !!(
   typeof ext.actions?.tickAll === "function"
 );
 
-const engine = bridgeReady ? createSystemsEngine() : createFallbackEngine();
+/**
+ * 只允许存在一个内核：systems 可用就交给它，装配阶段抛错才退回内置内核，
+ * 两者的 tick 绝不会同时跑。
+ */
+function selectEngine() {
+  if (!bridgeReady) return createFallbackEngine();
+  try {
+    return createSystemsEngine();
+  } catch (err) {
+    console.warn("[sanguo] systems 装配失败，退回内置内核", err?.message || err);
+    return createFallbackEngine();
+  }
+}
+
+const engine = selectEngine();
 
 /**
  * 正常路径：systems 推进权威状态，bridge 负责投影与动作。
@@ -121,6 +135,9 @@ function createSystemsEngine() {
   const saveGame = pickFn(ext.save, "saveGame");
   const loadGame = pickFn(ext.save, "loadGame");
   const clearSave = pickFn(ext.save, "clearSave");
+  const exportSave = pickFn(ext.save, "exportSave");
+  const importSave = pickFn(ext.save, "importSave");
+  const adoptState = pickFn(ext.actions, "adoptState");
 
   let restored = null;
   try {
@@ -134,6 +151,8 @@ function createSystemsEngine() {
     catalog,
     heroCatalog,
     questCatalog,
+    // 领赏入口已接（HUD 托盘 + 功业簿面板），任务停在 ready 等玩家自己点
+    autoClaimQuests: false,
   });
 
   let paused = false;
@@ -194,6 +213,40 @@ function createSystemsEngine() {
         console.warn("[sanguo] 存档失败", err?.message || err);
       }
     },
+    canExport: !!exportSave,
+    canImport: !!(importSave && adoptState),
+    /** 导出为可下载的 JSON 文本（HUD 负责生成文件）。 */
+    exportSave() {
+      return exportSave(ctx.state);
+    },
+    /** 导入一份存档文本；结构不合法时保持当前局面不变。 */
+    importSave(text) {
+      const gated = pickFn(ext.actions, "importSave");
+      if (gated) {
+        const r = gated(ctx, text);
+        if (r?.ok) {
+          paused = false;
+          bannerUntil = 0;
+          try { saveGame?.(ctx.state); } catch (err) {
+            console.warn("[sanguo] 导入后存档失败", err?.message || err);
+          }
+        }
+        return r && typeof r === "object" ? r : { ok: false, reason: "导入失败" };
+      }
+      let next;
+      try {
+        next = importSave(text);
+      } catch (err) {
+        return { ok: false, reason: err?.message || "存档无法解析" };
+      }
+      adoptState(ctx, next);
+      paused = false;
+      bannerUntil = 0;
+      try { saveGame?.(ctx.state); } catch (err) {
+        console.warn("[sanguo] 导入后存档失败", err?.message || err);
+      }
+      return { ok: true };
+    },
     restart() {
       try {
         clearSave?.();
@@ -223,6 +276,11 @@ const hud = createHud({
   onSpeed: (n) => applySpeed(n),
   onOpen: (kind) => panels.open(kind),
   onHero: () => panels.open("recruit"),
+  onRestart: () => restartGame(),
+  onClaimQuest: (id) => claimQuest(id),
+  // 内置内核没有权威存档，给 null 让 HUD 自己把导入导出按钮藏起来
+  onExport: engine.canExport ? () => engine.exportSave() : null,
+  onImport: engine.canImport ? (text) => importSaveText(text) : null,
 });
 
 let lastView = engine.view();
@@ -247,9 +305,10 @@ const game = {
   battle: (t, h, n) => engine.battle(t, h, n),
   techList: () => engine.techList(),
   research: (id) => engine.research(id),
+  claimQuest: (id) => claimQuest(id),
 };
 
-const panels = createPanels({ game, hud });
+const panels = createPanels({ game, hud, onClaimQuest: (id) => claimQuest(id) });
 
 const tutorial = createTutorial({
   getBuildingRect: (key) => {
@@ -310,9 +369,37 @@ function restartGame() {
   engine.restart();
   gameOverShown = false;
   delete app.dataset.gameover;
+  refresh();
+  hud.toast("重立拾薪城，再撑一个冬天。", "info", 3000);
+}
+
+/** 立刻重投影一帧：动作改了权威状态后，不必等下一帧才反映到 HUD / 面板。 */
+function refresh() {
   lastView = engine.view();
   hud.update(lastView);
-  hud.toast("重立拾薪城，再撑一个冬天。", "info", 3000);
+  panels.tick(lastView);
+  return lastView;
+}
+
+/* ── 功业簿：托盘与面板的「领赏」都走这里 ─────────────────── */
+function claimQuest(id) {
+  const r = engine.claimQuest(id) || { ok: false, reason: "任务系统未接通" };
+  if (!r.ok) return r;
+  refresh();
+  engine.save();
+  return r;
+}
+
+/** 导入存档：失败时把原因交回 HUD 提示，成功则整局切到新状态。 */
+function importSaveText(text) {
+  const r = engine.importSave(text);
+  if (!r.ok) return r;
+  gameOverShown = false;
+  delete app.dataset.gameover;
+  panels.close();
+  refresh();
+  applySpeed(1);
+  return r;
 }
 
 /* ── 输入：平移 / 缩放 / 选取 ─────────────────────────────── */
@@ -527,7 +614,12 @@ function applySpeed(n) {
 }
 
 /* ── 启动收尾 ─────────────────────────────────────────────── */
-hud.update(lastView);
+try {
+  hud.update(lastView);
+} catch (err) {
+  // 首帧刷 HUD 失败也要撤掉启动遮罩，否则玩家只看得到「正在点燃火炉…」
+  console.warn("[sanguo] 首帧 HUD 刷新失败", err?.message || err);
+}
 app.dataset.boot = "ready";
 
 if (engine.loaded) {
@@ -553,6 +645,9 @@ window.__sanguo = {
   CITY_LAYOUT,
   applySpeed,
   restart: restartGame,
+  claimQuest,
+  exportSave: () => (engine.canExport ? engine.exportSave() : null),
+  importSave: importSaveText,
   get view() {
     return lastView;
   },
@@ -747,6 +842,11 @@ function createFallbackEngine() {
     techList: () => [],
     research: () => missing,
     claimQuest: () => missing,
+    // 内置内核的状态不是权威结构，导出的档 systems 内核读不回来，索性不给入口
+    canExport: false,
+    canImport: false,
+    exportSave: () => null,
+    importSave: () => missing,
     save() {},
     restart() {
       reset();

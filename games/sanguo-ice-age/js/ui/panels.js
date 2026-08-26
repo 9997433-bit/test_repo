@@ -16,6 +16,9 @@ const SIGIL = {
   furnace: "🔥", recruit: "🏮", expedition: "⚔️", academy: "📜", report: "📯", quests: "🎯",
 };
 
+/** 只有这两档值得全屏打断；蓝紫照旧留在结果区里翻牌。 */
+const EPIC_QUALITIES = new Set(["orange", "red"]);
+
 /** 战报里可能出现的乘区键 → 中文名。 */
 const COUNTER_LABELS = {
   troop: "兵种克制", troopAdvantage: "兵种克制",
@@ -68,10 +71,70 @@ export function createPanels({ game, hud, onClaimQuest } = {}) {
   });
 
   function close() {
+    hideHighlight();
     host.hidden = true;
     host.innerHTML = "";
     current = null;
     onCloseCb?.();
+  }
+
+  /* ============================================================
+     招贤高光：出传奇 / 绝世时的全屏亮相
+     ============================================================ */
+  let flashEl = null;
+  let flashTimer = 0;
+
+  function hideHighlight() {
+    if (!flashEl || flashEl.hidden) return;
+    clearTimeout(flashTimer);
+    flashEl.classList.remove("is-on");
+    flashTimer = setTimeout(() => {
+      flashEl.hidden = true;
+      flashEl.innerHTML = "";
+    }, 280);
+  }
+
+  /**
+   * 一次招贤里最好的那位橙 / 红将占满整屏亮个相，2.2 秒后自散，点一下也能提前收。
+   * @returns {boolean} 是否真的出了高光（供调用方与测试判断）
+   */
+  function heroHighlight(results) {
+    const hits = (Array.isArray(results) ? results : [])
+      .filter((r) => r?.hero && EPIC_QUALITIES.has(r.hero.quality))
+      .sort((a, b) => QUALITY_META[b.hero.quality].stars - QUALITY_META[a.hero.quality].stars);
+    if (!hits.length) return false;
+
+    const h = hits[0].hero;
+    const q = QUALITY_META[h.quality];
+    const f = FACTION_META[h.faction] || FACTION_META.qun;
+    if (!flashEl) {
+      flashEl = document.createElement("div");
+      flashEl.className = "gacha-flash";
+      flashEl.hidden = true;
+      flashEl.addEventListener("click", hideHighlight);
+      document.body.appendChild(flashEl);
+    }
+    clearTimeout(flashTimer);
+    flashEl.dataset.q = h.quality;
+    flashEl.style.setProperty("--q-color", q.color);
+    flashEl.style.setProperty("--f-color", f.color);
+    flashEl.innerHTML = `
+      <div class="gacha-flash__rays" aria-hidden="true"></div>
+      <div class="gacha-flash__card" role="status">
+        <span class="gacha-flash__q">${escText(q.name)}</span>
+        <span class="gacha-flash__av">${escText(h.name[0])}</span>
+        <span class="gacha-flash__name">${escText(h.name)}</span>
+        ${h.title ? `<span class="gacha-flash__title">${escText(h.title)}</span>` : ""}
+        <span class="gacha-flash__meta">${f.name}军 · ${TROOP_META[h.troop]?.name ?? "步兵"} · 战力 ${fmt(h.power)}</span>
+        <span class="gacha-flash__stars">${stars(q.stars)}</span>
+        ${hits.length > 1 ? `<span class="gacha-flash__more">同榜另有 ${hits.length - 1} 位上品入帐</span>` : ""}
+      </div>
+      <span class="gacha-flash__hint">点击继续</span>`;
+    flashEl.hidden = false;
+    // hidden 撤掉要先落一帧，否则 opacity 过渡不会跑
+    requestAnimationFrame(() => flashEl?.classList.add("is-on"));
+    flashTimer = setTimeout(hideHighlight, 2200);
+    return true;
   }
 
   function isOpen() {
@@ -361,7 +424,9 @@ export function createPanels({ game, hud, onClaimQuest } = {}) {
         if (!r.ok) return hud.toast(r.reason, "warn");
         const best = r.results.reduce((a, b) => (QUALITY_META[b.hero.quality].stars > QUALITY_META[a.hero.quality].stars ? b : a));
         hud.toast(`招得 ${r.results.length} 人，最佳：${best.hero.name}（${QUALITY_META[best.hero.quality].name}）`, "good");
-        return openRecruit(r.results);
+        openRecruit(r.results);
+        heroHighlight(r.results);
+        return;
       }
       const b = e.target.closest("[data-buy]");
       if (b) {
@@ -387,7 +452,8 @@ export function createPanels({ game, hud, onClaimQuest } = {}) {
         const h = r.hero;
         const f = FACTION_META[h.faction] || FACTION_META.qun;
         const q = QUALITY_META[h.quality] || QUALITY_META.blue;
-        return `<div class="hero-card ${r.dupe ? "is-dupe" : ""}" style="--q-color:${q.color};--f-color:${f.color};animation-delay:${i * 70}ms"
+        const epic = EPIC_QUALITIES.has(h.quality) ? " is-epic" : "";
+        return `<div class="hero-card${epic} ${r.dupe ? "is-dupe" : ""}" style="--q-color:${q.color};--f-color:${f.color};animation-delay:${i * 70}ms"
              title="${h.title ? `${h.title} · ` : ""}${h.skillDesc || ""}">
           <span class="hero-card__q">${q.name}</span>
           <div class="hero-card__av">${h.name[0]}</div>
@@ -930,5 +996,5 @@ export function createPanels({ game, hud, onClaimQuest } = {}) {
     current?.tick?.(state);
   }
 
-  return { open, close, isOpen, tick, onClose: (fn) => (onCloseCb = fn) };
+  return { open, close, isOpen, tick, heroHighlight, onClose: (fn) => (onCloseCb = fn) };
 }

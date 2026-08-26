@@ -78,8 +78,8 @@ export const START = {
   heroTickets: 3,
 };
 
-/** 开局赠送的橙将占位 id；heroes 数据表就位后用同名 id 关联。 */
-export const START_HERO_IDS = ["liubei", "zhangfei", "huatuo"];
+/** 开局赠送的橙将；id 取自 js/data/heroes.js 的名录写法（下划线分词）。 */
+export const START_HERO_IDS = ["liu_bei", "zhang_fei", "hua_tuo"];
 
 /**
  * 城建槽位 id（不含火炉，火炉单独存 city.furnaceLevel）。

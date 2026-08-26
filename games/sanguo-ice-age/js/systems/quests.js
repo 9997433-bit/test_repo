@@ -44,10 +44,10 @@ export const FALLBACK_QUESTS = [
     rewards: { resources: { food: 120, wood: 150 } },
   },
   {
-    id: "q_sawmill_3",
+    id: "q_lumber_3",
     name: "伐木不辍",
     desc: "伐木场升到 3 级。",
-    require: { type: "buildingLevel", id: "sawmill", value: 3 },
+    require: { type: "buildingLevel", id: "lumber", value: 3 },
     rewards: { resources: { wood: 220, coal: 60 } },
     unlockAfter: "q_furnace_2",
   },
@@ -57,7 +57,7 @@ export const FALLBACK_QUESTS = [
     desc: "仓库中木材达到 800。",
     require: { type: "resource", id: "wood", value: 800 },
     rewards: { resources: { coal: 120 }, tickets: 1 },
-    unlockAfter: "q_sawmill_3",
+    unlockAfter: "q_lumber_3",
   },
   {
     id: "q_recruit_3",

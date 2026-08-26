@@ -46,6 +46,7 @@ import {
 } from "../systems/climate.js";
 import { foodDemand } from "../systems/population.js";
 import { FALLBACK_HEROES, findHeroDef, heroPower } from "../systems/heroes.js";
+import { FALLBACK_QUESTS, QUEST_STATUS, questProgress } from "../systems/quests.js";
 
 /* ------------------------------------------------------------------ *
  * id 映射
@@ -63,9 +64,13 @@ export const LAYOUT_KEYS = {
   kitchen: "kitchen",
   clinic: "clinic",
   barracks_inf: "barracks",
+  barracks_arch: "barracks_arch",
+  barracks_cav: "barracks_cav",
+  hospital: "hospital",
   academy: "academy",
   tavern: "recruit",
   wall: "wall",
+  embassy: "embassy",
 };
 
 /** 画布 key / 旧存档 id → 权威 id。 */
@@ -429,6 +434,269 @@ export function projectLog(state, limit = 60) {
 }
 
 /* ------------------------------------------------------------------ *
+ * 任务
+ * ------------------------------------------------------------------ *
+ * 任务托盘（hud.js 的 #quest-tray）与功业簿（panels.js）都读 view.quests。
+ * 这里给的是只读投影：进度用 systems/quests.js 的 questProgress 现算，
+ * 状态优先信任 state.quests.entries，缺失时按「前置已领 → 达成即可领」推导，
+ * 因此对一份刚 createInitialState()、还没跑过 tick 的裸状态也成立。
+ */
+
+/** 这些 reward 键有专门语义，其余数值键按资源计（与 systems/quests.js 的发放口径一致）。 */
+const RESERVED_REWARD_KEYS = new Set([
+  "resources", "tickets", "recruitTickets", "heroXp", "xp", "heroId", "hero", "heroes",
+]);
+
+const QUEST_STATUSES = new Set(Object.values(QUEST_STATUS));
+
+/** 奖励 → [{ key, icon, label, value }]，兼容 { resources:{…} } 与扁平两种写法。 */
+export function rewardEntries(rewards) {
+  const out = [];
+  if (!rewards || typeof rewards !== "object") return out;
+  const seen = new Set();
+  const addRes = (key, raw) => {
+    const v = Math.round(num(raw, 0));
+    if (v <= 0 || seen.has(key)) return;
+    seen.add(key);
+    out.push({ key, icon: RES_ICONS[key] || "◆", label: RES_NAMES[key] || key, value: v });
+  };
+  const bag = obj(rewards.resources);
+  for (const key of Object.keys(bag)) addRes(key, bag[key]);
+  for (const [key, v] of Object.entries(rewards)) {
+    if (!RESERVED_REWARD_KEYS.has(key) && typeof v === "number") addRes(key, v);
+  }
+  const tickets = Math.round(num(rewards.tickets ?? rewards.recruitTickets, 0));
+  if (tickets > 0) out.push({ key: "tickets", icon: "🏮", label: "招募令", value: tickets });
+  const xp = Math.round(num(rewards.heroXp ?? rewards.xp, 0));
+  if (xp > 0) out.push({ key: "heroXp", icon: "⭑", label: "武将经验", value: xp });
+  const heroes = [rewards.heroId, rewards.hero, ...(Array.isArray(rewards.heroes) ? rewards.heroes : [])]
+    .filter((h) => typeof h === "string" && h);
+  if (heroes.length) out.push({ key: "heroes", icon: "⚑", label: "武将来投", value: heroes.length });
+  return out;
+}
+
+/** 奖励摘要，托盘一行展示：`🍖 肉食 80 · 🪵 木材 120`。 */
+export function rewardSummary(rewards) {
+  return rewardEntries(rewards)
+    .map((r) => `${r.icon} ${r.label} ${r.value}`)
+    .join(" · ");
+}
+
+function questCatalogOf(list) {
+  if (Array.isArray(list) && list.length) return list;
+  const nested = obj(list).quests;
+  if (Array.isArray(nested) && nested.length) return nested;
+  return FALLBACK_QUESTS;
+}
+
+/** data/quests.js 用 next 串主线，反推「前置任务」表，与 unlockAfter 等价。 */
+function questPredecessors(list) {
+  const map = new Map();
+  for (const quest of list) {
+    if (!quest?.next) continue;
+    for (const id of Array.isArray(quest.next) ? quest.next : [quest.next]) {
+      if (id && !map.has(id)) map.set(id, quest.id);
+    }
+  }
+  return map;
+}
+
+function safeProgress(state, quest) {
+  try {
+    const p = questProgress(state, quest);
+    return {
+      current: num(p?.current, 0),
+      target: num(p?.target, 0),
+      done: p?.done === true,
+      parts: Array.isArray(p?.parts) ? p.parts : [],
+    };
+  } catch {
+    return { current: 0, target: 0, done: false, parts: [] };
+  }
+}
+
+/** 统一的任务行；两条投影路径（现算 / 复用上游结果）都收敛到这里。 */
+function questRow({ id, title, name, desc, status, current, target, parts, rewards, gate }) {
+  const st = QUEST_STATUSES.has(status) ? status : QUEST_STATUS.ACTIVE;
+  const claimed = st === QUEST_STATUS.CLAIMED;
+  const ready = st === QUEST_STATUS.READY;
+  const locked = st === QUEST_STATUS.LOCKED;
+  const cap = Math.max(0, num(target, 0));
+  const cur = locked ? 0 : clamp(num(current, 0), 0, cap > 0 ? cap : Infinity);
+  const ratio = ready || claimed ? 1 : cap > 0 ? clamp(cur / cap, 0, 1) : 0;
+  const bag = rewards && typeof rewards === "object" ? rewards : {};
+  const label = title || name || id;
+  return {
+    id,
+    title: label,
+    name: name || label,
+    desc: desc || "",
+    status: st,
+    locked,
+    active: st === QUEST_STATUS.ACTIVE,
+    ready,
+    claimed,
+    canClaim: ready,
+    current: cur,
+    target: cap,
+    ratio,
+    percent: Math.round(ratio * 100),
+    // 对象形态：hud.js 的 normalizeQuest 认 progress.{current,target}，
+    // 顶层同时留一份 current/target，只认标量 progress 的旧读法也不会读歪。
+    progress: { current: cur, target: cap, ratio, done: ready || claimed },
+    requires: Array.isArray(parts) ? parts : [],
+    reward: rewardSummary(bag),
+    rewards: bag,
+    rewardList: rewardEntries(bag),
+    unlockAfter: gate ?? null,
+  };
+}
+
+/** 上游（actions.listQuests / 旧投影）已经算好的任务行，归一到统一形状。 */
+function adoptQuestRow(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = raw.id ?? raw.key;
+  if (!id) return null;
+  const prog = raw.progress && typeof raw.progress === "object" ? raw.progress : null;
+  const statusRaw = String(raw.status ?? "").toLowerCase();
+  const status = QUEST_STATUSES.has(statusRaw)
+    ? statusRaw
+    : raw.claimed
+      ? QUEST_STATUS.CLAIMED
+      : raw.ready || raw.done
+        ? QUEST_STATUS.READY
+        : raw.locked
+          ? QUEST_STATUS.LOCKED
+          : QUEST_STATUS.ACTIVE;
+  return questRow({
+    id,
+    title: raw.title,
+    name: raw.name,
+    desc: raw.desc ?? raw.text,
+    status,
+    current: prog ? prog.current : (raw.current ?? raw.progress),
+    target: raw.target ?? prog?.target,
+    parts: raw.requires ?? prog?.parts,
+    rewards: raw.rewards ?? raw.reward,
+    gate: raw.unlockAfter,
+  });
+}
+
+/**
+ * 任务投影。不写 state。
+ * @param {object} state 权威状态
+ * @param {object} [extras] { quests?: 上游算好的任务行, questCatalog?: 任务表 }
+ */
+export function projectQuests(state, extras = {}) {
+  try {
+    if (Array.isArray(extras.quests) && extras.quests.length) {
+      return extras.quests.map(adoptQuestRow).filter(Boolean);
+    }
+    const list = questCatalogOf(extras.questCatalog);
+    const q = obj(state?.quests);
+    const entries = obj(q.entries);
+    const claimedIds = new Set([
+      ...(Array.isArray(q.claimed) ? q.claimed : []),
+      ...(Array.isArray(q.completed) ? q.completed : []),
+    ]);
+    const isClaimed = (id) => obj(entries[id]).status === QUEST_STATUS.CLAIMED || claimedIds.has(id);
+    const preds = questPredecessors(list);
+
+    const out = [];
+    for (const quest of list) {
+      if (!quest || !quest.id) continue;
+      const prog = safeProgress(state, quest);
+      const gate = quest.unlockAfter ?? preds.get(quest.id) ?? null;
+      const status = isClaimed(quest.id)
+        ? QUEST_STATUS.CLAIMED
+        : gate && !isClaimed(gate)
+          ? QUEST_STATUS.LOCKED
+          : prog.done
+            ? QUEST_STATUS.READY
+            : QUEST_STATUS.ACTIVE;
+      out.push(
+        questRow({
+          id: quest.id,
+          title: quest.title,
+          name: quest.name,
+          desc: quest.desc ?? quest.text,
+          status,
+          current: prog.current,
+          target: prog.target,
+          parts: prog.parts,
+          rewards: quest.rewards ?? quest.reward,
+          gate,
+        }),
+      );
+    }
+    return out;
+  } catch (err) {
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("[bridge/view] 任务投影失败：", err?.message || err);
+    }
+    return [];
+  }
+}
+
+/** 任务分档计数（托盘徽标 / 功业簿页眉）。 */
+export function questCounts(rows) {
+  const out = { total: 0, locked: 0, active: 0, ready: 0, claimed: 0 };
+  for (const q of Array.isArray(rows) ? rows : []) {
+    out.total += 1;
+    if (out[q?.status] !== undefined) out[q.status] += 1;
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ *
+ * 军
+ * ------------------------------------------------------------------ */
+
+/**
+ * 三兵种 + 伤兵编成。
+ * 伤兵给的是分兵种明细（hud.js 的 readArmy 认对象形态，出征面板据此显示
+ * 「步/骑/弓各伤多少」）；权威状态只有标量 wounded 时全部记到步卒名下，
+ * 与 actions.js 的 ensureArmy 口径一致。合计另存 woundedTotal。
+ */
+export function projectArmy(state) {
+  const army = obj(state?.army);
+  const byType = obj(army.woundedByType);
+  const hasByType = ["infantry", "cavalry", "archer"].some((t) => Number.isFinite(num(byType[t], NaN)));
+  const scalarWounded = Math.max(0, Math.floor(num(army.wounded, 0)));
+
+  const out = { infantry: 0, cavalry: 0, archer: 0, total: 0, wounded: {}, woundedTotal: 0 };
+  for (const t of ["infantry", "cavalry", "archer"]) {
+    out[t] = Math.max(0, Math.floor(num(army[t], 0)));
+    out.total += out[t];
+    const hurt = hasByType
+      ? Math.max(0, Math.floor(num(byType[t], 0)))
+      : t === "infantry"
+        ? scalarWounded
+        : 0;
+    out.wounded[t] = hurt;
+    out.woundedTotal += hurt;
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ *
+ * 败亡
+ * ------------------------------------------------------------------ */
+
+/**
+ * 败亡原因。population.js 会把 flags.gameOver 写成 "morale" / "extinct"，
+ * 也可能是布尔 true（读档归一后）。未败亡返回 ""。
+ */
+export function gameOverReasonOf(state) {
+  const flags = obj(state?.flags);
+  const flag = flags.gameOver;
+  if (!flag) return "";
+  const reason = flags.gameOverReason ?? (typeof flag === "string" ? flag : obj(flag).reason);
+  const text = typeof reason === "string" ? reason.trim() : "";
+  return text || "unknown";
+}
+
+/* ------------------------------------------------------------------ *
  * 主投影
  * ------------------------------------------------------------------ */
 
@@ -465,9 +733,18 @@ function emptyView(extras = {}) {
     heroes: [],
     troops: 0,
     troopCap: 0,
-    army: { infantry: 0, cavalry: 0, archer: 0, wounded: 0 },
+    army: {
+      infantry: 0,
+      cavalry: 0,
+      archer: 0,
+      total: 0,
+      wounded: { infantry: 0, cavalry: 0, archer: 0 },
+      woundedTotal: 0,
+    },
     recruitTickets: 0,
     quests: [],
+    questsActive: [],
+    questCounts: { total: 0, locked: 0, active: 0, ready: 0, claimed: 0 },
     log: [],
     tech: {},
     stats: {},
@@ -481,9 +758,11 @@ function emptyView(extras = {}) {
 /**
  * 把权威嵌套状态投影成 UI / 渲染层消费的扁平视图。
  *
+ * 只依赖 state 与数据表，不碰 DOM，Node 里可直接 import 后调用。
+ *
  * @param {object} state createInitialState() 的嵌套状态
- * @param {object} [extras] { catalog, heroCatalog, quests, paused, speed, blizzardBanner,
- *                            blizzardBannerSub, cityName, troopCap }
+ * @param {object} [extras] { catalog, heroCatalog, quests, questCatalog, paused, speed,
+ *                            blizzardBanner, blizzardBannerSub, cityName, troopCap }
  */
 export function projectView(state, extras = {}) {
   try {
@@ -493,7 +772,7 @@ export function projectView(state, extras = {}) {
 
     const climate = obj(state.climate);
     const people = obj(state.people);
-    const army = obj(state.army);
+    const army = projectArmy(state);
     const meta = obj(state.meta);
 
     const tick = Math.max(0, Math.floor(num(meta.tick, 0)));
@@ -506,12 +785,9 @@ export function projectView(state, extras = {}) {
     const assigned = assignedWorkers(state);
     const popCap = housingCapacity(state, cat);
 
-    const troops = ["infantry", "cavalry", "archer"].reduce(
-      (sum, t) => sum + Math.max(0, num(army[t], 0)),
-      0,
-    );
-
-    const flagGameOver = obj(state.flags).gameOver;
+    const troops = army.total;
+    const quests = projectQuests(state, extras);
+    const gameOverReason = gameOverReasonOf(state);
 
     return {
       /* 时间 */
@@ -569,21 +845,21 @@ export function projectView(state, extras = {}) {
       heroes: projectHeroes(state, extras.heroCatalog),
       troops,
       troopCap: Math.max(troops, num(extras.troopCap, troops)),
-      army: {
-        infantry: Math.max(0, num(army.infantry, 0)),
-        cavalry: Math.max(0, num(army.cavalry, 0)),
-        archer: Math.max(0, num(army.archer, 0)),
-        wounded: Math.max(0, num(army.wounded, 0)),
-      },
+      army,
       recruitTickets: Math.max(0, num(state?.heroes?.tickets, 0)),
 
+      /* 任务 */
+      quests,
+      questsActive: quests.filter((q) => q.active || q.ready),
+      questCounts: questCounts(quests),
+
       /* 其他 */
-      quests: Array.isArray(extras.quests) ? extras.quests : [],
       log: projectLog(state),
       tech: obj(state.tech),
       stats: obj(state.stats),
-      gameOver: !!flagGameOver,
-      gameOverReason: obj(state.flags).gameOverReason || (typeof flagGameOver === "string" ? flagGameOver : ""),
+      // 契约：gameOver 为布尔；原因单独放 gameOverReason（"morale" / "extinct"）
+      gameOver: Boolean(gameOverReason),
+      gameOverReason,
       villagerCount: clamp(Math.round(6 + pop * 0.55), 8, 16),
     };
   } catch (err) {

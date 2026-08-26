@@ -16,6 +16,7 @@
  */
 import { TICK_SEC, TICKS_PER_DAY, clamp } from "../config.js";
 import { createRng } from "../engine/rng.js";
+import { defaultAdapter } from "../engine/save.js";
 import { createInitialState } from "../state.js";
 import * as city from "../systems/city.js";
 import * as economy from "../systems/economy.js";
@@ -30,6 +31,7 @@ import {
   canonicalHeroId,
   dedupeHeroCatalog,
   heroDefOf,
+  projectQuests,
 } from "./view.js";
 
 const { num, obj, pushLog } = city;
@@ -40,12 +42,17 @@ const TROOP_TYPES = ["infantry", "cavalry", "archer"];
  * ------------------------------------------------------------------ */
 
 /**
- * @param {object} init { state, catalog, heroCatalog, questCatalog }
- * @returns {{state:object, catalog:object, heroCatalog:Array, questCatalog:Array, events:Array}}
+ * @param {object} init { state, catalog, heroCatalog, questCatalog, save }
+ *   save 为 engine/save.js 的适配器，省略时用默认适配器（浏览器 localStorage / Node 内存）；
+ *   autoClaimQuests 默认 true —— 达成即自动领取，奖励不会因为 UI 没接领赏而卡住。
+ *   接了领赏入口（hud 的 onClaimQuest / panels 的 game.claimQuest）后传 false，
+ *   任务就会停在 ready 上，托盘的「领赏」按钮与 view.quests[].canClaim 才有意义。
+ * @returns {{state:object, catalog:object, heroCatalog:Array, questCatalog:Array,
+ *            save:object, autoClaimQuests:boolean, events:Array}}
  */
-export function createContext({ state, catalog, heroCatalog, questCatalog } = {}) {
+export function createContext({ state, catalog, heroCatalog, questCatalog, save, autoClaimQuests } = {}) {
   const ctx = {
-    state: state ?? createInitialState(1),
+    state: state && typeof state === "object" ? state : createInitialState(1),
     catalog: city.catalogOf(catalog),
     // 名录先去重：data/heroes.js 的 liu_bei 与保底表的 liubei 是同一人，
     // 不合并的话卡池里会出现两个刘备。
@@ -53,6 +60,8 @@ export function createContext({ state, catalog, heroCatalog, questCatalog } = {}
       Array.isArray(heroCatalog) && heroCatalog.length ? heroCatalog : heroSys.FALLBACK_HEROES,
     ),
     questCatalog: Array.isArray(questCatalog) && questCatalog.length ? questCatalog : questSys.FALLBACK_QUESTS,
+    save: save && typeof save.exportSave === "function" ? save : defaultAdapter,
+    autoClaimQuests: autoClaimQuests !== false,
     events: [],
   };
   prepare(ctx);
@@ -61,24 +70,30 @@ export function createContext({ state, catalog, heroCatalog, questCatalog } = {}
 
 /** 换一份 state（读档 / 重开）后重新挂目录与结构补齐。 */
 export function adoptState(ctx, state) {
-  ctx.state = state;
+  ctx.state = state && typeof state === "object" ? state : createInitialState(1);
   prepare(ctx);
   return ctx.state;
 }
 
+/**
+ * 结构补齐。每一步都兜住异常：读进来的存档可能残缺，
+ * 但 createContext / importSave / restart 都不该因此抛给调用方。
+ */
 function prepare(ctx) {
   const s = ctx.state;
-  city.setCatalog(s, ctx.catalog);
-  city.ensureState(s, ctx.catalog);
-  heroSys.ensureHeroesState(s);
-  ensureRoster(s, ctx.heroCatalog);
-  ensureArmy(s);
+  safely("setCatalog", () => city.setCatalog(s, ctx.catalog));
+  safely("ensureState", () => city.ensureState(s, ctx.catalog));
+  safely("ensureHeroes", () => heroSys.ensureHeroesState(s));
+  safely("ensureRoster", () => ensureRoster(s, ctx.heroCatalog));
+  safely("ensureArmy", () => ensureArmy(s));
+  s.meta = obj(s.meta);
+  s.climate = obj(s.climate);
   if (typeof s.climate.fuelMode !== "string") s.climate.fuelMode = "auto";
   if (!s.tech || typeof s.tech !== "object") s.tech = {};
   if (!s.stats || typeof s.stats !== "object") s.stats = {};
   if (!s.meta.rngCursors || typeof s.meta.rngCursors !== "object") s.meta.rngCursors = {};
-  syncQuests(ctx, { silent: true });
-  normalize(s);
+  safely("syncQuests", () => syncQuests(ctx, { silent: true }));
+  safely("normalize", () => normalize(s));
   return s;
 }
 
@@ -434,12 +449,15 @@ function applyTech(state, bonus) {
  * - 邸报补一个单调递增 id，HUD 靠它判断是否需要重绘。
  */
 function normalize(state) {
+  state.meta = obj(state.meta);
   const flags = (state.flags = obj(state.flags));
   if (flags.gameOver && typeof flags.gameOver !== "boolean") {
     flags.gameOverReason = String(flags.gameOver);
     flags.gameOver = true;
   }
   flags.gameOver = !!flags.gameOver;
+  // 原因随 gameOver 走：败亡时必为非空字符串，未败亡时清空，投影层据此给出 false / 原因串。
+  flags.gameOverReason = flags.gameOver ? String(flags.gameOverReason || "unknown") : "";
   flags.victory = !!flags.victory;
   if (typeof flags.tutorialStep !== "number") flags.tutorialStep = 0;
 
@@ -482,8 +500,8 @@ function rewardText(applied) {
 }
 
 /**
- * 刷新任务进度。当前 UI 没有任务面板，达成即自动领取，
- * 奖励通过邸报与 toast 反馈（claimQuest 仍作为公开动作供后续面板调用）。
+ * 刷新任务进度。ctx.autoClaimQuests 为真时达成即自动领取，奖励走邸报与 toast——
+ * 这是给「UI 还没接领赏入口」的兜底，避免奖励永远卡在 ready 上拿不到。
  */
 function syncQuests(ctx, { silent = false } = {}) {
   const s = ctx.state;
@@ -494,6 +512,7 @@ function syncQuests(ctx, { silent = false } = {}) {
   } catch {
     return;
   }
+  if (ctx.autoClaimQuests === false) return;
   const order = Array.isArray(s.quests.order) ? s.quests.order.slice() : [];
   for (const id of order) {
     const entry = s.quests.entries?.[id];
@@ -506,26 +525,44 @@ function syncQuests(ctx, { silent = false } = {}) {
   }
 }
 
-/** 领取任务奖励。 */
+/** 未完成 / 已领取等拒绝理由，翻成给玩家看的话。 */
+const CLAIM_REASONS = {
+  "unknown-quest": "查无此任务",
+  "already-claimed": "此功业已录",
+  locked: "前置功业尚未达成",
+  incomplete: "尚未达成，无法领赏",
+};
+
+/** 领取任务奖励。任何异常都收敛成 { ok:false, reason }，不向外抛。 */
 export function claimQuest(ctx, questId) {
   const s = ctx.state;
   let res;
   try {
     res = questSys.claimQuest(s, questId, ctx.questCatalog, { heroCatalog: ctx.heroCatalog });
   } catch (err) {
-    return { ok: false, reason: err?.message || "任务系统异常" };
+    return { ok: false, reason: err?.message || "任务系统异常", questId };
   }
-  if (!res.ok) return { ok: false, reason: res.reason, questId };
+  if (!res || !res.ok) {
+    return { ok: false, reason: CLAIM_REASONS[res?.reason] || res?.reason || "尚不可领取", questId };
+  }
   const title = questTitleOf(ctx, questId);
   pushLog(s, `任务达成《${title}》，得 ${rewardText(res.rewards)}`, "good");
-  ensureRoster(s, ctx.heroCatalog);
+  safely("claimQuest", () => {
+    ensureRoster(s, ctx.heroCatalog);
+    normalize(s);
+  });
   return { ok: true, questId, title, rewards: res.rewards };
 }
 
-/** 任务列表（供后续任务面板）。 */
+/**
+ * 任务列表：id / title / progress / canClaim / reward 摘要俱全，
+ * 与 view.projectView 输出的 quests 是同一份形状（托盘与功业簿共用）。
+ */
 export function listQuests(ctx) {
   try {
-    return questSys.listQuests(ctx.state, ctx.questCatalog);
+    // 进度是现算的，但首次要把 entries 建起来（写状态只发生在这里，投影层只读）
+    if (!ctx.state?.quests?.entries) questSys.initQuests(ctx.state, ctx.questCatalog);
+    return projectQuests(ctx.state, { questCatalog: ctx.questCatalog });
   } catch {
     return [];
   }
@@ -873,11 +910,120 @@ export function raid(ctx, targetId, heroIds, troopCount) {
 }
 
 /* ------------------------------------------------------------------ *
+ * 存档
+ * ------------------------------------------------------------------ *
+ * engine/save.js 的默认适配器在浏览器里用 localStorage，Node 里自动退回内存实现，
+ * 因此这一组动作在测试环境同样可用。导入导出面向玩家，失败要有明确理由，
+ * 所以一律收敛成 { ok, reason }，不把异常抛给 UI。
+ */
+
+function adapterOf(ctx) {
+  const a = ctx?.save;
+  return a && typeof a.exportSave === "function" ? a : defaultAdapter;
+}
+
+/** 写入本地存档。 */
+export function saveGame(ctx) {
+  try {
+    return { ok: adapterOf(ctx).saveGame(ctx.state) === true };
+  } catch (err) {
+    return { ok: false, reason: err?.message || "存档写入失败" };
+  }
+}
+
+/** 读取本地存档并接管（无存档返回 ok:false）。 */
+export function loadGame(ctx) {
+  let state;
+  try {
+    state = adapterOf(ctx).loadGame();
+  } catch (err) {
+    return { ok: false, reason: err?.message || "存档读取失败" };
+  }
+  if (!state) return { ok: false, reason: "没有可用的存档" };
+  adoptState(ctx, state);
+  return { ok: true, state: ctx.state };
+}
+
+/** 导出为可复制 / 可下载的 JSON 文本。 */
+export function exportSave(ctx) {
+  try {
+    const text = adapterOf(ctx).exportSave(ctx.state);
+    return { ok: true, text, day: num(ctx.state?.meta?.day, 1) };
+  } catch (err) {
+    return { ok: false, reason: err?.message || "导出失败" };
+  }
+}
+
+/** 一份存档至少该有的顶层结构。 */
+const SAVE_SHAPE_KEYS = ["meta", "resources", "climate", "city", "people", "army", "heroes", "flags"];
+
+/**
+ * state.js 的 normalizeState 足够宽容——`{"foo":1}` 也能被补成一份崭新存档，
+ * 直接交给它会把玩家正在玩的局面悄无声息地清空。导入前先看「像不像存档」。
+ */
+function looksLikeSave(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  if (typeof payload.format === "string" && payload.format !== "sanguo-ice-age") return false;
+  const body = payload.state && typeof payload.state === "object" ? payload.state : payload;
+  const hits = SAVE_SHAPE_KEYS.filter((k) => body[k] && typeof body[k] === "object").length;
+  return hits >= 3;
+}
+
+/** 导入存档文本；校验通过才接管，失败时当前局面原样保留。 */
+export function importSave(ctx, json) {
+  let payload;
+  if (typeof json === "string") {
+    if (json.trim() === "") return { ok: false, reason: "存档内容为空" };
+    try {
+      payload = JSON.parse(json);
+    } catch {
+      return { ok: false, reason: "存档不是合法 JSON" };
+    }
+  } else {
+    payload = json;
+  }
+  if (!looksLikeSave(payload)) return { ok: false, reason: "这不像一份《三国·冰河时代》的存档" };
+
+  let state;
+  try {
+    state = adapterOf(ctx).importSave(payload);
+  } catch (err) {
+    return { ok: false, reason: err?.message || "存档无法解析" };
+  }
+  if (!state || typeof state !== "object") return { ok: false, reason: "存档结构无法识别" };
+  adoptState(ctx, state);
+  pushLog(ctx.state, "读入外部存档。", "info");
+  return { ok: true, state: ctx.state, day: num(ctx.state?.meta?.day, 1) };
+}
+
+/** 删除本地存档。 */
+export function clearSave(ctx) {
+  try {
+    return { ok: adapterOf(ctx).clearSave() === true };
+  } catch (err) {
+    return { ok: false, reason: err?.message || "删除存档失败" };
+  }
+}
+
+/** 本地是否已有存档。 */
+export function hasSave(ctx) {
+  try {
+    return adapterOf(ctx).hasSave() === true;
+  } catch {
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * 重开
  * ------------------------------------------------------------------ */
 
-/** 重开一局（可指定新种子）。 */
-export function restart(ctx, seed) {
+/**
+ * 重开一局（可指定新种子）。默认保留本地存档，交由调用方决定是否 clearSave；
+ * 传 { clearSave: true } 时一并抹掉。
+ */
+export function restart(ctx, seed, { clearSave: wipe = false } = {}) {
+  if (wipe) clearSave(ctx);
   const next = createInitialState(seed ?? ctx.state?.meta?.seed ?? 1);
   adoptState(ctx, next);
   return ctx.state;

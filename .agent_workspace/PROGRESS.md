@@ -37,7 +37,7 @@
 |-------|------|------|
 | 1 初始构建与基线探索 | 完成 | 2026-08-26 |
 | 2 靶向重构与深度优化 | 完成 | 2026-08-26 |
-| 3 SOTA 打磨与最终验收 | 未开始 | — |
+| 3 SOTA 打磨与最终验收 | 完成 | 2026-08-26 |
 
 ### Round 1 文件归属（避免冲突）
 
@@ -136,3 +136,26 @@
 2. Juice：熄火、寒潮四拍、抽卡高光、战力滚动
 3. README/验收勾选与测试链全绿
 4. 浏览器走完引导→升炉→招贤→讨伐→寒潮→失败/重开
+
+---
+
+## Round 3 结论简报与全局总结
+
+**已收敛**
+
+- HUD 回调接通：导出/导入/领赏/东山再起；`autoClaimQuests: false`
+- `START_HERO_IDS` 改为 `liu_bei/zhang_fei/hua_tuo`；FALLBACK `sawmill` → `lumber`
+- 双核叠加已拆除（`selectEngine` 二选一）
+- Juice：资源滚动、橙红招贤高光、熄火/冰点暗场、寒潮四拍
+- 17 地块 + 粒子预算 + 炉心禁行
+- `projectView.quests` / 布尔 `gameOver` + `gameOverReason`；导入走结构门槛
+- 战报带 `troopAdvantage` / `factionAdvantage`
+- 测试：**24/24**、probes **10/10**、bench 同 seed 差 0、~3300 tick/s
+- 文档：README、PLAYGUIDE、ACCEPTANCE/SOTA/ROUND3_AUDIT 对齐
+
+**残留（非阻塞）**
+
+- 坏档备份键、pity 数值未做系统层、DESIGN 火炉 6 级 vs 实现 20 级文档差
+- 读档失败无 `${SAVE_KEY}-corrupt-backup`
+
+**交付位置**：`/workspace/games/sanguo-ice-age/`（与其他游戏隔离）

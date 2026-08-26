@@ -12,6 +12,7 @@ import {
   createEmberField,
   drawFrostOverlay,
   drawGroundDrift,
+  renderQuality,
 } from "./particles.js";
 import { createVillagerCrowd } from "./villagers.js";
 
@@ -233,8 +234,23 @@ function apronOf(art) {
   return 0.6 + Math.max(art.w, art.d) * 0.4;
 }
 
-/** 城民的取暖点：火炉正前方，半径避开炉台。 */
-const HEARTH_NODE = { key: "hearth", gx: CX, gy: CY + 1.6, r0: 2.1, r1: 3.0 };
+/**
+ * 炉台禁行圈：石台阶是 3.1×3.1 的方台（角点在 ±1.55），
+ * 取外接半径再留一点余量，城民无论走路还是站定都不许踏进来。
+ */
+const FURNACE_CORE_R = 2.24;
+
+/**
+ * 城民的取暖点：火炉正前方。围站半径以「取暖点」为心，
+ * 但真正的禁区以「炉心」为心——两者差 1.6 格，只靠 r0 挡不住
+ * （正北方向的采样点会正好落回炉子中央）。
+ */
+const HEARTH_NODE = {
+  key: "hearth",
+  gx: CX, gy: CY + 1.6,
+  r0: 2.4, r1: 3.3,
+  coreGx: CX, coreGy: CY, coreR: FURNACE_CORE_R,
+};
 
 /* ── 颜色工具 ─────────────────────────────────────────────── */
 const hexCache = new Map();
@@ -269,6 +285,64 @@ function shadeWarm(hex, light, warm, a = 1) {
     B = B + (96 - B) * warm * 0.18;
   }
   return css(Math.min(255, R), Math.min(255, G), Math.min(255, B), a);
+}
+
+/* ── 火势 ─────────────────────────────────────────────────── */
+/** 熄火后炉膛并非全黑，留一点余烬的暗红 */
+const EMBER_FLOOR = 0.06;
+/** 火势低于这条线就只剩余烬，不再画火舌——一根一像素高的火苗比没有更假 */
+const FLAME_MIN = 0.16;
+
+/**
+ * 当前火势 0~1：已经把「点没点着」（含熄火过渡）与跳动一起算进去了。
+ * env 由 render() 组装；这里对缺字段的 env 也给得出结果，
+ * 免得上游少送一个字段就整帧崩掉。
+ */
+function fireOf(env) {
+  if (!env) return 0;
+  if (Number.isFinite(env.fire)) return Math.max(0, Math.min(1, env.fire));
+  const lit = env.furnaceLit === false ? 0 : 1;
+  const flick = Number.isFinite(env.flicker) ? env.flicker : 1;
+  return Math.max(0, Math.min(1, (EMBER_FLOOR + (1 - EMBER_FLOOR) * lit) * flick));
+}
+
+/** 宽松地把各种写法读成真假；读不出来返回 null，交给调用方兜底。 */
+function boolish(v) {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return Number.isFinite(v) ? v > 0 : null;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true" || s === "1" || s === "on" || s === "lit" || s === "burning") return true;
+    if (s === "false" || s === "0" || s === "off" || s === "out" || s === "cold") return false;
+  }
+  return null;
+}
+
+/**
+ * 火炉点没点着。
+ *
+ * 视图层现在给的是顶层的 `furnaceLit`，但这份投影换过好几版
+ * （曾挂在 climate 下，也可能落到 furnace 那一行上），所以按优先级挨个试，
+ * 全都没有就退回「有炉子就当它烧着」——少一个字段不该让整帧崩掉。
+ */
+function readFurnaceLit(st, furnaceB) {
+  const src = st || {};
+  const cands = [
+    src.furnaceLit,
+    src.env?.furnaceLit,
+    src.climate?.furnaceLit,
+    src.furnace?.lit,
+    furnaceB?.furnaceLit,
+    furnaceB?.lit,
+  ];
+  for (const v of cands) {
+    const t = boolish(v);
+    if (t !== null) return t && !(Number.isFinite(furnaceB?.level) && furnaceB.level <= 0);
+  }
+  // 连热量都没有就当熄了；字段整个缺席时维持旧行为（烧着）
+  const heat = Number(src.furnaceHeat);
+  if (Number.isFinite(heat)) return heat > 0;
+  return !(Number.isFinite(furnaceB?.level) && furnaceB.level <= 0);
 }
 
 /* ── 噪声 ─────────────────────────────────────────────────── */
@@ -334,6 +408,7 @@ export function createCityRenderer({ canvas }) {
 
   let time = 0;
   let flicker = 1;
+  let litMix = 1;      // 点火程度 0~1，熄火时平滑落到 0
   let hoverKey = null;
   let pointer = null;
   const pulses = new Map();
@@ -645,7 +720,7 @@ export function createCityRenderer({ canvas }) {
     const d = Math.hypot(gx - CX, gy - CY);
     const R = 4.2 + (env?.furnaceLevel ?? 1) * 0.14;
     const k = Math.exp(-(d * d) / (2 * R * R));
-    return Math.min(1, k * (env?.furnaceLit ? 1 : 0.15) * (env?.flicker ?? 1));
+    return Math.min(1, k * fireOf(env));
   }
 
   /** 通用棱柱：网格多边形 + 高度 */
@@ -1749,8 +1824,7 @@ export function createCityRenderer({ canvas }) {
   function drawFurnace(b, art, env) {
     const c = isoPt(art.gx, art.gy);
     const lv = Math.max(1, b.level || 1);
-    const lit = env.furnaceLit;
-    const inten = (lit ? 1 : 0.12) * env.flicker;
+    const inten = fireOf(env);
     const h1 = 21 + lv * 1.2;
     const h2 = 50 + lv * 3.2;
 
@@ -1873,37 +1947,57 @@ export function createCityRenderer({ canvas }) {
       ctx.globalAlpha = 0.85 * inten;
       ctx.drawImage(glowWarm, c.x - 48, fireY - 32, 96, 64);
 
-      const flames = 7;
-      for (let i = 0; i < flames; i++) {
-        const t = time * 3.1 + i * 1.37;
-        const sway = Math.sin(t) * 4.6 + Math.sin(t * 1.9 + i) * 2.8;
-        const hgt = (44 + lv * 2.0) * inten * (0.62 + 0.38 * (0.5 + 0.5 * Math.sin(t * 1.6 + i))) - i * 2.6;
-        const wid = 16 - i * 1.4;
-        if (hgt < 3) continue;
-        const hue = 18 + i * 5 + Math.sin(t) * 6;
-        const lightness = 52 + i * 5;
-        ctx.globalAlpha = (0.42 - i * 0.035) * inten;
-        ctx.fillStyle = `hsl(${hue},100%,${lightness}%)`;
+      if (inten > FLAME_MIN) {
+        // 火舌条数：火小了自然少几条，掉帧时也跟着抽稀
+        const flames = Math.max(3, Math.round(7 * Math.min(1, 0.45 + inten) * renderQuality()));
+        for (let i = 0; i < flames; i++) {
+          const t = time * 3.1 + i * 1.37;
+          const sway = Math.sin(t) * 4.6 + Math.sin(t * 1.9 + i) * 2.8;
+          const hgt = (44 + lv * 2.0) * inten * (0.62 + 0.38 * (0.5 + 0.5 * Math.sin(t * 1.6 + i))) - i * 2.6;
+          const wid = 16 - i * 1.4;
+          if (hgt < 3) continue;
+          const hue = 18 + i * 5 + Math.sin(t) * 6;
+          const lightness = 52 + i * 5;
+          ctx.globalAlpha = (0.42 - i * 0.035) * inten;
+          ctx.fillStyle = `hsl(${hue},100%,${lightness}%)`;
+          ctx.beginPath();
+          const bx = c.x + sway * 0.3;
+          ctx.moveTo(bx - wid, fireY);
+          ctx.quadraticCurveTo(bx - wid * 0.8, fireY - hgt * 0.6, bx + sway, fireY - hgt);
+          ctx.quadraticCurveTo(bx + wid * 0.8, fireY - hgt * 0.6, bx + wid, fireY);
+          ctx.quadraticCurveTo(bx, fireY + 4, bx - wid, fireY);
+          ctx.fill();
+        }
+        // 白热核心
+        ctx.globalAlpha = 0.7 * inten;
+        ctx.fillStyle = "#fff3d2";
         ctx.beginPath();
-        const bx = c.x + sway * 0.3;
-        ctx.moveTo(bx - wid, fireY);
-        ctx.quadraticCurveTo(bx - wid * 0.8, fireY - hgt * 0.6, bx + sway, fireY - hgt);
-        ctx.quadraticCurveTo(bx + wid * 0.8, fireY - hgt * 0.6, bx + wid, fireY);
-        ctx.quadraticCurveTo(bx, fireY + 4, bx - wid, fireY);
+        ctx.ellipse(c.x, fireY - 2, 7.6, 5, 0, 0, TAU);
+        ctx.fill();
+      } else {
+        // 熄火：不留火舌，炉口只剩一小片暗红余烬。
+        // 这里的透明度不跟着 inten 一路掉到 0——真按 0.05 画出来就是纯黑，
+        // 炉子看着像被搬空了，而不是刚灭。
+        ctx.globalAlpha = 0.16 + inten;
+        ctx.fillStyle = "#8e2c0e";
+        ctx.beginPath();
+        ctx.ellipse(c.x, fireY + 1, 9.5, 3.6, 0, 0, TAU);
+        ctx.fill();
+        ctx.globalAlpha = 0.1 + inten * 0.8;
+        ctx.fillStyle = "#c2521c";
+        ctx.beginPath();
+        ctx.ellipse(c.x + Math.sin(time * 0.9) * 1.6, fireY, 4.6, 1.9, 0, 0, TAU);
         ctx.fill();
       }
-      // 白热核心
-      ctx.globalAlpha = 0.7 * inten;
-      ctx.fillStyle = "#fff3d2";
-      ctx.beginPath();
-      ctx.ellipse(c.x, fireY - 2, 7.6, 5, 0, 0, TAU);
-      ctx.fill();
       ctx.restore();
 
-      if (Math.random() < 0.7) {
+      // 火星只有旺火才溅得出来；熄了火还在喷火星，看着就不像灭了
+      const spark = Math.max(0, (inten - 0.18) / 0.82);
+      if (Math.random() < 0.7 * spark) {
         embers.spawn("ember", c.x, fireY - 6, { spread: 9, vy: -46 - Math.random() * 40 });
       }
-      if (Math.random() < 0.22) {
+      // 反过来，余烬会闷出更多白烟，所以这里给一个不随火势归零的底
+      if (Math.random() < 0.06 + 0.16 * inten) {
         embers.spawn("smoke", c.x, fireY - 18, { spread: 8, size: 6 });
       }
     }
@@ -1914,9 +2008,10 @@ export function createCityRenderer({ canvas }) {
   /** 火炉地面光池（在建筑之前绘制） */
   function drawHearthPool(env) {
     const c = isoPt(CX, CY);
-    const inten = (env.furnaceLit ? 1 : 0.12) * env.flicker;
+    const inten = fireOf(env);
     if (inten <= 0.02) return;
-    const R = (272 + env.furnaceLevel * 12) * (0.9 + 0.1 * env.flicker);
+    // 火弱下去时光池同时收窄，不然地上会剩一圈没来由的暖斑
+    const R = (272 + env.furnaceLevel * 12) * (0.42 + 0.58 * inten);
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     ctx.globalAlpha = 0.34 * inten;
@@ -1929,9 +2024,9 @@ export function createCityRenderer({ canvas }) {
   /** 火炉空气光晕（建筑之后） */
   function drawHearthHalo(env) {
     const c = isoPt(CX, CY);
-    const inten = (env.furnaceLit ? 1 : 0.1) * env.flicker;
+    const inten = fireOf(env);
     if (inten <= 0.02) return;
-    const R = 200 + env.furnaceLevel * 8;
+    const R = (200 + env.furnaceLevel * 8) * (0.5 + 0.5 * inten);
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     ctx.globalAlpha = 0.26 * inten;
@@ -2005,7 +2100,7 @@ export function createCityRenderer({ canvas }) {
     }
     ctx.globalAlpha = 1;
     // 火炉在冰面上的倒影
-    const inten = (env.furnaceLit ? 1 : 0.1) * env.flicker;
+    const inten = fireOf(env);
     if (inten > 0.02) {
       ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = 0.18 * inten;
@@ -2434,9 +2529,13 @@ export function createCityRenderer({ canvas }) {
     }
     const apexY = c.y - 3.4 - h - rh;
 
-    // 窗火
+    // 窗火：炉子灭了，各家的灯也跟着暗一半
     const workers = b.workers ?? 0;
-    const litK = Math.max(0.14, Math.min(1, 0.3 + workers * 0.22 + lv * 0.05)) * (0.55 + 0.45 * env.flicker);
+    const cityGlow = 0.5 + 0.5 * (Number.isFinite(env.lit) ? env.lit : 1);
+    const litK =
+      Math.max(0.14, Math.min(1, 0.3 + workers * 0.22 + lv * 0.05)) *
+      (0.55 + 0.45 * env.flicker) *
+      cityGlow;
     drawWindows(fp, 3.4, h, env, seed, art.w > 1.6 ? 3 : 2, litK);
 
     // 烟囱与炊烟
@@ -2713,7 +2812,7 @@ export function createCityRenderer({ canvas }) {
 
     const furnaceB = entryOf("furnace");
     const furnaceLevel = Math.max(1, furnaceB?.level ?? 1);
-    const furnaceLit = st.furnaceLit !== false;
+    const furnaceLit = readFurnaceLit(st, furnaceB);
 
     // 火光闪烁
     const target =
@@ -2722,10 +2821,15 @@ export function createCityRenderer({ canvas }) {
       0.12 * Math.sin(time * 2.1) +
       0.06 * Math.sin(time * 17.7);
     flicker += (target - flicker) * Math.min(1, dt * 9);
+    // 熄火/复燃都走一段过渡：火焰、光池、暖色调一起收，避免整城颜色突跳
+    litMix += ((furnaceLit ? 1 : 0) - litMix) * Math.min(1, dt * 2.4);
+    const fire = (EMBER_FLOOR + (1 - EMBER_FLOOR) * litMix) * flicker;
     const env = {
       furnaceLevel,
       furnaceLit,
-      flicker: furnaceLit ? flicker : 0.18,
+      lit: litMix,
+      fire,
+      flicker,
       blizzard,
       temp: st.temp ?? 0,
     };

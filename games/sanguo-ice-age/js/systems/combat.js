@@ -404,6 +404,8 @@ function finish(A, D, win, rounds, log, rawRewards, reason) {
     wounded: aCas.wounded,
     lossesTotal: aCas.lossesTotal,
     woundedTotal: aCas.woundedTotal,
+    troopAdvantage: troopAdvantage(A.troops, D.troops),
+    factionAdvantage: factionAdvantage(A.faction, D.faction),
     attacker: {
       losses: aCas.losses,
       wounded: aCas.wounded,

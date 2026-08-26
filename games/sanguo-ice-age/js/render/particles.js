@@ -12,16 +12,75 @@ function rnd(a, b) {
 }
 
 /* ============================================================
+   画质预算（全模块共享）
+   ------------------------------------------------------------
+   寒潮把雪量顶到上限时最容易掉帧。密度先被「画布面积」限死，
+   再乘一个按实测帧耗时升降的系数：慢下来就抽稀，缓过来再放开。
+   ============================================================ */
+
+const QUALITY_MIN = 0.36;
+/** 帧耗时超过它（约 48fps）开始降密度 */
+const FRAME_BUDGET_MS = 21;
+/**
+ * 回到它以下才慢慢放开。必须**高于** 60Hz 垂直同步的 16.7ms：
+ * 阈值压到 16.7 以下的话，跑满 60fps 也永远判不出「缓过来了」，
+ * 开局加载那几帧一掉，密度就再也回不去。
+ */
+const FRAME_EASY_MS = 17.6;
+
+const perf = { quality: 1, ema: 16.7, last: 0 };
+
+const nowMs = () =>
+  typeof performance === "object" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+
+/**
+ * 每帧调用一次（由雪场的 update 负责），返回 0.36~1 的画质系数。
+ * 用自测的墙钟时间而不是外部传进来的 dt——渲染层的 dt 被倍速缩放过，
+ * 拿它当帧耗时会在暂停/加速时误判。
+ */
+function tunePerf() {
+  const t = nowMs();
+  const prev = perf.last;
+  perf.last = t;
+  if (!prev) return perf.quality;
+  const dt = t - prev;
+  // 切走标签页再回来的那一帧不算数
+  if (!(dt > 0) || dt > 400) return perf.quality;
+  perf.ema += (dt - perf.ema) * 0.12;
+  // 降得快、升得慢：掉帧要立刻止血，恢复则慢慢来，免得在阈值上来回抖
+  if (perf.ema > FRAME_BUDGET_MS) {
+    perf.quality = Math.max(QUALITY_MIN, perf.quality - 0.03);
+  } else if (perf.ema < FRAME_EASY_MS) {
+    perf.quality = Math.min(1, perf.quality + 0.008);
+  }
+  return perf.quality;
+}
+
+/** 当前画质系数（0.36~1），其他渲染模块可以按它抽稀自己的装饰。 */
+export function renderQuality() {
+  return perf.quality;
+}
+
+/* ============================================================
    雪场（屏幕空间）
    ============================================================ */
 
+/** 池子上限；单帧实际参与更新/绘制的数量另有更严的动态上限。 */
 export const SNOW_MAX = 1400;
+/** 无风雪时的基础雪量 */
+const SNOW_BASE = 340;
+/** 每片雪花摊到的画布像素：越大越稀，用来给小窗口减负 */
+const PX_PER_FLAKE = 1000;
 
 export function createSnowField() {
   const flakes = new Array(SNOW_MAX);
   let w = 1;
   let h = 1;
   let seeded = false;
+  // update 定下的当帧数量，drawBack / drawFront 复用，避免两趟数量对不上
+  let live = SNOW_BASE;
 
   for (let i = 0; i < SNOW_MAX; i++) {
     flakes[i] = {
@@ -59,9 +118,11 @@ export function createSnowField() {
 
   /** @param env {{ intensity:number, wind:number, dt:number }} */
   function update(dt, env) {
-    const intensity = env.intensity;            // 0 = 微雪, 1 = 暴风雪
-    const gust = env.wind;                      // -1 .. 1
+    tunePerf();
+    const intensity = Math.max(0, Math.min(1, env?.intensity ?? 0)); // 0 = 微雪, 1 = 暴风雪
+    const gust = env?.wind ?? 0;                // -1 .. 1
     const count = activeCount(intensity);
+    live = count;
     const speedK = 1 + intensity * 2.35;
     const drift = gust * (26 + intensity * 210);
 
@@ -78,13 +139,26 @@ export function createSnowField() {
     }
   }
 
+  /**
+   * 寒潮下雪量随强度上升，但要先过两道闸：
+   *   · 画布面积闸——小窗口里 1400 片纯属浪费；
+   *   · 画质闸——真掉帧了就整体抽稀。
+   *
+   * 画质系数是**乘**在结果上的，不是又一条封顶线：封顶的写法在慢机器上
+   * 会让寒潮和晴夜落一样多的雪，寒潮就白来了。乘法则保证无论快慢，
+   * 寒潮永远比平时密一大截，只是绝对量跟着机器走。
+   */
   function activeCount(intensity) {
-    return Math.round(340 + intensity * (SNOW_MAX - 340));
+    const k = Math.max(0, Math.min(1, intensity));
+    const byArea = Math.round((w * h) / PX_PER_FLAKE);
+    const cap = Math.max(240, Math.min(SNOW_MAX, byArea));
+    const want = SNOW_BASE + k * (SNOW_MAX - SNOW_BASE);
+    return Math.max(80, Math.min(SNOW_MAX, Math.round(Math.min(cap, want) * perf.quality)));
   }
 
   /** 远景层：细小、暗淡，画在城池之前 */
   function drawBack(ctx, env) {
-    const count = activeCount(env.intensity);
+    const count = live;
     ctx.save();
     ctx.fillStyle = "#cfeafa";
     ctx.beginPath();
@@ -102,8 +176,8 @@ export function createSnowField() {
 
   /** 近景层：大颗粒 + 暴风雪横流 */
   function drawFront(ctx, env) {
-    const count = activeCount(env.intensity);
-    const intensity = env.intensity;
+    const count = live;
+    const intensity = Math.max(0, Math.min(1, env?.intensity ?? 0));
 
     ctx.save();
     ctx.fillStyle = "#f2fbff";
@@ -135,9 +209,9 @@ export function createSnowField() {
     }
     ctx.stroke();
 
-    // 暴风雪横流
+    // 暴风雪横流：条数同样受画质闸约束，且不会超过在场的雪花数
     if (intensity > 0.08) {
-      const streaks = Math.round(intensity * 88);
+      const streaks = Math.min(count, Math.round(intensity * 88 * perf.quality));
       ctx.globalAlpha = 0.06 + intensity * 0.2;
       ctx.strokeStyle = "#e8f8ff";
       ctx.lineWidth = 1;
@@ -166,6 +240,8 @@ export function createEmberField(max = 260) {
   let cursor = 0;
 
   function spawn(kind, x, y, opts = {}) {
+    // 掉帧时按画质系数抽稀：火星本来就是散点，少几粒看不出来
+    if (perf.quality < 0.85 && Math.random() > perf.quality) return;
     const p = pool[cursor];
     cursor = (cursor + 1) % max;
     p.alive = true;
@@ -230,28 +306,46 @@ export function createEmberField(max = 260) {
    霜雾 / 寒潮全屏叠加（屏幕空间）
    ============================================================ */
 
+/** 全屏霜晕的径向渐变按尺寸 + 强度档缓存，免得逐帧重建。 */
+const frostGrads = new Map();
+function frostGradient(ctx, w, h, k) {
+  const step = Math.round(k * 12);              // 强度分 12 档，肉眼看不出跳变
+  const key = `${w}x${h}@${step}`;
+  let g = frostGrads.get(key);
+  if (!g) {
+    const a = step / 12;
+    g = ctx.createRadialGradient(
+      w * 0.5, h * 0.52, Math.min(w, h) * 0.22,
+      w * 0.5, h * 0.5, Math.max(w, h) * 0.78,
+    );
+    g.addColorStop(0, "rgba(214,242,255,0)");
+    g.addColorStop(0.62, `rgba(200,236,255,${0.06 * a})`);
+    g.addColorStop(1, `rgba(224,246,255,${0.4 * a})`);
+    if (frostGrads.size > 24) frostGrads.clear();
+    frostGrads.set(key, g);
+  }
+  return g;
+}
+
 export function drawFrostOverlay(ctx, w, h, time, intensity) {
   if (intensity <= 0.01) return;
   ctx.save();
 
   // 边缘结霜
   const k = Math.min(1, intensity);
-  const grd = ctx.createRadialGradient(w * 0.5, h * 0.52, Math.min(w, h) * 0.22, w * 0.5, h * 0.5, Math.max(w, h) * 0.78);
-  grd.addColorStop(0, "rgba(214,242,255,0)");
-  grd.addColorStop(0.62, `rgba(200,236,255,${0.06 * k})`);
-  grd.addColorStop(1, `rgba(224,246,255,${0.4 * k})`);
-  ctx.fillStyle = grd;
+  ctx.fillStyle = frostGradient(ctx, w, h, k);
   ctx.fillRect(0, 0, w, h);
 
-  // 霜针（角落生长）
+  // 霜针（角落生长）：根数随强度长，但压在画质闸下
   ctx.globalCompositeOperation = "screen";
   ctx.strokeStyle = `rgba(230,248,255,${0.16 * k})`;
   ctx.lineWidth = 1;
+  const spikes = Math.max(5, Math.round(16 * k * perf.quality));
   const corners = [[0, 0, 1, 1], [w, 0, -1, 1], [0, h, 1, -1], [w, h, -1, -1]];
   for (let c = 0; c < corners.length; c++) {
     const [ox, oy, sx, sy] = corners[c];
     ctx.beginPath();
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < spikes; i++) {
       const seed = c * 17 + i * 3.7;
       const grow = (0.5 + 0.5 * Math.sin(time * 0.4 + seed)) * k;
       const len = (52 + ((seed * 37) % 110)) * grow;
@@ -280,7 +374,7 @@ export function drawGroundDrift(ctx, bounds, time, intensity) {
   if (intensity <= 0.02) return;
   ctx.save();
   ctx.globalCompositeOperation = "screen";
-  const bands = 5;
+  const bands = Math.max(2, Math.round(5 * perf.quality));
   for (let i = 0; i < bands; i++) {
     const t = (time * (0.05 + i * 0.022) + i * 0.31) % 1;
     const y = bounds.y0 + (bounds.y1 - bounds.y0) * t;

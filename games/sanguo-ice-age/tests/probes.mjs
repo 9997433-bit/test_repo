@@ -316,16 +316,50 @@ async function bridgeProjectView(modules) {
     };
   }
 
-  const state = await freshState(modules.state);
-  const projected = await namespace.projectView(state);
-  const pass = Boolean(projected && typeof projected === "object");
+  const falseState = await freshState(modules.state);
+  falseState.flags =
+    falseState.flags && typeof falseState.flags === "object" ? falseState.flags : {};
+  falseState.flags.gameOver = false;
+  delete falseState.flags.gameOverReason;
+
+  const stringState = clone(falseState);
+  stringState.flags.gameOver = "morale";
+  delete stringState.flags.gameOverReason;
+
+  const falseView = await namespace.projectView(falseState);
+  const stringView = await namespace.projectView(stringState);
+  const returnedObjects = Boolean(
+    falseView &&
+      typeof falseView === "object" &&
+      stringView &&
+      typeof stringView === "object",
+  );
+  const falseReadable = returnedObjects && falseView.gameOver === false;
+  const stringReadable =
+    returnedObjects &&
+    stringView.gameOver === true &&
+    stringView.gameOverReason === "morale";
+  const pass = returnedObjects && falseReadable && stringReadable;
   return {
     pass,
     info: {
       module: specifier,
       export: "projectView",
-      returnedObject: pass,
-      reason: pass ? "projectView 已动态导入并成功投影视图" : "projectView 未返回对象",
+      returnedObjects,
+      falseInput: {
+        gameOver: falseView?.gameOver,
+        gameOverReason: falseView?.gameOverReason,
+        readable: falseReadable,
+      },
+      stringInput: {
+        source: "morale",
+        gameOver: stringView?.gameOver,
+        gameOverReason: stringView?.gameOverReason,
+        readable: stringReadable,
+      },
+      reason: pass
+        ? "projectView 可读取 false 与字符串两种 gameOver 写法"
+        : "projectView 未正确读取 false 或字符串 gameOver",
     },
   };
 }
@@ -774,7 +808,7 @@ async function main() {
     ),
   );
   probes.push(
-    await runProbe("bridge-project-view", "动态导入桥接 projectView", () =>
+    await runProbe("bridge-project-view", "桥接 projectView 读取 gameOver 字符串或 false", () =>
       bridgeProjectView(modules),
     ),
   );

@@ -274,6 +274,80 @@
 .hero-card__stars { margin-top: 5px; font-size: 10px; color: var(--gold); letter-spacing: .12em; }
 .hero-card__line { margin-top: 5px; font-size: 10px; color: var(--text-dim); }
 .hero-card.is-dupe .hero-card__line { color: var(--warn); }
+.hero-card.is-epic {
+  border-width: 2px;
+  box-shadow: 0 14px 30px -16px color-mix(in srgb, var(--q-color) 95%, transparent),
+              0 0 0 1px color-mix(in srgb, var(--q-color) 40%, transparent) inset;
+}
+
+/* ── 招贤高光：只有传奇 / 绝世才占满整屏 ──────────────────── */
+.gacha-flash {
+  position: fixed; inset: 0; z-index: 155;
+  display: grid; place-items: center;
+  padding: 24px; cursor: pointer;
+  background: radial-gradient(56% 52% at 50% 46%, rgba(6, 20, 28, .6), rgba(2, 7, 11, .93));
+  backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity .28s ease;
+}
+.gacha-flash[hidden] { display: none; }
+.gacha-flash.is-on { opacity: 1; }
+
+/* 极慢的一圈扫光（26s / 转），不构成闪烁 */
+.gacha-flash__rays {
+  position: absolute; width: min(112vw, 112vh); aspect-ratio: 1;
+  pointer-events: none; opacity: .34;
+  background: repeating-conic-gradient(from 0deg,
+    color-mix(in srgb, var(--q-color) 30%, transparent) 0 3deg, transparent 3deg 20deg);
+  -webkit-mask-image: radial-gradient(closest-side, transparent 18%, rgba(0,0,0,.8) 44%, transparent 82%);
+  mask-image: radial-gradient(closest-side, transparent 18%, rgba(0,0,0,.8) 44%, transparent 82%);
+  animation: gachaRays 26s linear infinite;
+}
+@keyframes gachaRays { to { transform: rotate(360deg) } }
+.gacha-flash[data-q="red"] .gacha-flash__rays { opacity: .44; }
+
+.gacha-flash__card {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: min(320px, 84vw);
+  padding: 24px 22px 20px;
+  border-radius: 22px; text-align: center;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--q-color) 26%, #061c26), #04141c 78%);
+  border: 1px solid color-mix(in srgb, var(--q-color) 62%, transparent);
+  box-shadow: 0 0 64px -14px color-mix(in srgb, var(--q-color) 92%, transparent), var(--shadow-panel);
+  animation: gachaCardIn .5s cubic-bezier(.2, .9, .25, 1) both;
+}
+@keyframes gachaCardIn {
+  from { opacity: 0; transform: translateY(18px) scale(.9); filter: blur(6px) }
+  to   { opacity: 1; transform: none; filter: none }
+}
+/* shine 复用上方抽卡小卡的定义：只扫一次 */
+.gacha-flash__card::after {
+  content: ""; position: absolute; inset: -40% -120%; pointer-events: none;
+  background: linear-gradient(72deg, transparent 44%, rgba(255,255,255,.3) 50%, transparent 56%);
+  animation: shine 1.5s ease .34s 1 both;
+}
+.gacha-flash__q {
+  padding: 2px 12px; border-radius: 999px; margin-bottom: 4px;
+  font-size: 11px; font-weight: 700; letter-spacing: .26em; text-indent: .26em;
+  background: color-mix(in srgb, var(--q-color) 82%, #000); color: #0b0704;
+}
+.gacha-flash__av {
+  width: 92px; height: 92px; margin: 6px 0 8px;
+  border-radius: 26px; display: grid; place-items: center;
+  font-family: var(--font-serif); font-size: 44px; color: #05171f;
+  background: linear-gradient(150deg, var(--f-color), color-mix(in srgb, var(--f-color) 38%, #041219));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 12px 26px -12px #000;
+}
+.gacha-flash__name { font-family: var(--font-serif); font-size: 27px; letter-spacing: .2em; text-indent: .2em; color: #fff; }
+.gacha-flash__title { font-size: 11px; letter-spacing: .2em; color: var(--gold); }
+.gacha-flash__meta { margin-top: 4px; font-size: 11.5px; letter-spacing: .1em; color: var(--text-dim); }
+.gacha-flash__stars { margin-top: 6px; font-size: 14px; letter-spacing: .18em; color: var(--gold); }
+.gacha-flash__more { margin-top: 9px; font-size: 11px; letter-spacing: .12em; color: var(--ice-300); }
+.gacha-flash__hint {
+  position: absolute; left: 50%; bottom: calc(var(--dock-h) + 22px);
+  transform: translateX(-50%);
+  font-size: 11px; letter-spacing: .3em; text-indent: .3em; color: var(--text-faint);
+}
 
 /* 武将名录 */
 .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }

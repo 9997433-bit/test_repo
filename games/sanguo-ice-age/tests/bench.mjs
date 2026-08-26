@@ -2,6 +2,9 @@ import { performance } from "node:perf_hooks";
 import { existsSync } from "node:fs";
 
 const TICKS = Math.max(2000, Number.parseInt(process.env.BENCH_TICKS ?? "2000", 10) || 2000);
+const DETERMINISM_TICKS = 50;
+const DETERMINISM_SEED = "bench-same-seed";
+const DETERMINISM_TOLERANCE = 1e-6;
 const RESOURCE_KEYS = new Set(["food", "wood", "coal", "iron"]);
 
 const moduleCandidates = {
@@ -46,10 +49,11 @@ async function loadFirst(role, candidates) {
   return { role, namespace: null, status: "stub", attempts };
 }
 
-function defaultState() {
+function defaultState(seed = 1) {
   return {
     tick: 0,
     day: 0,
+    meta: { seed, tick: 0, day: 1 },
     resources: { food: 1000, wood: 1000, coal: 600, iron: 300 },
     morale: 70,
     population: 100,
@@ -71,11 +75,11 @@ function clone(value) {
   }
 }
 
-async function makeInitialState(stateModule) {
-  if (!stateModule) return defaultState();
+async function makeInitialState(stateModule, seed = 1) {
+  if (!stateModule) return defaultState(seed);
   for (const name of ["createInitialState", "createGameState", "createState", "getInitialState"]) {
     if (typeof stateModule[name] === "function") {
-      const result = await stateModule[name]();
+      const result = await stateModule[name](seed);
       if (result && typeof result === "object") return result;
     }
   }
@@ -87,7 +91,7 @@ async function makeInitialState(stateModule) {
     const result = await stateModule.default();
     if (result && typeof result === "object") return result;
   }
-  return defaultState();
+  return defaultState(seed);
 }
 
 function findTick(namespace, names) {
@@ -274,6 +278,71 @@ async function invokeTick(system, state, context) {
   return system.fn(state, context);
 }
 
+async function runSeededTicks(stateModule, systems, seed, tickCount) {
+  let state = await makeInitialState(stateModule, seed);
+  state.meta = state.meta && typeof state.meta === "object" ? state.meta : {};
+  state.meta.seed = seed;
+  const metrics = { coldWaveTriggers: 0 };
+  const bus = { emit() {}, on: () => () => {} };
+
+  for (let tick = 0; tick < tickCount; tick += 1) {
+    if (state.meta && typeof state.meta === "object") {
+      state.meta.tick = tick;
+      state.meta.day = Math.floor(tick / 16) + 1;
+    }
+    const context = {
+      tick,
+      dt: 0.25,
+      tickMs: 250,
+      state,
+      metrics,
+      bus,
+      rng: () => 0.5,
+    };
+    for (const role of ["climate", "economy", "city", "population", "combat"]) {
+      state = absorbResult(state, await invokeTick(systems[role], state, context));
+      context.state = state;
+    }
+    state.tick = tick + 1;
+    if (Number.isFinite(state.day)) state.day = state.tick / 16;
+    if (state.meta && typeof state.meta === "object") {
+      state.meta.tick = tick + 1;
+      state.meta.day = Math.floor((tick + 1) / 16) + 1;
+    }
+  }
+
+  return state;
+}
+
+async function sameSeedResourceDeterminism(stateModule, systems) {
+  const first = await runSeededTicks(stateModule, systems, DETERMINISM_SEED, DETERMINISM_TICKS);
+  const second = await runSeededTicks(stateModule, systems, DETERMINISM_SEED, DETERMINISM_TICKS);
+  const firstResources = resourcesOf(first);
+  const secondResources = resourcesOf(second);
+  const differences = {};
+  let absoluteDifferenceSum = 0;
+
+  for (const key of RESOURCE_KEYS) {
+    const difference = Math.abs(firstResources[key] - secondResources[key]);
+    differences[key] = difference;
+    absoluteDifferenceSum += difference;
+  }
+
+  const pass =
+    Number.isFinite(absoluteDifferenceSum) &&
+    absoluteDifferenceSum <= DETERMINISM_TOLERANCE;
+  return {
+    pass,
+    seed: DETERMINISM_SEED,
+    ticks: DETERMINISM_TICKS,
+    tolerance: DETERMINISM_TOLERANCE,
+    absoluteDifferenceSum,
+    differences,
+    first: Object.fromEntries([...RESOURCE_KEYS].map((key) => [key, firstResources[key]])),
+    second: Object.fromEntries([...RESOURCE_KEYS].map((key) => [key, secondResources[key]])),
+  };
+}
+
 async function main() {
   const loaded = await Promise.all(
     Object.entries(moduleCandidates).map(([role, candidates]) => loadFirst(role, candidates)),
@@ -356,6 +425,7 @@ async function main() {
     }
   }
   const elapsedMs = performance.now() - started;
+  const determinism = await sameSeedResourceDeterminism(modules.state, systems);
 
   const finalExplicitColdCount = explicitColdCount(state);
   const coldWaveTriggers = Math.max(
@@ -380,6 +450,7 @@ async function main() {
         ? [Number(minMorale.toFixed(3)), Number(maxMorale.toFixed(3))]
         : null,
     coldWaveTriggers,
+    determinism,
     systems: Object.fromEntries(Object.entries(systems).map(([role, value]) => [role, value.source])),
     imports: Object.fromEntries(
       loaded.map((entry) => [
@@ -393,8 +464,11 @@ async function main() {
   console.log(`资源 NaN: ${report.resources.hasNaN}; 资源负数: ${report.resources.hasNegative}`);
   console.log(`民心区间: ${report.moraleRange ? report.moraleRange.join("..") : "N/A"}`);
   console.log(`寒潮触发次数: ${report.coldWaveTriggers}`);
+  console.log(
+    `同 seed ${determinism.ticks} tick 资源差绝对值和: ${determinism.absoluteDifferenceSum} (容差 ${determinism.tolerance})`,
+  );
   console.log(JSON.stringify(report, null, 2));
-  process.exitCode = nanPaths.size > 0 ? 1 : 0;
+  process.exitCode = nanPaths.size > 0 || !determinism.pass ? 1 : 0;
 }
 
 main().catch((error) => {

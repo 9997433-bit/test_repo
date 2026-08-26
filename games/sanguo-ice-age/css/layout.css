@@ -164,9 +164,11 @@ button:focus-visible, [tabindex]:focus-visible {
   overflow: hidden;
 }
 .res {
+  position: relative;
   display: flex; align-items: center; gap: 8px;
   padding: 6px 11px 6px 8px;
   min-width: 0;
+  overflow: hidden;
   border-radius: var(--radius-m);
   background: linear-gradient(180deg, rgba(18, 52, 68, 0.72), rgba(9, 28, 38, 0.72));
   border: 1px solid var(--line-soft);
@@ -564,9 +566,112 @@ button:focus-visible, [tabindex]:focus-visible {
   .sidebar { flex-direction: column; gap: 6px; padding: 6px; }
   .side-card--heroes { max-height: 46%; }
   .scene__legend { font-size: 10px; }
+  .banner__days { margin-top: 8px; padding: 4px 13px; gap: 5px; }
+  .banner__days b { font-size: 22px; }
+  .banner__days-pips .pip-day { width: 6px; height: 6px; }
   .dock { padding: 7px 8px; gap: 5px; }
   .dock__text b { font-size: 12px; letter-spacing: .1em; }
 }
+
+/* ============================================================
+   手感层：数字滚动 / 熄火暗场 / 寒潮余日
+   ------------------------------------------------------------
+   一律「一拍就收」：没有循环闪烁，最快的一拍也有 400ms，
+   减弱动效偏好下由 hud.js 直接跳过或落值，信息不依赖动画传达。
+   ============================================================ */
+
+/* ── 资源短滚动的收尾提示（数字本身由 hud.js 在 ≤300ms 内滚到位） ── */
+.res__val { transition: color .3s ease; }
+.res.is-gain { border-color: rgba(111, 224, 168, .55); box-shadow: 0 0 0 1px rgba(111, 224, 168, .14) inset; }
+.res.is-gain .res__val { color: #d9ffec; }
+.res.is-drop { border-color: rgba(255, 203, 92, .52); box-shadow: 0 0 0 1px rgba(255, 203, 92, .12) inset; }
+.res.is-drop .res__val { color: #ffe8b8; }
+
+.res__delta {
+  position: absolute; right: 9px; bottom: 2px;
+  pointer-events: none; white-space: nowrap;
+  font-family: var(--font-num); font-size: 11px; font-weight: 600;
+  text-shadow: 0 2px 8px #000, 0 0 3px #000;
+  animation: resDelta .9s cubic-bezier(.2, .9, .25, 1) forwards;
+}
+.res__delta.is-gain { color: var(--good); }
+.res__delta.is-drop { color: var(--warn); }
+@keyframes resDelta {
+  0%   { opacity: 0; transform: translateY(6px) }
+  22%  { opacity: 1; transform: translateY(0) }
+  100% { opacity: 0; transform: translateY(-9px) }
+}
+
+/* ── 战力滚动：只有涨过的那一位亮一下 ─────────────────────── */
+.hero-mini { transition: background .18s, border-color .18s, transform .14s, box-shadow .3s ease; }
+.hero-mini__pow { transition: color .3s ease, text-shadow .3s ease; }
+.hero-mini.is-levelup { background: rgba(255, 154, 60, .13); box-shadow: 0 0 24px -10px var(--ember-300); }
+.hero-mini.is-levelup .hero-mini__pow { color: #ffe6b8; text-shadow: 0 0 14px rgba(255, 178, 96, .9); }
+
+/* ── 熄火 / 跌破冰点：单拍暗场 ────────────────────────────── */
+.blackout {
+  position: fixed; inset: 0; z-index: 180;
+  display: grid; place-items: center;
+  pointer-events: none; opacity: 0;
+  background: radial-gradient(72% 62% at 50% 50%, rgba(2, 8, 12, .74), rgba(0, 0, 0, .96));
+}
+.blackout.is-on { animation: blackoutBeat 400ms ease-out both; }
+@keyframes blackoutBeat {
+  0%   { opacity: 0 }
+  18%  { opacity: .9 }
+  55%  { opacity: .74 }
+  100% { opacity: 0 }
+}
+.blackout__txt {
+  font-family: var(--font-serif);
+  font-size: clamp(22px, 4.4vw, 42px);
+  letter-spacing: .34em; text-indent: .34em;
+  color: #cfe7f2;
+}
+.blackout[data-tone="ember"] .blackout__txt { color: #ffcf9a; text-shadow: 0 0 34px rgba(255, 150, 60, .6); }
+.blackout[data-tone="frost"] .blackout__txt { color: #dff4ff; text-shadow: 0 0 34px rgba(160, 220, 255, .7); }
+
+/* ── 寒潮四拍：预警 → 来袭 → 持续 → 转晴 ─────────────────── */
+.chip__days { display: inline-flex; align-items: center; gap: 3px; }
+.chip__days:empty { display: none; }
+.pip-day { width: 5px; height: 5px; border-radius: 50%; background: rgba(207, 238, 251, .2); }
+.pip-day.is-on { background: #e8f9ff; box-shadow: 0 0 8px rgba(190, 235, 255, .95); }
+
+.scene__weather { transition: border-color .5s ease, color .5s ease; }
+.scene__weather[data-phase="warn"] { border-color: rgba(255, 203, 92, .5); color: #ffe3a8; }
+.scene__weather[data-phase="warn"] .chip__dot { background: var(--warn); box-shadow: 0 0 12px var(--warn); }
+.scene__weather[data-phase="fade"] { border-color: rgba(111, 224, 168, .45); color: #cdf5e2; }
+/* 转晴这一拍撤掉闪点，紧张感随之松开 */
+.scene__weather[data-phase="fade"] .chip__dot { background: var(--good); box-shadow: 0 0 12px var(--good); animation: none; }
+
+/* 寒潮时场景会被霜雾刷白，余日读数得自带底板才压得住 */
+.banner__days {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-top: 12px; padding: 5px 18px;
+  border-radius: 999px;
+  background: rgba(4, 16, 24, .62);
+  border: 1px solid rgba(190, 235, 255, .3);
+  backdrop-filter: blur(4px);
+  color: #cfeefb;
+}
+.banner__days b {
+  font-family: var(--font-num); font-size: 28px; line-height: 1;
+  color: #fff; text-shadow: 0 0 24px rgba(160, 220, 255, .95);
+}
+.banner__days-k { font-size: 11px; letter-spacing: .24em; color: #9dc9dc; }
+/* 两块底板都是 shrink-to-fit 的行内块，靠列式排布把它们各自摆一行 */
+.scene__banner { display: flex; flex-direction: column; align-items: center; }
+/* 霜雾把场景刷白后，原有副标题也压不住底，跟余日读数用同一块底板 */
+.scene__banner .banner__sub {
+  display: inline-block;
+  padding: 4px 16px; border-radius: 999px;
+  background: rgba(4, 16, 24, .62);
+  border: 1px solid rgba(190, 235, 255, .18);
+  backdrop-filter: blur(4px);
+  color: #cfeefb; text-shadow: 0 2px 10px #000;
+}
+.banner__days-pips { display: inline-flex; align-items: center; gap: 4px; margin-left: 5px; }
+.banner__days-pips .pip-day { width: 7px; height: 7px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

@@ -84,6 +84,96 @@ export function fmtRate(n) {
 
 const $ = (id) => document.getElementById(id);
 
+const nowMs = () => (typeof performance?.now === "function" ? performance.now() : Date.now());
+
+const motionQuery =
+  typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+/** 减弱动效偏好下一律直接落值：滚动与暗场只是修饰，信息本身都写在文字里。 */
+const reduceMotion = () => motionQuery?.matches === true;
+
+/**
+ * 数字短滚动。一个 DOM 节点一条轨道，节点脱离文档后自动回收。
+ *
+ * 只在「跳变」时滚：产量自然涨落的幅度小于 minDelta，直接落值，
+ * 否则整条资源条会一直处在追赶状态，反而看不清数。
+ *
+ * @param {{format?:(n:number)=>string, ms?:number, minDelta?:number}} [opt]
+ */
+export function createNumberRoller({ format = fmt, ms = 280, minDelta = 4 } = {}) {
+  const tracks = new Map();
+  let raf = 0;
+
+  function frame() {
+    raf = 0;
+    const t = nowMs();
+    let alive = false;
+    for (const [node, tr] of tracks) {
+      if (!node.isConnected) {
+        tracks.delete(node);
+        continue;
+      }
+      if (!tr.dur) continue;
+      const p = Math.min(1, (t - tr.t0) / tr.dur);
+      const e = 1 - (1 - p) ** 3;
+      tr.shown = tr.from + (tr.to - tr.from) * e;
+      if (p >= 1) {
+        tr.shown = tr.to;
+        tr.dur = 0;
+      } else {
+        alive = true;
+      }
+      node.textContent = format(tr.shown);
+    }
+    if (alive) raf = requestAnimationFrame(frame);
+  }
+
+  return {
+    /**
+     * 把节点滚到 value。
+     * @returns {number} 相对上一次目标值的增量，调用方据此决定要不要再加提示
+     */
+    set(node, value, { instant = false } = {}) {
+      if (!node) return 0;
+      const v = Number(value) || 0;
+      const tr = tracks.get(node);
+      if (!tr) {
+        tracks.set(node, { shown: v, from: v, to: v, t0: 0, dur: 0 });
+        node.textContent = format(v);
+        return 0;
+      }
+      const delta = v - tr.to;
+      tr.to = v;
+      if (instant || reduceMotion()) {
+        tr.shown = v;
+        tr.dur = 0;
+        node.textContent = format(v);
+        return delta;
+      }
+      // 滚动途中改终点只挪目标、不重置计时，总时长仍锁在 ms 内
+      if (tr.dur) return delta;
+      if (Math.abs(v - tr.shown) < minDelta) {
+        tr.shown = v;
+        node.textContent = format(v);
+        return delta;
+      }
+      tr.from = tr.shown;
+      tr.t0 = nowMs();
+      tr.dur = ms;
+      if (!raf) raf = requestAnimationFrame(frame);
+      return delta;
+    },
+  };
+}
+
+/** 寒潮余日圆点：total 为本次寒潮起始天数，left 为剩余天数。 */
+function dayPips(left, total) {
+  const max = Math.max(1, Math.min(8, Math.round(total) || Math.round(left)));
+  const on = Math.max(0, Math.min(max, Math.round(left)));
+  let out = "";
+  for (let i = 0; i < max; i++) out += `<i class="pip-day${i < on ? " is-on" : ""}"></i>`;
+  return out;
+}
+
 /* ============================================================
    状态读取：对上游三种结构一律宽容
    ------------------------------------------------------------
@@ -284,6 +374,17 @@ export function createHud({ onSpeed, onOpen, onHero, onRestart, onClaimQuest, on
   const fileInput = $("save-file-input");
   const overRoot = $("gameover-root");
 
+  const resRoll = createNumberRoller({ minDelta: 4 });
+  const powRoll = createNumberRoller({ ms: 260, minDelta: 1 });
+
+  /* 寒潮四拍的读数挂件：index.html 只给了标题与副标题，余日由这里补出来 */
+  const chipDays = document.createElement("span");
+  chipDays.className = "chip__days";
+  $("weather-chip")?.appendChild(chipDays);
+  const bannerDays = document.createElement("div");
+  bannerDays.className = "banner__days";
+  $("blizzard-banner")?.appendChild(bannerDays);
+
   const resNodes = {};
   for (const key of Object.keys(RES_META)) {
     const meta = RES_META[key];
@@ -424,15 +525,22 @@ export function createHud({ onSpeed, onOpen, onHero, onRestart, onClaimQuest, on
   let lastHeroSig = null;
   let lastQuestSig = null;
   let lastDefeatKey = null;
+  let litWas = null;
+  let freezeArmed = null;
+  let blizzTotal = 0;
+  const heroPow = new Map();
+  const resFx = {};
 
   function update(state) {
-    /* 资源 */
+    /* 资源：跳变时短滚动，顺带标一次增减 */
     for (const key of Object.keys(RES_META)) {
       const n = resNodes[key];
       const amt = state.resources?.[key] ?? 0;
       const cap = state.capacity?.[key] ?? 0;
       const rate = state.rates?.[key] ?? 0;
-      n.val.textContent = fmt(amt);
+      const delta = resRoll.set(n.val, amt);
+      // 产量自然涨落不算「变化」：半日产出以内一律静默，否则高倍速下会一直在闪
+      if (Math.abs(delta) >= Math.max(8, Math.abs(rate) * 0.45)) flashRes(key, delta);
       n.cap.textContent = cap ? `/${fmt(cap)}` : "";
       n.rate.textContent = `${fmtRate(rate)}/日`;
       n.rate.className = `res__rate ${rate > 0.05 ? "" : rate < -0.05 ? "is-neg" : "is-zero"}`;
@@ -482,20 +590,38 @@ export function createHud({ onSpeed, onOpen, onHero, onRestart, onClaimQuest, on
       b.classList.toggle("is-on", Number(b.dataset.speed) === spd);
     }
 
-    /* 天气条 */
+    /* 天气条：预警 → 来袭 → 持续 → 转晴 四拍，全部由既有字段推出，不另起一套天气 */
     const chip = $("weather-chip");
     const blizz = (state.blizzard ?? 0) > 0.05;
+    const daysLeft = Math.max(blizz ? 1 : 0, Math.ceil(num(state.blizzardDaysLeft)));
+    const inDays = state.blizzardIn == null ? null : Math.max(0, Math.round(num(state.blizzardIn)));
+    blizzTotal = blizz ? Math.max(blizzTotal, daysLeft) : 0;
+
+    const phase = blizz
+      ? daysLeft <= 1 ? "fade" : "peak"
+      : inDays != null && inDays <= 2 ? "warn" : "calm";
     chip.classList.toggle("is-blizzard", blizz);
-    $("weather-text").textContent = blizz
-      ? `寒潮 · 余 ${Math.max(1, Math.ceil(state.blizzardDaysLeft ?? 1))} 日`
-      : state.blizzardIn != null
-        ? `霜夜 · ${state.blizzardIn} 日后寒潮`
-        : "霜夜";
+    if (chip.dataset.phase !== phase) chip.dataset.phase = phase;
+    $("weather-text").textContent =
+      phase === "peak" ? `寒潮 · 余 ${daysLeft} 日`
+      : phase === "fade" ? "寒潮将歇 · 今日放晴"
+      : phase === "warn" ? (inDays <= 1 ? "寒潮明日临城" : `寒潮将至 · 余 ${inDays} 日`)
+      : inDays != null ? `霜夜 · ${inDays} 日后寒潮` : "霜夜";
+    chipDays.innerHTML = blizz ? dayPips(daysLeft, blizzTotal) : "";
+
     $("scene-frost").classList.toggle("is-on", blizz);
     const banner = $("blizzard-banner");
     const showBanner = !!state.blizzardBanner;
     if (banner.hidden === showBanner) banner.hidden = !showBanner;
-    if (showBanner) $("blizzard-sub").textContent = state.blizzardBannerSub || "气温骤降，速添薪火";
+    if (showBanner) {
+      $("blizzard-sub").textContent = state.blizzardBannerSub || "气温骤降，速添薪火";
+      bannerDays.innerHTML =
+        `<span class="banner__days-k">预计余</span><b>${daysLeft}</b><span class="banner__days-k">日</span>` +
+        `<span class="banner__days-pips">${dayPips(daysLeft, blizzTotal)}</span>`;
+    }
+
+    /* 熄火 / 跌破冰点：一次性暗场 */
+    watchDarkMoments(state);
 
     /* 底栏提示 */
     const furnace = (state.buildings || []).find((b) => b.key === "furnace");
@@ -553,6 +679,73 @@ export function createHud({ onSpeed, onOpen, onHero, onRestart, onClaimQuest, on
       if (el.dataset.crisis !== crisis) el.dataset.crisis = crisis;
     } else if (el.dataset.crisis != null) {
       delete el.dataset.crisis;
+    }
+  }
+
+  /** 资源跳变的收尾提示：整格描边扫一下，幅度够大时再飘一个增减数。 */
+  function flashRes(key, delta) {
+    const n = resNodes[key];
+    if (!n) return;
+    const cls = delta > 0 ? "is-gain" : "is-drop";
+    n.root.classList.remove("is-gain", "is-drop");
+    n.root.classList.add(cls);
+    clearTimeout(resFx[key]);
+    resFx[key] = setTimeout(() => n.root.classList.remove("is-gain", "is-drop"), 620);
+
+    if (reduceMotion()) return;
+    const chip = document.createElement("span");
+    chip.className = `res__delta ${cls}`;
+    chip.textContent = `${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))}`;
+    n.root.appendChild(chip);
+    setTimeout(() => chip.remove(), 900);
+  }
+
+  /* ── 熄火 / 跌破冰点：短暂暗场 ─────────────────────────── */
+  let blackoutEl = null;
+  let blackoutTimer = 0;
+  let blackoutAt = -Infinity;
+
+  /** 一拍暗场（≤400ms），带冷却，减弱动效偏好下整体跳过。 */
+  function blackout(label, tone) {
+    if (reduceMotion()) return;
+    const t = nowMs();
+    if (t - blackoutAt < 9000) return;
+    blackoutAt = t;
+    if (!blackoutEl) {
+      blackoutEl = document.createElement("div");
+      blackoutEl.className = "blackout";
+      blackoutEl.setAttribute("aria-hidden", "true");
+      blackoutEl.innerHTML = '<span class="blackout__txt"></span>';
+      document.body.appendChild(blackoutEl);
+    }
+    blackoutEl.dataset.tone = tone;
+    blackoutEl.querySelector(".blackout__txt").textContent = label;
+    blackoutEl.classList.remove("is-on");
+    void blackoutEl.offsetWidth; // 重启动画，连续两次事件也各暗一拍
+    blackoutEl.classList.add("is-on");
+    clearTimeout(blackoutTimer);
+    blackoutTimer = setTimeout(() => blackoutEl.classList.remove("is-on"), 440);
+  }
+
+  /**
+   * 只在「跨过去的那一下」暗一次：之后温度带与底栏文字已经把状态说清楚了。
+   * 冰点用 0° / 1.2° 两条线做迟滞，避免在零度附近来回抖动时反复触发。
+   */
+  function watchDarkMoments(state) {
+    const lit = state.furnaceLit !== false;
+    const t = num(state.temp);
+    if (litWas === null) {
+      litWas = lit;
+      freezeArmed = t >= 1.2;
+      return;
+    }
+    if (litWas && !lit) blackout("炉 火 熄 灭", "ember");
+    litWas = lit;
+    if (freezeArmed && t < 0) {
+      blackout("跌 破 冰 点", "frost");
+      freezeArmed = false;
+    } else if (t >= 1.2) {
+      freezeArmed = true;
     }
   }
 
@@ -665,6 +858,7 @@ export function createHud({ onSpeed, onOpen, onHero, onRestart, onClaimQuest, on
     if (!heroes.length) {
       heroStrip.innerHTML =
         '<div class="hero-strip__empty">帐下无人。<br/>前往 <b>招贤</b> 张榜求贤。</div>';
+      heroPow.clear();
       return;
     }
     heroStrip.innerHTML = heroes
@@ -683,6 +877,27 @@ export function createHud({ onSpeed, onOpen, onHero, onRestart, onClaimQuest, on
         </div>`;
       })
       .join("");
+    rollHeroPower(heroes);
+  }
+
+  /**
+   * 战力滚动。整条武将栏是按签名整块重绘的，重绘后这里按 id 找回旧战力，
+   * 只让「涨了的那一位」从旧值滚到新值；新入帐的直接落值，不假装升过级。
+   */
+  function rollHeroPower(heroes) {
+    const byId = new Map(heroes.map((h) => [String(h.id), Math.round(num(h.power))]));
+    for (const row of heroStrip.querySelectorAll("[data-hero]")) {
+      const id = row.dataset.hero;
+      const powEl = row.querySelector(".hero-mini__pow");
+      const target = byId.get(id) ?? 0;
+      const prev = heroPow.get(id);
+      heroPow.set(id, target);
+      if (!powEl || prev == null || prev === target) continue;
+      powRoll.set(powEl, prev, { instant: true });
+      powRoll.set(powEl, target);
+      row.classList.add("is-levelup");
+      setTimeout(() => row.classList.remove("is-levelup"), 900);
+    }
   }
 
   function renderLog(log) {
@@ -715,5 +930,5 @@ export function createHud({ onSpeed, onOpen, onHero, onRestart, onClaimQuest, on
   }
 
   // render 是 update 的别名：主题写入与整屏刷新是同一次调用。
-  return { update, render: update, toast, setBadge, showDefeat, hideDefeat, claimQuest };
+  return { update, render: update, toast, setBadge, showDefeat, hideDefeat, claimQuest, blackout };
 }

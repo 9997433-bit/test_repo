@@ -41,7 +41,65 @@ export function createVillagerCrowd() {
   let works = [];
   const puffs = [];
 
-  let nodeSig = "";
+  // null 而不是 ""：开局一个地块都没建成时，空节点表也要能走完 setNodes，
+  // 否则禁行圈的参数永远读不到
+  let nodeSig = null;
+
+  /**
+   * 炉台禁行圈。取暖点在炉子**前方**，围站半径是以它为心量的，
+   * 所以朝北那一段圆弧会正好扫过炉膛——真正要挡的是这个以炉心为心的圈。
+   * 渲染层没给参数时半径为 0，行为与从前一致。
+   */
+  const core = { gx: 4, gy: 4, r: 0 };
+
+  function readCore(node) {
+    const r = Number(node?.coreR);
+    core.r = Number.isFinite(r) && r > 0 ? r : 0;
+    core.gx = Number.isFinite(node?.coreGx) ? node.coreGx : (node?.gx ?? 4);
+    core.gy = Number.isFinite(node?.coreGy) ? node.coreGy : (node?.gy ?? 4);
+  }
+
+  /** 把落点顶到禁行圈外；正好压在炉心时朝镜头方向让开。 */
+  function clearOfCore(gx, gy, pad = 0.14) {
+    if (core.r <= 0) return { gx, gy };
+    let dx = gx - core.gx;
+    let dy = gy - core.gy;
+    let d = Math.hypot(dx, dy);
+    const want = core.r + pad;
+    if (d >= want) return { gx, gy };
+    if (d < 1e-4) { dx = Math.SQRT1_2; dy = Math.SQRT1_2; d = 1; }
+    const k = want / d;
+    return { gx: core.gx + dx * k, gy: core.gy + dy * k };
+  }
+
+  /**
+   * 朝目标的单位方向；若直线会从炉台上碾过去，就改走切线绕开。
+   * 每帧重算，于是人会沿着炉沿划出一道弧线，而不是撞上去再弹开。
+   */
+  function steer(p, dx, dy, dist) {
+    let ux = dx / dist;
+    let uy = dy / dist;
+    if (core.r <= 0) return { ux, uy };
+
+    const cx = core.gx - p.gx;
+    const cy = core.gy - p.gy;
+    const cd = Math.hypot(cx, cy);
+    if (cd < 1e-4) return { ux, uy };
+
+    const R = core.r + 0.2;
+    const ahead = cx * ux + cy * uy;          // 炉心在前进方向上的投影
+    const cross = ux * cy - uy * cx;          // 正 = 炉心在左手边
+    if (ahead <= 0 || Math.abs(cross) >= R || ahead >= dist + R) return { ux, uy };
+
+    // 从当前位置看，炉台张开 ±spread；把方向压到那条切线上
+    const spread = Math.asin(Math.min(1, R / Math.max(cd, R)));
+    const phi = Math.atan2(cy, cx);
+    let delta = Math.atan2(uy, ux) - phi;
+    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+    const side = Math.abs(delta) < 1e-3 ? (p.avoidSide || 1) : Math.sign(delta);
+    const psi = phi + side * spread;
+    return { ux: Math.cos(psi), uy: Math.sin(psi) };
+  }
 
   /** 某个节点上已经派了几个人（`self` 不计入，方便给它重新找位子）。 */
   function staffOf(node, field, self) {
@@ -76,7 +134,10 @@ export function createVillagerCrowd() {
     nodes = clean;
     homes = nodes.filter((n) => n.role === "home");
     works = nodes.filter((n) => n.role === "work");
-    if (hearthNode) hearth = hearthNode;
+    if (hearthNode) {
+      hearth = hearthNode;
+      readCore(hearthNode);
+    }
     if (!homes.length) homes = [hearth];
     if (!works.length) works = [hearth];
     for (const p of people) retarget(p, true);
@@ -115,6 +176,8 @@ export function createVillagerCrowd() {
       carry: null,
       bob: Math.random() * TAU,
       facing: 1,
+      // 正对炉心时往哪边绕，固定下来才不会左右打摆
+      avoidSide: Math.random() < 0.5 ? -1 : 1,
       breath: rnd(1, 4),
       scale: rnd(1.18, 1.44),
     };
@@ -141,8 +204,13 @@ export function createVillagerCrowd() {
       // 火炉四周围一圈取暖，而不是全挤在一点；半径要绕开炉台，由渲染层给
       const a = rnd(0, TAU);
       const r = rnd(hearth.r0 ?? 1.15, hearth.r1 ?? 1.9);
-      p.tx = hearth.gx + Math.cos(a) * r;
-      p.ty = hearth.gy + Math.sin(a) * r * 0.9 + 0.35;
+      const spot = clearOfCore(
+        hearth.gx + Math.cos(a) * r,
+        hearth.gy + Math.sin(a) * r * 0.9 + 0.35,
+        0.3,
+      );
+      p.tx = spot.gx;
+      p.ty = spot.gy;
     } else {
       const dest = p.state === "toWork" ? p.work : p.state === "toHome" ? p.home : null;
       if (dest) {
@@ -207,10 +275,11 @@ export function createVillagerCrowd() {
         if (dist < 0.09) {
           nextState(p, { blizzard });
         } else {
-          const v = (p.speed * chill * dt) / Math.max(dist, 1e-4);
-          p.gx += dx * v;
-          p.gy += dy * v;
-          p.facing = dx - dy >= 0 ? 1 : -1;
+          const { ux, uy } = steer(p, dx, dy, dist);
+          const step = Math.min(dist, p.speed * chill * dt);
+          p.gx += ux * step;
+          p.gy += uy * step;
+          p.facing = ux - uy >= 0 ? 1 : -1;
         }
       } else {
         p.timer -= dt;
@@ -219,6 +288,11 @@ export function createVillagerCrowd() {
         p.gx += Math.sin(p.bob * 0.7) * dt * 0.012;
         p.gy += Math.cos(p.bob * 0.5) * dt * 0.012;
       }
+
+      // 兜底：无论怎么走，人都不该出现在炉膛里
+      const safe = clearOfCore(p.gx, p.gy);
+      p.gx = safe.gx;
+      p.gy = safe.gy;
     }
 
     for (let i = puffs.length - 1; i >= 0; i--) {
