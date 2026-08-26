@@ -147,16 +147,28 @@ export function generateNeighborPlots(neighborId: string, day: number): Neighbor
       picked: false,
     });
   }
-  // 保底：至少 1 块盛放、至少 1 块缺水、于是也必有 2 块有花——串门总有事可做
-  const force = (target: number, stage: NeighborStage): void => {
-    const plot = plots[target];
+  // 保底（同教程保底订单的思路）：至少 2 块有花、至少 1 块盛放可摘、至少 1 块缺水可浇——串门必有事可做
+  const sow = (plot: NeighborPlot | undefined, stage: NeighborStage): void => {
     if (!plot) return;
     plot.stage = stage;
-    plot.flowerId = def.pool[Math.floor(hashSeed(`${neighborId}#${day}#${target}`) % def.pool.length)] ?? null;
+    plot.flowerId ??= def.pool[hashSeed(`${neighborId}#${day}#${plot.idx}`) % def.pool.length] ?? null;
     plot.thirsty = stage === "growing";
   };
-  if (!plots.some((p) => p.stage === "bloom")) force(0, "bloom");
-  if (!plots.some((p) => p.stage === "growing")) force(plots.length - 1, "growing");
+  const flowered = (): NeighborPlot[] => plots.filter((p) => p.flowerId !== null);
+  for (const plot of plots) {
+    if (flowered().length >= 2) break;
+    if (plot.flowerId === null) sow(plot, "growing");
+  }
+  if (!plots.some((p) => p.stage === "bloom")) sow(flowered()[0] ?? plots[0], "bloom");
+  if (!plots.some((p) => p.thirsty)) {
+    // 别把唯一那朵盛放的花改成含苞，否则「可摘」的保底反被这一手抹掉
+    const blooms = plots.filter((p) => p.stage === "bloom").length;
+    sow(
+      plots.find((p) => p.flowerId !== null && (p.stage !== "bloom" || blooms > 1)) ??
+        plots.find((p) => p.flowerId === null),
+      "growing",
+    );
+  }
   return plots;
 }
 

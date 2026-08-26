@@ -3,7 +3,6 @@ import { FLOWER_MAP } from "./data/flowers";
 import { tutorialAllows } from "./data/story";
 import type { DecorTheme } from "./data/decorations";
 import { loadState, flushSave, clearSave } from "./engine/save";
-import { loadPrefs, setMutedPref } from "./engine/prefs";
 import { applyOfflineCatchUp } from "./engine/offline";
 import { startLoop } from "./engine/loop";
 import { isNight } from "./engine/time";
@@ -55,8 +54,6 @@ export function boot(root: HTMLElement): void {
   const ambient = mountAmbient(root);
   mountToasts(root);
   const hud = createHud(hudEl);
-  // 静音是设备偏好而非花园进度，单独存一格，刷新后照旧
-  if (loadPrefs().muted !== isMuted()) toggleMute();
 
   let panelDirty = true;
   let panelSigLast = "";
@@ -207,7 +204,8 @@ export function boot(root: HTMLElement): void {
     { id: "bag", glyph: "囊", label: "库存", aria: "打开花材库存", kind: "panel", run: () => togglePanel("bag") },
     { id: "visit", glyph: "邻", label: "访邻", aria: "串门去邻家花园", kind: "panel", run: () => togglePanel(VISIT_PANEL) },
     { id: "plot", glyph: "拓", label: "扩建", aria: "扩建一块花圃", kind: "action", run: () => unlockPlot(state) },
-    { id: "mute", glyph: "音", label: "音效", aria: "开关音效", kind: "action", run: () => setMutedPref(toggleMute()) },
+    // 静音是设备偏好而非花园进度：音景自己经 engine/prefs 落盘，重整山河不抹掉它
+    { id: "mute", glyph: "音", label: "音效", aria: "开关音效", kind: "action", run: () => toggleMute() },
     {
       id: "reset",
       glyph: "归",
