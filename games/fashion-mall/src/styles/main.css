@@ -10,8 +10,10 @@
    tokens.css 尚未覆盖、但 DESIGN_SYSTEM 已给出取值的量集中在此，便于后续并入 token 层
    -------------------------------------------------------------------------- */
 :root {
+  --btn-primary-shadow-press: var(--shadow-btn-press); /* §9.1 要求但 tokens.css 未定义 */
   --btn-ghost-bg-hover: var(--cream-100);
   --btn-ghost-bg-press: var(--cream-200);
+  --choice-selected-ring: var(--rose-500);
   --shop-card-min-h: 118px;   /* §10.1 店卡最小高 */
   --line-key-height: 56px;    /* §10.1 流水线键拇指热区 */
   --doll-hair: var(--ink-900);
@@ -421,10 +423,10 @@ button {
 .choices button.on {
   color: var(--text-brand);
   font-weight: var(--weight-semibold);
-  box-shadow: inset 0 0 0 2px var(--rose-500), var(--shadow-1);
+  box-shadow: inset 0 0 0 2px var(--choice-selected-ring), var(--shadow-1);
 }
 .choices button:focus-visible { box-shadow: var(--shadow-1), var(--ring-focus); }
-.choices button.on:focus-visible { box-shadow: inset 0 0 0 2px var(--rose-500), var(--ring-focus); }
+.choices button.on:focus-visible { box-shadow: inset 0 0 0 2px var(--choice-selected-ring), var(--ring-focus); }
 
 /* --------------------------------------------------------------------------
    12. 纸娃娃与房间（早期占位视图）
