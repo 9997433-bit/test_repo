@@ -1,8 +1,8 @@
-# 经济设计（Round 2 / F3 复核版）
+# 经济设计（Round 3 / F3 复核版）
 
-本文是 `src/data/balance.js` 的设计依据与验收口径。所有公式常量以 balance.js 为唯一事实来源；本文负责解释「为什么是这个数」，并给出模拟验证结论。配套断言：`tests/economy.test.js` 18 条 + `tests/contracts.test.js` 3 条（共享成本曲线/视图出口/文案键），连同 `tests/save.test.js` 共 61 条全绿。节奏数据自本版起以 `scripts/simulate.mjs` 实测输出为准（§7），不再沿用 Round 1 的场外模拟估值。
+本文是 `src/data/balance.js` 的设计依据与验收口径。所有公式常量以 balance.js 为唯一事实来源；本文负责解释「为什么是这个数」，并给出模拟验证结论。配套断言：`tests/economy.test.js` 18 条 + `tests/contracts.test.js` 3 条（共享成本曲线/视图出口/文案键）+ `tests/minigames.test.js` 30 条（赏金适配层与 B6 红线）+ `tests/simulation.test.js` 2 条（推进模拟入测，§0.3/§7），连同 `tests/save.test.js` 41 条全套 94 条全绿，`npm run verify` 4/4。节奏数据以 `scripts/simulate.mjs` 实测输出为准（§7），不再沿用 Round 1 的场外模拟估值。
 
-对照文档：`ARCHITECTURE.md` §4.3（目标接口）、`SOTA_RUBRIC.md` B 维、`MODULE_CONTRACT.md` §3（F3 写权限）。本轮（R2-F3）只改本文档；公式与接线状态按 `src/core/limits.js`、`src/core/state.js`、`src/core/actions.js`、`src/core/economy.js` 与 `src/minigames/payouts.js` 的现行代码如实记录。
+对照文档：`ARCHITECTURE.md` §4.3（目标接口）、`SOTA_RUBRIC.md` B 维、`MODULE_CONTRACT.md` §3（F3 写权限）。本轮（R3-F3）只改本文档；公式与接线状态按 `src/core/limits.js`、`src/core/state.js`、`src/core/actions.js`、`src/core/economy.js`、`src/minigames/payouts.js` 与 `src/home/mansion.js` 的现行代码如实记录。
 
 ---
 
@@ -25,9 +25,9 @@
 
 ### 0.15 Parent 续评（本文档快照之后）
 
-`src/minigames/payouts.js` 已改为异名键适配层：`tipBase`/`goldPerCatch` 等 F3 键会投影到视图键位，盲盒补 `tier`/`icon`，并有 `tests/minigames.test.js` 守死键。§8.1 的「技巧型键名不生效」按现行代码视为已关闭；`simulate.mjs` 对照表仍可能是 Round 1 旧值。
+`src/minigames/payouts.js` 已改为异名键适配层：`tipBase`/`goldPerCatch` 等 F3 键会投影到视图键位，盲盒补 `tier`/`icon`，并有 `tests/minigames.test.js` 守死键。§8.1 的「技巧型键名不生效」按现行代码视为已关闭；`simulate.mjs` 对照表当时仍是 Round 1 旧值，Round 3 已同步为 §7 实测值（§0.3/§8.5）。
 
-### 0.2 Round 2 接线核实（本轮新增）
+### 0.2 Round 2 接线核实（历史记录，状态列已按后续轮次标注）
 
 | 接线项 | 状态 | 证据 |
 |---|---|---|
@@ -38,9 +38,19 @@
 | 数值上限帽：店/伙伴 Lv 50、驻店 2 位、离线 8h | ✅ 已接 | `limits.js`（balance 未导出同名常量，兜底值即现值） |
 | 升级/招聘/培训价目走 balance 曲线 | ✅ 已接 | `actions.js` 查表，`mallView.js`/`roster.js` 调动作层 |
 | 存档形状（goal 带 tier/reward） | ✅ 已接 | `save.js` v2 + v1→v2 迁移（旧 done 目标降为空档续期） |
-| 盲盒/占卜负期望进运行时 | ✅ 已接（口径有分歧，见 §2 与 §8.1–8.3） | `minigames/payouts.js` 逐键合并 |
-| 技巧型小游戏赏金查 balance 表 | ⚠️ 键名分歧，balance 键大多不生效 | §2.0 / §8.1 |
-| 家具价目 | ❌ `mansion.js` 仍用 200/bonus 且绕过动作层 | §8.4 |
+| 盲盒/占卜负期望进运行时 | ✅ 已接（当轮口径有分歧，后由适配层收口，见 §2） | `minigames/payouts.js` 适配层合并 |
+| 技巧型小游戏赏金查 balance 表 | ⚠️→✅ 键名分歧已被 payouts 适配层关闭（§0.15） | §2.0 / §8.1 |
+| 家具价目 | ❌→✅ Round 3 已关：`mansion.js` 改走 `buyFurniture`/`furnitureCost` | §0.3 / §8.4 |
+
+### 0.3 Round 3 接线核实（本轮新增）
+
+| 接线项 | 状态 | 证据 |
+|---|---|---|
+| 家具价目走动作层（P0-1） | ✅ 已关 | `mansion.js` 删本地 `200/bonus` 倒挂公式与直扣金币，侧栏清单与房间幽灵位的购买统一走 `actions.buyFurniture`，价签与缺钱差额先 `formatGold` |
+| 离线/目标播报接 copy 键（P0-2 部分） | ✅ 已接 | `state.js#hydrate` 与 `app.js` 的 `offlineReceipt` 走 `OFFLINE.short/summary/cappedNote`；`advanceGoal` 达标推 `GOALS.done`、超时推 `GOALS.miss`；金额一律先 `formatGold` 再进 copy（copy 层不做数学，回执与 HUD 口径一致） |
+| 推进模拟入测（P0-5） | ✅ 已关 | `tests/simulation.test.js` 随 `npm test` 断言：半活跃/纯挂机 60 分钟五店全解锁、限时目标续期 ≥10 轮；`simulate.mjs` 的 `ECONOMY_REFERENCE` 已回填 §7 实测值 |
+
+仍开（非 F3 域，列作全局账）：离店回执仍是 toast 单句、未面板化（RUBRIC A7）；`hydrate` 的开档坏档句仍硬编码、未走 `SYSTEM.corruptKept` 带备份时间戳（设置页备注已接 `corruptKept`，开档 toast 未接）；1280 宽度双栏布局与 legacy token（P0-7，F2 域）。
 
 ---
 
@@ -64,19 +74,19 @@
 
 ## 2. 小游戏赏金：表口径与运行时口径
 
-### 2.0 接管机制与键名分歧（Round 2 实况）
+### 2.0 接管机制（payouts 适配层，现行）
 
-视图层经 `src/minigames/payouts.js` 查表：本地 `DEFAULTS` 兜底，`balance.MINIGAME_PAYOUTS` 的**同名键**逐键覆盖（只接受有限数字与非空数组）。这带来一个 Round 1 未预料的后果——**键名不一致的项覆盖不生效**：
+视图层经 `src/minigames/payouts.js` 查表。该文件已是**异名键适配层**（§0.15）：本地 `DEFAULTS` 兜底，`balance.MINIGAME_PAYOUTS` 的键按「单位换算（CONVERTERS）→ 别名改名（ALIASES）→ 同名直给」三步投影到视图键位；schema 外的键明着不落表，坏值（非有限数字、过短数组）退回兜底。付费玩法另有 `auditPayouts` 红线：含保底的长期金币期望 RTP > 85% 或不出碎片时，覆盖整表退回兜底。Round 2 记录的「键名不生效」已按此关闭：
 
 | 玩法 | balance 键 | 运行时状态 |
 |---|---|---|
-| 快餐 | `tipBase/tipPerItem/xp` | 全部无同名键，**不生效**；运行时用视图 `orderBase 12 + 7/件` × 连击/连胜 |
-| 生鲜 | `goldPerCatch/catchesPerXp` | 无同名键，**不生效**；运行时用 `goldPerGood 9` × 连击 |
-| 服装 | `base/perScore/xpBase/xpPerScore` | 仅 `base 40` 与 `xpBase 3` 键名巧合生效；`perScore` 不生效 |
-| 盲盒 | `cost/xp/pool` | **全部生效**（池整表接管），视图另加保底 pity 10 与连开 5 |
-| 占卜 | `cost/xp/slots` | `cost/xp` 生效；`slots` 六槽转盘**未被任何运行时调用**，视图跑的是三星盘机制 |
+| 快餐 | `tipBase/tipPerItem/xp` | **全部生效**（→ `orderBase 28 / perItem 12 / xpPerOrder 2`）；连击/连胜倍率与耗时节奏归视图 DEFAULTS |
+| 生鲜 | `goldPerCatch/catchesPerXp` | **全部生效**（→ `goldPerGood 18`；`catchesPerXp 3` 换算为 `xpPerGood 1/3`）；掉落节奏与生命归 DEFAULTS |
+| 服装 | `base/perScore/xpBase/xpPerScore` | **全部生效**（`base 40` 同名、`perScore`→`perTagHit 35`、`xpBase 3`、`xpPerScore`→`xpPerHit 1`）；成衣命中 18 与满堂彩 60 归 DEFAULTS |
+| 盲盒 | `cost/xp/pool` | **全部生效**（池整表接管，`normalizePool` 按权重阶梯补 `tier/icon`）；保底 pity 10 与连开 5 归 DEFAULTS |
+| 占卜 | `cost/xp/slots` | `cost/xp` 生效；`slots` 现作为**星象名册**被 `fortuneOmens` 消费（`good`→`bless`），机制仍是三星盘；赔付参数（goldByBless 等）归 DEFAULTS（§8.3） |
 
-数值主权部分回流到了视图层 DEFAULTS，是 §8.1–8.3 的头号跟进项。以下按「表口径（balance，测试守护）」与「运行时口径（实际上线）」并列记录。
+数值主权已回流 balance（`tests/minigames.test.js` 30 条守住键投影与 B6 红线）；仍留在视图 DEFAULTS 的只有操作节奏与三星盘赔付参数。以下按「表口径（balance，测试守护）」与「运行时口径（实际上线）」并列记录。
 
 ### 2.1 技巧型（正收益，由操作耗时与技巧上限约束）
 
@@ -88,21 +98,21 @@
 | 晨光生鲜 | 18×接住数，阅历 = ⌈接住/3⌉ | ≈25.7 金/s 上限 |
 | 缪斯服装 | 40 + 35×评分，阅历 = 3 + 评分 | 评分 4 单 ≈ 12s → ≈15 金/s、0.58 xp/s |
 
-运行时口径（视图 DEFAULTS，估算上限）：快餐单笔 = (12+7×件数) × 连击(≤×1.9) × 连胜(≤×1.75)，3 件单 ≈10.8s、满打 ≈10 金/s、3 xp/单；生鲜 = 9/件 × 连击(≤×1.6)，30s 一局带口碑惩罚，≈15–18 金/s 上限；服装 = 40(balance 覆盖) + 26/需求命中 + 18/成衣命中 + 60 满堂彩，单笔上限 232 金。两套口径量级一致（主动 ≈ 同期挂机的数倍，主动最优的设计意图在线上成立），但具体数字不同——simulate.mjs 用表口径，属保守估计。
+运行时口径（适配层合并后，基数已与表同源）：快餐单笔 = (28+12×件数) × 连击(≤×1.9) × 连胜(≤×1.75)；生鲜 = 18/件 × 连击(≤×1.6)，30s 一局带口碑惩罚；服装 = 40 + 35/需求命中 + 18/成衣命中 + 60 满堂彩，单笔上限 259 金。基础赏金即 balance 键的投影值，运行时另乘视图侧的连击/连胜与操作节奏，实际产率高于表口径的静态估算——simulate.mjs 用表口径，属保守估计（主动 ≈ 同期挂机的数倍，主动最优的设计意图在线上成立）。
 
 ### 2.2 付费随机型（负期望，碎片承载价值）
 
 **盲盒潮玩**（运行时 = balance 池 + 视图保底）：`cost 60`，+1 阅历，池按权重 55/30/12/3 出 18/45/100/280 金、0/0/1/3 碎片。
 
 - 纯表期望（无保底，测试口径）：**43.8 金（RTP 73%）+ 0.21 碎片**。
-- 运行时期望（含 10 盒保底顶到隐藏款，4×10⁶ 次蒙特卡洛实测）：**46.5 金（RTP 77.5%）+ 0.247 碎片**；净成本 13.5 金/盒 → 碎片净价 ≈55 金，签一名伙伴（3 碎片）≈ 12.1 盒 ≈ 净 164 金。保底抬高了回收但仍守住 85% 不变式。
+- 运行时期望（含 10 盒保底顶到隐藏款；`poolExpectation` 稳态闭式，与 4×10⁶ 次蒙特卡洛一致）：**46.5 金（RTP 77.5%）+ 0.247 碎片**；净成本 13.5 金/盒 → 碎片净价 ≈55 金，签一名伙伴（3 碎片）≈ 12.1 盒 ≈ 净 164 金。保底抬高了回收但仍守住 85% 不变式。
 
-**星语占卜**（运行时 = 三星盘机制，balance `slots` 未接线）：`cost 30`，+2 阅历。三格独立均匀取 6 象（4 吉 2 非吉），金币按吉兆数查 [2, 6, 14, 26]；三格全吉（p=8/27）碎片 +1，三格同象（p=1/36）再 +2。
+**星语占卜**（运行时 = 三星盘机制；balance `slots` 作星象名册接入，赔付参数在视图 DEFAULTS）：`cost 30`，+2 阅历。三格独立均匀取 6 象（4 吉 2 非吉），金币按吉兆数查 [2, 6, 14, 26]；三格全吉（p=8/27）碎片 +1，三格同象（p=1/36）再 +2。
 
 - 运行时期望（6³ 全空间枚举）：**15.33 金（RTP 51.1%）+ 0.352 碎片**；碎片净价 ≈42 金，3 碎片 ≈ 8.5 次 ≈ 净 125 金。占卜费率优于盲盒（晚一级解锁、单次更耗时），与设计意图一致。
-- balance 表口径（23.83 金 / RTP 79% / 1/6 碎片）描述的是未上线的六槽转盘，`fortuneSpin` 目前只有测试在调用（§8.3）。
+- balance 表口径（23.83 金 / RTP 79% / 1/6 碎片）描述的是未上线的六槽转盘，`fortuneSpin` 目前只有测试在调用；`slots` 名册本身已被运行时消费为星象盘面（§2.0/§8.3）。
 
-`paidGameExpectation(id)` 返回表口径精确期望，供测试断言；运行时公示由视图 `poolExpectation`/`expectedSpin` 按实际机制计算，两套公示口径各自诚实。
+`paidGameExpectation(id)` 返回表口径精确期望，供测试断言；运行时公示由 `payouts.poolExpectation`（含保底闭式）与 `spinExpectation`/`expectedSpin`（闭式与 6³ 枚举互证，测试守护）按实际机制计算，两套公示口径各自诚实。
 
 ---
 
@@ -124,6 +134,7 @@ tier      = 完成 → +1（封顶 6）；超时 → −1（balance 下限 0）
 - **节奏实测**：dt=1s 全速模拟中每小时完成 14–15 个目标（半活跃 15、纯挂机 14）；tier 在 3 分钟即爬到 5、15 分钟顶到 6，60 分钟随增速放缓回落到 4（半活跃）/ 3（纯挂机）——升降档的自适应符合设计。
 - **回流受控**：金奖 = 区间 ×25% 不变；阅历奖励是挂机玩家的主要阅历来源，实测范围每目标 20–106（0 档 Lv1 → 6 档 Lv7）。
 - **旧档兼容**：v1→v2 迁移把已完成的一次性目标降为零奖励空档，下一次结算立即续期，不重复发奖。
+- **播报已接 copy 键（Round 3）**：达标发奖推 `GOALS.done`（奖励金额先 `formatGold`，copy 层不做数学），超时只推 `GOALS.miss` 一条，档位与进度由商场目标行 `GOALS.line` 交代；达标后有意不追加续期 toast，离线追帧一次补完多档时不会连环刷屏。
 
 ---
 
@@ -170,12 +181,12 @@ cost = 20 × shop.base × (shop.growth + 0.2)^(level−1)      （等级帽 50�
 
 ### 5.2 其他成本
 
-| 项 | 公式 | 理由 / Round 2 状态 |
+| 项 | 公式 | 理由 / 状态（Round 3 复核） |
 |---|---|---|
 | 招聘 `hireCost(shop, n)` | 4×base×1.5^n | 满员=自动化是 ×2.86 跳变，按店铺体量计价；已接线 |
 | 研发 `RESEARCH_NODES` | 1200/8000/5万/30万 → +6/18/60/180 每秒 | 回本 200s→1700s 递增；顺序前置已接线（绕过 UI 也开不出后面的产线） |
 | 培训 `partnerTrainCost(lv)` | 40×1.6^(lv−1)，帽 50 | 每级 +4.8% 店收入，指数成本设自然停手点：Lv30→31 已 3320 万，Lv49→50 ≈2.5×10¹¹，实际停手点远在帽前 |
-| 家具 `furnitureCost(item)` | bonus×40000 | 动作层已接线并有契约测试；**但 mansion 视图仍走旧倒挂价且绕过动作层**（§8.4） |
+| 家具 `furnitureCost(item)` | bonus×40000 | 动作层已接线并有契约测试；Round 3 起 `mansion.js` 购买全走 `buyFurniture`，旧倒挂价已删（§8.4 已关） |
 | 伙伴叠加 | 每店至多驻 2 位（`PARTNERS_PER_SHOP_MAX`），加成降序 ×1, ×0.5 合并 | 双满匹配 = +90%（Lv1）/ +443%（Lv50）；人数帽在动作层、读档处、产出公式三处兜底 |
 
 ### 5.3 数值上限与终局天花板（Round 2 新增）
@@ -208,7 +219,7 @@ cost = 20 × shop.base × (shop.growth + 0.2)^(level−1)      （等级帽 50�
 
 关键里程碑（半活跃上界）：Lv2 @0.5 分、Lv3 @1.3 分、Lv4（盲盒开）@3.2 分、Lv5（占卜开）@7.3 分、Lv6 @15.2 分、Lv7 @29.3 分；第二伙伴（首个需碎片签约的）@9.5 分，第 3–6 位 @16.7 / 29.4 / 42.1 / 54.8 分；研发四档 @1.8 / 4.5 / 10.8 / 20.6 分。纯挂机：Lv2–Lv7 = 0.9 / 1.9 / 3.9 / 8.1 / 16.5 / 38.6 分；全程只有开局伙伴（不玩付费玩法拿不到碎片，符合“碎片只出自付费随机玩法”的不变式）。
 
-**与 Round 1 §7 估值的偏差及原因**：Round 1 的场外模拟没有驻店帽（2 位/店）与衰减合并，也未建模研发顺序前置，中后期乘区被高估。接线后半活跃 Lv6/Lv7 各推迟约 4/8 分钟（11.3→15.2、21.4→29.3），60 分钟收入 16 万/s → 12.6 万/s（×0.79）、累计 2.6 亿 → 1.72 亿（×0.66）；“15 分钟四伙伴签约完毕”修正为两伙伴（第 4 位要到 29 分）。纯挂机端几乎不受影响（满级 39.8→38.6 分），因为单伙伴档位摸不到叠加帽。前 3 分钟教学窗基本吻合（Round 1 预估 400/s、4.2 万 vs 实测 462/s、4.5 万）。**本表数字已回填为脚本实测值；simulate.mjs 内置的 ECONOMY_REFERENCE 对照表仍存 Round 1 旧值，需 G2 同步（§8.5）。**
+**与 Round 1 §7 估值的偏差及原因**：Round 1 的场外模拟没有驻店帽（2 位/店）与衰减合并，也未建模研发顺序前置，中后期乘区被高估。接线后半活跃 Lv6/Lv7 各推迟约 4/8 分钟（11.3→15.2、21.4→29.3），60 分钟收入 16 万/s → 12.6 万/s（×0.79）、累计 2.6 亿 → 1.72 亿（×0.66）；“15 分钟四伙伴签约完毕”修正为两伙伴（第 4 位要到 29 分）。纯挂机端几乎不受影响（满级 39.8→38.6 分），因为单伙伴档位摸不到叠加帽。前 3 分钟教学窗基本吻合（Round 1 预估 400/s、4.2 万 vs 实测 462/s、4.5 万）。**本表数字已回填为脚本实测值；simulate.mjs 内置的 ECONOMY_REFERENCE 对照表已在 Round 3 同步为本表同值（两边同源，不得单边改数），且推进模拟随 `npm test` 常驻——`tests/simulation.test.js` 断言两模式五店全解锁与目标续期 ≥10 轮（§8.5 已关）。**
 
 **设计意图（真人体验，按上界 ÷2–5 折算）**：
 
@@ -220,15 +231,15 @@ cost = 20 × shop.base × (shop.growth + 0.2)^(level−1)      （等级帽 50�
 
 ---
 
-## 8. 残留风险与 Round 3 跟进清单
+## 8. 残留风险与跟进清单（Round 3 复核）
 
-Round 1 遗留八项的关闭状况：#1 印钞洞（视图查表+负期望）、#2 core 接线、#3 存档形状（v2+迁移）、#7 模拟脚本入库——**已关闭**；#4 视图旧价目关剩一处（家装，见 8.4）；#5 抽水衰减、#6 老档体感、#8 事件奖励——**仍开放**（8.6/8.10/8.7）。本轮新增 8.1–8.3、8.5、8.8、8.9。
+Round 1 遗留八项：#1 印钞洞（视图查表+负期望）、#2 core 接线、#3 存档形状（v2+迁移）、#4 视图旧价目（最后一处家装于 Round 3 关闭，见 8.4）、#7 模拟脚本入库——**已关闭**；#5 抽水衰减、#6 老档体感、#8 事件奖励——**仍开放**（8.6/8.10/8.7）。Round 2 新增的 8.1/8.2 已被 payouts 适配层关闭、8.3 收窄（§0.15/§2.0），8.5 于 Round 3 关闭；仍开放 8.6–8.10，另有全局账上的回执面板化、坏档时间戳、1280 双栏（§0.3，非 F3 域）。
 
-1. **技巧型赏金键名分歧（新，最高优先级）**：balance 的 fastfood（tipBase/tipPerItem）与 fresh（goldPerCatch/catchesPerXp）键在视图 `payouts.js` 无同名键，逐键覆盖后**不生效**；运行时产率由视图 DEFAULTS 决定。boutique 的 `base 40` 因键名巧合生效，把视图设计的 24 顶高（单笔上浮 ≈7–17%）。量级仍健康（§2.1），但「数值主权归 balance」的契约对技巧型只剩空架子。需 F3+O2 会签统一键 schema：把 DEFAULTS 收编进 `MINIGAME_PAYOUTS`（推荐，一处调参）或反向对齐键名。
-2. **盲盒池接管后缺展示字段（新）**：balance 池条目无 `tier/icon`，整表接管后概率公示表与开奖行的稀有度徽章显示 `undefined`（样式类有 shard 兜底，功能不受影响）。修法二选一：balance 池补 `tier/icon` 字段，或视图按 shard 数推导文案。归 R2-O2。
-3. **占卜双表并存（新）**：balance 的六槽 `slots` 表与运行时三星盘机制不一致，`fortuneSpin`/`slots` 只有测试在调用。运行时 RTP 51% 比表口径 79% 更紧、碎片 0.352/次比 1/6 更松——不印钞、碎片循环反而更顺，但 §2.2 的表口径对占卜是「纸面机制」。应把三星盘参数（goldByBless/shardAllBless/shardTriple）收编进 balance 并补期望断言。
-4. **家装是最后一个旧价视图**：`mansion.js` 本地 `costOf = 200/bonus`（倒挂：加成越高越便宜）且直接扣金绕过 `buyFurniture`；契约测试只守住了动作层。全套实付 21357 金（vs 新口径 15600），只影响离线加成、不炸档，但倒挂定价仍在线上。归核心/家装工程，接线后删本地公式。
-5. **simulate.mjs 的对照表过期（新）**：脚本内 `ECONOMY_REFERENCE` 存的是 Round 1 估值（15 分钟 Lv6、60 分钟 2.6 亿/16 万每秒），本文档 §7 已按实测回填，两边现在不一致。脚本只做记录性对照、不断言命中，不会假红；G2 下轮按 §7 新值同步（本轮 F3 只有文档写权限，未动 JS）。
+1. **技巧型赏金键名分歧——已关闭（parent 续评落地，§0.15）**：`payouts.js` 用 ALIASES/CONVERTERS 把 `tipBase/tipPerItem/goldPerCatch/catchesPerXp/perScore/xpPerScore` 投影到视图键位，schema 外的键明着不落表；`tests/minigames.test.js` 守住键投影与 B6 红线。数值主权回归 balance，「改 balance.js 就能改玩法」对技巧型重新成立（运行时基数见 §2.0/§2.1）。
+2. **盲盒池缺展示字段——已关闭**：`payouts.normalizePool` 对整表接管的池子按权重从高到低映射 R→UR 档位并补图标，缺 `tier/icon` 不再把 `undefined` 印给玩家；保底顶替档按「权重最高的带碎片档」挑选，F3 重排池序不会悄悄改掉保底价值。
+3. **占卜双表并存——收窄仍开**：`slots` 已作为星象名册被 `fortuneOmens` 消费（`good`→`bless`，改 balance 名册即改盘面），闭式期望 `spinExpectation` 与 `fortune.js` 的 6³ 枚举互证（测试守护）；但三星盘赔付参数（goldByBless/shardAllBless/shardTriple）仍在视图 DEFAULTS，`fortuneSpin` 的六槽口径只有测试在调用。把赔付参数收编进 balance 并补期望断言的建议保留。
+4. **家装旧价视图——已关闭（Round 3）**：`mansion.js` 删除本地 `costOf = 200/bonus` 与直扣金币，侧栏清单与房间幽灵位的购买统一走 `actions.buyFurniture`（扣款、入库、成功/失败文案都在动作层），价签与缺钱差额先 `formatGold`。全套实付回到新口径 15600 金（Σbonus 0.39 × 40000），倒挂定价（21357 金且加成越高越便宜）下线。
+5. **simulate.mjs 对照表——已关闭（Round 3）**：`ECONOMY_REFERENCE` 已按 §7 实测值同步，两边同源、不得单边改数；对照仍是记录性、不断言命中，硬断言在 `tests/simulation.test.js`——半活跃/纯挂机 60 分钟五店全解锁、限时目标续期 ≥10 轮、检查点账目有限非负且单调不回退，随 `npm test` 与 `npm run verify` 常驻。
 6. **抽水占比衰减**：盲盒/占卜为平价（60/30），Lv4+ 收入下沉没感趋零，碎片获取实际只受操作节奏限制。负期望不变式保证不印钞；若要金币沉没有感，可让 cost 随主角等级缩放（常量已集中，一处可改）。
 7. **事件奖励未缩放且 charm 字段被丢弃**：`copy.js` EVENTS 固定 60–140 金，后期沦为噪声；事件定义里的 `reward.charm` 在 `randomEvents.js` 结算时未发放。建议事件奖励按等级/收入查 balance 缩放、charm 要么发放要么从数据里删掉（归 F4 + F3 会签）。
 8. **首目标硬编码（新）**：`defaultState` 的 600/200 金/25 阅历与 balance 0 档曲线（140/20）不一致，教学期多发 60 金。影响仅首个目标，建议 defaultState 改调 `rollNextGoal` 生成。
