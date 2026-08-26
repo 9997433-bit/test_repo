@@ -37,7 +37,7 @@ cd games/fashion-mall
 npm test
 ```
 
-Node 原生 test runner 直跑 `tests/*.test.js`，当前 **92 项断言全部通过**，分布如下：
+Node 原生 test runner 直跑 `tests/*.test.js`，当前 **94 项断言全部通过**，分布如下：
 
 | 测试文件 | 项数 | 覆盖内容 |
 |---|---|---|
@@ -57,7 +57,7 @@ npm run verify
 
 | 子命令 | 作用 | 通过门槛 |
 |---|---|---|
-| `npm test` | 92 项单元测试 | 零失败 |
+| `npm test` | 94 项单元测试 | 零失败 |
 | `npm run bench` | 长时 tick 吞吐与大数精度基准 | 吞吐 ≥ 50,000 ticks/s（本机实测约 75 万，随机器波动） |
 | `npm run simulate` | 半活跃 / 纯挂机两条路径推演到满级 | 3 / 15 / 60 分钟节奏与 `docs/ECONOMY.md` 基准对齐 |
 | `npm run boundary` | 7 个数值与存档边界探针 | `hazards: 0`（NaN 时间、负时间、空档、店铺等级溢出、目标饱和刷屏等全部 guarded） |
