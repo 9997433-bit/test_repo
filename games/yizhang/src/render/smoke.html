@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>异掌 · 渲染冒烟台</title>
+    <style>
+      /* 冒烟台自己的最小样式，不进 src/styles，也不代表游戏 UI */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #10151f;
+        overflow: hidden;
+      }
+      #gl {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        touch-action: none;
+      }
+      #readout {
+        display: none;
+        position: fixed;
+        left: env(safe-area-inset-left, 12px);
+        bottom: env(safe-area-inset-bottom, 12px);
+        margin: 12px;
+        padding: 6px 10px;
+        color: #cbd5e1;
+        font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: rgba(16, 21, 31, 0.55);
+        border: 1px solid rgba(203, 213, 225, 0.18);
+        border-radius: 4px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="readout"></div>
+    <script type="module" src="./smoke.js"></script>
+  </body>
+</html>
