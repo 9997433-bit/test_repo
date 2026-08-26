@@ -16,7 +16,9 @@ const HUD_MS = 0.1;
 export function freshPayout({ good = 0, bestCombo = 0 }, table = payouts("fresh")) {
   const bonus = 1 + Math.min(Math.max(0, bestCombo) * table.comboBonus, table.comboBonusMax);
   const gold = Math.max(0, Math.round(good * table.goldPerGood * bonus));
-  const xp = good > 0 ? Math.max(1, Math.round(good * table.xpPerGood)) : 0;
+  // F3 记的是「每 N 件 1 阅历」，向上取整才是那句话的意思。减 ε 是因为 xpPerGood
+  // 由 1/N 得来，N 的整数倍在浮点下可能落成 1.0000000000000002 而白送一点。
+  const xp = good > 0 ? Math.max(1, Math.ceil(good * table.xpPerGood - 1e-9)) : 0;
   return { gold, xp, bonus };
 }
 

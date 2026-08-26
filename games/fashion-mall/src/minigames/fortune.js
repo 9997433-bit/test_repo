@@ -4,14 +4,9 @@ import { payouts } from "./payouts.js";
 import { createDisposer, chargeFee, grantReward, viewCtx } from "./runtime.js";
 import { ensureStyles, panelShell, statBlock, setStat, floatText } from "./ui.js";
 
-const OMENS = [
-  { id: "daji", name: "大吉", icon: "🌟", bless: true },
-  { id: "taohua", name: "桃花", icon: "🌸", bless: true },
-  { id: "piancai", name: "偏财", icon: "🪙", bless: true },
-  { id: "qiyu", name: "奇遇", icon: "🗝️", bless: true },
-  { id: "pingwen", name: "平稳", icon: "☁️", bless: false },
-  { id: "xiaoxiong", name: "小凶", icon: "🌧️", bless: false },
-];
+// 星象名册也归赏金表：F3 在 balance.js 用 fortune.slots 改名册与吉凶归属，
+// 吉兆占比直接决定金币期望，这条线必须和 goldByBless 出自同一张表。
+const OMENS = payouts("fortune").omens;
 
 const READINGS = [
   "三格皆浊，星语说今天宜守不宜攻",
@@ -44,8 +39,8 @@ export function fortuneResult(picks, table = payouts("fortune")) {
   };
 }
 
-/** 枚举 6³ 全空间算期望，供 UI 公示与期望值自检（必须低于香火钱）。 */
-export function expectedSpin(table = payouts("fortune"), omens = OMENS) {
+/** 枚举 n³ 全空间算期望，供 UI 公示与期望值自检（必须低于香火钱）。 */
+export function expectedSpin(table = payouts("fortune"), omens = table.omens || OMENS) {
   let gold = 0;
   let shards = 0;
   let count = 0;
