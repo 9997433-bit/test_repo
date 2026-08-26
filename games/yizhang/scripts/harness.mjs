@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 export const DT = 1 / 60;
 export const PLAYER_COUNT = 4;
-export const PROBE_STEPS = 60 * 60;
+export const PROBE_STEPS = readProbeSteps(process.env.YZ_STEPS);
 
 const ZERO_INPUT = Object.freeze({
   moveX: 0,
@@ -18,6 +18,8 @@ const ZERO_INPUT = Object.freeze({
 
 const SIMULATION_URL = new URL('../src/sim/index.js', import.meta.url);
 const AI_URL = new URL('../src/ai/bots.js', import.meta.url);
+const DATA_URL = new URL('../src/data/index.js', import.meta.url);
+const COMBAT_URL = new URL('../src/combat/index.js', import.meta.url);
 
 function moduleSpecifier(environmentName, defaultUrl) {
   return process.env[environmentName] || defaultUrl.href;
@@ -52,7 +54,23 @@ export async function loadSimulation() {
     }
   }
 
+  await installSimulationDependencies(simulation);
   return simulation;
+}
+
+export function getWiredCombat(simulation) {
+  if (typeof simulation?.usingRealCombat === 'boolean') {
+    return simulation.usingRealCombat;
+  }
+
+  if (typeof simulation?.getDeps === 'function') {
+    const dependencies = simulation.getDeps();
+    if (typeof dependencies?.usingRealCombat === 'boolean') {
+      return dependencies.usingRealCombat;
+    }
+  }
+
+  return undefined;
 }
 
 export async function loadOptionalAi() {
@@ -99,15 +117,20 @@ export function getPlayers(view) {
     view?.entities?.players ??
     (Array.isArray(view) ? view : null);
 
-  if (Array.isArray(collection)) {
-    return collection;
+  const players = Array.isArray(collection)
+    ? collection
+    : collection && typeof collection === 'object'
+      ? Object.values(collection)
+      : null;
+
+  if (!players) {
+    throw new Error('getView() snapshot does not contain a players collection');
+  }
+  if (players.length === 0) {
+    throw new Error('getView() snapshot contains an empty players collection');
   }
 
-  if (collection && typeof collection === 'object') {
-    return Object.values(collection);
-  }
-
-  throw new Error('getView() snapshot does not contain a players collection');
+  return players;
 }
 
 export function validateRoster(view) {
@@ -123,6 +146,11 @@ export function validateRoster(view) {
     throw new Error(
       `expected 1 human + 3 bots; got ${humans.length} human(s), ` +
         `${bots.length} bot(s), ${players.length} total`,
+    );
+  }
+  if (humans[0]?.id !== 'p0') {
+    throw new Error(
+      `expected p0 to be the human player; got ${String(humans[0]?.id)}`,
     );
   }
 
@@ -169,18 +197,24 @@ export function makeSeededRandom(seed) {
   return random;
 }
 
-export function makeProbeInputs(view, stepIndex, ai, random) {
-  const players = getPlayers(view);
+export function makeProbeInputs(view, stepIndex, ai, random, activity) {
+  const players = validateRoster(view);
   const inputs = {};
 
   for (let index = 0; index < players.length; index += 1) {
     const player = players[index];
     let input;
 
-    if (player.kind === 'human') {
+    if (player.id === 'p0') {
       input = scriptedInput(players, player, stepIndex, 0);
     } else if (ai) {
       input = ai.think(view, player.id, random);
+      if (activity) {
+        activity.botThinkCalls = (activity.botThinkCalls ?? 0) + 1;
+        if (input?.slap) {
+          activity.botSlapAttempts = (activity.botSlapAttempts ?? 0) + 1;
+        }
+      }
     } else {
       input = scriptedInput(players, player, stepIndex, index);
     }
@@ -237,6 +271,46 @@ export function findNonFinite(value, path = 'state', seen = new WeakSet()) {
 
 export function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function installSimulationDependencies(simulation) {
+  if (typeof simulation.installData === 'function') {
+    let data;
+    try {
+      data = await import(DATA_URL);
+    } catch (error) {
+      throw new Error(`could not load data module: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+    simulation.installData(data);
+  }
+
+  if (typeof simulation.installCombat === 'function') {
+    let combat;
+    try {
+      combat = await import(COMBAT_URL);
+    } catch (error) {
+      throw new Error(`could not load combat module: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+    simulation.installCombat(combat);
+  }
+}
+
+function readProbeSteps(value) {
+  if (value === undefined || value === '') {
+    return 60 * 60;
+  }
+
+  const steps = Number(value);
+  if (!Number.isSafeInteger(steps) || steps <= 0) {
+    throw new Error(
+      `YZ_STEPS must be a positive integer; got ${JSON.stringify(value)}`,
+    );
+  }
+  return steps;
 }
 
 function scriptedInput(players, player, stepIndex, offset) {

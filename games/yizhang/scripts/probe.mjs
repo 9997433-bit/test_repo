@@ -7,6 +7,7 @@ import {
   createFourPlayerMatch,
   errorMessage,
   findNonFinite,
+  getWiredCombat,
   getPlayers,
   loadOptionalAi,
   loadSimulation,
@@ -96,7 +97,12 @@ function superviseProbe() {
             : `${result.kills} kill(s) observed`;
         console.log(
           `${label}: ${PROBE_STEPS} steps (${result.simulatedSeconds}s), ` +
-            `${detail}`,
+            `${detail}, real combat ` +
+            (result.usingRealCombat === undefined
+              ? 'status unavailable'
+              : result.usingRealCombat
+                ? 'wired'
+                : 'not wired'),
         );
         console.log(JSON.stringify(result));
         resolve();
@@ -134,6 +140,9 @@ async function executeProbeWorker() {
     heartbeat('loading');
     const simulation = await loadSimulation();
     const ai = await loadOptionalAi();
+    if (!ai) {
+      throw new Error('AI module is required to verify bot think() calls');
+    }
     let state = createFourPlayerMatch(simulation);
     let view = simulation.getView(state);
 
@@ -154,10 +163,17 @@ async function executeProbeWorker() {
     const movedPlayerIds = new Set();
     const stepDurations = [];
     const random = makeSeededRandom(0x5eed1234);
+    const activity = { botThinkCalls: 0, botSlapAttempts: 0 };
 
     for (let stepIndex = 0; stepIndex < PROBE_STEPS; stepIndex += 1) {
       heartbeat('simulation step', stepIndex);
-      const inputs = makeProbeInputs(view, stepIndex, ai, random);
+      const inputs = makeProbeInputs(
+        view,
+        stepIndex,
+        ai,
+        random,
+        activity,
+      );
       const startedAt = performance.now();
       const nextState = simulation.step(state, inputs, DT);
       stepDurations.push(performance.now() - startedAt);
@@ -209,6 +225,18 @@ async function executeProbeWorker() {
       );
     }
 
+    if (activity.botThinkCalls === 0) {
+      throw new Error(
+        `bot think() was not called across ${PROBE_STEPS} simulation steps`,
+      );
+    }
+
+    if (activity.botSlapAttempts === 0) {
+      throw new Error(
+        `bots made no slap attempts across ${PROBE_STEPS} simulation steps`,
+      );
+    }
+
     const finalPlayers = getPlayers(view);
     const kills = Math.max(0, totalKills(finalPlayers) - initialKills);
     const sortedDurations = [...stepDurations].sort(
@@ -234,6 +262,9 @@ async function executeProbeWorker() {
         p99StepMs: sortedDurations[p99Index],
         maxStepMs: Math.max(...stepDurations),
         ai: ai ? 'think' : 'fallback',
+        botThinkCalls: activity.botThinkCalls,
+        botSlapAttempts: activity.botSlapAttempts,
+        usingRealCombat: getWiredCombat(simulation),
       },
     });
   } catch (error) {

@@ -6,6 +6,7 @@ import {
   PROBE_STEPS,
   createFourPlayerMatch,
   errorMessage,
+  getWiredCombat,
   loadSimulation,
   makeBenchInputFrames,
   validateRoster,
@@ -15,6 +16,7 @@ const WARMUP_STEPS = 60 * 10;
 
 try {
   const simulation = await loadSimulation();
+  const wiredCombat = getWiredCombat(simulation);
   let state = createFourPlayerMatch(simulation);
   let view = simulation.getView(state);
   validateRoster(view);
@@ -55,6 +57,7 @@ try {
       stepsPerSec,
       players: PLAYER_COUNT,
       dt: DT,
+      ...(typeof wiredCombat === 'boolean' ? { wiredCombat } : {}),
     }),
   );
 } catch (error) {
