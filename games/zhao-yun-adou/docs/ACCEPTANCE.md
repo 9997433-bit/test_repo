@@ -341,3 +341,146 @@ curl /src/styles/ink.css   → http=200 bytes=6407
 **R2 简报五项攻坚：完成 1.5 / 5。** ✅ enemySeq 入 state；⚠️ 教程/触控半程（教练条 + touch-action 落地，强引导/首局记忆/真机缺）；❌ juice 上屏（两头就绪、中间断线，`juice.js` 在途未接）；❌ 胜率仍 91.67%（调参未见效，觉醒率 0.083/局是新线索）；❌ AI 覆盖窗口（模块就绪、AI 未切换）。
 
 下轮建议优先序：接通 `juice.js`（在途，最接近完成）→ `opponent.js` 切 `placement.js` 覆盖打分 → 以 bench 遥测（觉醒率/leaksByWave）为准绳重校数值到 45–55% → 蒙层 FTUE + localStorage → ARIA/键盘选格 + 字体自托管。
+
+---
+
+## Round 3 · SOTA 终验（Fable-4，最终回签）
+
+- **审计时间**：2026-08-26 08:14–08:28 UTC
+- **分支**：`cursor/zhao-yun-adou-673d`
+- **实测基准提交**：`60c85e7`（test: drive the drop parity matrix off named cases）
+- **环境**：Node v22.14.0 / npm 10.9.7 / Vitest 3.2.7 / Vite 6.4.3（Linux 云端 VM，`npm ci` 干净安装）
+- **审计范围**：R2 差距逐项对账 + R3 冲刺六项对账 + 实跑 `npm test` / `npm run probe` / `npm run bench`（各基准一轮，共三轮）+ 4180 dev server 冒烟 + 头less 满载压测
+
+> ⚠️ **审计期间工作树持续在动（与前两轮同款）**：开跑时 HEAD=`7c25933`，14 分钟内写码 Agent 推了 6 个提交——`2364b9e`（课程计数入档 + bench 胜率闸门）、`0c1afb4`（孤儿板块谓词对拍测试）、`0103233`（飘字描边）、`7da2994`（清过渡死代码）、`9e152b4`（战斗层畸形状态加固）、`60c85e7`（对拍矩阵具名化）。三条验收命令在 `7c25933`、`2364b9e`、`60c85e7` 三个基准各完整跑过一轮，**三轮全绿**；下方输出取自最终基准 `60c85e7`。审计结束后二次 fetch 45 秒无新提交，基准视为已静止。
+
+### 1. `npm test` — ✅ 通过（17 文件 / 194 用例全绿，退出码 0）
+
+```text
+ ✓ src/combat/tuning.test.js (10)     ✓ src/board/placement.test.js (21)
+ ✓ src/combat/replay.test.js (11)     ✓ src/ai/opponent.test.js (8)
+ ✓ tests/state.test.js (2)            ✓ src/board/drop.test.js (39)
+ ✓ src/combat/sim.test.js (22)        ✓ tests/round3-regressions.test.js (5)
+ ✓ src/board/hand.test.js (16)        ✓ src/ui/juice.test.js (13)
+ ✓ src/combat/pressure.test.js (11)   ✓ tests/game.test.js (8)
+ ✓ src/combat/skills.test.js (8)      ✓ tests/awaken.test.js (7)
+ ✓ tests/game-contract.test.js (4)    ✓ tests/merge.test.js (3)
+ ✓ src/combat/geometry.test.js (6)
+
+ Test Files  17 passed (17)
+      Tests  194 passed (194)
+   Duration  1.11s
+```
+
+三轮轨迹：R1 20 → R2 92 → R3 **194**。本轮新增大项：`drop.test.js` 39 项对拍矩阵（`main.js` 落子判定 vs `board/merge.js` 谓词逐格一致）、`hand.test.js` 16 项（孤儿模块钉住而非删除）、`round3-regressions.test.js` 5 项（`kill`/`leak`/`skill` 载荷契约逐键锁形、压力充能跨存档续跑、课程计数「读档续阶段 / 重开归零」）。
+
+### 2. `npm run probe` — ✅ 通过（八路径全 pass，不变量 8 项 0 违例，退出码 0）
+
+```json
+{
+  "seed": 99,
+  "paths": {
+    "recruit":  { "passed": true, "cardKind": "unit", "cost": 8 },
+    "place":    { "passed": true, "cell": 5 },
+    "merge":    { "passed": true, "from": 6, "to": 5, "level": 2 },
+    "awaken":   { "passed": true, "hero": "zhaoyun" },
+    "shovel":   { "passed": true, "cell": 0 },
+    "leak":     { "passed": true, "heartsBefore": 3, "heartsAfter": 2, "compensation": 10 },
+    "gameOver": { "passed": true, "winner": "player" },
+    "telemetry":{ "passed": true }
+  },
+  "invariants": { "checks": 8, "violations": [], "passed": true },
+  "passed": true
+}
+```
+
+R2 的六路径扩到八路径（新增 gameOver 裁定与遥测自检）。
+
+### 3. `npm run bench` — ✅ 通过，**胜率达标**（36/36 收敛，退出码 0）
+
+```json
+{
+  "matches": 36, "settled": 36, "settledRate": 1,
+  "playerWins": 17, "winRate": 0.4722,
+  "avgAwakenedHeroesTotal": 0.2222,
+  "avgDurationSeconds": 207.07,
+  "durationDistributionSeconds": { "min": 171.1, "p50": 203.15, "p95": 241.5, "max": 242.1 },
+  "avgSimTimeMs": 29.6, "p95SimTimeMs": 61.5, "maxSimTimeMs": 70.1,
+  "thresholds": { "minSettledRate": 0.8, "minWinRate": 0.4, "maxWinRate": 0.6, "maxMatchSimTimeMs": 2000 },
+  "invariantViolations": [],
+  "passed": true
+}
+```
+
+- **胜率 17/36 = 47.22%，四次运行（跨 `7c25933` / `2364b9e` / `60c85e7` 三个基准）逐次一致**——R1 66.7% → R2 91.7% → R3 **47.22%**，正中 45–55% 目标带。生效手段是 `a7cc5bb` 拉陡后期波次：leaksByWave 显示漏怪全部集中在 9–12 波（player 56 / ai 19），前 8 波双方零漏，「前期教学、后期见真章」的曲线成形。
+- **bench 脚本自带胜率闸门 [0.40, 0.60]**（`2364b9e`）：`passed` 现在直接要求胜率在带内，平衡回归从「审计发现」升级为「脚本拦截」。
+- 觉醒率 0.22/局（R2 0.083 的 2.7 倍）仍偏低——头less 对局武将罕见登场，胜负主要由兵种曲线决定；遥测已备，留作后续调参线索，不阻塞验收。
+- 单局 avg 207s（171–242s），GDD 3–5 分钟区间内；单局模拟 avg 29.6ms，阈值 2000ms 余量巨大。
+
+### 4. 补充证据 A：dev server 冒烟（端口 4180）— ✅
+
+```text
+npm ci → Vite v6.4.3 ready in 121 ms（strictPort 4180）
+/                    → 200 2638B
+/src/main.js         → 200 90966B（dev 变换后）
+/src/styles/ink.css  → 200 43099B
+/src/ui/juice.js     → 200 76774B
+/src/styles/fx.css   → 200 9089B
+<title>赵云与阿斗 · 汉字塔防</title>
+```
+
+### 5. 补充证据 B：满载压测（审计员临时脚本 `/tmp/r3-stress.mjs`，未入库）— ✅
+
+场景同 R1/R2 口径：双方 20 格全解锁满 5 级兵（40 单位）+ 每侧 120 敌（同屏 240+），60fps 步长双侧连跑 600 帧：
+
+```json
+{
+  "framesSimulated": 600, "enemiesPerSide": 120, "unitsOnBoard": 40,
+  "avgTickMs": 0.302, "p50TickMs": 0.2448, "p95TickMs": 0.4172, "maxTickMs": 3.9754,
+  "budgetPerFrameAt60fpsMs": 16.67
+}
+```
+
+模拟层占帧预算 **1.8%**（R2 为 2.5%，`9e152b4` 加固后反而略降）。「同屏 80+ 单位不掉 30fps」在逻辑层三倍余量成立；渲染层维持 R2 结论（增量 diff + 签名短路 + rAF 画布），真机帧率仍未测（无 GUI）。
+
+---
+
+### R2 审计追加项对账（十项逐一）
+
+| R2 追加项 | 级 | 终态 | 证据 |
+| --- | --- | --- | --- |
+| `juice.js` 接入并消费 `kill`/`skill` 载荷 | P0 | ✅ | `d140bd3`：render 挂 `attachJuice`、lane 画布耗 `takeLaneEffects`；飘字/墨晕/弹跳/震颤/泼墨六形状全上屏；13 单测 + 载荷契约测试 |
+| 数值重校到 45–55% | P0 | ✅ | 47.22%，四次一致；bench 闸门 [0.40, 0.60] 常态化把关 |
+| `opponent.js` 切覆盖打分 | P0 | ✅ | `7d3429e` 经 `combat/geometry.js`（`coverageWindows`/`coverageRatio`）直连，弃 `cellDistToPath`；8 项 AI 测试。注：未走 `board/placement.js`，该模块仍为孤儿（见遗留） |
+| 蒙层强引导 FTUE + localStorage | P0 | ❌ | 教练条与 R2 一字未动；全树 0 处 localStorage。**三轮唯一未动的 P0** |
+| ARIA 全缺 | P1 | ❌ | `render.js` 无一处 aria/role/tabindex；键盘仍无法选格落子（juice 层自带 `aria-hidden` 是唯一进展） |
+| 字体子集自托管或系统字栈 | P1 | ⚠️ | 系统字栈 ✅（`tokens.css` 双栈各 7+ 层兜底 + `display=swap`，CDN 挂了不白屏）；CDN 链接仍在 `index.html` |
+| BGM/静音开关 | P1 | ❌ | `sfx.js` 原样：裸振荡器、无 BGM、无静音 |
+| HUD 文案「10+4」vs 实际 `8+5n` | P2 | ❌ | `render.js` 原样，一行修复遗留三轮 |
+| 真机帧率/触屏实测 | P1 | ❌ | 云端无 GUI，三轮未测；建议交人工或接 CI 无头浏览器跑 fps 采样 |
+| 拾起时高亮全部可合并目标 | P1 | ❌ | 仅悬停格 `.drop` |
+
+### R3 冲刺六项对账（R2 简报）
+
+1. **`juice.js` 迁 `fx.css` 契约类** — ❌ 未迁。双轨照旧：`fx.css` 全部契约类与 `motion.css` 的 `.fx-merge`/`.fx-awaken` 零 JS 消费（随包死 CSS ~9KB dev）；`b67fdc0` 在 ART_DIRECTION §5.2 把双轨记为「待合流」的有意状态。功能已在屏，降级 P2 技债。
+2. **课程计数入 serialize/load** — ✅ `2364b9e`：全局抽数改由两侧 `recruitCount` 之和推导（字段本就在两种快照里，无需新增），start/reset/load 三处同步 WeakMap；`7da2994` 清掉过渡期死代码 `drawRecruitCard`（审计中发现，数分钟内被写码 Agent 自行清除）；回归测试锁死「读档续阶段 / 重开归零」。**R2 确定性缺口第 4 条结清。**
+3. **强制三步教程 + localStorage 首局标记** — ❌ 未动。
+4. **系统字体回退** — ⚠️ 回退成立（CDN 失败不碎排版），CDN 链接未撤。
+5. **全量交叉核验绿 + 胜率 45–55%** — ✅ 全绿 + 47.22%。
+6. **文档与 SOTA 清单回签最终版** — ✅ 本章节 + `SOTA_CHECKLIST.md` 终版。
+
+### 引擎/契约层本轮新发现
+
+1. ✅ `9e152b4` 战斗层防御性加固（sim/skills/pressure/path/geometry 共 217 行插入）：畸形存档/状态不再抛异常，读档路径的健壮性补齐。
+2. ✅ `0c1afb4` 对孤儿模块的处置是「钉住」而非删除：`hand.js` 16 项、`classifyDrop/canSwap` 经 39 项 drop 对拍矩阵与 `main.js` 判定逐格对齐——孤儿风险从「语义漂移」降为「纯冗余」。
+3. ❌ `API_CONTRACT.md` 漂移（P2，本轮只回签验收文档、未代改契约文档）：`serialize` 注释仍称 replay 档「不含 tie/reason/enemySeq/课程计数」，实际 `game.js` 三者皆写入、课程计数已由 `recruitCount` 推导恢复；§10 待办第 4（课程计数）、第 5（AI 接覆盖）已完成未回勾。
+4. ⚠️ `board/placement.js`（479 行 + 21 测试）仍无运行时消费者——AI 覆盖打分走了 `geometry.js` 直连。接入或裁撤，二选一。
+5. ⚠️ 仓库根游离未跟踪 `/workspace/package-lock.json` 三轮未清（不影响 git 历史，建议人工删除）。
+
+---
+
+## Round 3 结论（最终回签）
+
+**引擎 / 测试 / 脚本 / 平衡：通过，终验签字。** 194/194 测试全绿（三轮 20→92→194）；probe 八路径 + 8 不变量零违例；bench 36/36 收敛、胜率 47.22% 正中目标带且脚本闸门常态化；确定性回放全链路成立（同种子逐字节一致、存档续跑不漂移，最后一块拼图——课程计数——本轮补齐）；满载 240+ 单位模拟占帧预算 1.8%。R1 三大结构性欠账、R2 三项 P0 攻坚，至此全部结清。
+
+**产品层对照已上线微信/抖音小游戏：有条件通过。** juice/拖拽/性能三轴达标；收敛后的差距为 **1 P0**（蒙层强制 FTUE + localStorage 首局记忆，三轮未动）+ **5 P1**（ARIA/键盘、字体自托管与离线、BGM/静音、真机验证、合并目标高亮）+ **4 P2**（HUD 文案一行修、演出层双轨合流、API_CONTRACT 回写、placement.js 孤儿处置）。全部为增量补齐，无结构性返工。完整清单见 `SOTA_CHECKLIST.md`「最终遗留清单」。

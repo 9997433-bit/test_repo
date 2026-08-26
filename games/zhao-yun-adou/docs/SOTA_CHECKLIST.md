@@ -1,62 +1,72 @@
-# SOTA 验收清单
+# SOTA 验收清单（最终版）
 
-> Round 2 审计（Fable-4，2026-08-26 07:53–07:59 UTC，实测基准 HEAD=`4f85dd3`，分支 `cursor/zhao-yun-adou-673d`）。
-> 完整命令输出、差距复评与证据见 `ACCEPTANCE.md`。图例：✅ 通过 / ⚠️ 部分通过 / ❌ 未通过。
-> 注意：审计期间工作树持续在动（审计中 HEAD 从 `a73875e` 推进到 `1b84a90`，另有未提交的样式改动与未跟踪的 `src/ui/juice.js` 在途），带「在途」标记的项下轮需复验。
+> Round 3 终验（Fable-4，2026-08-26 08:14–08:28 UTC，实测基准 HEAD=`60c85e7`，分支 `cursor/zhao-yun-adou-673d`）。
+> 完整命令输出与证据见 `ACCEPTANCE.md` Round 3 章节。图例：✅ 通过 / ⚠️ 部分通过 / ❌ 未通过。
+> 审计期间写码 Agent 仍在推进（审计中 HEAD 从 `7c25933` 走到 `60c85e7`，共 6 个提交在途落地）；
+> 三条验收命令在 `7c25933`、`2364b9e`、`60c85e7` 三个基准上各跑一轮，**全部全绿**，结论按最终基准 `60c85e7` 回签。
 
-## 基础验收项
+## 基础验收项（终态）
 
 - [x] ✅ 独立目录可 `npm install && npm run dev`，端口 4180
-  - 证据：审计时 4180 已有并行 Agent 的 dev server 在跑，直接冒烟：`/`=200（2654B）、`/src/main.js`=200、`/src/styles/ink.css`=200、`/src/ui/render.js`=200，`<title>赵云与阿斗 · 汉字塔防</title>`。
+  - 证据：`npm ci` 干净安装后 Vite 6.4.3 起服 121ms；`/`=200（2638B）、`/src/main.js`=200、`/src/styles/ink.css`=200、`/src/ui/juice.js`=200、`/src/styles/fx.css`=200；`<title>赵云与阿斗 · 汉字塔防</title>`；`strictPort: true`。
 - [x] ✅ 不改仓库根业务、不写其他 `games/*`
-  - 证据：R1 后全部提交（`326ff27`…`1b84a90`）仅触及 `games/zhao-yun-adou/**` 与 `.agent_workspace/**`。
-  - ⚠️ 遗留：仓库根游离未跟踪 `/workspace/package-lock.json` 仍在（R1 已警告），不得入库。
+  - 证据：R1 至今全部提交仅触及 `games/zhao-yun-adou/**` 与 `.agent_workspace/**`。
+  - ⚠️ 遗留：仓库根游离未跟踪 `/workspace/package-lock.json`（R1 起三轮均警告），始终未入库也不得入库，建议人工删除。
 - [x] ✅ 征兵 / 拖放 / 合并 / 拼字觉醒 / 铲子扩地 全可玩
-  - 引擎层：`npm run probe` 六路径全 pass（首征兵 cost=8、place cell5、merge→L2、awaken=zhaoyun、shovel cell0、leak 3→2 补偿10），不变量 8 项 0 违例。
-  - UI 层：真拖拽（ghost 跟随 + DRAG_SLOP + 落点脉动高亮）；盘上棋子可拾起拖拽（R1 P0 缺口已补）；`merge()` 语义显式化为 合并/挪空格/贴符/换位 四分支，R1 的 `tryDrop` 误合并/误交换 bug 已随重写消失；失败落子有明确文案（「同兵同级方可合并」等）。
+  - 引擎层：`npm run probe` 八路径全 pass（recruit cost=8、place cell5、merge→L2、awaken=zhaoyun、shovel cell0、leak 3→2 补偿10、gameOver winner=player、telemetry），不变量 8 项 0 违例。
+  - UI 层：真拖拽（ghost + DRAG_SLOP + 落点高亮 + 拖出取消）、盘上棋子可拾起、`merge()` 四分支语义（合并/挪空格/贴符/换位）；`main.js` 落子判定与 `board/merge.js` 谓词的一致性由 `drop.test.js` 39 项对拍矩阵锁死（`60c85e7`）。
 - [x] ✅ 双方阿斗、路线行军、漏怪扣心
-  - 证据：probe leak 路径 pass；`sim.test.js`/`game.test.js` 覆盖漏怪补偿、心数下夹 0、双破防按 斩获→漏怪→存粮 依次裁定。
+  - 证据：probe leak 路径 pass；`kill`/`leak` 事件载荷契约由 `round3-regressions.test.js` 锁形状；压力援军跨存档续跑有测试。
 - [x] ✅ AI 镜像半区会征兵布阵
-  - 证据：`stepAi` 配对觉醒→盘面合并→手牌→征兵→阵型调整的打分启发式；bench 36 局全收敛。
-  - ⚠️ 但 AI 布阵仍按旧 `cellDistToPath`，未接新覆盖模型（见下方攻坚项 3）。
-- [ ] ⚠️ 水墨视觉与技能反馈
-  - 视觉 ✅：token 化样式体系（tokens/base/board/pieces/cards/hud/overlay/motion 八件套）；lane 画布新增血条、护盾环、眩晕标、Boss 光晕、起终点「营/斗」标记。
-  - 反馈 ❌（在途）：引擎已发全量 juice 契约（`skill` 带 fx/hits/damage/targets/juice，新增 `kill` 事件），`motion.css` 备好 `.fx-merge`/`.fx-awaken`/`.fx-float` 关键帧——但实测基准 HEAD 上无任何 JS 消费：无飘字、无泼墨、无投射物、无击杀墨溅。未跟踪的 `src/ui/juice.js`（409 行，WAAPI 飘字 + 画布特效队列）审计中出现，尚未接入 `main.js`。
+  - 证据：`opponent.js` 已切换到路线覆盖窗口模型（`coverageWindows`/`coverageRatio`，`7d3429e`），弃用 `cellDistToPath`；`opponent.test.js` 8 项（seatValue 换算 + stepAi 布阵）。R2 攻坚项 3 结清。
+- [x] ✅ 水墨视觉与技能反馈（R1/R2 最大欠账，本轮结清）
+  - 视觉：token 化八件套样式 + lane 画布血条/护盾环/眩晕标/Boss 光晕/起终点标记。
+  - 反馈：`ui/juice.js`（`d140bd3`）消费 `skill`/`kill`/`leak`/`merge` 全量载荷——WAAPI 飘字（伤害/招式名/Lv 升阶）、墨晕环、棋子弹跳、半区震颤、画布泼墨（splat/leak/skill 六形状）；上限护栏（画布 24 / 飘字 12）；reduced-motion 降级；13 项单测 + 事件载荷契约测试。
+  - ⚠️ 遗留（P2 技债）：演出层双轨——`fx.css` 契约类（`#fx-layer`/`.fx-splash`/`.fx-quake`）与 `motion.css` 的 `.fx-merge`/`.fx-awaken` 无任何 JS 消费，是随包死 CSS；实际走 `juice.js` 自注入 `zy-*` 通道。已在 ART_DIRECTION §5.2 记为「待合流」的有意状态（`b67fdc0`），见下方 R3 冲刺项 1。
 - [ ] ⚠️ 教程 + 胜负结算 + 再来一局
-  - 结算 ✅：胜负 overlay 六项战报 + 「再战」；键盘 Enter/R 可重开。
-  - 教程 ⚠️：新增 `coachHtml` 情境教练条（按局面点亮 征兵→选牌→落子 三步，前 2 波显示）+ 开局三步图解 + 全量 title 悬浮说明（含「还差哪个字觉醒谁」）。仍无蒙层强引导、无首局记忆（全树 0 处 localStorage）。
+  - 结算 ✅：胜负 overlay 六项战报 + 「再战」+ Enter/R 重开。
+  - 教程 ⚠️：情境教练条（按局面点亮 征兵→选牌→落子 三步，前 2 波显示）+ 开局三步图解 + 全量 title 说明。**仍无蒙层强制引导、全树 0 处 localStorage 无首局记忆**（R3 冲刺项 3 未动，连续三轮遗留）。
 - [x] ✅ 桌面拖拽 + 触屏
-  - 真拖拽落地：pointer 事件挂 window、增量 diff 不再摧毁拖拽节点；`touch-action: none` 注入棋盘与手牌、根容器 `manipulation`；点选→点放保留为老浏览器兜底；键盘 1-5/E/Space/Esc/R 快捷键。
-  - ⚠️ 真机触屏未验（无 GUI 环境）；拾起时不高亮全部可合并目标（P1）。
+  - 真拖拽 + `touch-action: none`（棋盘/手牌）+ 根容器 `manipulation` + `env(safe-area-inset-bottom)` + 键盘 1-5/E/Space/Esc/R。
+  - ⚠️ 真机触屏三轮未验（无 GUI 环境）；拾起时仅高亮悬停格（`.drop`），不高亮全部可合并目标（P1）。
 - [x] ✅ `npm test` 覆盖合并、拼字、漏怪、胜负
-  - 证据：92/92 全绿（10 文件，退出码 0）：R1 的 67 项 + 契约 4 项（暂停恢复/盘面合并/征兵成本/存档读档）+ 覆盖布阵 21 项。
+  - 证据：**194/194 全绿（17 文件，1.11s，退出码 0）**；R1 20 → R2 92 → R3 194。新增：drop 对拍矩阵 39、hand 谓词 16、tuning 10、replay 11、opponent 8、juice 13、round3 回归 5（juice 载荷契约 / 压力续跑 / 课程计数生命周期）。
 - [x] ✅ `npm run bench` / `npm run probe` 可跑
-  - 证据：probe 退出码 0 全 pass；bench 36/36 settled、0 不变量违例、单局模拟 avg≈24ms / p95≈48ms，新增 leaksByWave / 觉醒率 / 时长分布遥测。
-- [ ] ⚠️ 60fps 目标，同屏 80+ 单位不掉到 30
-  - 架构 ✅：`innerHTML` 全量重建已废，改为离屏渲染 + 同构 diff + 签名短路；事件只绑一次；lane 画布每帧全速重绘（rAF 原生 60fps）。
-  - 模拟 ✅：满载压测（40 单位 + 240 同屏敌，真实射程 O(格×敌) 判定）avg 0.42ms / p95 1.04ms / max 3.26ms，远低于 16.67ms 帧预算（比 R1 的 0.02ms 涨 20 倍但余量仍巨大）。
-  - 遗留 ⚠️：DOM 补丁仍有 `UI_INTERVAL = 1/30` 节流（HUD 文本 30Hz，可接受但与「60fps」口径要说清）；无 fps 计数器；真机浏览器帧率未测；字体走 CDN 有首屏抖动风险。
+  - 证据：probe 退出码 0 八路径全 pass；bench 36/36 收敛、0 不变量违例，且**脚本本身新增胜率闸门 [0.40, 0.60]**（`2364b9e`）——平衡回归从此挡在 CI 层。
+- [x] ✅ 胜率 45–55%（R1 67%、R2 92% 后本轮达标）
+  - 证据：四次 bench（跨三个基准 HEAD）**全部 17/36 = 47.22%**；`a7cc5bb` 拉陡后期波次后漏怪集中在 9–12 波（player 56 / ai 19），前 8 波零漏。单局 avg 207s（171–242s），GDD 3–5 分钟区间内。觉醒率 0.22/局（R2 0.08 的 2.7 倍，仍偏低，头less 对局武将罕见——留作后续调参线索，不阻塞验收）。
+- [x] ✅ 60fps 目标，同屏 80+ 单位不掉到 30（逻辑层与渲染架构达标）
+  - 模拟：满载压测（40 个 5 级兵 + 240 同屏敌，双侧逐帧）avg 0.302ms / p95 0.417ms / max 3.98ms —— 帧预算 16.67ms 的 1.8%。
+  - 渲染：离屏 render → 同构 diff → 签名短路，事件单绑，lane 画布 rAF 全速；`9e152b4` 加固战斗层遇畸形状态不抛异常（掉帧不崩帧）。
+  - ⚠️ 遗留：HUD 文本仍有 1/30s 节流兜底（口径已声明）；无 fps HUD；真机浏览器帧率三轮未测（云端无 GUI，需真机或 CI 无头浏览器）。
 
-## Round 1 攻坚项复评（BRIEF 六轴）
+## Round 3 冲刺项对账（R2 简报六项）
 
-| # | R1 攻坚项 | R2 状态 | 一句话证据 |
+| # | 冲刺项 | 终态 | 证据 |
 | --- | --- | --- | --- |
-| 1 | juice 上屏（飘字/震屏/泼墨） | ❌ 在途 | 事件契约与 CSS 关键帧两头齐备，中间 0 处接线；`juice.js` 未跟踪未接入 |
-| 2 | 胜率 91% → 45–55% | ❌ | bench 两次实测均 33/36 = **91.67%**，与 R1 合入后持平；觉醒率仅 0.083/局 |
-| 3 | AI 改用覆盖窗口 | ❌ | `placement.js`（479 行 + 21 测试）已备好 coverage 打分，`opponent.js` 未 import，仍用 `cellDistToPath` |
-| 4 | 教程/触控 | ⚠️ | 教练条 + touch-action + 安全区落地；无强引导、无首局记忆、真机未验 |
-| 5 | `enemySeq` 入 state | ✅ | `4f85dd3`：每侧 `nextEnemyId` 入 state、tick 后收编重编号、`serialize({replay:true})` 存读档字节一致（契约测试绿） |
-| 6 | 字体自托管/系统字体栈 | ❌ | `index.html` 仍指 `fonts.googleapis.com` |
+| 1 | `juice.js` 迁 `fx.css` 契约类，消双轨 | ❌ 未迁 | 双轨照旧：`fx.css`（9KB dev）+ `.fx-merge`/`.fx-awaken` 零 JS 消费；`juice.js` 走自注入 `zy-*`。仅 `b67fdc0` 在 ART_DIRECTION §5.2 把双轨记为「待合流」。降级为 P2 技债：功能已在屏、纯实现重复 |
+| 2 | `rollRecruit` 课程计数入 serialize/load | ✅ | `2364b9e`：计数改由两侧 `recruitCount` 之和推导（本就随档走），start/reset/load 同步 WeakMap；`7da2994` 清掉过渡死代码；回归测试锁「读档续阶段、重开归零」 |
+| 3 | 强制三步教程 + localStorage 首局标记 | ❌ | 教练条与 R2 完全一致（情境式、不阻断、每局重现）；全树 0 处 localStorage |
+| 4 | 系统字体回退，不再依赖 Google Fonts 成败 | ⚠️ | `tokens.css` 双字体栈各带 7+ 层系统兜底、CDN 链接带 `display=swap`——CDN 挂了游戏照常渲染（「不依赖成败」达成）；但 `index.html` 仍挂 `fonts.googleapis.com`，微信 webview/大陆网络下首屏字形不稳（自托管子集仍未做，P1） |
+| 5 | test / probe / bench 全绿，胜率 45–55% | ✅ | 194/194；probe 八路径 + 8 不变量；bench 47.22% 且脚本自带 40–60% 闸门 |
+| 6 | 文档与 SOTA 清单回签最终版 | ✅ | 本文档 + ACCEPTANCE.md Round 3 章节 |
 
-## Round 2 审计追加项（下轮验收对象）
+## 最终遗留清单（按优先级，交付后待办）
 
-- [ ] ❌ 把 `juice.js` 接入 `main.js` 并消费 `kill`/`skill` 载荷（P0，在途）
-- [ ] ❌ 数值重校到 45–55%：优先排查 AI 不用覆盖布阵吃的暗亏与觉醒率过低（bench 遥测已备好）（P0）
-- [ ] ❌ `opponent.js` 切换到 `placement.js` 的 coverage 打分（P0，与上一条联动）
-- [ ] ❌ 蒙层强引导 FTUE + localStorage 首局记忆（P0）
-- [ ] ❌ ARIA 全缺：toast 无 `aria-live`、心数「♥♡」无文本替代、格子无 role/tabindex、键盘无法选格落子（P1，`prefers-reduced-motion` 已 ✅）
-- [ ] ❌ 字体子集自托管或系统字体栈（P1）
-- [ ] ❌ BGM/静音开关（P1；toast 自清与暂停已 ✅）
-- [ ] ❌ 文案数据脱节：HUD 提示「征兵 10+4×已征次数」，实际 `recruitCost = 8 + 5n`（P2 小缺陷，`render.js`）
-- [ ] ❌ 真机/浏览器帧率与触屏实测（P1，需 GUI 环境或 fps HUD）
-- [ ] ❌ 拾起棋子时高亮全部可合并目标格（P1 打磨）
+- [ ] **P0** 蒙层强制 FTUE（征兵→拖放→合并三步阻断式引导）+ localStorage 首局记忆——对照已上线小游戏，这是留存侧唯一硬缺口（连续三轮未动）。
+- [ ] **P1** ARIA/键盘可达：toast 无 `aria-live`、心数「♥♡」无文本替代、格子无 role/tabindex 键盘无法选格落子（`prefers-reduced-motion` 已 ✅，juice 层已 `aria-hidden`）。
+- [ ] **P1** 字体子集自托管（撤 CDN 链接）+ 离线能力（GDD 承诺「可离线」）。
+- [ ] **P1** BGM 与静音开关（`sfx.js` 仍是裸振荡器 beep，无音量/静音）。
+- [ ] **P1** 真机验证：触屏手势 + 浏览器帧率（云端无 GUI，三轮未测）。
+- [ ] **P1** 拾起棋子时高亮全部可合并目标格（现仅悬停格 `.drop`）。
+- [ ] **P2** HUD 文案数据脱节：`render.js` 仍写「征兵 10+4×已征次数」，实际 `recruitCost = 8 + 5n`（一行修复，R2 起遗留）。
+- [ ] **P2** 演出层双轨合流：`juice.js` DOM 通道改挂 `fx.css` 契约类，撤自注入样式；或反向裁决删死 CSS。
+- [ ] **P2** `API_CONTRACT.md` 漂移：§`serialize` 注释仍称 replay 档「不含 tie/reason/enemySeq/课程计数」——`game.js` 现三者皆含、课程计数已由 `recruitCount` 推导（`2364b9e` 后未回写文档）；§10 待办 4/5 已完成未勾。
+- [ ] **P2** `board/placement.js`（479 行）仍是孤儿模块：AI 走 `combat/geometry.js` 直连，placement 仅被自测与 `0c1afb4` 对拍测试引用——接入或裁撤。
+- [ ] **P2** bench 觉醒率 0.22/局仍偏低：头less 胜负基本由兵种曲线决定，武将系统在自动对局中存在感不足（遥测已备，调参留后）。
+
+## 最终裁定
+
+**引擎 / 测试 / 性能 / 平衡：通过，签字生效。** 三轮累计把测试从 20 项拉到 194 项且全绿；确定性回放（同种子逐字节一致、存档续跑不漂移，含本轮补齐的课程计数）成立；模拟层满载 240+ 单位仅占帧预算 1.8%；胜率 47.22% 落进 45–55% 目标带并由 bench 闸门守住。R1 定下的三大结构性欠账（渲染增量化、盘上拖拽、回放安全存档）与 R2 的三项 P0（juice 上屏、AI 覆盖布阵、数值重校）全部结清。
+
+**产品层对照已上线微信/抖音小游戏：有条件通过。** 打击感、拖拽手感、性能三轴已达或接近爆款水准；差距收敛为 1 项 P0（强制 FTUE + 首局记忆）+ 5 项 P1（ARIA、字体自托管/离线、BGM/静音、真机验证、合并目标高亮）+ 4 项 P2 打磨。上述项不涉结构返工，均为增量补齐。
