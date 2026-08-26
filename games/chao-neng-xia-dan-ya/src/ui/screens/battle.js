@@ -278,7 +278,8 @@ export const battleScreen = {
         if (e.key === "ArrowRight") { battle.setAim(battle.aim.angle + 2.5, battle.aim.power); return; }
         if (e.key === "ArrowUp") { battle.setAim(battle.aim.angle, battle.aim.power + 0.05); return; }
         if (e.key === "ArrowDown") { battle.setAim(battle.aim.angle, battle.aim.power - 0.05); return; }
-        if (/^[1-5]$/.test(e.key)) selectHero(Number(e.key) - 1);
+        // 肉鸽三选一会把新英雄追加到坞里，所以按键要覆盖 5 人以上的队伍
+        if (/^[1-9]$/.test(e.key)) selectHero(Number(e.key) - 1);
       },
       destroy() {
         app.audio.setMood("menu");
