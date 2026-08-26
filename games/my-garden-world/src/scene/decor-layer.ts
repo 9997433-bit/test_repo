@@ -11,8 +11,6 @@ export interface DecorLayer {
   /** 铺满舞台、位于花圃之下的景物层 */
   scene: HTMLElement;
   update(items: PlacedDecor[]): void;
-  focus(id: string | null): void;
-  focused(): string | null;
 }
 
 interface Entry {
@@ -241,5 +239,5 @@ export function createDecorLayer(): DecorLayer {
 
   row.append(hint);
 
-  return { row, scene, update, focus, focused: () => focusId };
+  return { row, scene, update };
 }
