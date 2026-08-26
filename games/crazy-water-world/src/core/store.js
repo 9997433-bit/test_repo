@@ -1,6 +1,5 @@
 import { emptyResources, RESOURCE_KEYS } from "../data/resources.js";
 import { RAFT_RULES } from "../data/buildings.js";
-import { weatherMods } from "../world/mods.js";
 import { hashSeed } from "./rng.js";
 
 const SAVE_KEY = "cww.save.v1";
@@ -58,6 +57,117 @@ function normalizeTile(cell) {
   };
 }
 
+function obj(v) {
+  return isPlainObject(v) ? v : null;
+}
+
+// 漂浮物钳域：ttl / x / vx 被手改成 NaN 会让 spawnFlotsam 的漂移与命中检测一起烂掉。
+// tier / phase / shimmer / bornTick 这类附加键原样带过（只加不删）。
+function normalizeFlotsam(f) {
+  return {
+    ...f,
+    id: str(f.id, ""),
+    res: str(f.res, "wood"),
+    n: num(f.n, 1, 0, 1e6),
+    rare: bool(f.rare, false),
+    x: num(f.x, 0, -2, 2),
+    y: num(f.y, 0, -2, 2),
+    vx: num(f.vx, 0, -1, 1),
+    ttl: num(f.ttl, 0, 0, 3600),
+  };
+}
+
+// 图鉴逐条钳域：读档丢图鉴等于把首钓奖励重开一遍（§10-N1）。
+function normalizeCodex(raw) {
+  const src = obj(raw);
+  if (!src) return {};
+  const out = {};
+  for (const [id, e] of Object.entries(src)) {
+    if (!isPlainObject(e)) continue;
+    out[id] = {
+      ...e,
+      id: str(e.id, id),
+      name: str(e.name, id),
+      sea: str(e.sea, "near"),
+      rarity: str(e.rarity, "common"),
+      caught: int(e.caught, 0, 0),
+      perfect: int(e.perfect, 0, 0),
+      missed: int(e.missed, 0, 0),
+      encountered: int(e.encountered, 0, 0),
+      bestAccuracy: num(e.bestAccuracy, 0, 0, 1),
+      firstTick: Number.isFinite(e.firstTick) ? int(e.firstTick, 0, 0) : null,
+      lastTick: int(e.lastTick, 0, 0),
+    };
+  }
+  return out;
+}
+
+// 进行中的竿子：只认 castLine 出来的成功形状（ok + fish + 合法窗口），
+// 其余一律当没抛过——半截 cast 喂给 hookCast 会算出 NaN 判定。
+function normalizeCast(raw) {
+  const cast = obj(raw);
+  if (!cast || cast.ok !== true || !isPlainObject(cast.fish)) return null;
+  const w = cast.window;
+  if (!Array.isArray(w) || !Number.isFinite(w[0]) || !Number.isFinite(w[1]) || w[1] <= w[0]) return null;
+  return cast;
+}
+
+// 潜水生涯统计：runs/deaths/bestDepth/bestHaul 是只增量，读档清零等于抹掉战绩。
+function normalizeDiveRecord(raw) {
+  const rec = obj(raw);
+  if (!rec) return null;
+  const last = obj(rec.lastRun);
+  return {
+    ...rec,
+    runs: int(rec.runs, 0, 0),
+    deaths: int(rec.deaths, 0, 0),
+    bestDepth: num(rec.bestDepth, 0, 0),
+    bestHaul: int(rec.bestHaul, 0, 0),
+    lastRun: last
+      ? {
+          ...last,
+          zone: str(last.zone, ""),
+          depth: num(last.depth, 0, 0),
+          loot: int(last.loot, 0, 0),
+          alive: bool(last.alive, false),
+          tick: int(last.tick, 0, 0),
+        }
+      : null,
+  };
+}
+
+// explore 分支逐字段收编（原先是整段白名单，读档会丢图鉴 / 拾荒计数 / 潜水战绩，§10-N1）。
+// 口径：已知字段钳回合法域，未知附加键随对象展开带过，缺失补默认值。
+function normalizeExplore(raw) {
+  const src = obj(raw) || {};
+  const salvage = obj(src.salvage) || {};
+  const fishing = obj(src.fishing) || {};
+  const diveRecord = normalizeDiveRecord(src.diveRecord);
+  const explore = {
+    ...src,
+    salvage: {
+      ...salvage,
+      flotsam: list(salvage.flotsam).filter(isPlainObject).map(normalizeFlotsam),
+      picked: int(salvage.picked, 0, 0),
+      rarePicked: int(salvage.rarePicked, 0, 0),
+      lastPick: obj(salvage.lastPick),
+    },
+    fishing: {
+      ...fishing,
+      lastCatch: obj(fishing.lastCatch),
+      cast: normalizeCast(fishing.cast),
+      castTick: int(fishing.castTick, 0, 0),
+      codex: normalizeCodex(fishing.codex),
+    },
+    // 会话内部的缺字段由 explore/dive.js 的 hydrate() 现场补齐，这里只保形状。
+    dive: obj(src.dive),
+  };
+  // 没潜过就别凭空造一条空战绩（契约里 diveRecord 是可选键）。
+  if (diveRecord) explore.diveRecord = diveRecord;
+  else delete explore.diveRecord;
+  return explore;
+}
+
 // 存档可能来自旧版本或被手改过：把每个字段钳回合法域，缺失的补默认值，
 // 免得 NaN（如 weatherTimer）悄悄毒化整条模拟。
 function normalize(state, base) {
@@ -70,6 +180,11 @@ function normalize(state, base) {
 
   const resources = { ...emptyResources() };
   for (const k of RESOURCE_KEYS) resources[k] = num(state.resources?.[k], 0, 0, 1e12);
+
+  // 存档带来的 world.mods 一律作废：派生倍率归模拟量子现算（world/sim.js 每次 tickWorld
+  // 盖一份新的），手改档塞进来的倍率不许进模拟。core 因此不必反向 import world/**（§10-N6）。
+  const world = { ...base.world, ...(isPlainObject(state.world) ? state.world : {}) };
+  delete world.mods;
 
   return {
     ...state,
@@ -120,19 +235,14 @@ function normalize(state, base) {
       })),
     heroes: list(state.heroes).filter((h) => isPlainObject(h) && typeof h.id === "string"),
     world: {
-      ...base.world,
-      ...state.world,
+      ...world,
       timeOfDay: num(state.world?.timeOfDay, base.world.timeOfDay, 0, 1),
       weather: str(state.world?.weather, base.world.weather),
       event: typeof state.world?.event === "string" ? state.world.event : null,
       seaSeed: int(state.world?.seaSeed, base.world.seaSeed, 0, 0xffffffff) >>> 0,
       weatherTimer: num(state.world?.weatherTimer, base.world.weatherTimer, 0, 3600),
     },
-    explore: {
-      salvage: { flotsam: list(state.explore?.salvage?.flotsam).filter(isPlainObject) },
-      fishing: { lastCatch: isPlainObject(state.explore?.fishing?.lastCatch) ? state.explore.fishing.lastCatch : null },
-      dive: isPlainObject(state.explore?.dive) ? state.explore.dive : null,
-    },
+    explore: normalizeExplore(state.explore),
     campaign: {
       ...base.campaign,
       ...state.campaign,
@@ -216,10 +326,9 @@ export function defaultState(seed = {}) {
     settings: { muted: false, reduceMotion: false },
     log: ["潮水上涨。老大，这叶破木筏就靠你了。"],
   };
-  const state = normalize(deepMerge(base, isPlainObject(seed) ? seed : {}), base);
-  // 派生倍率总是现算：存档里带来的 world.mods 一律作废，免得手改档把倍率带进模拟。
-  state.world.mods = weatherMods(state);
-  return structuredClone(state);
+  // world.mods 不在这里预算：派生倍率是世界层的活，第一个量子的 tickWorld 就会盖上，
+  // 在那之前消费方走 explore/mods.js 的天气表回退（契约 §10-N6 的迁走方案）。
+  return structuredClone(normalize(deepMerge(base, isPlainObject(seed) ? seed : {}), base));
 }
 
 export function createStore(seed) {
