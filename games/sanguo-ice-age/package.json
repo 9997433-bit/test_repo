@@ -1,0 +1,13 @@
+{
+  "name": "sanguo-ice-age",
+  "version": "0.1.0",
+  "private": true,
+  "description": "三国：冰河时代 — 独立目录网页 SLG 致敬作",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/runner.mjs",
+    "bench": "node tests/bench.mjs",
+    "probe": "node tests/probes.mjs",
+    "start": "python3 -m http.server 4173 --bind 127.0.0.1"
+  }
+}
