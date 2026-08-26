@@ -32,6 +32,25 @@
 - Round 2：未开始
 - Round 3：未开始
 
+## Round 1 派发记录
+
+基础设施约束：`Async new-VM subagent limit of 3`。本轮按规格准备 10 路云端 Task，但同时只能启动 3 个新 VM。已启动 3 路，其余 7 路排队，空出槽位后立刻补派，禁止改派本地或降级模型。
+
+| 角色 | 模型 slug | 状态 | cloud agent id |
+| --- | --- | --- | --- |
+| Fable-1 架构 | `claude-fable-5-thinking-xhigh` | 运行中 | `bc-6c0aad50-7af2-5740-80ea-fab58f2aff30` |
+| Fable-2 美术 UX | `claude-fable-5-thinking-xhigh` | 运行中 | `bc-125afe7c-6e8b-5522-8db7-07d2a703a011` |
+| Fable-3 玩法数值 | `claude-fable-5-thinking-xhigh` | 排队待派 | — |
+| Fable-4 SOTA 验收 | `claude-fable-5-thinking-xhigh` | 运行中 | `bc-d1bb33dd-c25c-5103-9de4-9285c4985e6b` |
+| Opus-1 世界引擎 | `claude-opus-5-thinking-high-fast` | 排队待派 | — |
+| Opus-2 探索三线 | `claude-opus-5-thinking-high-fast` | 排队待派 | — |
+| Opus-3 英雄战斗 | `claude-opus-5-thinking-high-fast` | 排队待派 | — |
+| Opus-4 UI 主循环 | `claude-opus-5-thinking-high-fast` | 排队待派 | — |
+| GPT-sol-1 单测探针 | `gpt-5.6-sol-xhigh-fast` | 排队待派 | — |
+| GPT-sol-2 基准压力 | `gpt-5.6-sol-xhigh-fast` | 排队待派 | — |
+
+草稿 PR：https://github.com/9997433-bit/test_repo/pull/8
+
 ## 结论简报
 
-（各轮结束后由主调度器回写）
+（各轮 10 路回报后由主调度器回写）
