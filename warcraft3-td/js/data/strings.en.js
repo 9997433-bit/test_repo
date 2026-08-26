@@ -6,7 +6,7 @@
 
   NS.STRINGS['en'] = {
     lang: 'English',
-    title: 'Azeroth Keep — Tower Defense',
+    title: 'Emberhold Keep — Tower Defense',
     subtitle: 'A tribute to the classic Warcraft III custom TD maps',
     start: 'Begin Campaign',
     difficulty: 'Difficulty',
@@ -35,7 +35,7 @@
     target_weakest: 'Weakest', target_closest: 'Closest',
     victory: 'Victory!', defeat: 'Defeat…',
     victoryText: 'The keep holds. The dark portal is sealed once more.',
-    defeatText: 'The keep has fallen. The Scourge floods into Kalimdor.',
+    defeatText: 'The keep has fallen. The blight floods into the lowlands.',
     playAgain: 'Play again',
     waveIncoming: 'Wave {n} incoming: {types}',
     bossIncoming: 'A boss approaches! {name}',

@@ -6,7 +6,7 @@
 
   NS.STRINGS['zh'] = {
     lang: '中文',
-    title: '艾泽洛斯要塞 · 塔防',
+    title: '余烬要塞 · 塔防',
     subtitle: '致敬《魔兽争霸 III》经典自定义塔防地图',
     start: '开始战役',
     difficulty: '难度',
@@ -35,7 +35,7 @@
     target_weakest: '最弱', target_closest: '最近',
     victory: '胜利！', defeat: '失败…',
     victoryText: '要塞屹立不倒。黑暗之门重新封印。',
-    defeatText: '要塞陷落了。天灾的军队涌入了卡利姆多。',
+    defeatText: '要塞陷落了。腐化大军涌入了低地平原。',
     playAgain: '再来一局',
     waveIncoming: '第 {n} 波来袭：{types}',
     bossIncoming: '首领来袭！{name}',

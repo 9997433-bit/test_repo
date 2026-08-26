@@ -82,7 +82,7 @@ const filter = process.argv[2] || '';
 const testDir = here;
 const files = fs.readdirSync(testDir).filter((f) => f.endsWith('.test.js')).sort();
 
-console.log(ANSI.bold('\nAzeroth Keep TD — test suite\n'));
+console.log(ANSI.bold('\nEmberhold TD — test suite\n'));
 const started = Date.now();
 
 for (const file of files) {

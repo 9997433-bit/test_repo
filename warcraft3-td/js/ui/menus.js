@@ -4,7 +4,7 @@
   const NS = (root.WC3TD = root.WC3TD || {});
   const doc = root.document;
   function T(k, v) { return NS.I18n.t(k, v); }
-  const STORE_KEY = 'azerothKeepTD.best';
+  const STORE_KEY = 'emberholdTD.best';
 
   function Menus(app) {
     this.app = app;

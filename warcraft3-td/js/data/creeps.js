@@ -65,7 +65,7 @@
       body: '#6a7a3a', trim: '#2e3a18'
     },
     boss_skywyrm: {
-      id: 'boss_skywyrm', name: t('天灾双足飞龙', 'Scourge Skywyrm'), armorType: 'hero', armorBase: 7,
+      id: 'boss_skywyrm', name: t('腐翼双足飞龙', 'Blightwing Skywyrm'), armorType: 'hero', armorBase: 7,
       hpMul: 10, speed: 2.0, bountyMul: 11, radius: 0.7, boss: true, flying: true,
       body: '#c07a3a', trim: '#4a2410'
     },
@@ -75,7 +75,7 @@
       body: '#6f5a7f', trim: '#291a33'
     },
     boss_abyss: {
-      id: 'boss_abyss', name: t('深渊领主·阿卡玛纳', 'Abyss Lord Akamana'), armorType: 'hero', armorBase: 11,
+      id: 'boss_abyss', name: t('深渊领主·维尔萨克', 'Abyss Lord Vurthak'), armorType: 'hero', armorBase: 11,
       hpMul: 18, speed: 1.5, bountyMul: 20, radius: 0.85, boss: true, regen: 0.01,
       aura: { armor: 3, radius: 5 }, body: '#b0392f', trim: '#2a0c08'
     }

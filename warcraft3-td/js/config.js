@@ -1,4 +1,4 @@
-/* Azeroth Keep TD — global balance constants.
+/* Emberhold TD — global balance constants.
  * Classic script (no modules) so that file:// works. Everything hangs off WC3TD. */
 (function (root) {
   'use strict';

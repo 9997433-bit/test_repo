@@ -6,10 +6,10 @@
   const NS = (root.WC3TD = root.WC3TD || {});
 
   const RACES = [
-    { id: 'human',  name: { zh: '人类联盟', en: 'Alliance' },   color: '#6fa8dc', accent: '#dfe9f5', hotkey: '1' },
-    { id: 'orc',    name: { zh: '兽人部落', en: 'Horde' },      color: '#c0704a', accent: '#f0c9a0', hotkey: '2' },
-    { id: 'elf',    name: { zh: '暗夜精灵', en: 'Sentinels' },  color: '#8ad6b8', accent: '#d8fff0', hotkey: '3' },
-    { id: 'undead', name: { zh: '亡灵天灾', en: 'Scourge' },    color: '#a98cd8', accent: '#e6dcff', hotkey: '4' }
+    { id: 'human',  name: { zh: '人类王庭', en: 'Kingdom' },     color: '#6fa8dc', accent: '#dfe9f5', hotkey: '1' },
+    { id: 'orc',    name: { zh: '兽人部族', en: 'Warband' },     color: '#c0704a', accent: '#f0c9a0', hotkey: '2' },
+    { id: 'elf',    name: { zh: '月夜精灵', en: 'Moonwardens' }, color: '#8ad6b8', accent: '#d8fff0', hotkey: '3' },
+    { id: 'undead', name: { zh: '不朽亡军', en: 'Deathless' },   color: '#a98cd8', accent: '#e6dcff', hotkey: '4' }
   ];
 
   function t(zh, en) { return { zh, en }; }
@@ -278,11 +278,11 @@
     },
     {
       id: 'u_zigg', race: 'undead', icon: 'web', hotkey: 'W',
-      name: t('蛛魔序列', 'Nerubian Ziggurat Line'),
+      name: t('蛛族序列', 'Arachnid Ziggurat Line'),
       blurb: t('蛛网减速；有概率把飞行单位拉到地面。', 'Webs slow, and can drag flyers to the ground.'),
       tiers: [
         tier({
-          name: t('蛛魔神庙', 'Nerubian Ziggurat'), gold: 80, lumber: 0,
+          name: t('蛛族神庙', 'Arachnid Ziggurat'), gold: 80, lumber: 0,
           damage: [14, 20], attackType: 'magic', cooldown: 1.05, range: 6.0,
           targets: ['ground', 'air'],
           effects: [{ type: 'slow', amount: 0.2, duration: 2.0 }, { type: 'web', chance: 0.25, duration: 1.5 }],
