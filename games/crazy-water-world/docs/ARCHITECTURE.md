@@ -1,9 +1,9 @@
-# 架构（Round 1 冻结稿）
+# 架构（Round 2 落地版）
 
-> 维护者：Fable-1（架构 / API 契约）。基线 commit `14b21c9`，分支 `cursor/crazy-water-world-c895`。
+> 维护者：Fable-1（架构 / API 契约）。基线：Round 2 合并树 commit `25fd9c6`，分支 `cursor/crazy-water-world-c895`（Round 1 冻结稿基线 `14b21c9`）。
 > 配套文档：`docs/API_CONTRACT.md`（严格契约与禁止改名清单）。改代码前先读契约。
 >
-> 标记约定：**[冻结]** 不得变更；**[R2 必改]** Round 2 必须落实；**[附加]** 允许新增、不得破坏既有行为。
+> 标记约定：**[冻结]** 不得变更；**[附加]** 允许新增、不得破坏既有行为；**[R3]** 下一轮要落实。
 
 ## 0. 技术选型 [冻结]
 
@@ -15,56 +15,68 @@
 
 ```
                     ┌──────────────────────────────┐
-                    │  index.html → src/main.js    │  壳：水合存档、启动
+                    │  index.html → src/main.js    │  壳：水合存档、注入 render、启动
                     └──────────────┬───────────────┘
-                                   │
+                                   │ boot(root, store, { render })
                     ┌──────────────▼───────────────┐
-                    │ src/core/engine.js  boot()   │  rAF 循环、定步长、自动存档
+                    │ src/core/engine.js           │  rAF 循环、定步长、自动存档
+                    │   stepSim() 纯量子 [冻结]     │  （对 ui/** 零依赖，D1 已关）
                     └──┬──────────────────────┬────┘
-          纯模拟（每 0.1s 量子）          渲染/输入（每帧）
+          纯模拟（每 0.1s 量子）          渲染/输入（每帧，由 main.js 注入）
              │                                │
-   ┌─────────▼─────────┐            ┌─────────▼─────────┐
-   │ world/sim.js      │            │ ui/app.js render()│──▶ world/canvas.js
-   │ explore/salvage.js│            │  （唯一 DOM 组装点）│──▶ audio/sfx.js
-   └─────────┬─────────┘            └─────────┬─────────┘
+   ┌─────────▼─────────┐            ┌─────────▼─────────────┐
+   │ world/sim.js      │            │ ui/app.js render()    │──▶ ui/screens/* ui/dom.js
+   │ explore/salvage.js│            │  （唯一 DOM 组装点）    │──▶ world/canvas.js audio/sfx.js
+   └─────────┬─────────┘            └─────────┬─────────────┘
              │      两侧都只通过 store 交换状态  │
    ┌─────────▼────────────────────────────────▼─────────┐
-   │ core/store.js（单一状态）· core/rng.js（确定性随机）  │
+   │ core/store.js（单一状态 + normalize 钳域）           │
+   │ core/rng.js（mulberry32/hashSeed/deriveRng）        │
+   │ core/reasons.js（REASON 码表 + allow/deny 工厂）     │
    └─────────┬──────────────────────────────────────────┘
              │
    ┌─────────▼──────────────────────────────────────────┐
    │ 领域规则（全部纯函数，禁止 DOM / IO / 全局时间）        │
    │  world/grid.js  world/build.js  world/sim.js        │
-   │  explore/{salvage,fishing,dive}.js                  │
-   │  heroes/roster.js  combat/battle.js                 │
+   │  world/mods.js（派生倍率唯一读表口径）                │
+   │  explore/{salvage,fishing,dive,mods}.js             │
+   │  heroes/{roster,lineup}.js                          │
+   │  combat/{battle,skills,ai}.js                       │
    └─────────┬──────────────────────────────────────────┘
              │
    ┌─────────▼──────────────────────────────────────────┐
-   │ src/data/*（静态表：建筑/英雄/关卡/鱼/天气/资源）        │
+   │ src/data/*（静态表：建筑/英雄/关卡/鱼/潜水/天气/资源/  │
+   │            订单/事件）——引擎侧零硬编码，全部读表      │
    └────────────────────────────────────────────────────┘
 ```
 
-允许的依赖边（import 方向）**[冻结]**：
+允许的依赖边（import 方向）**[冻结，含一处已记录豁免]**：
 
 | 发起方 | 允许 import |
 | --- | --- |
 | `src/data/**` | 什么都不许（叶子层，纯常量 + 无副作用工厂函数） |
-| `world/ explore/ heroes/ combat/` | `src/data/**`、`core/rng.js`，以及本目录内文件 |
-| `core/store.js` | `src/data/**`、`core/rng.js` |
-| `core/engine.js` | `core/**`、`world/sim.js`、`explore/salvage.js`；**不得 import `ui/**`**（见缺陷 D1） |
-| `ui/app.js` | 任何 `src/**` |
-| `src/main.js` | `core/**`、`styles/**` |
+| `core/reasons.js` | 什么都不许（叶子层） |
+| `world/ explore/ heroes/ combat/` | `src/data/**`、`core/rng.js`、`core/reasons.js`，以及本目录内文件 |
+| `core/store.js` | `src/data/**`、`core/rng.js`；**豁免：`world/mods.js`**（为 `defaultState` 落 `world.mods` 快照；无环，契约 §10-N6 记录，R3 决定正式放宽或迁走） |
+| `core/engine.js` | `core/**`、`world/sim.js`、`explore/salvage.js`；**不得 import `ui/**`（静态与动态都禁，D1 已关并有此现状）** |
+| `ui/**` | 任何 `src/**` |
+| `src/main.js` | `core/**`、`ui/app.js`（render 注入）、`styles/**` |
 | 任何文件 | **禁止** import 仓库根、`../../`、其他 `games/*`、任何 npm 运行时包 |
+
+跨域读数不走 import 的两个特例 [冻结]：
+
+1. **explore 读天气不 import world**：`world/sim.js` 每量子把 `weatherMods()` 结果落成 `state.world.mods` 快照，`explore/mods.js` 优先读快照、缺席时按 `data/weather.js` 回退——数值只有一份，依赖边也没破。
+2. **explore 的失败码不 import core/reasons**：`EXPLORE_REASON` 按值复刻码面字符串（另加探索独有 `E_WEATHER`），避免反向依赖；码面必须与 `core/reasons.js` 保持字面一致。
 
 每个领域目录的 `index.js` 是对外唯一门面，UI 与测试原则上只从门面或契约列出的具体文件导入。
 
 ## 2. 时钟模型
 
-- **模拟量子 [冻结]**：0.1s。`boot()` 里 rAF 累加真实时间 × `meta.speed`（1/2/4），每攒满 0.1s 执行一次量子：`tickWorld(state, 0.1)` → 刷新漂浮物 → `meta.tick += 1`。`meta.tick` 是**唯一的模拟时间轴**，所有派生随机都以它为盐（§4）。
+- **模拟量子 [冻结]**：0.1s（`engine.QUANTUM`）。`boot()` 里 rAF 累加真实时间 × `meta.speed`（1/2/4），每攒满 0.1s 执行一次 `stepSim`。`meta.tick` 是**唯一的模拟时间轴**，所有派生随机都以它为盐（§4），伤病到期时刻也锚在它上面（`heroes.nowSeconds = tick × 0.1`）。
+- **纯量子入口 `stepSim` [冻结]**，铁序：`settleOffline(s, idleSince)` → `tickWorld(s, 0.1)` → `spawnFlotsam(s, deriveRng(seed, tick, "salvage"))` → `idleSince = 0` → `tick += 1`。测试驱动与线上完全一致的时间轴。**[R3]** `tickInjuries` 与 `syncExploreWeather` 已是「无事原引用」的纯巡检，接入位置应在 tick+1 之前追加（属附加变更，但会改挂机日志序列，需声明）——见契约 §10-N3。
 - 单帧真实 dt 上限 0.05s：掉帧时模拟变慢而不是跳变（有意为之，不算缺陷）。
-- 昼夜：`timeOfDay += dt/240`，即一天 240 秒真实时间（1x 速度）。天气持续 70–120s 后按权重重掷。
-- **离线补算 [R2 必改]**：契约已预留 `meta.savedAt`（存档时刻，`Date.now()` 毫秒，只允许在存/读档的壳层写入）。加载时 `elapsed = min(now - savedAt, 8h)`，按最多 120 个粗粒度块调用 `tickWorld(state, elapsed/块数)` 补产出，不补漂浮物、不掷天气事件日志。基线的 `campaign.idleSince` 一直累加但没人消费（缺陷 D8）。
-- **纯模拟量子入口 [R2 必改]**：把「tickWorld + spawnFlotsam + tick++」抽成纯函数 `stepSim(state): GameState`（附加导出，见契约 §5），`boot()` 退化为「rAF + stepSim + render + 自动存档」的薄壳，让测试能驱动与线上完全一致的量子。
+- 昼夜：`timeOfDay += dt/240`，一天 240 秒（1x 速度）。天气时长读 `WEATHERS[*].durationSec`；权重按 `hqLevel` 取 `WEATHER_SCHEDULE` 档位（开荒期不出海啸），无档回退 `WEATHER_WEIGHTS`。
+- **离线补算 [冻结]**：`saveState` 盖 `meta.savedAt`（墙钟毫秒，仅存档壳层写）；`hydrateSave` 把差值折进 `campaign.idleSince`（8h 封顶）；`stepSim` 首步 `settleOffline` 切 ≤120 块粗粒度 `tickWorld` 补产出，不补漂浮物、不留逐条天气日志。残留：块间天气派生流重放（契约 §10-N7）。
 
 ## 3. DOM / 副作用隔离 [冻结]
 
@@ -72,48 +84,43 @@
 
 | 文件 | 允许的副作用 |
 | --- | --- |
-| `src/main.js` | `document`、`localStorage`（读档水合） |
-| `src/core/engine.js` | rAF、`performance.now`、`setInterval`（自动存档） |
-| `src/core/store.js` | 仅 `saveState/loadState` 两个函数内的 `localStorage` |
-| `src/ui/app.js` | 全部 DOM、事件监听 |
+| `src/main.js` | `document`、`localStorage`（读档水合）、render 注入 |
+| `src/core/engine.js` | rAF、`performance.now`、`setInterval`（自动存档）、`beforeunload` 落盘 |
+| `src/core/store.js` | 仅 `saveState/loadState` 两个函数内的 `localStorage` 与 `Date.now`（写 savedAt） |
+| `src/ui/**` | 全部 DOM、事件监听（app.js 组装，screens/* 分屏，dom.js 工具） |
 | `src/world/canvas.js` | Canvas 2D、`window.devicePixelRatio` |
 | `src/audio/sfx.js` | WebAudio |
 
-白名单之外（`world/grid|build|sim`、`explore/**`、`heroes/**`、`combat/**`、`data/**`、`core/rng`）：
+白名单之外（`world/grid|build|sim|mods`、`explore/**`、`heroes/**`、`combat/**`、`data/**`、`core/rng|reasons|events`）：
 
 - 禁止 `Math.random`、`Date.now`、`performance.now`、`localeCompare`、`Intl`、`crypto`、`navigator`、任何 DOM API。
-- 禁止修改入参（用展开或 `structuredClone` 出新值）；失败路径必须返回**原对象引用**（`===`，契约 §2）。
-- 同输入必须同输出（随机性一律显式经 `rng` 参数或从 `(seed, tick, 盐)` 派生）。
+- 禁止修改入参（用展开出新值）；失败路径与「无事发生」路径必须返回**原对象引用**（`===`，契约 §2）。
+- 同输入必须同输出（随机性一律显式经 `rng` 参数或 `deriveRng(seed, tick, 盐, nonce)` 派生）。
 
 ## 4. RNG 策略
 
-统一原语在 `core/rng.js`：`mulberry32`（32 位种子流）、`hashSeed`（FNV-1a 字符串→u32）、`pickWeighted`。
+统一原语在 `core/rng.js`：`mulberry32`（32 位种子流）、`hashSeed`（FNV-1a 字符串→u32）、`deriveRng`（派生瞬时流 [附加·冻结]）、`pickWeighted`。
 
-**祝福模式：派生瞬时流 [冻结]**。不保存 RNG 游标，每次需要随机时从 `(meta.seed, meta.tick, 域盐)` 现场派生：
+**祝福模式：派生瞬时流 [冻结]**。不保存 RNG 游标，每次需要随机时从 `(meta.seed, meta.tick, 域盐, nonce)` 现场派生。存档只需存 `seed + tick`，读档后模拟严格可复现。各域现状：
 
-```js
-const rng = mulberry32((state.meta.seed ^ hashSeed("盐字符串") ^ state.meta.tick * 素数) >>> 0);
-```
-
-这样存档只需存 `seed + tick`，读档后模拟严格可复现。各域的盐与现状：
-
-| 域 | 基线做法 | 状态 |
+| 域 | 落地做法 | 状态 |
 | --- | --- | --- |
-| 天气重掷（sim.js） | `mulberry32(seed + tick)` | 符合模式，保留 |
-| 钓鱼（fishing.js） | `mulberry32(seed + tick*17)` | 符合模式，保留 |
-| 漂浮物（engine.js） | boot 时建一条长命流传给 `spawnFlotsam`，游标不落盘 | **[R2 必改]** 改派生模式（`stepSim` 内派生，盐 `"salvage"`），否则读档后漂浮物序列漂移 |
-| 潜水（dive.js） | 完全无随机：节点/鲨鱼写死 | **[R2 必改]** 从 `(seed, tick, zone)` 派生布局 |
-| 战斗（battle.js） | 调用方传 seed | 保留；UI 侧 seed 公式见缺陷 D12 |
+| 天气重掷（sim.js） | `deriveRng(seed, tick, "weather", roll)`，roll = 单次调用内重掷序号 | 冻结；离线分块重放残留见契约 §10-N7 |
+| 拾荒（engine.stepSim） | 每量子 `deriveRng(seed, tick, "salvage")` 传给 `spawnFlotsam`，游标不落盘 | 冻结（Round 1 长命流已废，读档可复现） |
+| 钓鱼（fishing.js） | `mulberry32(seed + tick*17)` | 冻结（Round 1 口径保留） |
+| 潜水布局（dive.js） | `mulberry32(hashSeed("dive|zone|seed|tick"))`，(seed,tick,zone) 定一张图 | 冻结（写死布局已废） |
+| 战斗（battle.js） | 调用方传 seed；导出 `battleSeed(state, stage, attempts)` | 冻结；但 UI 私有公式并存（契约 §10-N2，R3 收敛） |
 
-新游戏 seed：`defaultState` 基线写死 `20260108`（缺陷 D9）。目标：壳层（main.js/ui）在「启航」时生成随机 seed 注入；测试仍用固定 seed。**seed 的生成属于壳层副作用，领域层只消费。**
+新游戏 seed：`defaultState` 仍写死 `20260108`（D9 未落，契约 §10-N9）。目标不变：壳层「启航」时生成随机 seed 注入；测试仍用固定 seed。**seed 的生成属于壳层副作用，领域层只消费。**
 
 ## 5. 状态与存档
 
-- 单一 `createStore`；`GameState` 完整字段模式见契约 §3，**字段集合冻结**，新增字段走「附加 + 默认值」流程并同步契约。
+- 单一 `createStore`；`GameState` 完整字段模式见契约 §3，**字段集合冻结**，新增字段走「附加 + 默认值」流程并同步契约。本轮附加：`meta.savedAt`、`world.mods`、`campaign.attempts`、explore 侧 `fishing.cast/castTick/codex`、`salvage.picked/rarePicked/lastPick`、`diveRecord`、资源 `tool`。
 - `store.patch` 是**顶层浅合并**——改嵌套字段必须自带展开（`{ meta: { ...s.meta, x } }`）。深层直接赋值 = 契约违规。
-- 存档：`localStorage["cww.save.v1"]`，内容 = `JSON.stringify(GameState)` 全量。键前缀 `cww.` 是本游戏在 localStorage 的命名空间 **[冻结]**，其他游戏不得使用。
-- 自动存档：started 状态下每 4s 一次；读档时 `started` 强制回 false（回标题屏）。
-- **版本迁移 [R2 必改]**：`loadState` 目前不校验 schema（缺陷 D10）。规则：`meta.version` 与存档键版本号一起变；不兼容时改键名 `cww.save.v2` 并写迁移函数，禁止让旧档直接崩运行时。
+- 存档：`localStorage["cww.save.v1"]`，内容 = `JSON.stringify(GameState)` 全量 + `savedAt`。键前缀 `cww.` 是本游戏在 localStorage 的命名空间 **[冻结]**。
+- 自动存档：started 状态下每 4s 一次 + `beforeunload` 落盘；读档时 `started` 强制回 false（回标题屏）。
+- **读档健壮性 [冻结]**：`hydrateSave/normalize` 深合并 + 逐字段钳域 + tiles 重建 + `world.mods` 作废重算，坏 JSON/脏档不再毒化模拟（D10 钳域侧已关）。**已知债**：explore 分支白名单丢附加字段（契约 §10-N1）。
+- **版本迁移 [R3]**：`meta.version` 与存档键版本号一起变；不兼容时改键名 `cww.save.v2` 并写迁移函数，禁止让旧档直接崩运行时。当前只有钳域没有迁移。
 
 ## 6. 与同仓库其他游戏的隔离 [冻结]
 
@@ -125,62 +132,50 @@ const rng = mulberry32((state.meta.seed ^ hashSeed("盐字符串") ^ state.meta.
 
 ## 7. 性能预算
 
-`npm run bench` 门槛（超标即 exit 1）**[冻结]**：`tickMs ≤ 4`、`spawnMs ≤ 2`、`battleMs ≤ 12`。基线实测 0.019 / 0.002 / 0.05 ms，余量巨大——但注意 bench 目前因静默失败实际在跑 0 建筑（缺陷 D13），数字虚低。
+`npm run bench` 门槛（超标即 exit 1）**[冻结]**：`tickMs ≤ 4`、`spawnMs ≤ 2`、`battleMs ≤ 12`。Round 2 实测（64 建筑、12 类全覆盖、24×24 木筏）：tick p95 0.021ms / stepSim 0.024ms / spawn 0.006ms / battle 0.134ms，全预算内且负载真实（D18 已关）。
 
-已知热点：`tickWorld` 每量子 `structuredClone` 全量状态（每秒 10 次全深拷贝）。允许改成按需展开拷贝 **[附加]**，但「不改入参、失败返回原引用」两条铁律不变。渲染侧 60fps 目标见 `docs/SOTA_CHECKLIST.md`。
+结构性要点：
+
+- `tickWorld` 已弃整状态 `structuredClone`，改按需展开拷贝（`structuredClone` 只剩 `defaultState` 一处）。
+- 建筑表启动时 `compileBuildings` 编译一次（摊平 output/input/converts），tick 热路径零 `Object.entries`。
+- 邻接查询走 `adjacencyIndex(state)` 一次建索引（对建筑数线性），sim/mods 共享传递，**禁止**退化成逐座 `filter` 的 O(B²)。
+- 渲染侧一次建 DOM、每帧只改 text/style/class，60fps 目标见 `docs/SOTA_CHECKLIST.md`。
 
 ## 8. 测试与验证矩阵
 
 | 命令 | 覆盖 | 说明 |
 | --- | --- | --- |
-| `npm test`（vitest + jsdom） | `tests/*.test.js`：建造合法性、产出、扩建、拾荒/钓鱼/潜水、战斗确定性、招募/委任/升星 | 只准 import 契约冻结符号 |
-| `npm run probe` | 冒烟：store 启动、放 hq、时间推进、战斗返回 | 任何 FAIL exit 1 |
-| `npm run bench` | tick/spawn/battle 单次耗时门槛 | 见 §7 |
-| `npm run stress` | 20 次扩建 + 全建筑铺放 + 2000×0.25s tick 不死人 | 长时数值稳定性 |
+| `npm test`（vitest + jsdom） | `tests/*.test.js`：建造/升级/扩建 reason 码、旋转落位、表驱动产出、拾荒/钓鱼/潜水、战斗确定性与快照、招募/委任/升星、stepSim 纯度、hydrateSave | 只准 import 契约冻结符号 |
+| `npm run probe` | 冒烟：store 启动、放 hq、时间推进、战斗返回、隔离 realpath 断言 | 任何 FAIL exit 1 |
+| `npm run bench` | tick/stepSim/spawn/battle 耗时门槛（真实 64 建筑负载） | 见 §7 |
+| `npm run stress` | 密铺 + 30 关 × 128 seed × 双跑 digest（3840 场 0 错配）+ 长时数值稳定 | 确定性与稳定性 |
+| `src/ui/e2e/`（smoke/fresh） | 真 Chrome 六屏走查 47 断言 | 未入 `npm test` 门禁（[R3]，SOTA 清单 I 节） |
 
-Round 2 新增测试的硬性要求：战斗快照用 `JSON.stringify(simulateBattle(...))` 做**字节级**断言（契约 §8）；每修一个 §9 缺陷配一条回归测试。测试不得断言中文人话文案（会被 Fable-2/3 调整），只断言 reason 码与数值。
+测试硬性要求 [冻结]：战斗快照用 `JSON.stringify(simulateBattle(...))` 做**字节级**断言（契约 §8）；每修一个缺陷配一条回归测试；测试不得断言中文人话文案（会被 Fable-2/3 调整），只断言 reason/code 码与数值——world/heroes 断言 `reason`，explore 断言 `code`（契约 §2/§10-N5）。
 
-## 9. 已知缺陷 / 架构债（基线 `14b21c9`）
+## 9. 缺陷账本（Round 2 合并树 `25fd9c6` 复盘）
 
-按修复归属排列（角色 → 所有权见 PROGRESS.md）。**契约层面的不一致**另见 `API_CONTRACT.md` §10。
+Round 1 账本 D1–D18 处置如下；**残留项与新发现统一并入契约 §10 的 N 编号清单**（单一账本，不再两处记）。
 
-**Opus-1（world/core）**
+**已关**：D1（engine→ui 依赖，render 注入）、D2/D3（reason 码 + 全套 can*）、D4（maxLevel 上限 + tiles.level 双写同步维护）、D6（expandRaft 非法 dir）、D7（defaultState 深合并 + normalize）、D8（savedAt/idleSince/settleOffline 全链）、D10（读档钳域；版本迁移仍缺 → §5 [R3]）、D11（潜水布局派生 + finishDive 防御 + spawnFlotsam 用 dt + 拾荒派生流）、D13 上限侧（MAX_SIDE 截断 + 关卡 5 敌编队）、D14（UI 差异更新，钓鱼可玩）、D16（移动/旋转/拆除 UI）、D18（bench 真负载）。
 
-- D1 `core/engine.js` import 了 `ui/app.js`（下层依赖上层）。改法：`boot(root, store, renderFn)` 或由 main.js 注入 render。
-- D2 领域动词全部**静默失败**（资源不够 / 等级不足 / 目标不存在时原样返回），UI 无法解释原因。改法：按契约 §2 的 `can*` 前置检查 + reason 码补齐。
-- D3 `canPlace` 的 `reason` 是中文人话不是稳定码；契约 §2 定义了码表与 `message` 字段分离方案。
-- D4 `upgradeBuilding` 不检查解锁等级、无最高级上限；`tiles` 里的 `level` 与 `buildings[].level` 双写（易失同步），`occupant` 字段全程死值 null。
-- D5 天气重掷派生 rng 用 `(seed + tick)`，单次大 dt 调用内 tick 不变——离线补算实现时同一 tick 会重掷出同一天气。
-- D6 `expandRaft` 把一切非 left/right/down 的 dir 当 up；非法 dir 应返回原引用。
-- D7 `defaultState(seed)` 顶层浅合并：传部分嵌套（如只有 width 的 `raft`）会覆盖掉 tiles，坏档。
-- D8 离线补算完全缺失：`campaign.idleSince` 无消费者，存档无 `savedAt`。
-- D9 新档 seed 写死 `20260108`，人人同一条命运线。
-- D10 `loadState` 无 schema/版本校验，坏 JSON 结构会带病进运行时。
+**部分关/残留**（详见契约 §10 对应条目）：
 
-**Opus-2（explore）**
+| 旧编号 | 残留内容 | 契约条目 | 归属 |
+| --- | --- | --- | --- |
+| D5 | 离线分块的天气派生流重放（tick 不变、nonce 未掺块序） | N7 | Opus-1 |
+| D9 | 新档 seed 写死 20260108 | N9 | Opus-4（壳层）|
+| D12 | `applyBattleInjuries` 无调用方；战败零代价 | N3① | Opus-3 + Opus-4 |
+| D13 | 5v5 阵容取舍 UI 缺位，`selectLineup` 悬空 | N3③ / N12 | Opus-4 |
+| D15 | 钓鱼 cast 仍在 `ctx.ui` 双轨（潜水侧已入 state） | N4 | Opus-4 |
+| D17 | 居民恒 1 人、事件恒 null、coins 无消费 | N10 / N11 | Opus-1 + Fable-3 |
 
-- D11 `startDive` 布局写死（每次潜水同一批节点/鲨鱼），`zone` 参数无内容差异；`finishDive` 收到失败会话（`{ok:false}`）会因 `session.loot` undefined 直接抛异常。`spawnFlotsam` 的 ttl 衰减写死 0.1 而不是用 dt 参数；engine 的拾荒 rng 游标不落盘（§4）。
+**Round 2 新发现**（同表在契约 §10）：N1 normalize 丢探索附加字段（Opus-1/2）；N2 战斗 seed 双公式（Opus-3 + Opus-4）；N3② `tickInjuries/syncExploreWeather` 未入量子（Opus-1）；N5 can* 两套形状（Fable-1 定收敛方案）；N6 store→world/mods 豁免边（Fable-1 裁决）；N8 展示层成长口径双写（Opus-4）。
 
-**Opus-3（heroes/combat）**
+## 10. Round 3 落地顺序建议
 
-- D12 战斗确定性隐患：出手排序用 `name.localeCompare`（ICU/locale 相关，跨环境不保证字节稳定），必须换码点比较。技能层：`skill.star` 解锁星级只对 taunt 生效（burst/aoe/heal/multishot 无视星级门槛）；`buff` 类型（微醺之龙）在 battle.js 根本没实现；multishot 是恒定 ×1.15 而非多段。UI 侧战斗 seed = `meta.seed + stage*99`，重打同关永远同结果，需要加 `campaign.attempts` 盐（字段归 Opus-3 提、契约已预留）。`assignHero` 不校验 hero/building 存在；被顶替英雄的 `assignedBuildingId` 变悬挂引用。`injuredUntil` 全程死字段。
-- D13 「5v5」未成立：关卡只配 4 个敌人（数据归 Fable-3），我方人数无上限也无上阵选择。契约 §8 规定双方 1–5、超出确定性截断。
-
-**Opus-4（ui/main/audio）**
-
-- D14 `render()` 每帧重写左右面板 `innerHTML` → 钓鱼滑条 `#timing` 每帧被重置回 50，**钓鱼小游戏在 UI 上实际不可玩**；也导致按钮焦点丢失。需改成按 state 变化的差异更新或把频繁重绘限制在 canvas。
-- D15 潜水会话与钓鱼 cast 存在 ui/app.js 模块级变量里，没进 `state.explore.dive/fishing`——刷新即丢，且与契约的 GameState 定义矛盾；dive 模拟用写死 dt=0.032 跑在渲染路径里。
-- D16 GDD 要求的拖拽移动（`moveBuilding`）与旋转（rot 90）逻辑层已有、UI 完全没接（永远 rot=0）；无拆除入口。
-- D17 居民系统只剩装饰：`fulfillOrder` 写死 `residents[0]`、无居民招募、`house.pop` 无消费者；饥渴归零按 GDD 应产能减半，基线只扣血。`player.coins/diamonds` 无任何进出账。
-
-**GPT-sol（tests/scripts）**
-
-- D18 bench.mjs 因 D2 静默失败：8 次扩建只成功 1 次、hq 买不起，最终 0 建筑在跑基准（输出 `buildings: 0`），门槛形同虚设。修 D2 后 bench 应断言 `buildings > 0`。
-
-## 10. Round 2 落地顺序建议
-
-1. 先冻结契约（`API_CONTRACT.md` 已列禁止改名清单），各角色只做自己所有权内文件。
-2. Opus-1 先落 D2/D3（reason 码）+ `stepSim`，因为 Opus-2/3/4 与 GPT-sol 的工作都踩在失败语义和量子入口上。
-3. Opus-3 的 D12 换排序比较器会改变既有战斗快照——快照测试必须在该修复**之后**由 GPT-sol 重新落盘。
-4. D14/D15（UI 可玩性）不依赖别人，可并行。
-5. 数据表数值（5 敌人编队、平衡）由 Fable-3 在 `src/data/**` 独立调，引擎按契约字段消费，互不阻塞。
+1. **先收敛双轨**（N2 战斗 seed、N4 钓鱼 cast、N8 双份常量）：都是「实现有两份、谁是真身不明」的债，拖越久快照与存档越难迁移。战斗 seed 收敛会改战报快照，须与 GPT-sol 的快照重落盘排同一批。
+2. **stepSim 追加巡检**（N3②）：`tickInjuries` + `syncExploreWeather` 挂量子（tick+1 前、独立盐、无事原引用），随后 campaign 接 `applyBattleInjuries`（N3①）与 `selectLineup`（N3③/N12）才有意义。
+3. **normalize 收编探索字段**（N1）：在图鉴/生涯统计有 UI 之前修掉，否则玩家第一次刷新就丢数据。
+4. **N6 依赖边裁决**：建议把 `world.mods` 盖章挪到 stepSim（defaultState 不算 mods，消费方已有回退），恢复「core 不 import 领域层」的干净表述。
+5. 事件/居民/coins 消费（N10/N11）依赖 Fable-3 数值与 Opus-1 接线，可与上面并行；D9/版本迁移是壳层小活，见缝插针。
