@@ -12,7 +12,7 @@ games/my-garden-world/
   src/app.ts               组合根
   src/styles/tokens.css    国风设计令牌
   src/styles/main.css      布局与组件
-  src/engine/*             状态、循环、存档、时间、事件
+  src/engine/*             状态、循环、存档、时间、事件、邻里、偏好
   src/data/*               静态内容（花/订单/装扮/花灵/剧情）
   src/systems/*            规则（无 DOM）
   src/ui/*                 HUD / 面板 / 教程
@@ -23,6 +23,26 @@ games/my-garden-world/
 ```
 
 状态为单一 `GameState`（见 `src/engine/state.ts`），系统函数纯更新，UI 订阅渲染。存档 schemaVersion 递增迁移。
+
+## 存档 schema 沿革
+
+| 版本 | 新增 | 迁移要点 |
+|------|------|----------|
+| v1 | 初版 | — |
+| v2 | `lastSeenAt` | 旧档以本次加载为准，首次回来不补发离线收益；按等级回填 `unlockedFlowers` |
+| v3 | `social`、`decorTheme` | 旧档补一份满余量的空邻里段；主题只认 `THEMES` 里的 id，野值归 `null`。`social` 逐字段体检（余量夹进合法区间、交情只留有限数、痕迹只留形状对的条目） |
+
+`decorAnchors`（陈设落位表）由 `systems/decorate.ts` 用模块增强挂在 `GameState` 上，可缺省——缺项按偏好锚位自动落座，因此不占 schema 版本。
+
+## 邻家花园互访（Round 3）
+
+分三层，互不越界：
+
+- `engine/neighbors.ts`：玩法与数值——三位邻居、按「邻居 id + 游戏日」程序化生成的园子（保底至少两块有花、一块盛放、一块缺水）、每日帮浇/借花余量、交情与当日痕迹。纯逻辑，不碰 DOM。
+- `engine/state.ts` 的 `social` 段：余量与痕迹跨日重置（`ensureSocialDay` 用 `engine/time.ts` 的 `gameDay`），交情长期累积。
+- `ui/panels.ts` 的访邻花笺：只做渲染与点按，规则一律回调上面两层；`app.ts` 的 dock「访邻」印章经 `VISIT_PANEL` 打开它。
+
+静音属设备偏好而非花园进度，走 `engine/prefs.ts` 另存一格（`my-garden-world:prefs:v1`），`audio/soundscape.ts` 在模块加载时读回——「重整山河」清空存档不会连耳朵的选择一起抹掉。
 
 ## 渲染架构（Round 1 重构后）
 
@@ -47,3 +67,9 @@ games/my-garden-world/
 | opus-meta | `src/systems/decorate.ts`, `src/systems/spirits.ts`, `src/ui/**`（除 tutorial）, `src/audio/**` |
 | gpt-unit | `tests/unit/**` |
 | gpt-probe | `tests/probe/**`, `docs/PERF.md` |
+
+Round 3 沿用同一张表；跨槽位的接线一律走「一方导出、另一方调用」，不改对方的文件：
+
+- 邻访：`engine/neighbors.ts`（engine 槽）导出规则 → `ui/panels.ts`（meta 槽）渲染 → `app.ts`（engine 槽）接 dock。
+- 主题：`systems/decorate.ts` 的 `applyTheme` 记 `state.decorTheme` → `app.ts` 每帧写根节点 `[data-theme]`。
+- 静音：`engine/prefs.ts` 提供存取 → `audio/soundscape.ts` 自持久化，`app.ts` 只管开关。
