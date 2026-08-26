@@ -60,6 +60,11 @@ import { createMatch, step } from "./sim/index.js"; // 8 掌数值与 8 个主�
 
 `installData(mod)` / `installCombat(mod)` 只给测试塞替身，`resetDeps()` 回到真实模块。
 
+探针与装配层习惯把真身再装一遍（`installCombat(await import("../combat/index.js"))`）。
+那不是替身：deps 认出真身（或只做转发的薄适配器）后**折回静态桥**——朝向相位与命中形状的换算
+只在 `combat-bridge.js` 做过一次，绕过去技能就全哑——`usingRealCombat` / `usingRealData` 保持 `true`。
+只有认不出的表 / 缺件的函数集才算替身，那时两个布尔才是 `false`。
+
 ### combat-bridge
 
 `combat-bridge.js` 是 sim 与 `src/combat` 之间**唯一**的适配点，收敛三处约定差：
@@ -67,7 +72,7 @@ import { createMatch, step } from "./sim/index.js"; // 8 掌数值与 8 个主�
 | 差异 | 处理 |
 | --- | --- |
 | combat 的 `yaw=0` 面向 +Z | 进出 combat 时整体加/减 `FACE.combatOffset` |
-| data 的 `skillId`（`iron_pull`…）≠ combat handler id（`magnetPull`…） | `SKILL_ALIAS` 映射 |
+| 掌表的 `skillId` 三套词表：data（`iron_pull`）、combat handler（`magnetPull`）、文档短名（`pull`） | `SKILL_ALIAS` 三套都收，`none`/空值归一成 `"none"` |
 | combat 命中是 `{ id, impulse }` 且冲量已写进目标速度 | 转成 `{ targetId, impulse, applied: true }` |
 | combat 有自己的 `cd` / `busyUntil` | 出招时机由 sim 的 attack 状态机独占，调用前清零，避免两套冷却互卡 |
 | combat 的事件字段名（`attackerId` / `playerId`）与碎地记账 | 收进暂存区翻译成 sim 事件，并补 `brokenCount` / `stats.tilesBroken` |
@@ -87,7 +92,8 @@ import { createMatch, step } from "./sim/index.js"; // 8 掌数值与 8 个主�
 - 击退：水平速度冲量 + 小抬升，受击方 `knockScale` 每次 +0.075（最高 3.2），落地回一点。
 - 边缘低护栏：站着走不出去；**`kbT > 0`（被扇飞）时护栏完全失效**，击退必须能把人送出岛。
 - 掉落：`y < config.fallY`（-8）判定出局；或者水平半径 > `arenaRadius + 0.2` 且脚下无台，
-  一旦掉到台面高度以下就立刻出局（GDD §4）。脚下台块碎了就没有支撑，会直接漏下去。
+  一旦掉到台面高度以下就立刻出局（GDD §4，`tests/match-lifecycle` 要的是越缘即开始重生计时）。
+  脚下台块碎了就没有支撑，会直接漏下去。
 - 台面：`arena.tiles` 是圆盘上的方格，各自有 `hp/maxHp/alive/zone/seam`，`damageTileAt(state,x,z,amount)` 是唯一入口。
 
 ## 怎么单测“扇下岛”

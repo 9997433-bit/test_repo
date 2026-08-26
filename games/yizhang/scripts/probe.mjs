@@ -89,18 +89,12 @@ function superviseProbe() {
           );
         }
 
-        const label =
-          result.status === 'soft-pass' ? 'PROBE SOFT PASS' : 'PROBE PASS';
-        const detail =
-          result.status === 'soft-pass'
-            ? 'zero kills, but players moved'
-            : `${result.kills} kill(s) observed`;
         console.log(
-          `${label}: ${PROBE_STEPS} steps (${result.simulatedSeconds}s), ` +
-            `${detail}, real combat ` +
-            (result.usingRealCombat === undefined
+          `PROBE PASS: ${PROBE_STEPS} steps (${result.simulatedSeconds}s), ` +
+            `${result.kills} kill(s) observed, real combat ` +
+            (result.wiredCombat === undefined
               ? 'status unavailable'
-              : result.usingRealCombat
+              : result.wiredCombat
                 ? 'wired'
                 : 'not wired'),
         );
@@ -144,6 +138,12 @@ async function executeProbeWorker() {
       throw new Error('AI module is required to verify bot think() calls');
     }
     let state = createFourPlayerMatch(simulation);
+    const wiredCombat = getWiredCombat(simulation);
+    if (wiredCombat !== true) {
+      throw new Error(
+        `production combat is not statically wired: ${String(wiredCombat)}`,
+      );
+    }
     let view = simulation.getView(state);
 
     const initialNonFinite =
@@ -238,7 +238,15 @@ async function executeProbeWorker() {
     }
 
     const finalPlayers = getPlayers(view);
-    const kills = Math.max(0, totalKills(finalPlayers) - initialKills);
+    const kills = totalKills(finalPlayers) - initialKills;
+    if (!Number.isFinite(kills)) {
+      throw new Error(`non-finite kill count after simulation: ${String(kills)}`);
+    }
+    if (kills < 1) {
+      throw new Error(
+        `zero kills observed across ${PROBE_STEPS} simulation steps`,
+      );
+    }
     const sortedDurations = [...stepDurations].sort(
       (left, right) => left - right,
     );
@@ -250,7 +258,7 @@ async function executeProbeWorker() {
     parentPort.postMessage({
       type: 'result',
       result: {
-        status: kills === 0 ? 'soft-pass' : 'pass',
+        status: 'pass',
         steps: PROBE_STEPS,
         players: initialPlayers.length,
         dt: DT,
@@ -264,7 +272,7 @@ async function executeProbeWorker() {
         ai: ai ? 'think' : 'fallback',
         botThinkCalls: activity.botThinkCalls,
         botSlapAttempts: activity.botSlapAttempts,
-        usingRealCombat: getWiredCombat(simulation),
+        wiredCombat,
       },
     });
   } catch (error) {
@@ -295,9 +303,13 @@ function squaredDistance(left, right) {
 }
 
 function totalKills(players) {
-  return players.reduce(
-    (total, player) =>
-      total + (Number.isFinite(player?.kills) ? player.kills : 0),
-    0,
-  );
+  return players.reduce((total, player) => {
+    if (!Number.isFinite(player?.kills)) {
+      throw new Error(
+        `player ${String(player?.id)} has non-finite kills: ` +
+          `${String(player?.kills)}`,
+      );
+    }
+    return total + player.kills;
+  }, 0);
 }
