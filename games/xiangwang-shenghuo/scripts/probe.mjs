@@ -8,6 +8,7 @@ const moduleChecks = [
     name: "farm",
     path: "../src/systems/farm/index.js",
     exports: ["till", "plant", "harvest", "tickPlots", "seasonFactor"],
+    optionalExports: ["catchUpPlots", "harvestAll"],
   },
   {
     name: "production",
@@ -38,6 +39,12 @@ const missingExports = moduleChecks.flatMap((check, index) =>
   check.exports
     .filter((name) => !(name in loaded[index]))
     .map((name) => `${check.name}.${name}`),
+);
+const optionalExports = moduleChecks.flatMap((check, index) =>
+  (check.optionalExports || []).map((name) => ({
+    name: `${check.name}.${name}`,
+    present: name in loaded[index],
+  })),
 );
 
 if (missingExports.length > 0) {
@@ -88,9 +95,15 @@ const requiredExports = moduleChecks.reduce(
   (total, check) => total + check.exports.length,
   0,
 );
+const presentOptionalExports = optionalExports.filter(({ present }) => present);
 const report = {
   ok: failedChecks.length === 0,
-  exports: { required: requiredExports, present: requiredExports },
+  exports: {
+    required: requiredExports,
+    present: requiredExports + presentOptionalExports.length,
+    optionalPresent: presentOptionalExports.map(({ name }) => name),
+    optionalSkipped: optionalExports.filter(({ present }) => !present).map(({ name }) => name),
+  },
   data: {
     crops: data.CROPS.length,
     recipes: data.RECIPES.length,
