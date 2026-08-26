@@ -84,3 +84,17 @@
 - 无 History 路由、无离线字体。
 - 乱涂门禁未把 cloud 治疗算进硬误报。
 - Round 3 必收：单一轨迹源、migrate、删死代码、放生/合成 UI、全盘交叉核验、README 对齐。
+
+---
+
+## 《Round 3 最终结论》
+
+SOTA 网页复刻有条件通过（自动化 P0 清零）。
+
+- 轨迹金标准合一到 `synth.js`；乱涂硬误报含 cloud，实测 2%。
+- 存档 v2 migrate + `.bak`；`releaseBeast` + 枢纽灵兽栏。
+- `mods.js` 已删；控制 `500+1100×精度`；pointercancel 丢弃；减动效开关。
+- 文档 README/GDD/契约/清单对齐实现。
+- 门禁：vitest **105/105**，probe/bench 绿，识别 p95≈0.14ms。
+
+剩余 P1：真机 60fps 未录；根目录勿提交 `package-lock.json`。
