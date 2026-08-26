@@ -102,8 +102,13 @@ test("F3 的异名键按别名表接到视图键位，异构键按语义换算",
   assert.equal(payouts("blindbox").cost, f3.blindbox.cost);
   assert.equal(payouts("fortune").cost, f3.fortune.cost);
   // 单位换算：F3 记「每 N 件 1 阅历」，视图按「每件多少阅历」累加
-  assert.equal(payouts("fresh").xpPerGood, 1 / f3.fresh.catchesPerXp);
-  assert.equal(freshPayout({ good: f3.fresh.catchesPerXp }).xp, 1);
+  const per = f3.fresh.catchesPerXp;
+  assert.equal(payouts("fresh").xpPerGood, 1 / per);
+  // 「每 N 件 1 阅历」= 向上取整，且整数倍处不得因浮点误差白送一点
+  for (const batches of [1, 2, 3, 7]) {
+    assert.equal(freshPayout({ good: per * batches }).xp, batches, `${per * batches} 件应恰好 ${batches} 点阅历`);
+    assert.equal(freshPayout({ good: per * batches + 1 }).xp, batches + 1, "多接一件就进下一档");
+  }
 });
 
 test("改 F3 的数字就能改判定结果，视图不留第二份数值", () => {
