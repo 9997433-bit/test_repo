@@ -6,6 +6,7 @@
  */
 
 import { GRID_CELL, WORLD_H, WORLD_W } from "./constants.js";
+import { ensureStampSlot } from "./shapes.js";
 
 export function createGrid(cell = GRID_CELL, width = WORLD_W, height = WORLD_H) {
   const cols = Math.max(1, Math.ceil(width / cell));
@@ -40,6 +41,8 @@ function cellRange(grid, minX, minY, maxX, maxY) {
 }
 
 export function insertBody(grid, body) {
+  // 去重戳必须是不可枚举槽位，否则 queryGrid 的赋值会在快照里留下内部字段
+  ensureStampSlot(body);
   const box = body.aabb;
   const { c0, r0, c1, r1 } = cellRange(grid, box.minX, box.minY, box.maxX, box.maxY);
   grid.count++;
