@@ -1,10 +1,13 @@
 import { UNIT_TABLE, unitAttack } from "../data/units.js";
 import { heroById } from "../data/heroes.js";
-import { waveSpec, leakCompensation, MAX_WAVE } from "../data/waves.js";
+import * as waveTable from "../data/waves.js";
 import { castSkill } from "./skills.js";
 import { applyDamage } from "./damage.js";
 import { cellCenter, falloffFor, lanePoint } from "./geometry.js";
 import { linkArena, notePressureKill } from "./pressure.js";
+import { createTuning, tableFrom } from "./tuning.js";
+
+const { waveSpec, leakCompensation, MAX_WAVE } = waveTable;
 
 /** 路线推进的时间常数：speed(点/秒) / PATH_SCALE = 每秒推进的进度。 */
 const PATH_SCALE = 520;
@@ -21,15 +24,25 @@ const CD_BANK = 0.5;
  * 不补的话整局会比旧版早三四波结束（实测 avgWave 9.1 → 5.8）。
  * data 表不归本轮改，补偿系数因此留在战斗层，并做成可调。
  */
-const BALANCE = { towerDamage: 1.35 };
+const BALANCE_TUNING = createTuning({
+  defaults: { towerDamage: 1.35 },
+  table: tableFrom(waveTable, ["BALANCE", "COMBAT_BALANCE"]),
+  coerce: { towerDamage: (v) => Math.max(0, v) },
+});
+
+const BALANCE = BALANCE_TUNING.live;
 
 export function balanceConfig() {
-  return { ...BALANCE };
+  return BALANCE_TUNING.read();
 }
 
 export function configureBalance(patch = {}) {
-  if (typeof patch.towerDamage === "number") BALANCE.towerDamage = patch.towerDamage;
-  return balanceConfig();
+  return BALANCE_TUNING.patch(patch);
+}
+
+/** 回到「默认值 + data 表覆盖」的状态，丢弃运行时改动。 */
+export function resetBalance() {
+  return BALANCE_TUNING.reset();
 }
 
 let enemySeq = 1;
@@ -301,4 +314,4 @@ function finishByHearts(state, notify) {
 
 export { MAX_WAVE };
 export { sendPressure, linkArena, opponentOf, notePressureKill } from "./pressure.js";
-export { configurePressure, pressureConfig } from "./pressure.js";
+export { configurePressure, pressureConfig, resetPressure } from "./pressure.js";

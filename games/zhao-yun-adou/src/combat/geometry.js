@@ -1,5 +1,8 @@
-import { CELL_COUNT, COLS, ROWS } from "../data/units.js";
+import * as unitTable from "../data/units.js";
 import { measurePath, nearestOn, pathPoints, pointOn } from "./path.js";
+import { createTuning, tableFrom } from "./tuning.js";
+
+const { CELL_COUNT, COLS, ROWS } = unitTable;
 
 /**
  * 战斗几何：把 COLS×ROWS 的棋盘与「几」字路线放进同一坐标系，
@@ -17,17 +20,36 @@ const LANE = measurePath(pathPoints(COLS, ROWS, false));
  * reach = range * scale + pad。默认值下近战覆盖约半条路，
  * 弓/赵云覆盖大半，黄忠(range 3)接近全场，射程档位因此拉得开。
  */
-const REACH = { scale: 1.2, pad: 0.55, graze: 1.6 };
+const REACH_DEFAULTS = { scale: 1.2, pad: 0.55, graze: 1.6 };
+
+/**
+ * 兵种表若导出 `REACH`（或 `REACH_TUNING` / `RANGE_TUNING`），这里整表覆盖默认值。
+ * 现在 data/units.js 没有这个导出，于是照常用上面的默认值 —— 射程手感要重调时，
+ * 在 data 表里加一个导出就够了。
+ */
+const TUNING = createTuning({
+  defaults: REACH_DEFAULTS,
+  table: tableFrom(unitTable, ["REACH", "REACH_TUNING", "RANGE_TUNING"]),
+  coerce: {
+    scale: (v) => Math.max(0, v),
+    pad: (v) => Math.max(0, v),
+    graze: (v) => Math.max(1, v),
+  },
+});
+
+const REACH = TUNING.live;
 
 export function reachConfig() {
-  return { ...REACH };
+  return TUNING.read();
 }
 
 export function configureReach(patch = {}) {
-  if (typeof patch.scale === "number") REACH.scale = patch.scale;
-  if (typeof patch.pad === "number") REACH.pad = patch.pad;
-  if (typeof patch.graze === "number") REACH.graze = Math.max(1, patch.graze);
-  return reachConfig();
+  return TUNING.patch(patch);
+}
+
+/** 回到「默认值 + data 表覆盖」的状态，丢弃运行时改动。 */
+export function resetReach() {
+  return TUNING.reset();
 }
 
 export const LANE_LENGTH = LANE.total;
