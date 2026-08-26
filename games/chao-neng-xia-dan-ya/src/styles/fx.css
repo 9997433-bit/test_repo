@@ -3,11 +3,17 @@
    关键帧 / 停顿 / 震屏 / 连击闪光 / 飘字 / 稀有卡流光 / reduce-motion 双通道
    原则：只动 transform·opacity·background-position·filter；
         一次性动画由 JS 重挂 .is-* 或 .fx-* 类触发，播完自删。
-   加载事实（Round 2 实测）：
+   加载事实（Round 3 复核）：
      游戏 index.html 挂 tokens → base → fx → ui.css（O4 的 ui.css 在本文件之后）；
      gallery.html 挂 tokens → layout(@import base/components/hud) → fx。
    因此本文件必须自洽：juice 类的基础样式一并放这里（勿依赖 hud.css），
    reduce-motion 覆盖靠 !important 压过后加载的 ui.css，仍放文件底部。
+   Round 3 起分两条通道：
+     ① 零接线自动 juice —— 直接绑定 battle.js 已在切换的现网状态类
+        （.combo-badge.on/.hot、.hero-slot.active/.ready、.ult-btn.ready…），
+        游戏加载链今天即产出手感，无需 JS 改动；
+     ② 事件接线 juice —— .fx-hitstop/.fx-shake-*/.fx-combo-flash/.fx-float/
+        .is-bump/.is-fever，等 O4 按 §5.1 接 combat 反馈事件后启用。
    ============================================================ */
 
 /* ============ 关键帧 ============ */
@@ -150,6 +156,29 @@
   }
   50% {
     filter: brightness(1.35);
+  }
+}
+
+/* 满能缩放脉冲（与 ui.css 的 pulse 等价，收编进本文件避免跨文件引用关键帧） */
+@keyframes kf-scale-pulse {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.12);
+  }
+}
+
+/* 英雄坞选中：轻微顶起一下（比连击弹跳收敛，选择反馈不抢戏） */
+@keyframes kf-slot-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.07);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
@@ -403,6 +432,85 @@
    --aim-idle/--aim-lock/--aim-fan/--aim-power-lo/--aim-power-hi 同值 hex，
    配方与三重编码要求见 docs/ART_DIRECTION.md §6.3。 —— */
 
+/* ============ 零接线自动 juice：绑定现网 JS 已在切换的状态类 ============
+   Round 3 实测：battle.js 尚未接 .is-bump / .fx-hitstop 等事件接线类，
+   且 syncHud() 每 60ms 以 className 整串重写 .combo-badge（会抹掉外挂类）。
+   为让 tokens → base → fx 加载链在今天的游戏里就产出手感，本段直接
+   消费现网状态类（battle.js 已经在增删的那些）：
+     .combo-badge.on/.hot · .hero-slot.active/.ready · .ult-btn.ready
+     .draft-card / .modal / .toast 入场
+   O4 的事件接线通道（.is-* / .fx-*，见 §5.1）保持可用：.is-fever /
+   .is-bump 规则在后、特异性同级，接上后自动压过本段的映射。
+   ui.css 在本文件之后加载，凡与其同元素同属性的绑定一律双写类名
+   抬到 (0,3,0)，不用 !important。 */
+
+/* 连击点亮（combo ≥2 时 JS 加 .on）：入场弹跳一记。
+   连击继续增长时 className 整串重写不改变类集合、动画不会复播——
+   逐次弹跳仍需 O4 重挂 .is-bump（见 §5.1 接线表）。 */
+.combo-badge.on.on {
+  animation: kf-combo-bump var(--dur-3) var(--ease-pop);
+}
+
+/* 连击高热（≥10 时 JS 加 .hot）：热橙流光字 + 缩放脉冲。
+   对应设计系统 tier 2（10–19 热橙）；彩虹爆蛋流光仍专属 .is-fever(20+)。
+   压过 ui.css 的 .combo-badge.hot（金字 + pulse），脉冲由 kf-scale-pulse 等价承接。 */
+.combo-badge.hot.hot {
+  background: var(--grad-hot);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--yolk-hot) 60%, transparent));
+  animation:
+    kf-fever-shift 1.6s linear infinite,
+    kf-scale-pulse 0.5s var(--ease-in-out) infinite alternate;
+}
+
+/* 英雄坞：能量满（.ready）辉光呼吸；选中（.active）轻弹一下 */
+.hero-slot.ready.ready {
+  animation: kf-pulse-glow 1.3s var(--ease-in-out) infinite;
+}
+
+.hero-slot.active.active {
+  animation: kf-slot-pop var(--dur-2) var(--ease-pop);
+}
+
+.hero-slot.active.ready {
+  animation:
+    kf-slot-pop var(--dur-2) var(--ease-pop),
+    kf-pulse-glow 1.3s var(--ease-in-out) infinite;
+}
+
+/* 大招钮就绪：保留 ui.css 的缩放脉冲（等价关键帧收编）并叠加辉光呼吸 */
+.ult-btn.ready.ready {
+  animation:
+    kf-scale-pulse 0.7s var(--ease-in-out) infinite alternate,
+    kf-pulse-glow 1.4s var(--ease-in-out) infinite;
+}
+
+/* 三选一卡：插入即播的阶梯弹入（60ms 阶梯，无需 JS 设 --i） */
+.draft-card {
+  animation: kf-pop-in var(--dur-3) var(--ease-pop) both;
+}
+
+.draft-row .draft-card:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.draft-row .draft-card:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+/* 弹窗 / Toast 入场（游戏 .modal/.toast 与样板 components.css 同名共用） */
+.modal {
+  animation: kf-pop-in var(--dur-3) var(--ease-pop) both;
+}
+
+.toast {
+  animation: kf-rise-in var(--dur-3) var(--ease-out);
+}
+
 /* ============ 入场工具类 ============ */
 
 /* 逐项入场：JS 给每项设 --i（0,1,2…）实现 60ms 阶梯 */
@@ -446,11 +554,17 @@
     transform: none;
   }
 
-  /* 静态替代：爆蛋时刻改为静态流光字/金字，弹跳与流动停 */
+  /* 静态替代：爆蛋时刻改为静态流光字/金字，弹跳与流动停；
+     零接线自动 juice 的无限循环（辉光呼吸/流光/脉冲）一并停成静态辉光 */
   html:not([data-reduced-motion="off"]) .combo.is-fever .combo__count,
   html:not([data-reduced-motion="off"]) .combo.is-fever .combo__label,
   html:not([data-reduced-motion="off"]) .combo-badge.is-fever,
-  html:not([data-reduced-motion="off"]) .combo-badge.is-bump {
+  html:not([data-reduced-motion="off"]) .combo-badge.is-bump,
+  html:not([data-reduced-motion="off"]) .combo-badge.on,
+  html:not([data-reduced-motion="off"]) .combo-badge.hot,
+  html:not([data-reduced-motion="off"]) .hero-slot.ready,
+  html:not([data-reduced-motion="off"]) .hero-slot.active,
+  html:not([data-reduced-motion="off"]) .ult-btn.ready {
     animation: none;
   }
 }
@@ -482,7 +596,12 @@ html[data-reduced-motion="on"] .fx-hitstop-lg {
 html[data-reduced-motion="on"] .combo.is-fever .combo__count,
 html[data-reduced-motion="on"] .combo.is-fever .combo__label,
 html[data-reduced-motion="on"] .combo-badge.is-fever,
-html[data-reduced-motion="on"] .combo-badge.is-bump {
+html[data-reduced-motion="on"] .combo-badge.is-bump,
+html[data-reduced-motion="on"] .combo-badge.on,
+html[data-reduced-motion="on"] .combo-badge.hot,
+html[data-reduced-motion="on"] .hero-slot.ready,
+html[data-reduced-motion="on"] .hero-slot.active,
+html[data-reduced-motion="on"] .ult-btn.ready {
   animation: none;
 }
 

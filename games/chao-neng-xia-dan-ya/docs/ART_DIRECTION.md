@@ -125,12 +125,17 @@
 - 数值更新只改内联自定义属性（`--value/--energy`），布局零重排。
 - 连击层级：`data-tier` 0=灰(1–4) / 1=金(5–9) / 2=热橙(10–19) / 3=粉(20+)，满 20 加 `.is-fever`。
 
-### 5.1 Round 2 现网 DOM 对照与 juice 接线（给 Opus-4）
+### 5.1 现网 DOM 对照与 juice 接线（给 Opus-4）
 
 上表是设计系统的理想契约；O4 实际落地的战斗 DOM（`src/ui/screens/battle.js` + `ui.css`）类名不同。
 **juice 类已按现网类名在 `fx.css` 补齐并自洽（不依赖 hud.css）**，接线只需 JS 挂/摘类：
 
 现网结构：`.screen.screen-battle > .battle-canvas + .hud-top + .aim-hint + .hud-dock(.hero-slot.active/.ready…) + .ult-btn(.ready) + .combo-badge(.on/.hot)`
+
+**Round 3 复核：下表事件接线 battle.js 尚未接**（震屏/停顿/飘字仍走 `core/battle.js` + `render.js` 的 Canvas 内部实现，reduceMotion / shake 开关在 `battle.shake`/`battle.punch` 内 gate）。接线时两个坑：
+
+1. `syncHud()` 每 60ms 用 `comboBadge.className = \`combo-badge …\`` **整串重写**，会抹掉外挂的 `.is-bump/.is-fever`——接线前必须改成 `classList.toggle("on", …)` 式增量更新。
+2. Canvas 侧已有 `battle.shakeAmt` 抖动与 `hitStop` 白闪（`render.js` `effects()`），挂 `.fx-shake-*`/`.fx-hitstop` 前先关掉对应 Canvas 实现，**二选一勿叠加**。
 
 | juice | 挂点（现网） | 触发源（combat 反馈事件） | 类 / 做法 |
 | --- | --- | --- | --- |
@@ -146,6 +151,26 @@
 - `settings.reduceMotion === true` → `<html data-reduced-motion="on">`（false 时移除或设 `"off"`）。
 - `settings.shake === false` → `<html data-screen-shake="off">`，只禁 `.fx-shake-*` 位移，闪光/弹跳/飘字保留。
 - 两通道相互独立；`core/battle.js` 内部对 `shakeAmt`/粒子的现有 gate 保持不变。
+- Round 3 复核：壳层尚未写 `data-reduced-motion` / `data-screen-shake`。通道 A（系统 `prefers-reduced-motion`）经 fx.css 今天已生效；通道 B 等壳层接线。
+
+### 5.2 零接线自动 juice（Round 3 起已生效，无需 JS 改动）
+
+在 O4 完成事件接线之前，fx.css 直接绑定 battle.js **已经在切换**的现网状态类，
+让 `tokens → base → fx` 加载链当下就产出手感（实现见 fx.css「零接线自动 juice」段）：
+
+| 现网类（JS 已在挂） | 自动效果 |
+| --- | --- |
+| `.combo-badge.on`（combo ≥2） | 点亮时弹跳一记（`kf-combo-bump`）；后续逐次弹跳仍需 `.is-bump` 接线 |
+| `.combo-badge.hot`（combo ≥10） | 热橙流光字（`--grad-hot` 扫动）+ 缩放脉冲；对应设计系统 tier 2，彩虹爆蛋流光专属 `.is-fever`(20+) |
+| `.hero-slot.ready`（能量满） | 辉光呼吸（`kf-pulse-glow`，filter 亮度） |
+| `.hero-slot.active`（选中） | 轻微顶起一下（`kf-slot-pop`） |
+| `.ult-btn.ready` | 缩放脉冲（收编 ui.css `pulse` 等价关键帧）+ 辉光呼吸叠加 |
+| `.draft-card`（三选一插入） | 60ms 阶梯弹入（`:nth-child` 定延迟，无需 `--i`） |
+| `.modal` / `.toast` 插入 | 弹入 / 上浮淡入 |
+
+约定：这些绑定全部走双写类名（`(0,3,0)`）压过后加载的 ui.css，不用 `!important`；
+O4 接上 `.is-bump/.is-fever` 后，同级特异性、规则在后，自动压过本段映射，无需回收。
+reduce-motion 双通道对本段同样生效（无限循环停成静态辉光/静态渐变字，信息不丢失）。
 
 ## 6. 动效原则
 
@@ -172,13 +197,13 @@ Token 在 `tokens.css`，Canvas（`src/ui/render.js`）读不到 var 时硬编�
 
 | Token | 值 | 用途（现网配方） |
 | --- | --- | --- |
-| `--aim-idle` | `#f6f0e6` | 未锁敌：预测虚线 `rgba(246,240,230,.6)`、端点圆全色 |
+| `--aim-idle` | `#f6f0e6` | 未锁敌：预测虚线 `rgba(246,240,230,.55)`、端点圆全色 |
 | `--aim-lock` | `#ff6b9d`（=`--neon-pink`） | 锁敌：虚线 `rgba(255,107,157,.95)`、端点圆与命中准星圈全色 |
 | `--aim-fan` | `#ffd447`（=`--yolk-500`） | 发射角度扇形，alpha 0.16 铺底 |
 | `--aim-power-lo` | `#ffd447` | 力度条渐变低段（条底） |
 | `--aim-power-hi` | `#ff4d6d`（=`--danger`） | 力度条渐变满力段（条顶） |
 
-- 锁敌/未锁敌是三重编码：色相（粉↔暖白）+ 明度（95%↔60%）+ 形状（准星圈与十字刻度只在锁敌时画）。禁止只换色。
+- 锁敌/未锁敌是三重编码：色相（粉↔暖白）+ 明度（95%↔55%）+ 形状（准星圈、旋转四角括号与目标虚线框只在锁敌时画，见 `render.js` `reticle()/markTarget()`）。禁止只换色。
 - 虚线规格：`setLineDash([7,9])` 3px，`lineDashOffset` 随时间滚动示意弹道方向；端点圆呼吸 alpha 0.3–0.9。
 - reduce-motion 时 Canvas 侧同样收敛：虚线停止滚动、端点停止呼吸（读 `settings.reduceMotion`，JS 侧执行）。
 
@@ -212,7 +237,7 @@ Token 在 `tokens.css`，Canvas（`src/ui/render.js`）读不到 var 时硬编�
 
 ## 9. 加载序与文件职责
 
-两套挂载并存（Round 2 实测）：
+两套挂载并存（Round 3 复核，`index.html` 实链已含 juice 三件套 tokens/base/fx）：
 
 - **游戏** `index.html`：`tokens.css → base.css → fx.css → ui.css`（O4 的 `src/ui/ui.css` 最末）。`components/hud/layout` 未被游戏加载。
 - **样板** `gallery.html`：`tokens.css → layout.css(@import base → components → hud) → fx.css`。
@@ -226,7 +251,7 @@ Token 在 `tokens.css`，Canvas（`src/ui/render.js`）读不到 var 时硬编�
 | --- | --- | --- |
 | `tokens.css` | 全部设计令牌（含旧脚手架别名 `--bg/--panel/--yolk/…` 勿删；准星 `--aim-*`） | ✓ |
 | `base.css` | reset、夜市底景、排版、焦点环、滚动条、工具类 | ✓ |
-| `fx.css` | 全部 `@keyframes`、动画绑定、战斗 juice（自洽）、入场工具、reduce-motion / 关震屏通道 | ✓ |
+| `fx.css` | 全部 `@keyframes`、动画绑定、战斗 juice（自洽）、零接线自动 juice（§5.2）、入场工具、reduce-motion / 关震屏通道 | ✓ |
 | `components.css` | 按钮/卡片/芯片/条/星级/页签/列表/弹窗/toast | 仅 gallery |
 | `hud.css` | 战斗 HUD 设计系统全件（现网 HUD 由 ui.css 实现，对照迁移用） | 仅 gallery |
 | `layout.css` | 应用壳、招牌、屏幕、舞台框、结算屏、响应式 | 仅 gallery |
