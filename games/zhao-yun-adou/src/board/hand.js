@@ -8,6 +8,13 @@ export { HAND_LIMIT };
  *
  * 这里的函数都对传入数组原地增删（与 `side.hand` 的用法一致），
  * 每个写操作都返回是否生效，调用方据此决定要不要扣馒头 / 记日志。
+ *
+ * 待接入：`core/game.js` 至今仍手写 `side.hand.push/splice`。两边语义逐条对拍
+ * 过（见 `hand.test.js`「与 core/game.js 对拍」一节），可原地替换：
+ *   recruit 满手闸门   `side.hand.length >= HAND_LIMIT` → `isHandFull(side.hand)`
+ *   recruit 入手       `side.hand.push(card)`           → `addCard(side.hand, card)`
+ *   place/useShovel    `handCardOf` + `splice(i, 1)`    → `peekCard` / `removeCard`
+ * 本模块只认手牌数组，不碰棋格；落格与否仍由 game 决定。
  */
 
 /** 合法手牌：兵种、单字、铲子或神兵符。 */

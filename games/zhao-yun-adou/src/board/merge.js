@@ -149,11 +149,28 @@ export function canSwap(a, b) {
  * 判定顺序：道具（铲子 / 神兵符）→ 合并 → 落空格 → 交换。返回值：
  * - `merge`   同种同级兵种合并升级。
  * - `token`   神兵符强化目标兵种（source 消耗，不落格）。
- * - `place`   目标空格，source 直接落位。
- * - `swap`    两枚棋子互换（含单字挪位）。
+ * - `place`   目标空格，source 直接落位（棋盘来源即 game 里的 `move`）。
+ * - `swap`    两枚棋子互换（含单字挪位），只可能来自棋盘。
  * - `invalid` 其余情况，调用方必须原样退回，不得消耗手牌。
+ *
+ * 手牌拖出来的牌换不了座（游戏里没有「把棋子收回手牌」这一步），所以
+ * `{ from: "hand" }` 会把本该判 `swap` 的情形改判 `invalid`，其余分支不变；
+ * 缺省的 `{ from: "board" }` 与旧行为逐字一致。
+ *
+ * 只看两枚棋子，不看格子锁没锁 —— `cell.unlocked` 仍由调用方先行拦掉。
+ *
+ * 待接入：`core/game.js` 的 `place`（`{ from: "hand" }`）与 `merge`（缺省）
+ * 各自手写了同一棵判定树，`main.js` 的 `refuseReason` 也另写了一份拒绝理由；
+ * 三处都可以改读这里的 `action` / `reason`（对拍见 `drop.test.js`）。两处已知不同调：
+ * `merge` 里「棋盘上摆着神兵符」那条分支到不了（符牌从不驻留棋盘，接入时可一并删），
+ * 以及 `kind` 认不出来的怪棋子本模块一律拒收、引擎照单全收。
+ *
+ * @param {*} source 被拖动的手牌或棋子
+ * @param {*} target 目标格上的棋子（空格传 null）
+ * @param {{from?: "hand"|"board"}} [opts]
  */
-export function classifyDrop(source, target) {
+export function classifyDrop(source, target, opts = {}) {
+  const fromHand = opts?.from === "hand";
   if (source == null) return { action: "invalid", reason: "empty-source" };
   if (isShovel(source)) return { action: "invalid", reason: "shovel-needs-locked-cell" };
   if (isToken(source)) {
@@ -165,6 +182,7 @@ export function classifyDrop(source, target) {
   if (isToken(target) || isShovel(target)) return { action: "invalid", reason: "target-is-card" };
   if (canMerge(source, target)) return { action: "merge", reason: "same-id-same-level" };
   if (target == null) return { action: "place", reason: "empty-cell" };
+  if (fromHand) return { action: "invalid", reason: "hand-card-needs-empty-or-merge" };
   if (!canSwap(source, target)) return { action: "invalid", reason: "unknown-kind" };
   if (isUnit(source) && isUnit(target) && source.id === target.id) {
     return { action: "swap", reason: isMaxLevel(target) ? "max-level" : "level-mismatch" };

@@ -27,6 +27,9 @@ import { canMerge, isCombatant, isGlyph, isHero, isUnit } from "./merge.js";
  * 近战与远程的分工不是靠「外圈 / 内圈」这条老经验拍出来的 —— 在 5×4 的几字路上
  * 内圈反而覆盖更长。真正的分工来自机会成本：远程能守到近战完全够不着的段落
  * （`exclusive` 项），把那些格子让给远程，鲜活的贴路格子才留得住近战。
+ *
+ * 待接入：AI（`ai/opponent.js`）自带一张加权座位表，UI 还没画落点提示。
+ * 接入口是 `placementHeat`（棋格高亮）与 `recommendCells`（推荐落点）。
  */
 
 /** 覆盖计算的默认采样点数（沿路线均匀取样）。 */

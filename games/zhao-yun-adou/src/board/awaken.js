@@ -11,6 +11,8 @@ function heroUnit(hero) {
     glyph: hero.name,
     level: MAX_LEVEL,
     cooldown: hero.skill.cd * 0.35,
+    // 恒 0 且暂无消费者，但形状锁在 tests/awaken.test.js 与存档契约里：
+    // 战斗层要给武将加攻时读这一格，别另起字段。
     atkBonus: 0,
   };
 }
