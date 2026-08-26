@@ -80,7 +80,15 @@
   --sky-tsunami-lo: #3a1020;
   --sky-hi: var(--sky-clear-hi);
   --sky-lo: var(--sky-clear-lo);
-  --night-alpha: 0; /* 夜幕浓度，由 data-phase 钩子驱动 */
+
+  /* ---- 夜幕（单源，见 docs/ART_DIRECTION.md 第 4 节） ----
+     全站唯一的夜色 = .sea-wrap::after 一层：色用 --night-ink，
+     浓度用 --night-alpha（data-phase 钩子驱动）。canvas 与其他任何层
+     不得再叠整幅变暗。--night-ink 与 --sky-storm-lo 同值：近黑只此一个。 */
+  --night-ink: #06151b;
+  --night-alpha: 0;
+  --night-alpha-dusk: 0.14;
+  --night-alpha-night: 0.3;
 
   /* ---- 字体 ---- */
   --font-display: "ZCOOL KuaiLe", "Noto Sans SC", system-ui, sans-serif;
@@ -148,11 +156,17 @@
   --sky-hi: var(--sky-tsunami-hi);
   --sky-lo: var(--sky-tsunami-lo);
 }
+/* 夜幕单源铁律：这里是 --night-alpha 唯一的赋值点。
+   html[…] 那条 (0,1,1) 特异性专门压过 ui/skin.js UI_CSS 里遗留的
+   半量应急覆盖（(0,1,0)、排在级联最后）——那两行自此是死代码，
+   UI 轮删除前后表现一致；裸属性选择器留给 data-phase 落在 .shell 的场合。 */
+html[data-phase="dusk"],
 [data-phase="dusk"] {
-  --night-alpha: 0.14;
+  --night-alpha: var(--night-alpha-dusk);
 }
+html[data-phase="night"],
 [data-phase="night"] {
-  --night-alpha: 0.3;
+  --night-alpha: var(--night-alpha-night);
 }
 
 /* ---- 基础重置 ---- */

@@ -153,7 +153,8 @@
       filter var(--dur-quick) var(--ease-out);
   }
 
-  /* 天气天空 1.2s 渐变、夜幕淡入淡出 */
+  /* 天气天空 1.2s 渐变；夜幕淡入淡出只发生在唯一夜幕层
+     .sea-wrap::after 上（夜幕单源，ART_DIRECTION 第 4 节） */
   .sea-wrap {
     transition:
       --sky-hi var(--dur-scene) ease,
