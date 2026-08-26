@@ -2,7 +2,8 @@ import "./styles/main.css";
 import { FLOWER_MAP } from "./data/flowers";
 import { tutorialAllows } from "./data/story";
 import type { DecorTheme } from "./data/decorations";
-import { loadState, saveState, clearSave } from "./engine/save";
+import { loadState, flushSave, clearSave } from "./engine/save";
+import { applyOfflineCatchUp } from "./engine/offline";
 import { startLoop } from "./engine/loop";
 import { isNight } from "./engine/time";
 import { onGameEvent } from "./engine/events";
@@ -331,10 +332,19 @@ export function boot(root: HTMLElement): void {
     }
   };
 
+  // 先出一帧铺好花圃，再补算离园收益，绽放特效才有落点
+  frame();
+  applyOfflineCatchUp(state);
   frame();
   startLoop(() => state, frame);
-  addEventListener("beforeunload", () => saveState(state));
+  addEventListener("beforeunload", () => flushSave(state));
+  addEventListener("pagehide", () => flushSave(state));
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") saveState(state);
+    if (document.visibilityState === "hidden") {
+      flushSave(state);
+      return;
+    }
+    applyOfflineCatchUp(state);
+    invalidate();
   });
 }

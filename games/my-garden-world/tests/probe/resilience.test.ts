@@ -105,8 +105,12 @@ describe("legacy save migration backfill probe", () => {
       coins: 321,
       level: 7,
       inventory: { daisy: 9 },
-      unlockedFlowers: ["daisy", "peach"],
     });
+    // v2 迁移按等级回填解锁花种：旧档已有条目保持原序在前，缺的按 FLOWERS 顺序补齐
+    expect(migrated.unlockedFlowers.slice(0, 2)).toEqual(["daisy", "peach"]);
+    expect(new Set(migrated.unlockedFlowers)).toEqual(
+      new Set(FLOWERS.filter((flower) => flower.unlockLevel <= 7).map((flower) => flower.id)),
+    );
     expect(migrated.schemaVersion).toBe(defaults.schemaVersion);
     expect(migrated.plots).toEqual(defaults.plots);
     expect(migrated.orders).toEqual([]);

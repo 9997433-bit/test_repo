@@ -1,7 +1,8 @@
 import { FLOWERS, type GrowthStage, type Season } from "../data/flowers";
 import type { OrderKind } from "../data/orders";
 
-export const SCHEMA_VERSION = 1;
+/** v2：新增 lastSeenAt 墙钟锚点（离线补算），并在迁移时按等级回填 unlockedFlowers。 */
+export const SCHEMA_VERSION = 2;
 export const INITIAL_PLOTS = 6;
 export const MAX_PLOTS = 12;
 export const WATER_CAP = 40;
@@ -44,7 +45,10 @@ export interface Arrangement {
 export interface GameState {
   schemaVersion: number;
   startedAt: number;
+  /** 游戏内模拟时钟（只被主循环 / 离线补算推进）。 */
   now: number;
+  /** 最后一次在线的墙钟时刻，用来算离园时长。 */
+  lastSeenAt: number;
   coins: number;
   water: number;
   waterAcc: number;
@@ -95,6 +99,7 @@ export function createInitialState(now = Date.now()): GameState {
     schemaVersion: SCHEMA_VERSION,
     startedAt: now,
     now,
+    lastSeenAt: now,
     coins: 60,
     water: 16,
     waterAcc: 0,
