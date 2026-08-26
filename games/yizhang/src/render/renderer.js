@@ -374,6 +374,7 @@ export class YizhangRenderer {
       this._focus.set(0, 0, 0);
     }
 
+    this.vfx.ambientDrift(dt, this._focus);
     this.vfx.update(dt, this.time);
     this.lighting.update(this.time, this._focus);
     this.sky.update(this.time, this.camera.position);

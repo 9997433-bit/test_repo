@@ -103,7 +103,7 @@ const SHOCK_FRAG = /* glsl */ `
   void main() {
     // 菲涅尔：只有掠射角的壳面可见，中间是空的，读起来才是「一层被压缩的空气」
     float fres = 1.0 - abs(dot(normalize(vNormalW), normalize(vViewDir)));
-    fres = pow(clamp(fres, 0.0, 1.0), 3.4);
+    fres = pow(clamp(fres, 0.0, 1.0), 2.6);
 
     // 湍流把完美球壳撕开成絮状
     float n = texture2D(uNoise, vUv * 2.4 + vec2(uLife * 0.35, uLife * -0.2)).r;
@@ -304,7 +304,7 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
         grow: (1.6 + rand() * 2.2) * scale,
         drag: 1.9 + rand() * 1.4,
         size: (0.5 + rand() * 0.9) * scale,
-        alpha: 0.22 + rand() * 0.3,
+        alpha: 0.3 + rand() * 0.3,
         color: tmpColor,
       });
     }
@@ -399,11 +399,11 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
   // ---------- 碎屑 ----------
   const debrisGeo = new IcosahedronGeometry(0.16, 0);
   const debrisMat = new MeshStandardMaterial({
-    color: new Color(PALETTE.rockFresh),
-    roughness: 0.95,
+    color: new Color(0x655d52),
+    roughness: 0.98,
     metalness: 0,
     flatShading: true,
-    envMapIntensity: 0.3,
+    envMapIntensity: 0.15,
   });
   const debrisMesh = new InstancedMesh(debrisGeo, debrisMat, quality.debrisBudget);
   debrisMesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -427,14 +427,13 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
       polygonOffset: true,
       polygonOffsetFactor: -3,
       polygonOffsetUnits: -3,
-      toneMapped: false,
     });
     const mesh = new Mesh(decalGeo, mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.visible = false;
     mesh.renderOrder = 2;
-    mesh.layers.enable(BLOOM_LAYER);
-    mesh.userData.bloomSelf = true;
+    // 刻意不进辉光通道：贴花是地面的「裂开」，热量归岛心裂缝网络管。
+    // 让平铺的分叉纹路吃辉光会在画面里炸出四芒星，正是手册 §10 点名的廉价信号。
     group.add(mesh);
     decals.push({ mesh, mat, t: -1, hold: 0 });
   }
@@ -448,11 +447,12 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
     d.mesh.scale.setScalar(scale);
     d.mesh.visible = true;
     d.t = 0;
-    d.peak = 0.35 + strength * 0.35;
+    d.peak = 0.24 + strength * 0.2;
   }
 
   const up = new Vector3(0, 1, 0);
   const tmpDir = new Vector3();
+  let ambientAcc = 0;
 
   const api = {
     group,
@@ -473,13 +473,13 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
       s.mesh.lookAt(pos.x + tmpDir.x, pos.y, pos.z + tmpDir.z);
       // 压扁成一个顺着掌风方向的透镜，而不是完美的球
       s.scale.set(0.85 * p, 0.6 * p, 0.36 * p);
-      s.mat.uniforms.uOpacity.value = 0.3 + p * 0.1;
+      s.mat.uniforms.uOpacity.value = 0.38 + p * 0.14;
 
       emitDust(
         pos.x + tmpDir.x * 0.3,
         pos.y,
         pos.z + tmpDir.z * 0.3,
-        Math.round(10 * p * (quality.name === 'low' ? 0.4 : 1)),
+        Math.round(15 * p * (quality.name === 'low' ? 0.4 : 1)),
         2.6 * p,
         0.8,
         0.8 + p * 0.2
@@ -499,10 +499,10 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
       r.mesh.position.set(pos.x, 0.05, pos.z);
       r.mesh.visible = true;
 
-      emitDust(pos.x, 0.1, pos.z, Math.round(14 * p * (quality.name === 'low' ? 0.35 : 1)), 4.2 * p, 0.5, 1.3);
+      emitDust(pos.x, 0.1, pos.z, Math.round(22 * p * (quality.name === 'low' ? 0.35 : 1)), 4.2 * p, 0.5, 1.3);
       emitEmbers(pos.x, 0.2, pos.z, Math.round(6 * p * (quality.name === 'low' ? 0.3 : 1)), 1.0);
       api.spawnDebris(pos, p);
-      if (opts.crack !== false) addCrackDecal(pos.x, pos.z, 3.4 + p * 2.4, Math.min(1, p / 2));
+      if (opts.crack !== false) addCrackDecal(pos.x, pos.z, 1.9 + p * 1.1, Math.min(1, p / 2));
     },
 
     spawnDebris(pos, power) {
@@ -516,9 +516,9 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
           v: new Vector3(Math.cos(a) * sp * 0.6, 3 + rand() * 4.5, Math.sin(a) * sp * 0.6),
           rot: new Vector3(rand() * 6, rand() * 6, rand() * 6),
           spin: new Vector3((rand() - 0.5) * 9, (rand() - 0.5) * 9, (rand() - 0.5) * 9),
-          scale: 0.5 + rand() * 1.1,
+          scale: 0.32 + rand() * 0.7,
           life: 0,
-          maxLife: 2.4 + rand() * 1.6,
+          maxLife: 2.0 + rand() * 1.2,
         });
       }
     },
@@ -533,6 +533,34 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
     /** 掉出岛外：留一串下坠的尘尾。 */
     fallTrail(x, y, z) {
       emitDust(x, y, z, 1, 0.5, -0.4, 0.9);
+    },
+
+    /**
+     * 环境浮尘。裂缝一直在往上冒热气，台面一直在掉渣，所以空气里本来就该有东西。
+     * 它同时充当构图的前景层：偶尔有一两粒尘从镜头前飘过，画面立刻有了纵深。
+     */
+    ambientDrift(dt, focus) {
+      if (quality.name === 'low') return;
+      ambientAcc += dt;
+      const interval = quality.name === 'high' ? 0.16 : 0.34;
+      while (ambientAcc > interval) {
+        ambientAcc -= interval;
+        const a = rand() * Math.PI * 2;
+        const r = 2 + rand() * 13;
+        tmpColor.copy(dustDark).lerp(dustLit, rand() * 0.7);
+        emit(dust, focus.x + Math.cos(a) * r, 0.3 + rand() * 4.5, focus.z + Math.sin(a) * r, {
+          vx: (rand() - 0.5) * 0.25,
+          vy: 0.18 + rand() * 0.3,
+          vz: (rand() - 0.5) * 0.25,
+          life: 4 + rand() * 4,
+          spin: (rand() - 0.5) * 0.3,
+          grow: 0.5,
+          drag: 0.25,
+          size: 0.16 + rand() * 0.3,
+          alpha: 0.05 + rand() * 0.07,
+          color: tmpColor,
+        });
+      }
     },
 
     /** 觉醒：手套周围少量上升的余烬，说明「掌意」是热的。 */

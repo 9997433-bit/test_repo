@@ -74,6 +74,7 @@ export function createCharacters({ scene, quality, textures }) {
     collar: keep(new CylinderGeometry(0.24, 0.31, 0.16, seg + 2, 1, true)),
     strapChest: keep(new BoxGeometry(0.1, 0.62, 0.035)),
     buckle: keep(new BoxGeometry(0.09, 0.07, 0.05)),
+    backPanel: keep(new BoxGeometry(0.36, 0.52, 0.05)),
     mitt: keep(new SphereGeometry(0.34, seg + 3, seg + 1)),
     knuckle: keep(new TorusGeometry(0.3, 0.045, 5, seg + 4, Math.PI * 1.05)),
     stud: keep(new BoxGeometry(0.07, 0.06, 0.055)),
@@ -98,7 +99,8 @@ export function createCharacters({ scene, quality, textures }) {
     }
 
     const clothOpts = {
-      color: new Color(PALETTE.cloth).lerp(ident, 0.22),
+      // 只借一点识别色的色相，明度仍然由布本身决定，否则浅色手套会把整身衣服洗白
+      color: new Color(PALETTE.cloth).lerp(ident, 0.12),
       roughness: 0.96,
       metalness: 0,
       roughnessMap: textures.cloth.rough,
@@ -109,9 +111,10 @@ export function createCharacters({ scene, quality, textures }) {
     const cloth = quality.sheenCloth
       ? new MeshPhysicalMaterial({
           ...clothOpts,
-          sheen: 0.55,
-          sheenRoughness: 0.85,
-          sheenColor: new Color(0xb9c3d4),
+          // 织物菲涅尔：轮廓边缘一圈绒毛感的亮边。给多了就变成塑料雨衣。
+          sheen: 0.3,
+          sheenRoughness: 0.9,
+          sheenColor: new Color(0x7d8797),
         })
       : new MeshStandardMaterial(clothOpts);
 
@@ -269,6 +272,13 @@ export function createCharacters({ scene, quality, textures }) {
     collar.position.y = 1.58;
     body.add(collar);
 
+    // 背上的掌印布片：跟随镜头看到的是后背，识别色必须在这里能读到
+    const backPanel = new Mesh(geo.backPanel, mats.paint);
+    backPanel.position.set(0, 1.26, -0.315);
+    backPanel.rotation.x = 0.06;
+    backPanel.castShadow = quality.shadows;
+    body.add(backPanel);
+
     const head = new Mesh(geo.head, mats.skin);
     head.position.y = 1.79;
     head.castShadow = quality.shadows;
@@ -391,7 +401,7 @@ export function createCharacters({ scene, quality, textures }) {
             ident.setHSL(hsl.h, hsl.s * 0.45, hsl.l * 0.92);
           }
           c.mats.paint.color.copy(ident);
-          c.mats.cloth.color.copy(new Color(PALETTE.cloth)).lerp(ident, 0.22);
+          c.mats.cloth.color.copy(new Color(PALETTE.cloth)).lerp(ident, 0.12);
         }
         c.target = p;
       }

@@ -37,18 +37,18 @@ export const PALETTE = {
   cloudShadow: 0x46506a,
 
   // 角色材质基色（皮革 / 金属 / 布，粗糙度各不相同）
-  leather: 0x4a3a30,
-  leatherWorn: 0x6b5341,
+  leather: 0x453529,
+  leatherWorn: 0x634c39,
   metal: 0x8d8f93,
   metalWarm: 0xb08b5e,
-  cloth: 0x5a5f6b,
-  clothDim: 0x3d434e,
-  skin: 0xa9765a,
+  cloth: 0x474d59,
+  clothDim: 0x2e333c,
+  skin: 0x8a5f47,
 };
 
 /** 8 只手套的识别色。渲染层不 import src/data，避免反向依赖，视图里带 color 时优先用视图的。 */
 export const GLOVE_TINT = {
-  cotton: 0xd9c7a6,
+  cotton: 0xbfa478,
   granite: 0x8a8578,
   gale: 0x7fc4b4,
   frost: 0x9fc6e8,
@@ -93,8 +93,8 @@ export const QUALITY = {
     // VFX
     dustBudget: 900,
     emberBudget: 220,
-    debrisPerBurst: 12,
-    debrisBudget: 168,
+    debrisPerBurst: 7,
+    debrisBudget: 120,
     mergedDebris: false,
     decalBudget: 24,
     shockRings: 2,
@@ -127,8 +127,8 @@ export const QUALITY = {
     cloudLayers: 2,
     dustBudget: 380,
     emberBudget: 96,
-    debrisPerBurst: 6,
-    debrisBudget: 72,
+    debrisPerBurst: 4,
+    debrisBudget: 56,
     mergedDebris: false,
     decalBudget: 12,
     shockRings: 1,
@@ -160,8 +160,8 @@ export const QUALITY = {
     cloudLayers: 1,
     dustBudget: 140,
     emberBudget: 32,
-    debrisPerBurst: 3,
-    debrisBudget: 24,
+    debrisPerBurst: 2,
+    debrisBudget: 20,
     mergedDebris: true,
     decalBudget: 4,
     shockRings: 1,

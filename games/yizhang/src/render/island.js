@@ -111,8 +111,8 @@ const CORE_FRAG = /* glsl */ `
     // 中心最亮，往外冷成暗橙；再乘一层缓慢起伏，像底下真的在烧
     float fall = smoothstep(1.15, 0.05, r);
     float pulse = 0.82 + 0.18 * sin(uTime * 0.9 + heat * 6.0);
-    vec3 col = mix(uDeep, uCore, clamp(fall * (0.45 + heat * 0.9), 0.0, 1.0));
-    gl_FragColor = vec4(col * fall * pulse * 2.4, 1.0);
+    vec3 col = mix(uDeep, uCore, clamp(fall * (0.35 + heat * 0.8), 0.0, 1.0));
+    gl_FragColor = vec4(col * fall * pulse * 0.7, 1.0);
   }
 `;
 
@@ -154,11 +154,11 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       map: cloneTex(textures.cliff.albedo, 4, 1.7),
       normalMap: cloneTex(textures.cliff.normal, 4, 1.7),
       roughnessMap: cloneTex(textures.cliff.rough, 4, 1.7),
-      normalScale: new Vector2(0.55, 0.55),
+      normalScale: new Vector2(0.7, 0.7),
       roughness: 1,
       metalness: 0,
       vertexColors: true,
-      envMapIntensity: 0.3,
+      envMapIntensity: 0.16,
       fog: true,
     })
   );
@@ -183,9 +183,10 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       roughnessMap: cloneTex(textures.cliff.rough, 0.4, 1.4),
       roughness: 1,
       metalness: 0,
-      // 断面比风化面亮：崩口露出的是新鲜岩
-      color: new Color(0xd8cec0),
-      envMapIntensity: 0.6,
+      // 断面比风化面亮一档就够。太亮的话，低角度的落日会直接灌进板缝，
+      // 把缝烧成一条奶黄色的光带。
+      color: new Color(0x8d8577),
+      envMapIntensity: 0.35,
     })
   );
 
@@ -202,20 +203,22 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   );
 
   // ---------- 崖体（层理剖面 + 噪声破对称） ----------
+  // 剖面里刻意留了几处「先收进去再挑出来」的台阶：这才是沉积岩被风化出的岩檐，
+  // 单调递减的剖面只会得到一个圆锥。
   const profile = [
-    [1.0, -0.35],
-    [1.035, -1.15],
-    [0.955, -2.1],
-    [0.985, -3.35],
-    [0.86, -4.9],
-    [0.895, -6.15],
-    [0.72, -8.2],
-    [0.69, -9.6],
-    [0.5, -11.9],
-    [0.42, -13.4],
-    [0.24, -15.8],
-    [0.1, -17.9],
-    [0.012, -19.4],
+    [1.0, -0.3],
+    [1.062, -1.5],
+    [0.9, -2.5],
+    [0.965, -3.8],
+    [0.775, -5.5],
+    [0.85, -6.7],
+    [0.615, -8.9],
+    [0.675, -10.1],
+    [0.43, -12.5],
+    [0.475, -13.7],
+    [0.25, -16.1],
+    [0.11, -18.3],
+    [0.012, -19.6],
   ];
   const profilePts = [];
   const steps = Math.max(2, Math.floor(quality.islandProfileSegments / profile.length) + 1);
@@ -229,9 +232,10 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   }
   profilePts.push(new Vector2(R * profile[profile.length - 1][0], profile[profile.length - 1][1]));
 
-  const bedrockGeo = track(
-    new LatheGeometry(profilePts, quality.islandRadialSegments, 0, Math.PI * 2)
-  );
+  // 崖体的环向分段刻意比台面低一半：段数太多，噪声起伏就摊成一层油光；
+  // 段数适中反而能读出一块块的岩面。
+  const bedrockSegments = Math.max(18, Math.round(quality.islandRadialSegments * 0.5));
+  const bedrockGeo = track(new LatheGeometry(profilePts, bedrockSegments, 0, Math.PI * 2));
   {
     const pos = bedrockGeo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
@@ -245,10 +249,10 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       const depth = clamp01(-y / 20);
 
       // 大尺度凸起：让剖面不再是回转体，侧面有真正的岩块凸出
-      const lobe = (fbm(noise, Math.cos(ang) * 1.6 + 5, Math.sin(ang) * 1.6 + 5, 3) - 0.5) * 0.16;
+      const lobe = (fbm(noise, Math.cos(ang) * 1.6 + 5, Math.sin(ang) * 1.6 + 5, 3) - 0.5) * 0.3;
       const detail =
-        (fbm(noise, Math.cos(ang) * 6 + 1, Math.sin(ang) * 6 - y * 0.22, 4) - 0.5) * 0.075;
-      const scale = 1 + lobe * (0.35 + depth) + detail;
+        (fbm(noise, Math.cos(ang) * 5 + 1, Math.sin(ang) * 5 - y * 0.3, 3) - 0.5) * 0.09;
+      const scale = 1 + lobe * (0.3 + depth * 1.1) + detail;
       pos.setX(i, x * scale);
       pos.setZ(i, z * scale);
       if (rad > 0.001) pos.setY(i, y + detail * 2.4);
@@ -337,11 +341,29 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       },
     })
   );
-  // 半径必须小于台面板块的外缘，否则从岛外能直接看见这圈发光盘
-  const coreGeo = track(new CircleGeometry(R * 0.86, 48));
+  // 缝底下是一口竖井，不是一块贴在下面的灯板：先看到被烤暖的暗壁，
+  // 再往深处才是那点光。半径必须小于台面板块外缘，否则从岛外能直接看见。
+  const shaftGeo = track(new CylinderGeometry(R * 0.87, R * 0.7, 2.9, 40, 1, true));
+  const shaftMat = track(
+    new MeshStandardMaterial({
+      map: cloneTex(textures.cliff.albedo, 3, 0.7),
+      roughnessMap: cloneTex(textures.cliff.rough, 3, 0.7),
+      color: new Color(0x6b6157),
+      roughness: 1,
+      metalness: 0,
+      side: DoubleSide,
+      envMapIntensity: 0.1,
+    })
+  );
+  const shaft = new Mesh(shaftGeo, shaftMat);
+  shaft.position.y = -2.0;
+  shaft.name = 'crack-shaft';
+  group.add(shaft);
+
+  const coreGeo = track(new CircleGeometry(R * 0.72, 48));
   const core = new Mesh(coreGeo, coreMat);
   core.rotation.x = -Math.PI / 2;
-  core.position.y = -1.05;
+  core.position.y = -3.35;
   core.name = 'crack-core';
   core.layers.enable(BLOOM_LAYER);
   core.userData.bloomSelf = true;
@@ -428,7 +450,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       const rad = Math.hypot(x, z);
       const macro = fbm(noise, x * 0.12 + 30, z * 0.12 + 30, 4);
       // 宏观明暗把贴图的重复感打散
-      let m = 0.82 + macro * 0.4;
+      let m = 0.68 + macro * 0.66;
       // 中央走动区被磨亮，靠外缘风吹雨打发暗
       const polish = smoothstep(R * 0.55, R * 0.1, rad);
       m *= 1 + polish * 0.16;
@@ -507,7 +529,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       0.012 + plate.decals.length * 0.004,
       plate.center.z + (rand() - 0.5) * spread
     );
-    const s = 3.2 + rand() * 3.4;
+    const s = 1.7 + rand() * 1.9;
     mesh.scale.set(s, s, s);
     mesh.layers.enable(BLOOM_LAYER);
     mesh.userData.bloomSelf = true;
@@ -596,6 +618,49 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     lip.receiveShadow = quality.shadows;
     lip.castShadow = quality.shadows;
     railGroup.add(lip);
+  }
+
+  // ---------- 台面上的碎石 ----------
+  // 打了这么多场，台面上不可能一颗石渣都没有。碎石往缝边与外缘堆，
+  // 顺便把「一整块干净圆盘」的读法打散。
+  {
+    const count = quality.name === 'low' ? 10 : quality.name === 'mid' ? 22 : 46;
+    const rubbleGeo = track(new IcosahedronGeometry(0.13, 0));
+    {
+      const pos = rubbleGeo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const s = 0.7 + fbm(noise, pos.getX(i) * 9, pos.getZ(i) * 9, 2) * 0.8;
+        pos.setXYZ(i, pos.getX(i) * s, pos.getY(i) * s * 0.7, pos.getZ(i) * s);
+      }
+      rubbleGeo.computeVertexNormals();
+    }
+    const rubbleMat = track(
+      new MeshStandardMaterial({
+        color: new Color(0x59524a),
+        roughness: 0.98,
+        metalness: 0,
+        flatShading: true,
+        envMapIntensity: 0.2,
+      })
+    );
+    const rubble = new InstancedMesh(rubbleGeo, rubbleMat, count);
+    const dummy2 = new Object3D();
+    for (let i = 0; i < count; i++) {
+      // 偏向外缘与缝边分布，不是均匀撒点
+      const a = rand() * Math.PI * 2;
+      const bias = rand() < 0.45 ? 0.86 : Math.sqrt(rand());
+      const rr = R * 0.12 + R * 0.74 * bias;
+      dummy2.position.set(Math.cos(a) * rr, 0.03 + rand() * 0.04, Math.sin(a) * rr);
+      dummy2.rotation.set(rand() * 3, rand() * 3, rand() * 3);
+      dummy2.scale.setScalar(0.35 + rand() * 0.9);
+      dummy2.updateMatrix();
+      rubble.setMatrixAt(i, dummy2.matrix);
+    }
+    rubble.instanceMatrix.needsUpdate = true;
+    rubble.castShadow = quality.shadows;
+    rubble.receiveShadow = quality.shadows;
+    group.add(rubble);
+    disposables.push(rubble);
   }
 
   const tmpQuat = new Quaternion();

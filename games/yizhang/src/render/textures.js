@@ -55,16 +55,35 @@ function imageDataTexture(size, write, { srgb = false, wrap = RepeatWrapping } =
   return tex;
 }
 
-/** 高度场转法线贴图。风格化资产也要有法线细节（手册 §2-8）。 */
-function normalFromHeight(height, size, strength) {
+/**
+ * 高度场转法线贴图。风格化资产也要有法线细节（手册 §2-8）。
+ *
+ * 强度不能按分辨率硬乘：高频噪声的逐像素梯度会被放大成接近 90° 的法线，
+ * 结果是崖面在环境光下变成一坨流动的铬。这里先统计梯度 RMS，再把整张图
+ * 归一到目标坡度（大约 targetSlope 弧度的正切），换分辨率也不会走样。
+ */
+function normalFromHeight(height, size, targetSlope) {
   const data = new Uint8Array(size * size * 4);
   const at = (x, y) => height[((y + size) % size) * size + ((x + size) % size)];
+  const gx = new Float32Array(size * size);
+  const gy = new Float32Array(size * size);
+  let acc = 0;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
-      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
-      let nx = -dx;
-      let ny = -dy;
+      const i = y * size + x;
+      gx[i] = at(x + 1, y) - at(x - 1, y);
+      gy[i] = at(x, y + 1) - at(x, y - 1);
+      acc += gx[i] * gx[i] + gy[i] * gy[i];
+    }
+  }
+  const rms = Math.sqrt(acc / (size * size * 2)) || 1e-6;
+  const k = targetSlope / rms;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const gi = y * size + x;
+      let nx = -gx[gi] * k;
+      let ny = -gy[gi] * k;
       let nz = 1;
       const len = Math.hypot(nx, ny, nz) || 1;
       nx /= len;
@@ -158,8 +177,9 @@ function buildCliff(size, seed, wantNormal) {
         const grain = fbm(n, u * 18, v * 18, 4, 0.55);
         const dripSeed = fbm(n2, u * 22, v * 1.2, 3);
         const drip = smoothstep(0.52, 0.86, dripSeed) * smoothstep(0.05, 0.7, v);
-        // 干燥风化面更粗糙，水渍处颜色变深、反射变锐（手册 §4.9）
-        const r = 0.94 - drip * 0.34 + (grain - 0.5) * 0.16;
+        // 干燥风化面更粗糙，水渍处颜色变深、反射变锐（手册 §4.9）。
+        // 下限必须守住：岩石一旦掉到 0.5 以下，天光就会在崖面上拉出银色反光，像铬。
+        const r = 0.98 - drip * 0.16 + (grain - 0.5) * 0.07;
         const i = (y * s + x) * 4;
         const c = Math.max(0, Math.min(255, r * 255));
         data[i] = c;
@@ -173,7 +193,7 @@ function buildCliff(size, seed, wantNormal) {
   return {
     albedo,
     rough,
-    normal: wantNormal ? normalFromHeight(height, size, size * 0.13) : null,
+    normal: wantNormal ? normalFromHeight(height, size, 0.3) : null,
   };
 }
 
@@ -244,7 +264,7 @@ function buildCrust(size, seed, wantNormal) {
   return {
     albedo,
     rough,
-    normal: wantNormal ? normalFromHeight(height, size, size * 0.16) : null,
+    normal: wantNormal ? normalFromHeight(height, size, 0.32) : null,
   };
 }
 
@@ -272,7 +292,7 @@ function buildLeather(size, seed, wantNormal) {
       }
     }
   });
-  return { rough, normal: wantNormal ? normalFromHeight(height, size, size * 0.5) : null };
+  return { rough, normal: wantNormal ? normalFromHeight(height, size, 0.45) : null };
 }
 
 /** 织物：可见经纬 + 缝合处聚集的褶皱。 */
@@ -298,7 +318,7 @@ function buildCloth(size, seed, wantNormal) {
       }
     }
   });
-  return { rough, normal: wantNormal ? normalFromHeight(height, size, size * 0.35) : null };
+  return { rough, normal: wantNormal ? normalFromHeight(height, size, 0.3) : null };
 }
 
 /** 金属：拉丝各向异性痕 + 边角磨亮 + 缝隙氧化。 */
@@ -324,7 +344,7 @@ function buildMetal(size, seed, wantNormal) {
       }
     }
   });
-  return { rough, normal: wantNormal ? normalFromHeight(height, size, size * 0.25) : null };
+  return { rough, normal: wantNormal ? normalFromHeight(height, size, 0.2) : null };
 }
 
 /** 尘团精灵：不是圆形光斑，是有缺口、有絮状边缘的烟团。 */
@@ -380,7 +400,12 @@ function buildEmberSprite(size) {
   );
 }
 
-/** 裂纹贴花：分叉的细缝，中心一线暖芯，其余是压暗的碎裂纹路。 */
+/**
+ * 裂纹贴花。
+ *
+ * 关键是「先裂开，再发光」：整张贴花的主体是压暗的碎裂纹路，暖色只作为一层
+ * 径向渐变叠在纹路上，且只出现在冲击点附近。直接画一堆黄线会得到「地上撒了把稻草」。
+ */
 function buildCrackDecal(size, seed) {
   const canvas = makeCanvas(size);
   if (!canvas) return null;
@@ -389,57 +414,54 @@ function buildCrackDecal(size, seed) {
   const rand = mulberry32(seed + 5);
   const cx = size / 2;
   const cy = size / 2;
-  const branches = 7;
+  const branches = 5;
 
-  const drawStroke = (color, widthScale, alpha) => {
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = alpha;
-    ctx.lineCap = 'round';
-    for (let b = 0; b < branches; b++) {
-      const baseAng = (b / branches) * Math.PI * 2 + rand() * 0.6;
-      let x = cx + Math.cos(baseAng) * size * 0.03;
-      let y = cy + Math.sin(baseAng) * size * 0.03;
-      let ang = baseAng;
-      const segs = 6 + Math.floor(rand() * 4);
-      let w = size * 0.03 * widthScale;
+  ctx.strokeStyle = '#150f0c';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let b = 0; b < branches; b++) {
+    const baseAng = (b / branches) * Math.PI * 2 + rand() * 0.9;
+    let x = cx;
+    let y = cy;
+    let ang = baseAng;
+    const segs = 5 + Math.floor(rand() * 3);
+    let w = size * 0.016;
+    const len = (size * 0.34) / segs;
+    ctx.globalAlpha = 0.8;
+    for (let i = 0; i < segs; i++) {
+      ang += (rand() - 0.5) * 0.85;
+      const nx = x + Math.cos(ang) * len;
+      const ny = y + Math.sin(ang) * len;
       ctx.beginPath();
+      ctx.lineWidth = Math.max(0.7, w);
       ctx.moveTo(x, y);
-      for (let i = 0; i < segs; i++) {
-        ang += (rand() - 0.5) * 0.9;
-        const len = (size * 0.42) / segs;
-        x += Math.cos(ang) * len;
-        y += Math.sin(ang) * len;
-        ctx.lineWidth = Math.max(0.6, w);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        w *= 0.78;
-        // 二级分叉：让裂纹像真的在传播，而不是米字星
-        if (rand() < 0.4 && i < segs - 2) {
-          const sa = ang + (rand() - 0.5) * 1.6;
-          let sx = x;
-          let sy = y;
-          ctx.lineWidth = Math.max(0.5, w * 0.6);
-          for (let j = 0; j < 3; j++) {
-            sx += Math.cos(sa) * len * 0.7;
-            sy += Math.sin(sa) * len * 0.7;
-            ctx.lineTo(sx, sy);
-          }
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-        }
-      }
+      ctx.lineTo(nx, ny);
       ctx.stroke();
+      // 二级分叉：裂纹是传播出来的，不是米字星
+      if (rand() < 0.45 && i < segs - 1) {
+        const sa = ang + (rand() - 0.5) * 1.7;
+        ctx.beginPath();
+        ctx.lineWidth = Math.max(0.6, w * 0.5);
+        ctx.moveTo(nx, ny);
+        ctx.lineTo(nx + Math.cos(sa) * len * 0.8, ny + Math.sin(sa) * len * 0.8);
+        ctx.stroke();
+      }
+      x = nx;
+      y = ny;
+      w *= 0.74;
     }
-    ctx.globalAlpha = 1;
-  };
+  }
+  ctx.globalAlpha = 1;
 
-  // 先画崩碎的暗边，再在正中压一条更细的暖芯：读起来是「裂开的石头」而不是「画上去的黄线」
-  drawStroke('#1a1512', 2.2, 0.62);
-  drawStroke('#8a5a2c', 1.15, 0.7);
-  drawStroke('#c98a45', 0.55, 0.85);
+  // 暖芯：只染已经画出来的裂纹，且随半径迅速衰减
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.3);
+  grad.addColorStop(0, 'rgba(214, 138, 74, 0.62)');
+  grad.addColorStop(0.45, 'rgba(140, 68, 26, 0.3)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.globalCompositeOperation = 'source-atop';
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  ctx.globalCompositeOperation = 'source-over';
 
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
