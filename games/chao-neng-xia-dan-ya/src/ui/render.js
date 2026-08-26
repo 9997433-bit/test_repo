@@ -97,39 +97,82 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
+  /** 命中准星：四角括号 + 呼吸圆环，比一个实心点好读得多 */
+  function reticle(x, y, radius, color) {
+    const pulse = radius + Math.sin(t * 9) * 2.5;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.arc(x, y, pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    circle(ctx, x, y, 2.5, color);
+
+    ctx.translate(x, y);
+    ctx.rotate(t * 1.1);
+    const arm = pulse + 10;
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 4; i++) {
+      ctx.rotate(Math.PI / 2);
+      ctx.beginPath();
+      ctx.moveTo(arm - 9, 0);
+      ctx.lineTo(arm, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** 把即将被击中的敌人框出来，"这一发打谁" 一眼可见 */
+  function markTarget(enemy, color) {
+    if (!enemy?.alive) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.45 + Math.sin(t * 7) * 0.25;
+    ctx.setLineDash([6, 5]);
+    ctx.lineDashOffset = -t * 34;
+    ctx.strokeRect(enemy.x - 4, enemy.y - 4, enemy.w + 8, enemy.h + 8);
+    ctx.restore();
+  }
+
   function aimUI(battle) {
-    const pts = battle.prediction.points;
+    const pred = battle.prediction;
+    const pts = pred.points;
     if (!pts || pts.length < 2) return;
+    const hot = pred.hitsEnemy;
+    const line = hot ? "rgba(255,107,157,0.95)" : "rgba(246,240,230,0.55)";
+
     ctx.save();
     ctx.setLineDash([7, 9]);
     ctx.lineDashOffset = -t * 60;
-    ctx.strokeStyle = battle.prediction.hitsEnemy ? "rgba(255,107,157,0.95)" : "rgba(246,240,230,0.6)";
+    ctx.strokeStyle = line;
     ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    if (hot) {
+      ctx.shadowColor = "#ff6b9d";
+      ctx.shadowBlur = 10;
+    }
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
     ctx.setLineDash([]);
     const last = pts[pts.length - 1];
     ctx.globalAlpha = 0.6 + Math.sin(t * 8) * 0.3;
-    circle(ctx, last[0], last[1], 6, battle.prediction.hitsEnemy ? "#ff6b9d" : "#f6f0e6");
-    // 首个命中点画准星，让「这一发会打到谁」比整条虚线更好读
-    const impact = battle.prediction.impact;
-    if (impact) {
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = "#ff6b9d";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(impact[0], impact[1], 13 + Math.sin(t * 8) * 2, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(impact[0] - 18, impact[1]);
-      ctx.lineTo(impact[0] - 8, impact[1]);
-      ctx.moveTo(impact[0] + 8, impact[1]);
-      ctx.lineTo(impact[0] + 18, impact[1]);
-      ctx.stroke();
-    }
+    circle(ctx, last[0], last[1], 5, hot ? "#ff6b9d" : "#f6f0e6");
     ctx.restore();
+
+    if (pred.impact) {
+      markTarget(pred.target, "#ff6b9d");
+      reticle(pred.impact[0], pred.impact[1], 13, "#ff6b9d");
+    }
 
     // 角度扇形与力度条
     ctx.save();
@@ -189,6 +232,15 @@ export function createRenderer(canvas) {
   }
 
   function effects(battle) {
+    // 命中停顿期间压一层暖白，让「顿帧」在视觉上也有交代
+    if (battle.hitStop > 0.005) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = Math.min(0.16, battle.hitStop * 1.1);
+      ctx.fillStyle = "#fff3c4";
+      ctx.fillRect(0, 0, 480, 800);
+      ctx.restore();
+    }
     for (const b of battle.beams) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, b.life / 0.28);
@@ -255,9 +307,17 @@ export function createRenderer(canvas) {
       ctx.clearRect(0, 0, 480, 800);
       background(battle.level.theme ?? "farm");
 
+      // 震屏用「高频振荡 + 少量抖动」而不是纯随机：纯随机在小幅度时只是糊，
+      // 带方向的振荡才读得出是一记敲击。
       const shake = battle.shakeAmt;
       if (shake > 0.2) {
-        ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+        const osc = Math.sin(t * 92);
+        ctx.translate(240, 400);
+        ctx.rotate(osc * shake * 0.0004);
+        ctx.translate(
+          -240 + osc * shake * 0.8 + (Math.random() - 0.5) * shake * 0.4,
+          -400 + Math.cos(t * 77) * shake * 0.5 + (Math.random() - 0.5) * shake * 0.4,
+        );
       }
 
       for (const p of world.ice) {

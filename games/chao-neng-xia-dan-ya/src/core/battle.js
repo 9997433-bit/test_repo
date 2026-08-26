@@ -23,6 +23,15 @@ import {
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+/** 命中停顿上限（秒）。再长就从「有力」变成「卡顿」了。 */
+const MAX_HIT_STOP = 0.16;
+/**
+ * 连击音高阶梯（半音）：小调五声音阶上行两个八度后封顶。
+ * 直接把 rate 线性拉高会滑出刺耳的半音，走音阶才像在打节奏。
+ */
+const COMBO_SCALE = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
+const comboRate = (n) => 2 ** (COMBO_SCALE[clamp(n, 0, COMBO_SCALE.length - 1)] / 12);
+
 export const BATTLE_STATE = {
   AIM: "aim",
   FIRE: "fire",
@@ -83,7 +92,7 @@ export function createBattle(config) {
     pendingDraft: false,
 
     aim: { angle: 0, power: 0.62, speed: MIN_SPEED + (MAX_SPEED - MIN_SPEED) * 0.62, dragging: false },
-    prediction: { points: [], bounces: 0, hitsEnemy: false },
+    prediction: { points: [], bounces: 0, hitsEnemy: false, impact: null, target: null },
 
     floats: [],
     particles: [],
@@ -129,6 +138,17 @@ export function createBattle(config) {
   battle.shake = (amt) => {
     if (config.settings?.shake === false || config.settings?.reduceMotion) return;
     battle.shakeAmt = Math.min(22, battle.shakeAmt + amt);
+  };
+  /**
+   * 命中反馈：震屏与命中停顿一起给。
+   * 停顿是「打到肉」的主要来源，所以按这一下的致命程度分级，
+   * 而不是所有命中都用同一个固定值。
+   */
+  battle.punch = (amt, stop = 0) => {
+    battle.shake(amt);
+    if (stop <= 0) return;
+    const scale = config.settings?.reduceMotion ? 0.45 : 1;
+    battle.hitStop = Math.min(MAX_HIT_STOP, Math.max(battle.hitStop, stop * scale));
   };
   battle.float = (x, y, text, color, size = 18) => {
     battle.floats.push({ x, y, text, color, size, life: 0.9, vy: -46 });
@@ -176,7 +196,7 @@ export function createBattle(config) {
     }
     battle.playerHp = Math.max(0, battle.playerHp - amount);
     battle.float(LAUNCH_X, NEST_Y - 24, `-${amount}`, "#ff4d6d", 22);
-    battle.shake(9);
+    battle.punch(9, 0.07);
     audio.play("hurt");
   };
   battle.grantEnergy = (hero, amount) => {
@@ -257,7 +277,10 @@ export function createBattle(config) {
     battle.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, enemy.color, enemy.boss ? 40 : 16, enemy.boss ? 300 : 200);
     battle.goldEarned += enemy.boss ? 60 : enemy.elite ? 24 : 6;
     audio.play(enemy.boss ? "bossDown" : "pop");
-    if (enemy.boss) battle.shake(16);
+    battle.punch(
+      enemy.boss ? 18 : enemy.elite ? 9 : 4,
+      enemy.boss ? 0.16 : enemy.elite ? 0.09 : 0.05,
+    );
     battle.onEvent("enemy-killed", enemy);
     if (battle.endless && level.respawnBoss && enemy.boss) battle.respawnRaidBoss();
   };
@@ -354,7 +377,8 @@ export function createBattle(config) {
         battle.grantEnergy(battle.activeHero(), 3);
       }
       battle.burst(peg.x, peg.y, "#3ee0c5", 5, 120);
-      audio.play("peg", { rate: 1 + Math.min(0.9, egg.collisions * 0.04) });
+      // 钉板也走音阶：一路弹下来会是一段上行的琶音
+      audio.play("peg", { rate: comboRate(Math.min(6, egg.collisions)) });
       const hero = battle.heroes.find((h) => h.id === egg.owner);
       if (hero) callHook(hero, "onPegHit", egg, peg, battle);
       if (peg.type === "bomb" && !peg.spent) {
@@ -410,12 +434,14 @@ export function createBattle(config) {
         enemy,
         { combo: battle.combo, element: egg.element },
       );
-      battle.damageEnemy(enemy, scaled.damage, { element: egg.element, crit });
+      const dealt = battle.damageEnemy(enemy, scaled.damage, { element: egg.element, crit });
 
       battle.grantEnergy(hero, 6);
       battle.burst(egg.x, egg.y, ELEMENT_TINT[egg.element] ?? "#ffd447", 8, 180);
-      battle.hitStop = Math.max(battle.hitStop, 0.03);
-      audio.play("hit", { rate: 1 + Math.min(1.2, battle.combo * 0.045) });
+      // 这一下削掉了目标多少血 → 停顿多久、震多狠
+      const lethal = clamp(dealt / Math.max(1, enemy.maxHp), 0, 1);
+      battle.punch(3 + lethal * 12 + (crit ? 3 : 0), 0.03 + lethal * 0.08 + (crit ? 0.02 : 0));
+      audio.play("hit", { rate: comboRate(battle.combo - 1) });
       if (battle.modifiers.shockOnHit) battle.applyStatus(enemy, "shock", 1);
       if (battle.modifiers.burnOnHit) battle.applyStatus(enemy, "burn", 1);
       callHook(hero, "onEnemyHit", egg, enemy, battle, scaled);
@@ -439,11 +465,12 @@ export function createBattle(config) {
     battle.comboPeak = Math.max(battle.comboPeak, battle.combo);
     if (battle.combo > 0 && battle.combo % 5 === 0) {
       battle.float(LAUNCH_X, 150, `${battle.combo} 连击!`, "#ff6b9d", 24);
-      audio.play("combo", { rate: 1 + Math.min(1.4, battle.combo * 0.06) });
+      audio.play("combo", { rate: comboRate(Math.floor(battle.combo / 5)) });
+      battle.punch(2 + battle.combo * 0.2, 0.035);
     }
     if (battle.combo === 20) {
       battle.announce("爆蛋时刻！全场引爆");
-      battle.shake(14);
+      battle.punch(14, 0.14);
       for (const en of battle.aliveEnemies()) battle.damageEnemy(en, battle.activeHero().atk * 1.6, { element: "fire" });
     }
   }
@@ -459,11 +486,21 @@ export function createBattle(config) {
   battle.refreshPrediction = () => {
     if (battle.state !== BATTLE_STATE.AIM) return;
     const v = aimVector(battle.aim.angle, battle.aim.speed);
+    // 用「这一发真的会射出去的蛋」去预测：半径 / 弹性 / 穿透 / 追踪全部取实弹参数。
+    // heroEgg 只写 egg 不改战斗状态，所以可以安全地当作探针。
+    const hero = battle.activeHero();
+    const probe = hero ? heroEgg(hero, 0) : null;
     battle.prediction = predictTrajectory(
       { x: LAUNCH_X, y: LAUNCH_Y },
       { x: v.vx, y: v.vy },
       world,
-      { maxBounces: config.settings?.aimAssist === false ? 1 : 3 },
+      {
+        maxBounces: config.settings?.aimAssist === false ? 1 : 3,
+        r: probe?.r,
+        restitution: probe?.restitution,
+        pierce: probe?.pierce,
+        homing: probe?.homing,
+      },
     );
   };
 
@@ -503,7 +540,7 @@ export function createBattle(config) {
     battle.nextShot = null;
     battle.eggsFired += total;
     battle.state = BATTLE_STATE.FIRE;
-    battle.prediction = { points: [], bounces: 0, hitsEnemy: false };
+    battle.prediction = { points: [], bounces: 0, hitsEnemy: false, impact: null, target: null };
     audio.play("shoot", { rate: 0.9 + battle.aim.power * 0.4 });
     battle.onEvent("fired", { hero, total });
     return true;
@@ -663,7 +700,8 @@ export function createBattle(config) {
 
     if (battle.hitStop > 0) {
       battle.hitStop -= dt;
-      decay(dt);
+      // 特效也跟着放慢，整帧才读得出「顿了一下」而不是「世界停了、粒子还在飞」
+      decay(dt * 0.25);
       return;
     }
 
