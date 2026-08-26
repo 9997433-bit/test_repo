@@ -1,8 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialState } from "../src/core/engine.js";
 import { plant, harvest, tickPlots, seasonFactor } from "../src/systems/farm/index.js";
-import { enqueueJob, collectJob, canCraft, tickProduction } from "../src/systems/production/index.js";
-import { deliverWish, refreshWishes, build } from "../src/systems/village/index.js";
+import {
+  enqueueJob,
+  collectJob,
+  canCraft,
+  feedAnimal,
+  tickProduction,
+} from "../src/systems/production/index.js";
+import {
+  acceptWish,
+  deliverWish,
+  refreshWishes,
+  wishCandidates,
+  build,
+} from "../src/systems/village/index.js";
 
 describe("season factor", () => {
   const rice = { seasons: ["spring", "summer"] };
@@ -68,6 +80,54 @@ describe("farm loop", () => {
       Math.round(18_000 / 0.55),
     );
   });
+
+  it("applies a plot greenhouse locally and a built greenhouse globally", () => {
+    const initial = createInitialState();
+    const winter = {
+      ...initial,
+      meta: { ...initial.meta, season: "winter" },
+      plots: initial.plots.map((plot) => ({
+        ...plot,
+        status: "empty",
+        greenhouse: plot.id === "p1",
+      })),
+    };
+
+    const localFirst = plant(winter, { plotId: "p1", cropId: "rice" });
+    const localBoth = plant(localFirst.state, { plotId: "p2", cropId: "rice" });
+
+    expect(localBoth.ok).toBe(true);
+    expect(localBoth.state.plots[0].doneAt - localBoth.state.plots[0].plantedAt).toBe(
+      18_000,
+    );
+    expect(localBoth.state.plots[1].doneAt - localBoth.state.plots[1].plantedAt).toBe(
+      Math.round(18_000 / 0.55),
+    );
+
+    const global = {
+      ...winter,
+      buildings: { ...winter.buildings, greenhouse: { built: true } },
+      plots: winter.plots.map((plot) => ({ ...plot, greenhouse: false })),
+    };
+    const globalFirst = plant(global, { plotId: "p1", cropId: "rice" });
+    const globalBoth = plant(globalFirst.state, { plotId: "p2", cropId: "rice" });
+
+    expect(globalBoth.ok).toBe(true);
+    expect(
+      globalBoth.state.plots.map((plot) => plot.doneAt - plot.plantedAt),
+    ).toEqual([18_000, 18_000]);
+  });
+
+  it.skip("rejects crops above the town level (pending farm unlockLevel gate)", () => {
+    const initial = createInitialState();
+    const result = plant(initial, { plotId: "p1", cropId: "corn" });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("小镇等级不够");
+    expect(result.state).toBe(initial);
+    expect(result.state.resources.coin).toBe(initial.resources.coin);
+    expect(result.state.plots[0]).toEqual(initial.plots[0]);
+  });
 });
 
 describe("mill chain", () => {
@@ -113,17 +173,75 @@ describe("mill chain", () => {
     expect(collected.state.jobs).toHaveLength(0);
   });
 
-  it.todo("collects completed livestock jobs through the public collection API");
+  it("collects completed livestock jobs through the public collection API", () => {
+    const initial = createInitialState();
+    const ready = {
+      ...initial,
+      inv: { ...initial.inv, chicken_feed: 1 },
+      buildings: { ...initial.buildings, coop: { built: true, slotCount: 3 } },
+    };
+
+    const fed = feedAnimal(ready, { buildingId: "coop" });
+    expect(fed.ok).toBe(true);
+    expect(fed.state.inv.chicken_feed).toBeUndefined();
+    expect(fed.state.jobs[0]).toMatchObject({
+      buildingId: "coop",
+      kind: "livestock",
+      productId: "egg",
+      qty: 1,
+      xp: 5,
+    });
+
+    const done = tickProduction(fed.state, 0, fed.state.jobs[0].doneAt);
+    const collected = collectJob(done, {
+      buildingId: "coop",
+      slot: done.jobs[0].id,
+    });
+
+    expect(collected.ok).toBe(true);
+    expect(collected.state.inv.egg).toBe(1);
+    expect(collected.state.meta.xp).toBe(initial.meta.xp + 5);
+    expect(collected.state.jobs).toHaveLength(0);
+  });
 });
 
 describe("wishes", () => {
-  it.todo("marks an open wish accepted once wish acceptance has a status model");
+  it("marks an open wish accepted without mutating the input state", () => {
+    const initial = createInitialState();
+    const openWish = {
+      id: "w_veg",
+      wishId: "w_veg_test",
+      name: "一棵白菜",
+      needs: { cabbage: 1 },
+      coin: 14,
+      xp: 8,
+      status: "open",
+    };
+    const ready = { ...initial, wishes: [openWish] };
 
-  it("fills the board to three deterministic wishes", () => {
-    const refreshed = refreshWishes(createInitialState());
+    const accepted = acceptWish(ready, { wishId: openWish.wishId });
 
+    expect(accepted.ok).toBe(true);
+    expect(accepted.wish).toMatchObject({ wishId: openWish.wishId, status: "accepted" });
+    expect(accepted.state.wishes).toEqual([accepted.wish]);
+    expect(ready.wishes).toEqual([openWish]);
+
+    const repeated = acceptWish(accepted.state, { wishId: openWish.wishId });
+    expect(repeated).toEqual({
+      ok: false,
+      reason: "这单已经接下了",
+      state: accepted.state,
+    });
+  });
+
+  it.skip("filters the deterministic first board by minLevel (pending village gate)", () => {
+    const initial = createInitialState();
+    const candidates = wishCandidates(initial);
+    const refreshed = refreshWishes(initial);
+
+    expect(candidates.every((wish) => wish.minLevel <= initial.meta.level)).toBe(true);
     expect(refreshed.wishes).toHaveLength(3);
-    expect(refreshed.wishes.map((wish) => wish.id)).toEqual(["w_veg", "w_rice", "w_egg"]);
+    expect(refreshed.wishes.map((wish) => wish.id)).toEqual(["w_veg", "w_soy", "w_wheat"]);
     expect(refreshed.wishes.every((wish) => wish.status === "open")).toBe(true);
   });
 

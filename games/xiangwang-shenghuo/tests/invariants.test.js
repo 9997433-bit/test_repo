@@ -3,7 +3,7 @@ import { createInitialState } from "../src/core/engine.js";
 import { addInv, spendInv } from "../src/core/store.js";
 import { seasonFactor } from "../src/systems/farm/index.js";
 import { canCraft, enqueueJob } from "../src/systems/production/index.js";
-import { deliverWish } from "../src/systems/village/index.js";
+import { deliverWish, stallSell } from "../src/systems/village/index.js";
 
 const expectNonNegativeInventory = (state) => {
   expect(Object.values(state.inv).every((quantity) => quantity >= 0)).toBe(true);
@@ -100,5 +100,40 @@ describe("economy invariants", () => {
     expect(seasonFactor(rice, "winter")).toBe(0.55);
   });
 
-  it.todo("rejects non-positive transaction quantities before mutating balances");
+  it.each([-1, -1.25, Number.NEGATIVE_INFINITY])(
+    "rejects negative stall quantity %s without changing stock or coins",
+    (qty) => {
+      const initial = createInitialState();
+      const ready = {
+        ...initial,
+        inv: { ...initial.inv, paddy: 2 },
+        buildings: { ...initial.buildings, stall: { built: true } },
+      };
+
+      const result = stallSell(ready, { itemId: "paddy", qty });
+
+      expect(result).toEqual({
+        ok: false,
+        reason: "至少也得摆一件出去",
+        state: ready,
+      });
+      expect(result.state.inv.paddy).toBe(2);
+      expect(result.state.resources.coin).toBe(initial.resources.coin);
+      expectNonNegativeInventory(result.state);
+    },
+  );
+
+  it.skip(
+    "rejects non-positive inventory transaction quantities (pending core validation)",
+    () => {
+      const initial = { ...createInitialState(), inv: { rice: 2 } };
+
+      for (const quantity of [0, -1]) {
+        const result = spendInv(initial, { rice: quantity });
+        expect(result.ok).toBe(false);
+        expect(result.state).toBe(initial);
+        expect(result.state.inv.rice).toBe(2);
+      }
+    },
+  );
 });

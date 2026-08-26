@@ -5,8 +5,10 @@ import {
   DAYS_PER_SEASON,
   DAY_HOURS,
 } from "../src/core/engine.js";
+import { catchUpPlots } from "../src/systems/farm/index.js";
 
 const elapsedHours = (state, hours) => state.meta.hourMs * hours;
+const REAL_HOUR_MS = 60 * 60 * 1000;
 
 describe("advanceTime", () => {
   it("keeps partial-day time within the same day", () => {
@@ -84,5 +86,39 @@ describe("advanceTime", () => {
     });
     expect(result.crossedDay).toBe(true);
     expect(result.crossedSeason).toBe(true);
+  });
+});
+
+describe("offline plot catch-up", () => {
+  it.skip("caps plot progress at eight real hours (pending effective catchUpPlots cap)", () => {
+    const savedAt = Date.parse("2026-04-01T00:00:00Z");
+    const now = savedAt + 24 * REAL_HOUR_MS;
+    const initial = createInitialState();
+    const growing = {
+      ...initial,
+      plots: [
+        {
+          ...initial.plots[0],
+          status: "growing",
+          cropId: "rice",
+          plantedAt: savedAt,
+          doneAt: savedAt + 8 * REAL_HOUR_MS,
+          wiltAt: 0,
+        },
+        {
+          ...initial.plots[1],
+          status: "growing",
+          cropId: "rice",
+          plantedAt: savedAt,
+          doneAt: savedAt + 8 * REAL_HOUR_MS + 1,
+          wiltAt: 0,
+        },
+      ],
+    };
+
+    const caughtUp = catchUpPlots(growing, savedAt, now);
+
+    expect(caughtUp.plots[0].status).toBe("ready");
+    expect(caughtUp.plots[1].status).toBe("growing");
   });
 });
