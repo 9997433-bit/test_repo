@@ -86,7 +86,7 @@
 
 | 角色 | 状态 | cloud agent id |
 | --- | --- | --- |
-| Fable-1 架构复审 | 运行中 | `bc-7dd1028d-4130-52f1-a06d-1804948dbc41` |
+| Fable-1 架构复审 | 已完成 · 文档已合入 `625b272` | `bc-7dd1028d-4130-52f1-a06d-1804948dbc41` |
 | Fable-2 画布缺口 | 运行中 | `bc-07088209-00a2-538a-888d-20c514a00551` |
 | Fable-3 5v5 关卡 | 已完成 · 已合并 `cursor/fable3-5v5-stages-4f62` | `bc-60924e68-32b9-5437-b520-e99818644f62` |
 | Fable-4 SOTA 复验 | 已完成 · 已合并 `cursor/fable4-round2-acceptance-4cb8` | `bc-8ff2474a-e0aa-5f41-8de4-e757cdf04cb8` |
