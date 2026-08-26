@@ -346,14 +346,16 @@
     var ctx = this.ctx;
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = 'rgba(' + Math.round(255 - 105 * n) + ',' +
-      Math.round(255 - 95 * n) + ',' + Math.round(255 - 30 * n) + ',1)';
+    // Kept light on purpose: night should read as a blue shift, not as a
+    // brightness drop that hides the units the player is trying to read.
+    ctx.fillStyle = 'rgba(' + Math.round(255 - 62 * n) + ',' +
+      Math.round(255 - 52 * n) + ',' + Math.round(255 - 14 * n) + ',1)';
     ctx.fillRect(0, 0, this.camera.vw, this.camera.vh);
     ctx.restore();
     if (n > 0.35) {
       ctx.save();
       ctx.globalCompositeOperation = 'screen';
-      ctx.fillStyle = 'rgba(40,55,120,' + (0.08 * n) + ')';
+      ctx.fillStyle = 'rgba(34,48,110,' + (0.1 * n) + ')';
       ctx.fillRect(0, 0, this.camera.vw, this.camera.vh);
       ctx.restore();
     }
