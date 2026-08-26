@@ -12,13 +12,24 @@
     <title>赵云与阿斗 · 汉字塔防</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      字体是锦上添花：tokens.css 已备好宋/楷系统字体栈，断网或被墙时视觉照样成立。
+      所以这张外链表不许挡首屏 —— 先按 print 媒体加载（非阻塞），到货再切 all。
+    -->
     <link
       href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
   </head>
   <body>
     <div id="app"></div>
+    <!--
+      战斗演出层：与 #app 平级，样式由 styles/fx.css 提供。
+      渲染层的同构 diff 只重写 #app 子树，飘字与泼墨挂在这里才活得过下一帧。
+    -->
+    <div id="fx-layer" aria-hidden="true"></div>
     <noscript>
       <!-- 样式随 main.js 一起加载，禁用脚本时只能靠内联样式说话。 -->
       <div

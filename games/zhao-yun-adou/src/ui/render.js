@@ -3,6 +3,7 @@ import { HEROES, heroById } from "../data/heroes.js";
 import * as waves from "../data/waves.js";
 import { drawLane } from "./lane.js";
 import { attachJuice } from "./juice.js";
+import { attachTutorial } from "./tutorial.js";
 
 const MAX_WAVE = Number.isFinite(waves.MAX_WAVE) ? waves.MAX_WAVE : 12;
 
@@ -256,7 +257,10 @@ function menuPanel() {
       </div></li>
     </ol>
     <p class="zy-keys">空格 暂停 · 1-5 选牌 · E 征兵 · R 重开</p>
-    <p><button class="ink" id="btn-start">出征</button></p>
+    <p class="zy-menu-acts">
+      <button class="ink" id="btn-start">出征</button>
+      <button class="ghost" type="button" data-tutor-open>看教程</button>
+    </p>
   </div></div>`;
 }
 
@@ -315,6 +319,8 @@ const EXTRA_CSS = `
 #app .zy-tutor strong { display: block; margin-bottom: 2px; font-size: 14px; }
 #app .zy-tutor span { display: block; font-size: 12px; line-height: 1.7; color: var(--ink-soft, #4a4033); }
 #app .zy-keys { margin: 0 0 14px; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-faint, #8b8071); }
+#app .zy-menu-acts { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+#app .zy-menu-acts button.ghost { padding: 11px 18px; font-size: 13px; }
 #app .zy-score { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 12px; margin: 14px 0 18px; }
 #app .zy-score div { display: grid; gap: 2px; }
 #app .zy-score strong { font-size: 16px; font-weight: 600; color: var(--cinnabar, #b23a2f); }
@@ -341,9 +347,10 @@ function ensureStyles() {
 
 export function render(root, api, ui) {
   ensureStyles();
-  // juice 层自挂在 body 上、按事件驱动，和这里的 diff 互不干涉；
+  // juice 与教程都自挂在 body 上、按事件驱动，和这里的 diff 互不干涉；
   // 同一个 api 重复调用是空操作，所以放在每帧都会走到的地方最省心。
   attachJuice(api);
+  attachTutorial(api);
   const s = api.state;
   const p = s.sides.player;
   const a = s.sides.ai;
