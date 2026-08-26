@@ -16,7 +16,11 @@ function roundMs(value) {
 function errorReport(error) {
   return {
     ok: false,
-    battles: { runs: 0, expectedRuns: battleRuns, budgetMs: battleBudgetMs, elapsedMs: null },
+    battles: 0,
+    battleMs: null,
+    produceIters: 0,
+    produceMs: null,
+    battle: { runs: 0, expectedRuns: battleRuns, budgetMs: battleBudgetMs, elapsedMs: null },
     production: { runs: 0, expectedRuns: productionRuns, elapsedMs: null },
     error: {
       name: error instanceof Error ? error.name : "Error",
@@ -88,7 +92,13 @@ try {
     productionChecksum > 0;
   const report = {
     ok: battlesOk && productionOk,
-    battles: {
+    battles: battleRuns,
+    wins,
+    losses,
+    battleMs: roundMs(battleElapsedMs),
+    produceIters: productionRuns,
+    produceMs: roundMs(productionElapsedMs),
+    battle: {
       ok: battlesOk,
       runs: battleRuns,
       budgetMs: battleBudgetMs,
