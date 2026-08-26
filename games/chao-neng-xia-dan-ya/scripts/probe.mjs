@@ -38,7 +38,12 @@ check("empty world fixed step", () => {
 
 check("damage is monotonic by power", () => {
   const damages = [0, 1, 5, 10, 20].map(
-    (power) => resolveHit({ power }, { hp: 100 }, { combo: 0 }).damage,
+    (power) =>
+      resolveHit(
+        { power, forceCrit: false },
+        { hp: 100 },
+        { combo: 0 },
+      ).damage,
   );
   damages.slice(1).forEach((damage, index) => {
     assert.ok(damage >= damages[index]);
@@ -46,9 +51,9 @@ check("damage is monotonic by power", () => {
 });
 
 const zeroPowerHit = resolveHit({ power: 0 }, { hp: 40 }, { combo: 0 });
-check("zero power has finite non-negative damage", () => {
+check("zero power deals exactly zero damage", () => {
   assert.ok(Number.isFinite(zeroPowerHit.damage));
-  assert.ok(zeroPowerHit.damage >= 0);
+  assert.equal(zeroPowerHit.damage, 0);
 });
 
 check("missing egg fields use safe combat defaults", () => {
@@ -56,12 +61,21 @@ check("missing egg fields use safe combat defaults", () => {
   assert.ok(Number.isFinite(result.damage));
   assert.ok(result.damage > 0);
   assert.equal(result.comboDelta, 1);
-  assert.deepEqual(result.effects, []);
+  assert.ok(
+    result.effects.some(
+      (effect) => effect.type === "feedback" && effect.kind === "floater",
+    ),
+  );
 });
 
 check("damage is monotonic by combo", () => {
   const damages = [0, 1, 5, 10, 20].map(
-    (combo) => resolveHit({ power: 12 }, { hp: 100 }, { combo }).damage,
+    (combo) =>
+      resolveHit(
+        { power: 12, forceCrit: false },
+        { hp: 100 },
+        { combo },
+      ).damage,
   );
   damages.slice(1).forEach((damage, index) => {
     assert.ok(damage >= damages[index]);

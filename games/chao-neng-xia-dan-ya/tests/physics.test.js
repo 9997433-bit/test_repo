@@ -5,6 +5,12 @@ import {
   predictTrajectory,
   stepWorld,
 } from "../src/physics/index.js";
+import {
+  createWorld as createBattleWorld,
+  makeEgg,
+  predictTrajectory as predictBattleTrajectory,
+  stepWorld as stepBattleWorld,
+} from "../src/core/sim.js";
 
 describe("physics stepping", () => {
   it("samples the fixed-step world clock deterministically", () => {
@@ -97,3 +103,33 @@ describe(
     });
   },
 );
+
+describe("active battle physics adapter", () => {
+  it("keeps prediction and a live shot on the same upstream fixed-step path", () => {
+    const world = createBattleWorld();
+    const origin = { x: 240, y: 92 };
+    const velocity = { x: 120, y: 240 };
+    const steps = 24;
+    const prediction = predictBattleTrajectory(origin, velocity, world, {
+      maxBounces: 99,
+      maxSteps: steps,
+    });
+    const egg = makeEgg({
+      x: origin.x,
+      y: origin.y,
+      vx: velocity.x,
+      vy: velocity.y,
+    });
+
+    expect(world.time).toBe(0);
+    world.eggs.push(egg);
+    for (let i = 0; i < steps; i += 1) {
+      stepBattleWorld(world, FIXED_DT);
+    }
+
+    const [predictedX, predictedY] = prediction.points.at(-1);
+    expect(egg.x).toBeCloseTo(predictedX, 10);
+    expect(egg.y).toBeCloseTo(predictedY, 10);
+    expect(world.time).toBeCloseTo(steps * FIXED_DT, 12);
+  });
+});
