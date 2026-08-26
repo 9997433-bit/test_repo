@@ -13,7 +13,7 @@ import { buildAdventureContext, buildRogueContext } from "../progression/context
 import { ensureProgression, isHeroOwned } from "../progression/save.js";
 import { FIELD_SIZE } from "./constants.js";
 import { createHeroInstance, refreshStats } from "./runtime.js";
-import { auraOf, mergeTraitMods, resolveSkill } from "./skills.js";
+import { auraOf, mergeTraitMods, resolveSkill, schoolOf } from "./skills.js";
 
 /**
  * 羁绊：同流派 2 人小羁绊 / 3 人大羁绊 / 4 人以上禽王光环。
@@ -26,7 +26,7 @@ export const BOND_TIER_ATK = { 2: 0.08, 3: 0.18, 4: 0.32 };
  * 英雄层能消费的羁绊乘区，按「流派 → 人数档」登记。
  * 流派清单、档位人数与档位名一律来自 `src/data`（`BONDS.schools`，回退 `SYNERGIES`），
  * 这里只补一份英雄层自己的 mods 词汇——数据表的 `mods` 是战斗层词汇，两者互不覆盖。
- * 数据表里有、但英雄层还没写风味加成的流派（如预留的 support）仍会拿到档位攻击加成。
+ * 没登记风味加成的流派仍会拿到档位攻击加成。
  */
 const BOND_MODS = {
   combo: {
@@ -79,10 +79,51 @@ function buildBonds() {
   return bonds;
 }
 
-export const BONDS = buildBonds();
+/** 数据表登记的全部流派，含 support 这类「本版无人携带」的预留流派。 */
+const ALL_BONDS = buildBonds();
+
+/** 名册里至少有一名英雄携带的流派（含 `registerHeroDefs` 注入的）。 */
+function rosterSchools() {
+  const set = new Set();
+  for (const def of heroList()) {
+    const school = def?.school;
+    if (typeof school === "string" && school) set.add(school);
+  }
+  return set;
+}
+
+/**
+ * 对外的羁绊表只留名册真实存在的流派：预留流派（GDD §4.1 的「辅助流」）
+ * 挂在 `RESERVED_BONDS` 里，不进 `SCHOOLS`，免得组队/羁绊面板长出一个永远 0 人的分类。
+ * 真有英雄被注入到预留流派时，`bondTierFor()` 仍能结算到它。
+ */
+function splitBonds() {
+  const carried = rosterSchools();
+  const active = {};
+  const reserved = {};
+  for (const [school, bond] of Object.entries(ALL_BONDS)) {
+    if (carried.has(school)) active[school] = bond;
+    else reserved[school] = bond;
+  }
+  return { active, reserved };
+}
+
+const SPLIT = splitBonds();
+
+export const BONDS = Object.freeze(SPLIT.active);
+
+/** 数据表有、但本版名册无人携带的预留流派（只供文档 / 图鉴说明，不进 UI 分类）。 */
+export const RESERVED_BONDS = Object.freeze(SPLIT.reserved);
 
 /** 名册里真实存在的流派清单（数据表口径）。 */
-export const SCHOOLS = Object.keys(BONDS);
+export const SCHOOLS = Object.freeze(Object.keys(BONDS));
+
+/** 预留流派 id 清单。 */
+export const RESERVED_SCHOOLS = Object.freeze(Object.keys(RESERVED_BONDS));
+
+function bondOf(school) {
+  return BONDS[school] ?? ALL_BONDS[school] ?? null;
+}
 
 const AURA_KEYS = [
   "teamAtkMul",
@@ -148,23 +189,23 @@ export function sanitizeRoster(heroIds, { field = FIELD_SIZE, save = null } = {}
   return { ids, defs, warnings };
 }
 
-function schoolOf(entry) {
+function entrySchool(entry) {
   const def = typeof entry === "string" ? heroDef(entry) : entry;
-  return def?.school ?? resolveSkill(def)?.school ?? "brute";
+  return schoolOf(def);
 }
 
 /** 统计同流派人数并结算羁绊档位。入参可以是英雄 id、def 对象或运行时实例。 */
 export function computeBonds(entries) {
   const counts = {};
   for (const entry of entries ?? []) {
-    const school = schoolOf(entry);
+    const school = entrySchool(entry);
     counts[school] = (counts[school] ?? 0) + 1;
   }
 
   const active = [];
   const mods = {};
   for (const [school, count] of Object.entries(counts)) {
-    const bond = BONDS[school];
+    const bond = bondOf(school);
     if (!bond) continue;
     let tier = null;
     for (const candidate of bond.tiers) {
@@ -173,7 +214,17 @@ export function computeBonds(entries) {
     if (!tier) continue;
     const atk = BOND_TIER_ATK[Math.min(4, tier.count)] ?? 0;
     const tierMods = { ...tier.mods, teamAtkMul: (tier.mods.teamAtkMul ?? 0) + atk };
-    active.push({ school, name: bond.name, count, label: tier.label, atk, mods: tierMods });
+    active.push({
+      school,
+      name: bond.name,
+      count,
+      tier: tier.count,
+      tierName: tier.name ?? tier.label,
+      label: tier.label,
+      desc: tier.desc ?? "",
+      atk,
+      mods: tierMods,
+    });
     for (const [key, value] of Object.entries(tierMods)) {
       mods[key] = (mods[key] ?? 0) + value;
     }

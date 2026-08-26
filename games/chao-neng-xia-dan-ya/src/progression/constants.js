@@ -17,10 +17,9 @@ export const STAR_SHARD_COST = { 1: 20, 2: 50, 3: 120, 4: 280 };
 /** 由 star → star+1 所需金币。 */
 export const STAR_GOLD_COST = { 1: 500, 2: 1500, 3: 4000, 4: 10000 };
 
-/** 每级成长系数。 */
+/** 每级成长系数。能量回复的等级加成不在这里：走数据表的 `LEVEL_BAND_BONUSES` 段位。 */
 export const ATK_PER_LEVEL = 0.055;
 export const HP_PER_LEVEL = 0.04;
-export const ENERGY_PER_LEVEL = 0.012;
 
 /** 每星成长系数。 */
 export const ATK_PER_STAR = 0.12;

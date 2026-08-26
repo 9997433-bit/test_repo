@@ -9,7 +9,6 @@ import {
   ATK_PER_LEVEL,
   ATK_PER_STAR,
   CRIT_PER_STAR,
-  ENERGY_PER_LEVEL,
   ENERGY_PER_STAR,
   HP_PER_LEVEL,
   HP_PER_STAR,
@@ -25,17 +24,19 @@ import { heroDef } from "./catalog.js";
 import { aggregateFishingBuff } from "./fishing.js";
 import { rogueArtifactMods, rogueLevelOf, rogueStarOf } from "./rogue.js";
 
+/** `energyPerLevel: 0` = 能量回复的等级加成走数据表段位（`LEVEL_BAND_BONUSES`）。 */
 const ACCOUNT_GROWTH = {
   atkPerLevel: ATK_PER_LEVEL,
   atkPerStar: ATK_PER_STAR,
   hpPerLevel: HP_PER_LEVEL,
   hpPerStar: HP_PER_STAR,
-  energyPerLevel: ENERGY_PER_LEVEL,
+  energyPerLevel: 0,
   energyPerStar: ENERGY_PER_STAR,
   critPerStar: CRIT_PER_STAR,
   maxLevel: MAX_LEVEL,
 };
 
+/** 肉鸽不读账号养成表，等级曲线（含能量）全部由 run 自带。 */
 const ROGUE_GROWTH = {
   atkPerLevel: ROGUE_ATK_PER_LEVEL,
   atkPerStar: 0,

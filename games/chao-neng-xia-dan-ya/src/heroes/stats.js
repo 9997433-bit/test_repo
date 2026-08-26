@@ -3,6 +3,8 @@
  *
  * 攻击链路（顺序固定，便于 UI 逐项展示与数值对拍）：
  *   基础攻 × 等级乘区 × 星级乘区 × 全局乘区(图鉴 × 钓鱼 / 神器) × 种族科技 × 光环乘区
+ * 能量链路：基础回能(`BALANCE.energy.perEnemyHit`) × 等级段位 × 星级 × 模式乘区 × 光环乘区；
+ * 能量上限不在这里算，恒等于大招消耗（见 `energy.js`）。
  */
 import {
   EGG_RADIUS_MAX,
@@ -13,6 +15,7 @@ import {
 } from "../progression/constants.js";
 import { neutralContext } from "../progression/context.js";
 import { DEFAULT_BASE_STATS } from "./constants.js";
+import { levelEnergyMul } from "./energy.js";
 
 /** 数据表字段名 → 基础属性键。F3 的 18 英雄表用 `energy` 表示大招能量上限。 */
 const FIELD_ALIASES = { energyMax: ["energyMax", "energy"] };
@@ -39,6 +42,16 @@ export function levelAtkMul(level, growth) {
 
 export function starAtkMul(star, growth) {
   return 1 + Math.max(0, star - 1) * (growth?.atkPerStar ?? 0);
+}
+
+/**
+ * 能量回复的等级乘区。账号成长走数据表的 `LEVEL_BAND_BONUSES`（段位制），
+ * 肉鸽这类自带成长曲线的模式（growth.energyPerLevel > 0）仍用自己的每级系数。
+ */
+export function energyLevelMul(level, growth) {
+  const perLevel = Number(growth?.energyPerLevel) || 0;
+  if (perLevel > 0) return 1 + Math.max(0, level - 1) * perLevel;
+  return levelEnergyMul(level);
 }
 
 export function eggRadiusFor(baseRadius, level, star) {
@@ -70,12 +83,12 @@ export function computeHeroStats(def, ctx = neutralContext(), auras = {}) {
     base.hp *
     (1 + Math.max(0, level - 1) * (growth.hpPerLevel ?? 0)) *
     (1 + Math.max(0, star - 1) * (growth.hpPerStar ?? 0));
-  const energyGain =
-    base.energyGain *
-    (1 + Math.max(0, level - 1) * (growth.energyPerLevel ?? 0)) *
+  const energyMul =
+    energyLevelMul(level, growth) *
     (1 + Math.max(0, star - 1) * (growth.energyPerStar ?? 0)) *
     (Number(ctx.energyMul) || 1) *
     (Number(auras.auraEnergyMul) || 1);
+  const energyGain = base.energyGain * energyMul;
 
   const critRate = clamp(
     base.critRate +
@@ -93,6 +106,7 @@ export function computeHeroStats(def, ctx = neutralContext(), auras = {}) {
     hp: Math.round(hp),
     energyMax: base.energyMax,
     energyGain: round2(energyGain),
+    energyMul: round4(energyMul),
     critRate: round4(critRate),
     critMul: base.critMul,
     eggRadius: eggRadiusFor(base.eggRadius, level, star),

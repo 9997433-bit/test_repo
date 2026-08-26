@@ -5,9 +5,10 @@
  * `buildLoadout(save, opts) → { heroes, bonds, ... }`，并注明「后续可整体替换为上游实现」。
  * 本文件按同样的签名与返回字段实现，因此主循环把 import 从
  * `../core/progress.js` 换成 `../progression/index.js` 即可切换，
- * 同时额外拿到 `squad`（技能触发器所需的运行时对象）。
+ * 同时额外拿到 `squad`（技能触发器所需的运行时对象）与 `hud`（HUD 稳定字段快照）。
  */
 import { createSquad } from "../heroes/squad.js";
+import { squadHudView } from "../heroes/hud.js";
 import { MAX_LEVEL, MAX_STAR, clampInt, levelGoldCost } from "./constants.js";
 import { dexTotals, heroDef } from "./catalog.js";
 import { addShards, ensureProgression, heroLevelOf, heroStarOf } from "./save.js";
@@ -71,6 +72,8 @@ export function buildLoadout(save, opts = {}) {
   return {
     squad,
     heroes: squad.members,
+    /** HUD 契约快照（能量 / 大招 / 羁绊）：字段清单见 `heroes/hud.js`。 */
+    hud: squadHudView(squad),
     bonds: squad.bonds.active,
     schoolCounts: squad.bonds.counts,
     atkBonus: squad.bonds.atkBonus,

@@ -10,9 +10,11 @@
  *
  * 名册与流派归属一律以 `src/data/heroes.js` 的 18 只英雄表为准：本表只登记「行为」，
  * 不再重复声明 school，也不为数据表之外的英雄预留条目。
+ * 大招消耗同理不在本表定稿——模块底部的 `alignUltCostsWithData()` 会用数据表值覆盖。
  */
 import * as DATA from "../data/index.js";
 import { EFFECTS, TRIGGERS } from "./constants.js";
+import { GENERIC_ULT_ID, tableUltCost } from "./energy.js";
 
 /** 技能词条按星级解锁；mods 会在实例化时合并进 `instance.skillMods`。 */
 function trait(star, id, name, desc, mods) {
@@ -206,12 +208,9 @@ export const SKILLS = {
     },
     traits: [
       trait(2, "louder", "重锤", "光环 +3%", { teamAtkMul: 0.03 }),
-      trait(3, "march", "行军", "全队能量回复 +10%", { teamEnergyMul: 0.1 }),
+      trait(3, "march", "行军", "光环附加全队暴击 +5%", { teamCrit: 0.05 }),
       trait(4, "battle_cry", "战吼", "光环 +3%", { teamAtkMul: 0.03 }),
-      trait(5, "anthem", "禽王战歌", "光环 +6%，大招效果 +20%", {
-        teamAtkMul: 0.06,
-        potency: 0.2,
-      }),
+      trait(5, "anthem", "禽王战歌", "战斗开始全队 +20 能量", { teamStartEnergy: 20 }),
     ],
   },
 
@@ -220,7 +219,9 @@ export const SKILLS = {
     name: "元气加蛋",
     desc: "战斗开始时额外获得 1 枚蛋。",
     trigger: TRIGGERS.BATTLE_START,
-    effects: (evt, self) => [modifier("extraEggs", 1 + extraCount(self))],
+    effects: (evt, self) => [
+      modifier("extraEggs", 1 + extraCount(self), { turns: 1 + (self?.skillMods?.eggTurns ?? 0) }),
+    ],
     ult: {
       name: "元气爆棚",
       cost: 45,
@@ -229,7 +230,7 @@ export const SKILLS = {
     },
     traits: [
       trait(2, "double_pep", "双份元气", "开局额外蛋 +1", { count: 1 }),
-      trait(3, "warm_up", "热身", "开局能量 +20", { startEnergy: 20 }),
+      trait(3, "warm_up", "热身", "每场前 2 回合都获得额外蛋", { eggTurns: 1 }),
       trait(4, "big_egg", "大蛋", "额外蛋威力 +25%", { potency: 0.25 }),
       trait(5, "endless", "元气无限", "开局额外蛋 +1", { count: 1 }),
     ],
@@ -427,8 +428,8 @@ export const SKILLS = {
     traits: [
       trait(2, "warm_yolk", "暖黄", "治疗量 +25%", { potency: 0.25 }),
       trait(3, "overheal", "溢流", "溢出治疗转为护盾", { overheal: 1 }),
-      trait(4, "quick_nest", "快巢", "大招能量消耗 -10", { cost: -10 }),
-      trait(5, "life_spring", "生命泉", "治疗量再 +35%", { potency: 0.35 }),
+      trait(4, "quick_nest", "快巢", "治疗量再 +25%", { potency: 0.25 }),
+      trait(5, "life_spring", "生命泉", "全队受到的漏怪伤害 -10%", { leakReduce: 0.1 }),
     ],
   },
 
@@ -535,6 +536,16 @@ export function resolveSkill(def) {
   return FALLBACK_SKILL;
 }
 
+/** 表外英雄既没有 school 也没有登记技能时的归属。 */
+export const DEFAULT_SCHOOL = "brute";
+
+/** 流派归属：数据表的 `school` 是权威，其次是技能登记的 school，最后才是默认流派。 */
+export function schoolOf(def, skill = null) {
+  if (typeof def?.school === "string" && def.school) return def.school;
+  const resolved = skill ?? resolveSkill(def);
+  return typeof resolved?.school === "string" && resolved.school ? resolved.school : DEFAULT_SCHOOL;
+}
+
 /** 星级解锁的词条列表。1 星只有基础效果。 */
 export function unlockedTraits(skill, star) {
   const s = Math.max(1, Math.floor(Number(star) || 1));
@@ -576,3 +587,19 @@ export function auraOf(skill, star) {
 function round4(n) {
   return Math.round(n * 1e4) / 1e4;
 }
+
+/**
+ * 大招消耗一律以数据表为准。本表的 `cost` 只是表外英雄的兜底数字，留着容易和
+ * `data/heroes.js` 漂移，所以模块加载时统一对齐一次：这样连按静态技能表取值的
+ * 展示层（`core/catalog.js` 的 HUD 能量环）也吃到数据表的能量。
+ */
+function alignUltCostsWithData() {
+  for (const [heroId, skill] of Object.entries(SKILLS)) {
+    const cost = tableUltCost(DATA.HEROES?.[heroId]);
+    if (skill.ult && cost !== null) skill.ult.cost = cost;
+  }
+  const generic = tableUltCost({ ult: GENERIC_ULT_ID });
+  if (generic !== null) FALLBACK_SKILL.ult.cost = generic;
+}
+
+alignUltCostsWithData();

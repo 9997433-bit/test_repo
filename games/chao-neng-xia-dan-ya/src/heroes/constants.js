@@ -1,9 +1,11 @@
 /** 英雄运行时常量与词汇表（Opus-3 所有权）。 */
+import { BASE_ENERGY_MAX, BASE_HIT_ENERGY } from "./energy.js";
 
 /** 上场位固定 5 人（GDD：主菜单组 5 人禽类小队）。 */
 export const FIELD_SIZE = 5;
 
-export const BASE_ENERGY_MAX = 100;
+/** 能量口径全部来自 `energy.js`（即 `src/data`），这里只做转出。 */
+export { BASE_ENERGY_MAX };
 
 /** 缺字段英雄的兜底基础属性；`src/data` 补全后以数据表为准。 */
 export const DEFAULT_BASE_STATS = {
@@ -13,7 +15,7 @@ export const DEFAULT_BASE_STATS = {
   eggPower: 1,
   eggs: 1,
   energyMax: BASE_ENERGY_MAX,
-  energyGain: 8,
+  energyGain: BASE_HIT_ENERGY,
   critRate: 0.05,
   critMul: 1.6,
 };

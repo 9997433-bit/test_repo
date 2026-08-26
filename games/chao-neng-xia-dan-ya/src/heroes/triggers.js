@@ -6,17 +6,31 @@
  * 返回一组声明式效果交给 `src/combat` 执行。英雄层不直接改世界。
  */
 import { EFFECTS, TRIGGERS } from "./constants.js";
+import {
+  BRICK_ENERGY,
+  BASE_HIT_ENERGY,
+  COMBO_MILESTONE_ENERGY,
+  EGG_RECYCLED_ENERGY,
+  KILL_ENERGY,
+  PEG_HIT_ENERGY,
+  TURN_END_ENERGY,
+  isComboMilestone,
+} from "./energy.js";
 import { addStack, gainEnergy, spendEnergy, tickTurn, ultimateCost } from "./runtime.js";
 
-/** 各触发时机的能量收益系数（乘以英雄 energyGain）。 */
-export const ENERGY_GAIN_RATE = {
-  [TRIGGERS.HIT]: 1,
-  [TRIGGERS.BRICK_BREAK]: 0.5,
-  [TRIGGERS.PEG_HIT]: 0.2,
-  [TRIGGERS.KILL]: 1.5,
-  [TRIGGERS.EGG_RECYCLED]: 0.4,
-  [TRIGGERS.TURN_END]: 0.6,
-};
+/**
+ * 各触发时机的基础回能（点数）。数值全部来自 `BALANCE.energy`，
+ * 英雄的 `stats.energyMul`（等级段位 / 星级 / 光环 / 神器）再乘在上面。
+ */
+export const ENERGY_AWARD = Object.freeze({
+  [TRIGGERS.HIT]: BASE_HIT_ENERGY,
+  [TRIGGERS.BRICK_BREAK]: BRICK_ENERGY,
+  [TRIGGERS.PEG_HIT]: PEG_HIT_ENERGY,
+  [TRIGGERS.KILL]: KILL_ENERGY,
+  [TRIGGERS.EGG_RECYCLED]: EGG_RECYCLED_ENERGY,
+  [TRIGGERS.TURN_END]: TURN_END_ENERGY,
+  [TRIGGERS.COMBO]: COMBO_MILESTONE_ENERGY,
+});
 
 /** 触发者获得全额能量，替补按此比例分摊。 */
 export const BENCH_ENERGY_SHARE = 0.35;
@@ -94,19 +108,20 @@ export function dispatchTrigger(squad, trigger, event = {}, ctx = {}) {
 }
 
 /**
- * 能量入账。命中者拿全额，其余队友拿分摊，
- * 「返场」词条让小帅鸽自己也能吃到自己的能量。
+ * 能量入账。命中者拿全额，其余队友拿分摊；
+ * 连击只在 `BALANCE.energy.milestoneEvery` 的整数层回能，不是每层都回。
  */
 export function awardEnergy(squad, trigger, event = {}) {
-  const rate = ENERGY_GAIN_RATE[trigger];
-  if (!rate || !squad?.members?.length) return [];
+  const award = ENERGY_AWARD[trigger];
+  if (!award || !squad?.members?.length) return [];
+  if (trigger === TRIGGERS.COMBO && !isComboMilestone(event.combo)) return [];
   const activeUid = event.heroUid ?? squad.members[squad.active]?.uid;
   const log = [];
 
   for (const instance of squad.members) {
     if (!instance.alive) continue;
     const share = instance.uid === activeUid ? 1 : BENCH_ENERGY_SHARE;
-    const gained = gainEnergy(instance, instance.stats.energyGain * rate * share);
+    const gained = gainEnergy(instance, award * (instance.stats?.energyMul ?? 1) * share);
     if (gained) log.push({ uid: instance.uid, gained: round2(gained), energy: round2(instance.energy) });
   }
   return log;
@@ -164,15 +179,28 @@ function resolveMember(squad, target) {
   return squad.byUid?.[target] ?? squad.byId?.[target] ?? null;
 }
 
-/** 战斗开局：派发 BATTLE_START 并把「开局能量」词条结算掉。 */
+/** 全队「开局能量」词条（战鼓鸡 5 星）：多名携带者相加。 */
+export function teamStartEnergy(squad) {
+  let total = 0;
+  for (const instance of squad?.members ?? []) {
+    total += Number(instance.skillMods?.teamStartEnergy) || 0;
+  }
+  return total;
+}
+
+/**
+ * 战斗开局：重置回合态与能量，再派发 BATTLE_START。
+ * 开局能量是「设定值」而不是「增量」，重复开局不会越滚越高。
+ */
 export function startBattle(squad, event = {}, ctx = {}) {
   if (!squad) return { trigger: TRIGGERS.BATTLE_START, effects: [], entries: [], energy: [] };
   squad.turn = 0;
+  const team = teamStartEnergy(squad);
   for (const instance of squad.members) {
     instance.turn = { fired: {}, stacks: {} };
     instance.cooldown = 0;
-    const start = instance.skillMods?.startEnergy ?? 0;
-    if (start) gainEnergy(instance, start);
+    instance.energy = 0;
+    gainEnergy(instance, (instance.startEnergy ?? 0) + team);
   }
   return dispatchTrigger(squad, TRIGGERS.BATTLE_START, event, ctx);
 }

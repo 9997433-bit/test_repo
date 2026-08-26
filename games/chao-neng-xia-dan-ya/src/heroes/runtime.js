@@ -4,38 +4,35 @@
  * 实例是「数据表条目 + 养成上下文 + 光环」在某一局战斗中的快照，
  * 只持有可变的战斗态（能量、冷却、本回合层数），不回写存档。
  *
- * 实例会平铺数据表条目的展示字段（palette / passive / lore / element / ult 等），
- * 并额外提供 `atk` / `maxEnergy` 别名，直接满足主循环 HUD 现有的读法。
+ * 实例会平铺数据表条目的展示字段（palette / passive / lore / element 等），
+ * 并额外提供 HUD 直接可读的稳定字段：`atk`、`energy` / `energyMax` / `maxEnergy`、
+ * `ultCost`、`ultId`、以及归一化成对象的 `ult`（见 `hud.js` 的字段清单）。
  */
-import * as DATA from "../data/index.js";
 import { neutralContext } from "../progression/context.js";
 import { computeHeroStats } from "./stats.js";
-import { auraOf, mergeTraitMods, resolveSkill, unlockedTraits } from "./skills.js";
-import { BASE_ENERGY_MAX } from "./constants.js";
+import { auraOf, mergeTraitMods, resolveSkill, schoolOf, unlockedTraits } from "./skills.js";
+import { energyMaxFor, ultEnergyCost, ultSkillDef, ultSkillId } from "./energy.js";
+
+/**
+ * 大招的展示形状。名字/文案取 heroes 层登记的招牌大招，
+ * 消耗一律是数据表口径，`id` 指回 `data/skills.js`，方便 HUD 与图鉴对同一条大招说话。
+ */
+function ultView(def, skill, cost) {
+  const table = ultSkillDef(def);
+  return {
+    id: ultSkillId(def) ?? skill?.ult?.id ?? null,
+    name: skill?.ult?.name ?? table?.name ?? null,
+    desc: skill?.ult?.desc ?? table?.desc ?? "",
+    tableName: table?.name ?? null,
+    cost,
+  };
+}
 
 /**
  * @param {object} def 数据表英雄条目
  * @param {object} ctx 养成上下文
  * @param {{slot?: number, auras?: object, startEnergy?: number}} options
  */
-/**
- * 大招消耗以数据表为权威：F3 的英雄表用 `energy` 表示大招能量上限，
- * `ult` 是指向 `src/data/skills.js` 的字符串 id（其 `energyCost` 与 `energy` 同值）。
- * 老形状 `ult: { cost }` 继续兼容，供注入的英雄使用。
- */
-function dataUltCost(def) {
-  const ult = def?.ult;
-  const fromSkillTable = typeof ult === "string" ? Number(DATA.SKILLS?.[ult]?.energyCost) : Number(ult?.cost);
-  if (Number.isFinite(fromSkillTable) && fromSkillTable > 0) return fromSkillTable;
-  const fromHeroTable = Number(def?.energy);
-  return Number.isFinite(fromHeroTable) && fromHeroTable > 0 ? fromHeroTable : null;
-}
-
-/** 能量条上限对齐大招消耗，HUD 的「能量满 = 可放大招」读法才成立。 */
-function resolveEnergyMax(def, stats) {
-  return dataUltCost(def) ?? stats?.energyMax ?? BASE_ENERGY_MAX;
-}
-
 export function createHeroInstance(def, ctx = neutralContext(), options = {}) {
   const { slot = 0, auras = {}, startEnergy } = options;
   const skill = resolveSkill(def);
@@ -43,7 +40,8 @@ export function createHeroInstance(def, ctx = neutralContext(), options = {}) {
   const star = Math.max(1, Math.floor(ctx.starOf?.(def?.id) ?? 1));
   const skillMods = mergeTraitMods(skill, star);
   const stats = computeHeroStats(def, ctx, auras);
-  const energyMax = resolveEnergyMax(def, stats);
+  const energyMax = energyMaxFor(def, star, { skill, mods: skillMods, fallback: stats.energyMax });
+  const ultCost = skill?.ult ? (ultEnergyCost(def, star, { skill, mods: skillMods }) ?? Infinity) : Infinity;
 
   return {
     ...def,
@@ -51,7 +49,7 @@ export function createHeroInstance(def, ctx = neutralContext(), options = {}) {
     id: def.id,
     name: def.name ?? def.id,
     race: def.race ?? "duck",
-    school: def.school ?? skill.school ?? "brute",
+    school: schoolOf(def, skill),
     slot,
     def,
     mode: ctx.mode ?? "preview",
@@ -65,8 +63,12 @@ export function createHeroInstance(def, ctx = neutralContext(), options = {}) {
     traits: unlockedTraits(skill, star),
     aura: auraOf(skill, star),
     energy: clampEnergy(startEnergy ?? skillMods.startEnergy ?? 0, energyMax),
+    startEnergy: clampEnergy(startEnergy ?? skillMods.startEnergy ?? 0, energyMax),
     energyMax,
     maxEnergy: energyMax,
+    ult: ultView(def, skill, ultCost),
+    ultId: ultSkillId(def),
+    ultCost,
     cooldown: 0,
     alive: true,
     turn: { fired: {}, stacks: {} },
@@ -79,12 +81,14 @@ function clampEnergy(value, max) {
   return Math.min(max, Math.max(0, n));
 }
 
-/** 大招能量消耗：数据表优先，词条可以打折。 */
+/** 大招能量消耗：数据表权威，表外英雄才吃词条折扣（见 `energy.js`）。 */
 export function ultimateCost(instance) {
   if (!instance?.skill?.ult) return Infinity;
-  const base = dataUltCost(instance?.def) ?? instance.skill.ult.cost;
-  if (!Number.isFinite(base)) return Infinity;
-  return Math.max(10, base + (instance?.skillMods?.cost ?? 0));
+  const cost = ultEnergyCost(instance.def, instance.star, {
+    skill: instance.skill,
+    mods: instance.skillMods,
+  });
+  return cost ?? Infinity;
 }
 
 export function ultimateReady(instance) {
@@ -153,8 +157,14 @@ export function refreshStats(instance, ctx, auras = {}) {
   instance.aura = auraOf(instance.skill, instance.star);
   instance.stats = computeHeroStats(instance.def, ctx, auras);
   instance.atk = instance.stats.atk;
-  instance.energyMax = resolveEnergyMax(instance.def, instance.stats);
+  instance.energyMax = energyMaxFor(instance.def, instance.star, {
+    skill: instance.skill,
+    mods: instance.skillMods,
+    fallback: instance.stats.energyMax,
+  });
   instance.maxEnergy = instance.energyMax;
   instance.energy = clampEnergy(instance.energy, instance.energyMax);
+  instance.ultCost = ultimateCost(instance);
+  instance.ult = ultView(instance.def, instance.skill, instance.ultCost);
   return instance;
 }
