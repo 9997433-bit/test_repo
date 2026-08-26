@@ -1,0 +1,494 @@
+/* ============================================================================
+   三国：冰河时代 — 设计令牌 tokens.css
+   ----------------------------------------------------------------------------
+   本文件完全独立，可单独加载。layout.css / panels.css 只引用变量，不重定义。
+
+   分层：
+     1. @font-face 本地字体回退（不请求任何网络/本地文件资源）
+     2. 原始色板（ink 夜幕 / snow 雪白 / frost 冰蓝 / ember 炉火 / 状态色）
+     3. 品质色（蓝紫橙红）与阵营色（魏蓝 蜀绿 吴赤 群金）、资源色、温度带色
+     4. 语义层（表面 / 文字 / 边框 / 阴影 / 辉光）
+     5. 字体 / 字号 / 间距 / 圆角 / 层级 / 布局尺寸
+     6. 动效（时长 / 曲线 / 动画速记 + @keyframes）
+     7. 主题状态：html[data-temp="comfort|mild|cold|freeze"]
+                  html[data-crisis="blizzard|collapse"]（由 JS 写在 <html> 上）
+     8. 媒体适配：减弱动效 / 高对比 / 窄屏尺寸重映射
+   命名约定：颜色 --xxx-100..900 由浅到深；"-rgb" 结尾为 R G B 三元组，
+   供 rgb(var(--x-rgb) / alpha) 派生透明色。
+   ============================================================================ */
+
+/* ---- 1. 字体回退栈（仅 local()，无外部依赖，找不到即落到通用族） ---------- */
+
+@font-face {
+  font-family: "SGIA Display"; /* 标题/大数字：衬线宋体系 */
+  src:
+    local("Songti SC"),
+    local("STSong"),
+    local("SimSun"),
+    local("NSimSun"),
+    local("Source Han Serif SC"),
+    local("Source Han Serif CN"),
+    local("Noto Serif CJK SC");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SGIA Sans"; /* 正文/界面：系统无衬线 */
+  src:
+    local("PingFang SC"),
+    local("Microsoft YaHei"),
+    local("Source Han Sans SC"),
+    local("Noto Sans CJK SC");
+  font-display: swap;
+}
+
+/* ---- 2–6. 全局令牌 -------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+
+  /* ==== 原始色板 ==== */
+
+  /* ink：极夜蓝黑（场景与面板底色） */
+  --ink-950: #060b14;
+  --ink-900: #0a1120;
+  --ink-800: #0e1626;
+  --ink-700: #141f36;
+  --ink-600: #1b2a47;
+  --ink-500: #25365a;
+  --ink-400: #31456f;
+  --ink-950-rgb: 6 11 20;
+  --ink-900-rgb: 10 17 32;
+
+  /* snow：带蓝调的雪白（文字主色） */
+  --snow-50: #f6f9fd;
+  --snow-100: #eaf1fa;
+  --snow-200: #d9e4f2;
+  --snow-300: #c3d2e6;
+  --snow-400: #a7b8d0;
+  --snow-500: #93a5bf;
+  --snow-600: #7e91ad;
+  --snow-700: #5f7292;
+  --snow-100-rgb: 234 241 250;
+
+  /* frost：冰河冷色（寒相主题 / 冰霜特效） */
+  --frost-100: #dff4ff;
+  --frost-200: #bfe7ff;
+  --frost-300: #9fd8ff;
+  --frost-400: #6fc0f2;
+  --frost-500: #46a1dd;
+  --frost-600: #2f7fb8;
+  --frost-700: #1f5c8c;
+  --frost-300-rgb: 159 216 255;
+  --frost-400-rgb: 111 192 242;
+
+  /* ember：火炉暖光（暖相主题 / 主行动色） */
+  --ember-100: #ffedd2;
+  --ember-200: #ffd9a0;
+  --ember-300: #ffbf66;
+  --ember-400: #ffab4d;
+  --ember-500: #ff9838;
+  --ember-600: #e97b2a;
+  --ember-700: #c85f1e;
+  --ember-800: #8f3f12;
+  --ember-500-rgb: 255 152 56;
+
+  /* 状态色 */
+  --danger-300: #ff9d94;
+  --danger-400: #ff6b5e;
+  --danger-500: #f0453c;
+  --danger-600: #c22f2f;
+  --danger-700: #8e1f1f;
+  --danger-500-rgb: 240 69 60;
+  --danger-600-rgb: 194 47 47;
+  --warn-300: #ffd58a;
+  --warn-400: #ffc266;
+  --warn-500: #f2a83b;
+  --warn-400-rgb: 255 194 102;
+  --success-300: #8fe0b0;
+  --success-400: #58c98b;
+  --success-500: #34a86b;
+  --success-400-rgb: 88 201 139;
+
+  /* ==== 品质色（对应 config.QUALITY_RANK：blue < purple < orange < red） ==== */
+  /* -text 变体保证小号文字在面板底上 ≥ 4.5:1 */
+  --q-blue: #55a8ff;
+  --q-blue-text: #7cbcff;
+  --q-blue-rgb: 85 168 255;
+  --q-purple: #b07cff;
+  --q-purple-text: #c08bff;
+  --q-purple-rgb: 176 124 255;
+  --q-orange: #ffa02e;
+  --q-orange-text: #ffb254;
+  --q-orange-rgb: 255 160 46;
+  --q-red: #ff5340;
+  --q-red-text: #ff8477;
+  --q-red-rgb: 255 83 64;
+
+  /* 品质卡框渐变 + 辉光（武将卡 / 战利品用） */
+  --q-blue-frame: linear-gradient(165deg, rgb(var(--q-blue-rgb) / 0.85), rgb(var(--q-blue-rgb) / 0.22) 45%, rgb(var(--q-blue-rgb) / 0.65));
+  --q-purple-frame: linear-gradient(165deg, rgb(var(--q-purple-rgb) / 0.85), rgb(var(--q-purple-rgb) / 0.22) 45%, rgb(var(--q-purple-rgb) / 0.65));
+  --q-orange-frame: linear-gradient(165deg, rgb(var(--q-orange-rgb) / 0.9), rgb(var(--q-orange-rgb) / 0.25) 45%, rgb(var(--q-orange-rgb) / 0.7));
+  --q-red-frame: linear-gradient(165deg, rgb(var(--q-red-rgb) / 0.9), rgb(var(--q-red-rgb) / 0.25) 45%, rgb(var(--q-red-rgb) / 0.7));
+  --q-blue-glow: 0 0 12px rgb(var(--q-blue-rgb) / 0.35);
+  --q-purple-glow: 0 0 12px rgb(var(--q-purple-rgb) / 0.4);
+  --q-orange-glow: 0 0 14px rgb(var(--q-orange-rgb) / 0.45);
+  --q-red-glow: 0 0 16px rgb(var(--q-red-rgb) / 0.5);
+
+  /* ==== 阵营色（config.FACTIONS：wei / shu / wu / qun） ==== */
+  /* -bright 为小号文字安全色（面板底上 ≥ 7:1） */
+  --f-wei: #5f8fe8;
+  --f-wei-bright: #8fb3ff;
+  --f-wei-rgb: 95 143 232;
+  --f-shu: #45c07e;
+  --f-shu-bright: #7fdca8;
+  --f-shu-rgb: 69 192 126;
+  --f-wu: #e8574f;
+  --f-wu-bright: #ff8f84;
+  --f-wu-rgb: 232 87 79;
+  --f-qun: #d9a441;
+  --f-qun-bright: #f0c468;
+  --f-qun-rgb: 217 164 65;
+
+  /* ==== 资源色（config.RESOURCES：food / wood / coal / iron） ==== */
+  --res-food: #ffa07a;
+  --res-wood: #cfa768;
+  --res-coal: #9aa7b8;
+  --res-iron: #c4d2e3;
+
+  /* ==== 温度带色（阈值见 config.CLIMATE：comfort ≥8，mild 0..8，cold -6..0，freeze ≤-6） ==== */
+  --temp-comfort: var(--ember-300);
+  --temp-mild: var(--snow-300);
+  --temp-cold: var(--frost-300);
+  --temp-freeze: #7de8ff;
+
+  /* ==== 语义：表面 ==== */
+  --bg-app: var(--ink-900);
+  /* 场景底：夜幕线性渐变 + 底部炉火余晖（body 直接引用） */
+  --bg-app-scene:
+    radial-gradient(1100px 700px at 50% 116%, rgb(var(--ember-500-rgb) / 0.1), transparent 62%),
+    linear-gradient(180deg, var(--ink-950) 0%, var(--ink-900) 42%, var(--ink-800) 100%);
+  --bg-panel: rgb(20 31 54 / 0.88);          /* 玻璃面板，配 --panel-blur */
+  --bg-panel-solid: var(--ink-700);
+  --bg-raised: var(--ink-600);               /* 卡片 / 行悬浮 */
+  --bg-inset: var(--ink-950);                /* 输入框 / 进度槽 */
+  --bg-hud: rgb(var(--ink-950-rgb) / 0.72);  /* 顶栏与底坞半透明底 */
+  --panel-blur: blur(10px);
+  --panel-desat: none;                       /* 民心崩溃时整体去饱和，见 data-crisis */
+
+  /* ==== 语义：文字 ==== */
+  --text-hi: var(--snow-100);     /* 主文字，ink-900 上 ≈16.6:1 */
+  --text-mid: var(--snow-400);    /* 次要，面板上 ≈8.1:1 */
+  --text-low: var(--snow-600);    /* 提示/禁用，面板上 ≈5.1:1，仅限辅助信息 */
+  --text-inverse: var(--ink-950); /* 暖色实心按钮上的深字 */
+  --text-warm: var(--ember-300);
+  --text-cold: var(--frost-300);
+  --text-danger: var(--danger-300);
+
+  /* ==== 语义：边框 ==== */
+  --border-subtle: rgb(147 165 191 / 0.14);
+  --border-strong: rgb(147 165 191 / 0.28);
+  --border-frost: rgb(var(--frost-300-rgb) / 0.35);
+  --border-ember: rgb(var(--ember-500-rgb) / 0.45);
+  --bw-1: 1px;
+  --bw-2: 2px;
+
+  /* ==== 阴影与辉光 ==== */
+  --shadow-1: 0 1px 2px rgb(3 6 12 / 0.5);
+  --shadow-2: 0 4px 12px -2px rgb(3 6 12 / 0.55);
+  --shadow-3: 0 12px 32px -8px rgb(3 6 12 / 0.65);
+  --bevel-frost: inset 0 1px 0 rgb(var(--snow-100-rgb) / 0.07); /* 面板顶缘冰晶高光 */
+  --glow-warm: 0 0 18px rgb(var(--ember-500-rgb) / 0.35);
+  --glow-warm-lg: 0 0 42px 6px rgb(var(--ember-500-rgb) / 0.28);
+  --glow-cold: 0 0 18px rgb(var(--frost-400-rgb) / 0.3);
+  --glow-danger: 0 0 16px rgb(var(--danger-500-rgb) / 0.45);
+
+  /* ==== 字体 ==== */
+  --font-display: "SGIA Display", "Songti SC", "STSong", SimSun, "Source Han Serif SC", "Noto Serif CJK SC", serif;
+  --font-ui: "SGIA Sans", system-ui, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", ui-sans-serif, sans-serif;
+  --font-num: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, Menlo, monospace; /* 数字一律 tabular-nums */
+
+  --fs-2xs: 0.6875rem;  /* 11px 角标 */
+  --fs-xs: 0.75rem;     /* 12px 辅助 */
+  --fs-sm: 0.8125rem;   /* 13px 次要 */
+  --fs-md: 0.875rem;    /* 14px 正文 */
+  --fs-lg: 1rem;        /* 16px 强调正文 */
+  --fs-xl: 1.125rem;    /* 18px 面板标题 */
+  --fs-2xl: clamp(1.25rem, 1.1rem + 0.8vw, 1.5rem);  /* 区块标题 */
+  --fs-3xl: clamp(1.5rem, 1.2rem + 1.6vw, 2rem);     /* 温度读数 */
+  --fs-hero: clamp(2rem, 1.4rem + 3vw, 3rem);        /* 事件横幅 / 标题画面 */
+
+  --lh-tight: 1.2;
+  --lh-body: 1.55;
+  --ls-wide: 0.08em;   /* 中文衬线标题加宽 */
+  --ls-num: 0.01em;
+  --fw-reg: 400;
+  --fw-med: 500;
+  --fw-bold: 700;
+
+  /* ==== 间距（4px 基数，编号 = px / 4） ==== */
+  --sp-0: 0;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* ==== 圆角 ==== */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-round: 999px;
+
+  /* ==== 层级 ==== */
+  --z-scene: 0;
+  --z-weather: 40;    /* 风雪粒子层，pointer-events:none */
+  --z-hud: 100;       /* 顶栏 */
+  --z-rail: 110;      /* 左右栏 */
+  --z-dock: 120;      /* 底坞 */
+  --z-drawer: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+  --z-vignette: 450;  /* 危机红晕全屏罩，pointer-events:none */
+
+  /* ==== 布局尺寸（HUD 骨架直接引用） ==== */
+  --hud-top-h: 56px;
+  --dock-h: 72px;
+  --rail-left-w: 296px;   /* 武将栏 */
+  --rail-right-w: 324px;  /* 建筑列表 */
+  --tap-min: 44px;        /* 触控最小命中 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* ==== 动效：时长与曲线 ==== */
+  --dur-1: 100ms;    /* 悬浮 / 按压反馈 */
+  --dur-2: 180ms;    /* 淡入淡出 / 颜色过渡 */
+  --dur-3: 280ms;    /* 面板 / 抽屉开合 */
+  --dur-4: 480ms;    /* 场景级转场 / 战报展开 */
+  --dur-amb: 2400ms; /* 环境呼吸循环 */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 弹入，仅用于小元素 */
+  --ease-linear: linear;
+
+  /* ==== 动画速记（用法：animation: var(--anim-xxx)） ==== */
+  /* 寒潮红闪：0.625 闪/秒，固定 3 次后停（满足 WCAG 2.3.1），之后靠常亮红晕维持紧张感 */
+  --anim-danger-flash: sgia-danger-flash 1.6s var(--ease-in-out) 0s 3 both;
+  --anim-crisis-breathe: sgia-crisis-breathe 2.8s var(--ease-in-out) infinite;
+  --anim-ember-flicker: sgia-ember-flicker 2.4s var(--ease-linear) infinite;
+  --anim-cold-breathe: sgia-cold-breathe 3.6s var(--ease-in-out) infinite;
+  --anim-shake: sgia-shake 420ms var(--ease-out) 1;
+  --anim-rise-fade: sgia-rise-fade 900ms var(--ease-out) forwards;
+  --anim-pulse: sgia-pulse 1.8s var(--ease-in-out) infinite;
+  --anim-pop-in: sgia-pop-in var(--dur-3) var(--ease-spring) both;
+  --anim-fade-in: sgia-fade-in var(--dur-2) var(--ease-out) both;
+
+  /* ==== 交互杂项 ==== */
+  --ring-color: var(--frost-200);
+  --focus-ring: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--ring-color); /* box-shadow 版焦点环 */
+  accent-color: var(--ember-500);
+  scrollbar-color: var(--ink-500) transparent;
+
+  /* ==== 气候语义（默认 mild 带，由 data-temp / data-crisis 重映射） ==== */
+  --clime-accent: var(--frost-300);                /* 当前气候的主题强调色 */
+  --temp-readout: var(--temp-mild);                /* 顶栏温度读数颜色 */
+  --hud-edge: var(--border-subtle);                /* HUD 描边随温度结霜 */
+  --clime-veil:
+    radial-gradient(120% 90% at 50% 0%, rgb(var(--frost-400-rgb) / 0.04), transparent 55%); /* 全屏气氛罩背景 */
+  --crisis-vignette: none;  /* 危机红晕罩背景，仅危机态非 none */
+  --crisis-anim: none;      /* 危机罩动画，仅危机态非 none */
+}
+
+/* ---- 7. 主题状态（JS 合同：写在 <html> 上） ------------------------------- */
+
+/* 暖相：温度 ≥ comfortThreshold(8)，炉火余晖从底部涌起 */
+html[data-temp="comfort"] {
+  --clime-accent: var(--ember-300);
+  --temp-readout: var(--temp-comfort);
+  --clime-veil:
+    radial-gradient(120% 100% at 50% 100%, rgb(var(--ember-500-rgb) / 0.12), transparent 60%);
+}
+
+/* 寒相：温度 < coldThreshold(0)，冷雾自顶部压下 */
+html[data-temp="cold"] {
+  --clime-accent: var(--frost-300);
+  --temp-readout: var(--temp-cold);
+  --clime-veil:
+    radial-gradient(120% 90% at 50% 0%, rgb(var(--frost-400-rgb) / 0.1), transparent 58%);
+}
+
+/* 冻结：温度 ≤ freezeThreshold(-6)，HUD 描边结霜、冷雾加重 */
+html[data-temp="freeze"] {
+  --clime-accent: var(--temp-freeze);
+  --temp-readout: var(--temp-freeze);
+  --hud-edge: var(--border-frost);
+  --clime-veil:
+    radial-gradient(130% 100% at 50% 0%, rgb(var(--frost-400-rgb) / 0.18), transparent 62%);
+}
+
+/* 寒潮：全屏红晕 + 呼吸（首次进入时叠加 --anim-danger-flash 三闪，见 UX.md） */
+html[data-crisis="blizzard"] {
+  --crisis-vignette:
+    radial-gradient(ellipse at 50% 50%, transparent 52%, rgb(var(--danger-600-rgb) / 0.38) 100%);
+  --crisis-anim: var(--anim-crisis-breathe);
+  --clime-accent: var(--danger-400);
+}
+
+/* 民心崩溃：画面去饱和 + 暗角，比寒潮更"死寂"而非更刺眼 */
+html[data-crisis="collapse"] {
+  --crisis-vignette:
+    radial-gradient(ellipse at 50% 50%, transparent 45%, rgb(var(--ink-950-rgb) / 0.72) 100%);
+  --crisis-anim: none;
+  --panel-desat: saturate(0.6) brightness(0.9);
+  --clime-accent: var(--danger-300);
+}
+
+/* ---- 基础全局（仅 a11y 必需，不含组件样式） ------------------------------- */
+
+::selection {
+  background: rgb(var(--ember-500-rgb) / 0.35);
+  color: var(--snow-50);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring-color);
+  outline-offset: 2px;
+}
+
+/* 屏幕阅读器专用文本 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- 6b. @keyframes -------------------------------------------------------- */
+
+/* 寒潮警报三闪（作用于全屏罩的 opacity，亮度变化温和、频率 <3Hz） */
+@keyframes sgia-danger-flash {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.85; }
+}
+
+/* 危机常态呼吸（三闪结束后的持续红晕） */
+@keyframes sgia-crisis-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.8; }
+}
+
+/* 炉火摇曳（作用于火炉辉光元素） */
+@keyframes sgia-ember-flicker {
+  0% { opacity: 0.82; }
+  13% { opacity: 0.96; }
+  27% { opacity: 0.86; }
+  42% { opacity: 1; }
+  58% { opacity: 0.88; }
+  71% { opacity: 0.97; }
+  86% { opacity: 0.84; }
+  100% { opacity: 0.82; }
+}
+
+/* 冷雾呼吸（作用于 --clime-veil 罩层） */
+@keyframes sgia-cold-breathe {
+  0%, 100% { opacity: 0.75; }
+  50% { opacity: 1; }
+}
+
+/* 受击 / 资源不足摇头 */
+@keyframes sgia-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+/* 资源增减浮字 */
+@keyframes sgia-rise-fade {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(-16px); opacity: 0; }
+}
+
+/* 注意力脉冲（红点 / 可升级角标） */
+@keyframes sgia-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.06); opacity: 0.85; }
+}
+
+/* 小元素弹入（toast / 徽章 / 掉落） */
+@keyframes sgia-pop-in {
+  0% { transform: scale(0.86); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes sgia-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---- 8. 媒体适配 ----------------------------------------------------------- */
+
+/* 减弱动效：时长压到 1ms、环境循环只跑一次；危机改为常亮罩，信息不丢失 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 1ms;
+    --dur-2: 1ms;
+    --dur-3: 1ms;
+    --dur-4: 1ms;
+    --dur-amb: 1ms;
+    --anim-danger-flash: none;
+    --anim-crisis-breathe: none;
+    --anim-ember-flicker: none;
+    --anim-cold-breathe: none;
+    --anim-pulse: none;
+  }
+  html[data-crisis="blizzard"] {
+    --crisis-anim: none; /* 罩层保持静态 opacity，由 layout 设 0.7 */
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 高对比偏好：加深描边与次要文字、撤掉气氛罩 */
+@media (prefers-contrast: more) {
+  :root {
+    --border-subtle: rgb(147 165 191 / 0.32);
+    --border-strong: rgb(147 165 191 / 0.5);
+    --text-mid: var(--snow-300);
+    --text-low: var(--snow-500);
+    --clime-veil: none;
+    --bg-panel: var(--ink-700); /* 去玻璃化 */
+    --panel-blur: none;
+  }
+}
+
+/* 窄屏：侧栏转抽屉宽度、HUD 收紧、底坞叠加安全区 */
+@media (max-width: 900px) {
+  :root {
+    --hud-top-h: 48px;
+    --dock-h: calc(64px + var(--safe-bottom));
+    --rail-left-w: min(86vw, 320px);
+    --rail-right-w: min(86vw, 340px);
+  }
+}
