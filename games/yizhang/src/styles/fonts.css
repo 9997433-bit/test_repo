@@ -1,27 +1,40 @@
 /* ============================================================
-   异掌 · 字体系统
-   铁律：HUD 不落默认系统字体。
-   - 展示层：Rajdhani（拉丁/数字，OFL）+ 思源宋体 Noto Serif SC
-     （中文标题/按钮，OFL，真 500/600 字重、全覆盖）。
-     外链 @import 在 index.css 顶部，display=swap 非阻塞：
-     字体未到时按下方回退栈渲染，到达后换入，不阻塞首帧。
-     注：曾试站酷小薇，其「回」等字形退化为墨块，弃用。
-   - 正文层：审慎中文栈（按渲染质量排序），非「不设置」的默认。
-   - 数字一律 tabular-nums，计时器不跳宽。
-   Round 2 升级路径：自托管子集化 woff2（见 ART_DIRECTION.md §4）。
+   异掌 · 字体系统（Round 3 · 零外链）
+   铁律一：HUD 不落默认系统字体（Arial / 默认 sans 的「无设计」栈）。
+   铁律二：零 CDN（红线 R-13）—— 不发一个字体网络请求，
+   全部命中本机字面；断网、首帧、弱网三种情况渲染完全一致，无 FOIT/FOUT。
+   策略：精品系统栈。展示层用「Rajdhani 系几何工业体」逐平台落位
+   （Win: Bahnschrift；Apple: DIN Alternate / Avenir Next Condensed；
+   Android: Roboto Condensed），中文落宋（Noto Serif SC / 思源宋 /
+   Songti SC 系）；正文层保持审慎中文黑体栈。
+   栈首 "Rajdhani" 仅在本机已装该字体时命中，不触发任何加载。
+   注：曾试站酷小薇，其「回」等字形退化为墨块，弃用；
+   曾走字体外链，Round 3 按 R-13 拔除（见 ART_DIRECTION.md §4）。
+   数字一律 tabular-nums，计时器不跳宽。
    ============================================================ */
 
 :root {
-  /* 展示：标题 / 按钮大字 / 掌名。拉丁与数字先落 Rajdhani，中文落宋 */
-  --yz-font-display: "Rajdhani", "Noto Serif SC", "Source Han Serif SC",
-    "Songti SC", serif;
+  /* 展示：标题 / 按钮大字 / 掌名。拉丁与数字落几何工业体，中文落宋。
+     几何段（按命中优先级）：Rajdhani（本机装了才用）→ Bahnschrift
+     （Win10+，DIN 1451 血统变量字重）→ DIN Alternate（macOS/iOS，
+     仅粗面，600 请求就近匹配，font-synthesis:none 保真）→
+     Avenir Next Condensed（Apple 全字重几何窄体）→ Roboto Condensed
+     （Android）。中文段：Noto Serif SC → 思源宋 → Songti SC → STSong
+     → SimSun（Win 宋体兜底）→ serif。 */
+  --yz-font-display: "Rajdhani", "Bahnschrift", "DIN Alternate",
+    "Avenir Next Condensed", "Roboto Condensed", "Noto Serif SC",
+    "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
 
-  /* 正文：状态说明 / 挑战文案 / 弹窗正文 */
+  /* 正文：状态说明 / 挑战文案 / 弹窗正文。
+     审慎中文黑体栈（按渲染质量排序），非「不设置」的默认。 */
   --yz-font-text: "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC",
     "Noto Sans SC", "Microsoft YaHei", sans-serif;
 
-  /* 数字：计时 / 杀数 / 冷却 */
-  --yz-font-num: "Rajdhani", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* 数字：计时 / 杀数 / 冷却。几何段同展示层（数字形一致），
+     中文回退走黑体（数字旁的单位字不宜落宋）。 */
+  --yz-font-num: "Rajdhani", "Bahnschrift", "DIN Alternate",
+    "Avenir Next Condensed", "Roboto Condensed", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
 }
 
 /* 展示字工具类：标题、按钮、掌名 */
