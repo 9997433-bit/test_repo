@@ -1,0 +1,17 @@
+:root {
+  --rose: #e85a8c;
+  --rose-deep: #c73b6f;
+  --gold: #e8c37a;
+  --gold-deep: #c9a24a;
+  --cream: #fff7f2;
+  --cream-2: #ffe9e0;
+  --ink: #3a2433;
+  --ink-soft: #6b4b5c;
+  --mint: #7fd6c2;
+  --lilac: #c9b6ff;
+  --card: rgba(255, 255, 255, 0.86);
+  --shadow: 0 16px 40px rgba(199, 59, 111, 0.16);
+  --radius: 22px;
+  --font: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
