@@ -197,7 +197,13 @@ export function typeLabel(type) {
 export function resolveWeaponDef(weapon, catalog) {
   if (!weapon) return null;
   if (weapon.def && typeof weapon.def === 'object') return weapon.def;
-  const id = weapon.defId ?? weapon.weaponId ?? weapon.protoId ?? weapon.baseId ?? weapon.id;
+  const id = weapon.defId
+    ?? weapon.weaponId
+    ?? weapon.protoId
+    ?? weapon.prototypeId
+    ?? weapon.templateId
+    ?? weapon.baseId
+    ?? weapon.id;
   if (!id || !catalog) return null;
   if (Array.isArray(catalog)) {
     return catalog.find((entry) => entry && (entry.id === id || entry.defId === id)) ?? null;
@@ -281,8 +287,11 @@ function collectSkills(raw, def) {
   push(raw?.skills);
   push(raw?.skillIds);
   push(raw?.skillId);
+  push(raw?.skill);
   push(def?.skills);
+  push(def?.skillIds);
   push(def?.skillId);
+  push(def?.skill);
   return ids;
 }
 
@@ -291,15 +300,39 @@ function num(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-let autoUid = 0;
+/**
+ * 没有任何 id 字段时的 uid 兜底。
+ *
+ * 早期用的是模块级自增计数器，但那让同一份输入在第 1 次和第 2 次 `simulateBattle`
+ * 里拿到不同的 uid，种子复现回归会挂在 uid 上。改成由「位置 + 原型特征」推导，
+ * 纯函数、可复现。
+ */
+function fallbackUid(merged, opts) {
+  const slot = Number.isFinite(opts.slot) ? opts.slot : Number(opts.index) || 0;
+  const parts = [
+    opts.uidHint ?? '',
+    opts.side ?? 'player',
+    slot,
+    merged.protoId ?? merged.prototypeId ?? merged.templateId ?? merged.defId ?? '',
+    merged.name ?? '',
+    merged.type ?? '',
+    merged.element ?? '',
+  ];
+  return `u:${parts.join('/')}`;
+}
 
 /**
  * 归一化为战斗单位。
+ *
+ * 最低可用字段（Round 2 统一契约）：
+ * `{ id | protoId, atk | baseAtk, hp | baseHp | maxHp, speed, element, skillId | skills }`，
+ * 其余一律有兜底，缺字段不会抛错。
+ *
  * @param {object} raw 兵器实例 / 原型 / 敌人配置
- * @param {object} [opts] { catalog, side, slot, index, levelAtkStep, levelHpStep }
+ * @param {object} [opts] { catalog, side, slot, index, uidHint, levelAtkStep, levelHpStep }
  */
 export function toCombatUnit(raw, opts = {}) {
-  const source = raw ?? {};
+  const source = raw && typeof raw === 'object' ? raw : {};
   const def = resolveWeaponDef(source, opts.catalog) ?? {};
   const merged = { ...def, ...source };
 
@@ -314,7 +347,7 @@ export function toCombatUnit(raw, opts = {}) {
   const affixes = collectAffixes(merged);
 
   const baseAtk = num(merged.baseAtk ?? merged.atkBase, 0);
-  const baseHp = num(merged.baseHp ?? merged.hpBase, 0);
+  const baseHp = num(merged.baseHp ?? merged.hpBase ?? merged.baseMaxHp, 0);
   const rawAtk = num(merged.atk, NaN);
   const rawHp = num(merged.maxHp ?? merged.hp, NaN);
 
@@ -329,11 +362,18 @@ export function toCombatUnit(raw, opts = {}) {
   const maxHp = Math.max(1, Math.round(hpCore * (1 + affixes.hpPct)));
   const speed = Math.max(1, Math.round(num(merged.speed, info.speed) * (1 + affixes.speed)));
 
-  const uid = merged.uid ?? merged.instanceId ?? merged.id ?? `u${(autoUid += 1)}`;
+  const uid = merged.uid ?? merged.instanceId ?? merged.id ?? fallbackUid(merged, opts);
 
   return {
     uid: String(uid),
-    defId: merged.defId ?? merged.weaponId ?? def.id ?? merged.id ?? null,
+    defId: merged.defId
+      ?? merged.weaponId
+      ?? merged.protoId
+      ?? merged.prototypeId
+      ?? merged.templateId
+      ?? def.id
+      ?? merged.id
+      ?? null,
     name: merged.name ?? def.name ?? '无名兵器',
     title: merged.title ?? def.title ?? '',
     side: opts.side ?? 'player',

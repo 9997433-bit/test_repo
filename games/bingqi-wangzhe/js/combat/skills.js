@@ -153,9 +153,14 @@ export function resolveSoulResonance(ctx) {
   for (const ally of allies) {
     ctx.applyStatus(ally, status('atkUp', 3, 0.22, ctx.actor, { element: ctx.actor.element }));
   }
+  // payload 与其他事件对齐：只放可序列化的标量，不要把活的 unit 引用塞进时间轴
   ctx.log('buff', {
-    actor: ctx.actor,
+    actorUid: ctx.actor.uid,
+    actor: ctx.actor.name,
+    side: ctx.actor.side,
+    element: ctx.actor.element,
     label: '兵魂共鸣',
+    targets: allies.map((u) => u.uid),
     text: `${ctx.actor.name} 唤醒兵魂，全军攻击 +22%（${elementLabel(ctx.actor.element)}共鸣）`,
   });
 }
@@ -365,8 +370,156 @@ export const SKILL_LIBRARY = Object.freeze({
   }),
 });
 
+/**
+ * 数据层 `data/skills.js` 的 `sk_*` id → 战斗层原型。
+ *
+ * 数据层按「兵器技」组织（三炉 + 神话 + 敌方），战斗层按结算原型组织，两边不是一一对应；
+ * 这里按元素与战术定位挂到最接近的原型上，避免全部落到 `synthesize()` 的哈希兜底
+ * ——哈希兜底虽然可复现，但会把治疗技打成斩杀技，数值上说不通。
+ */
+const DATA_SKILL_ALIASES = Object.freeze({
+  // 精铁炉
+  sk_liehuo_zhan: 'blaze_slash',
+  sk_hanfeng_ci: 'frost_lock',
+  sk_leiting_tu: 'thunder_chain',
+  sk_hanyu_she: 'execute',
+  sk_pishan: 'pierce_shot',
+  sk_leiming_ji: 'whirlwind',
+  sk_qingfeng_fu: 'forge_mend',
+  sk_liyin_zhen: 'whirlwind',
+  sk_zhepeng: 'thorn_armor',
+  sk_beici: 'execute',
+  sk_hengsao: 'whirlwind',
+  sk_shouye_nu: 'pierce_shot',
+  // 白银炉
+  sk_yanwu_zhan: 'blaze_slash',
+  sk_shuangfeng_lian: 'double_strike',
+  sk_binghe_ci: 'frost_lock',
+  sk_xingluo_ji: 'thunder_chain',
+  sk_liehuo_nu: 'pierce_shot',
+  sk_lianzhu_lei: 'thunder_chain',
+  sk_bingpo_zhan: 'frost_lock',
+  sk_ronghuo_za: 'whirlwind',
+  sk_yanwei_shan: 'soul_resonance',
+  sk_jiuxiao_yin: 'gale_lead',
+  sk_xuemu: 'guard_stance',
+  sk_linguang_ci: 'blood_drink',
+  sk_qiuhong_she: 'double_strike',
+  // 黄金炉
+  sk_poxiao_yijian: 'execute',
+  sk_wangchuan_zhan: 'blood_drink',
+  sk_tunri_ci: 'blaze_slash',
+  sk_jiuli_hengsao: 'whirlwind',
+  sk_shechen: 'execute',
+  sk_zhenchao: 'guard_stance',
+  sk_duanlong: 'pierce_shot',
+  sk_fenji: 'whirlwind',
+  sk_zhaohun: 'forge_mend',
+  sk_zhetian: 'thorn_armor',
+  sk_wanji: 'thunder_chain',
+  sk_chanyi: 'double_strike',
+  // 神话
+  sk_zhulong_kaimu: 'whirlwind',
+  sk_xuanming_fengyuan: 'frost_lock',
+  sk_leize_tianwen: 'execute',
+  sk_taixu_xingyun: 'thunder_chain',
+  // 羁绊被动（战斗层的羁绊走 lineup.js，这里只保证不炸）
+  bond_type_sword: 'soul_resonance',
+  bond_type_saber: 'double_strike',
+  bond_type_blade: 'double_strike',
+  bond_type_spear: 'pierce_shot',
+  bond_type_halberd: 'guard_stance',
+  bond_type_bow: 'pierce_shot',
+  bond_type_crossbow: 'gale_lead',
+  bond_type_axe: 'execute',
+  bond_type_hammer: 'guard_stance',
+  bond_type_fan: 'forge_mend',
+  bond_type_flute: 'gale_lead',
+  bond_type_umbrella: 'thorn_armor',
+  bond_elem_fire: 'blaze_slash',
+  bond_elem_ice: 'frost_lock',
+  bond_elem_thunder: 'thunder_chain',
+  bond_mythic_soul: 'soul_resonance',
+  // 敌方
+  sk_e_zaowo_hui: 'blaze_slash',
+  sk_e_suibing: 'whirlwind',
+  sk_e_maidian: 'thunder_chain',
+  sk_e_tiepi: 'guard_stance',
+  sk_e_kuangnu: 'soul_resonance',
+  sk_e_fenshen_zhan: 'whirlwind',
+  sk_e_hanyuan_suo: 'frost_lock',
+  sk_e_leiting_pu: 'thunder_chain',
+  sk_e_taotie_shi: 'blood_drink',
+  sk_e_wuxiang_beng: 'whirlwind',
+  sk_e_jiuyou_fen: 'whirlwind',
+  sk_e_tianwen_ni: 'pierce_shot',
+});
+
+/**
+ * Round 1 之前各分支用过的旧技能 id（camelCase / 早期命名）。
+ * 统一到 snake_case 之后仍要认这些旧名，否则老存档与老关卡表会掉进哈希兜底。
+ */
+const LEGACY_SKILL_ALIASES = Object.freeze({
+  flameSlash: 'blaze_slash',
+  flame_slash: 'blaze_slash',
+  fireSlash: 'blaze_slash',
+  fire_slash: 'blaze_slash',
+  burnStrike: 'blaze_slash',
+  iceLock: 'frost_lock',
+  ice_lock: 'frost_lock',
+  frostBolt: 'frost_lock',
+  frost_bolt: 'frost_lock',
+  freezeStrike: 'frost_lock',
+  lightningChain: 'thunder_chain',
+  lightning_chain: 'thunder_chain',
+  thunderBolt: 'thunder_chain',
+  thunder_bolt: 'thunder_chain',
+  whirlSlash: 'whirlwind',
+  whirl_slash: 'whirlwind',
+  spinSlash: 'whirlwind',
+  sweep: 'whirlwind',
+  armorPierce: 'pierce_shot',
+  armor_pierce: 'pierce_shot',
+  piercingShot: 'pierce_shot',
+  snipe: 'pierce_shot',
+  bloodStrike: 'blood_drink',
+  blood_strike: 'blood_drink',
+  drainStrike: 'blood_drink',
+  vampiricStrike: 'blood_drink',
+  ironWall: 'guard_stance',
+  iron_wall: 'guard_stance',
+  shieldWall: 'guard_stance',
+  defendStance: 'guard_stance',
+  comboStrike: 'double_strike',
+  dualStrike: 'double_strike',
+  dual_strike: 'double_strike',
+  twinStrike: 'double_strike',
+  soulEcho: 'soul_resonance',
+  soul_echo: 'soul_resonance',
+  weaponSoul: 'soul_resonance',
+  spikeArmor: 'thorn_armor',
+  spike_armor: 'thorn_armor',
+  thornsArmor: 'thorn_armor',
+  reflectArmor: 'thorn_armor',
+  executeStrike: 'execute',
+  execute_strike: 'execute',
+  behead: 'execute',
+  forgeHeal: 'forge_mend',
+  forge_heal: 'forge_mend',
+  mend: 'forge_mend',
+  healAlly: 'forge_mend',
+  windLead: 'gale_lead',
+  wind_lead: 'gale_lead',
+  hasteLead: 'gale_lead',
+  basicAttack: 'basic_attack',
+  normalAttack: 'basic_attack',
+  normal_attack: 'basic_attack',
+});
+
 /** data/skills.js 可能采用别名 id，这里做一层容错映射。 */
 export const SKILL_ALIASES = Object.freeze({
+  ...DATA_SKILL_ALIASES,
+  ...LEGACY_SKILL_ALIASES,
   blazeSlash: 'blaze_slash',
   烈焰斩: 'blaze_slash',
   fire_strike: 'blaze_slash',
@@ -435,14 +588,51 @@ function synthesize(id) {
 
 const synthCache = new Map();
 
+/** camelCase → snake_case，供别名表之外的旧名兜底。 */
+function toSnakeCase(key) {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .toLowerCase();
+}
+
+function lookup(key) {
+  if (!key) return null;
+  if (SKILL_LIBRARY[key]) return key;
+  const alias = SKILL_ALIASES[key];
+  if (alias && SKILL_LIBRARY[alias]) return alias;
+  return null;
+}
+
+/**
+ * 技能 id 归一化：现用 snake_case id → 原样；旧名 / 别名 / camelCase → 现用 id。
+ * 认不出来返回 null（由 getSkill 决定兜底策略）。
+ */
+export function normalizeSkillId(id) {
+  const raw = typeof id === 'object' && id ? id.id : id;
+  if (raw == null || raw === '') return null;
+  const key = String(raw).trim();
+  const candidates = [
+    key,
+    key.toLowerCase(),
+    toSnakeCase(key),
+    // `skill_blaze_slash` / `sk_blaze_slash` 这类带前缀的写法
+    toSnakeCase(key).replace(/^(?:skill|sk|s)_/, ''),
+  ];
+  for (const candidate of candidates) {
+    const hit = lookup(candidate);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 /** 取技能定义；未知 id 走稳定兜底，永不返回 null。 */
 export function getSkill(id) {
   if (!id) return BASIC_ATTACK;
   if (typeof id === 'object' && typeof id.resolve === 'function') return id;
   const key = typeof id === 'object' ? id.id : id;
-  if (SKILL_LIBRARY[key]) return SKILL_LIBRARY[key];
-  const alias = SKILL_ALIASES[key] ?? SKILL_ALIASES[String(key).toLowerCase()];
-  if (alias && SKILL_LIBRARY[alias]) return SKILL_LIBRARY[alias];
+  const resolved = normalizeSkillId(key);
+  if (resolved) return SKILL_LIBRARY[resolved];
   if (!synthCache.has(key)) synthCache.set(key, synthesize(key));
   return synthCache.get(key);
 }

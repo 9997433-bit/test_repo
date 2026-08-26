@@ -4,7 +4,8 @@
  * 契约：`core/rng.js` 的 mulberry32 是全局唯一随机源。战斗层不直接 import 它，
  * 而是通过 `toRng()` 接收外部注入的 rng（core 的实例、纯函数或种子数字），
  * 这样 combat 既能被 core 驱动，也能在 Node 测试中脱离 core 独立跑。
- * 当只拿到种子时，这里用与 core 完全一致的 mulberry32 算法兜底，保证同种子同结果。
+ * 当只拿到种子时，这里用与 core 完全一致的 mulberry32 + 种子折叠算法兜底，
+ * 因此 `createCombatRng(s)` 与 `core.createRng(s)` 对任意 s 都产出同一条浮点流。
  */
 
 const UINT32 = 4294967296;
@@ -20,21 +21,29 @@ export function mulberry32(seed) {
   };
 }
 
-/** 字符串/任意值 → 稳定的 uint32 种子（xmur3 变体）。 */
-export function hashSeed(value) {
+/**
+ * 任意值 → uint32 种子。
+ *
+ * 这里逐字复刻 `core/rng.js` 的 `normalizeSeed`（数字取整取绝对值，其余走 xfnv1a），
+ * 不 import 是为了让 combat 能脱离 core 独立跑，但算法必须一致：
+ * 同一个字符串种子在 core 与 combat 里要折出同一个 uint32，
+ * 否则「同名同种子」的存档在两层之间会静默漂移。
+ */
+export function hashSeed(value = 1) {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.abs(Math.trunc(value)) >>> 0 || 1;
+    return Math.floor(Math.abs(value)) >>> 0;
   }
-  const str = String(value ?? 1);
-  let h = 1779033703 ^ str.length;
-  for (let i = 0; i < str.length; i += 1) {
-    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
+  const text = String(value ?? '');
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
-  h = Math.imul(h ^ (h >>> 16), 2246822507);
-  h = Math.imul(h ^ (h >>> 13), 3266489909);
-  return (h ^ (h >>> 16)) >>> 0 || 1;
+  return h >>> 0;
 }
+
+/** `core/rng.js` 同名导出的别名，方便调用方两边通用。 */
+export const normalizeSeed = hashSeed;
 
 function buildInterface(nextFloat, seed) {
   const api = {

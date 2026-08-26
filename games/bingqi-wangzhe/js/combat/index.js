@@ -11,9 +11,12 @@ export {
   AI_PROFILES,
   ENGINE_VERSION,
   EVENT_DURATION,
+  EVENT_SUBTYPES,
+  EVENT_TYPE_OF,
   EVENT_TYPES,
   MAX_ROUNDS,
   arenaOpponentToWaves,
+  canonicalEventType,
   estimatePower,
   estimateUnitsPower,
   formatBattleReport,
@@ -21,4 +24,10 @@ export {
   simulateBattle,
   toEnemyWaves,
 } from './engine.js';
-export { createCombatRng, hashSeed, mulberry32, toRng } from './rng.js';
+export {
+  createCombatRng,
+  hashSeed,
+  mulberry32,
+  normalizeSeed,
+  toRng,
+} from './rng.js';

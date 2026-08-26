@@ -12,6 +12,16 @@
  *  - 全程纯函数，无 window / DOM / Date 依赖，Node 可直接 import。
  *  - 所有随机走注入的 rng（或种子），同种子必然复现同一条 timeline。
  *  - 安全回合上限 MAX_ROUNDS = 50，另有行动次数硬保险，杜绝死循环。
+ *
+ * Round 2 对外契约（上层只需要认这几条）：
+ *  - `timeline[]` 每条事件都带 `type`，取值必在 `EVENT_TYPES`
+ *    （`start | action | skill | damage | kill | end`）之内；
+ *    更细的语义放在 `subtype`（旧字段 `t` 与之同值，保留给老渲染器）。
+ *  - `playerWeapons[]` 最低只需 `{ id | protoId, atk | baseAtk,
+ *    hp | baseHp | maxHp, speed, element, skillId | skills }`，缺字段一律有兜底。
+ *  - 空阵容是合法输入：不抛错，winner 依次为
+ *    我方空→`enemy`、敌方空→`player`、双方皆空→`draw`。
+ *  - 元素倍率 `elementMultiplier` 从本文件直接出口，调用方不必再摸 elements.js。
  */
 
 import {
@@ -49,10 +59,14 @@ import {
 } from './skills.js';
 
 /**
- * 引擎版本。任何改变 rng 消耗次序的改动都必须 +1，
+ * 引擎版本。任何改变 rng 消耗次序（或种子折叠算法）的改动都必须 +1，
  * 否则历史种子的回放（golden 测试 / 战报重播）会静默漂移。
+ *
+ * v2：`hashSeed` 改为与 `core/rng.js` 的 `normalizeSeed` 同算法（xfnv1a），
+ *     字符串种子折出的 uint32 变了，v1 时代录下的字符串种子回放不再等价。
+ *     注入 rng 实例或数字种子的回放不受影响。
  */
-export const ENGINE_VERSION = 1;
+export const ENGINE_VERSION = 2;
 
 /** 安全回合上限：超过即判定并强制结束。 */
 export const MAX_ROUNDS = 50;
@@ -67,7 +81,7 @@ const VARIANCE_SPAN = 0.12;
 /** 减伤硬上限。 */
 const MAX_MITIGATION = 0.85;
 
-/** 战报播放节奏（毫秒），实际值为 base / speed。 */
+/** 战报播放节奏（毫秒），按**子类型**取值，实际值为 base / speed。 */
 export const EVENT_DURATION = Object.freeze({
   start: 700,
   wave: 480,
@@ -84,7 +98,21 @@ export const EVENT_DURATION = Object.freeze({
   end: 900,
 });
 
+/**
+ * 时间轴事件的**规范类型**（Round 2 统一契约）。
+ * 每条 timeline 事件的 `type` 一定落在这 6 个值之内，播放器只需要认这 6 种。
+ */
 export const EVENT_TYPES = Object.freeze([
+  'start',
+  'action',
+  'skill',
+  'damage',
+  'kill',
+  'end',
+]);
+
+/** 子类型：保留引擎内部的细分语义，写在事件的 `subtype`（与旧字段 `t` 同值）。 */
+export const EVENT_SUBTYPES = Object.freeze([
   'start',
   'wave',
   'round',
@@ -99,6 +127,33 @@ export const EVENT_TYPES = Object.freeze([
   'kill',
   'end',
 ]);
+
+/**
+ * 子类型 → 规范类型。
+ *  - 结构性节点（开战 / 波次 / 回合）统一归入 `start`；
+ *  - 一切「造成扣血」的结算（含 DOT、反伤）归入 `damage`；
+ *  - 治疗 / 护盾 / 增益 / 状态这类无扣血的结算归入 `action`。
+ */
+export const EVENT_TYPE_OF = Object.freeze({
+  start: 'start',
+  wave: 'start',
+  round: 'start',
+  action: 'action',
+  heal: 'action',
+  buff: 'action',
+  status: 'action',
+  shield: 'action',
+  skill: 'skill',
+  damage: 'damage',
+  dot: 'damage',
+  kill: 'kill',
+  end: 'end',
+});
+
+/** 子类型 → 规范类型；认不出来的一律当作 `action`，保证 type 恒在 EVENT_TYPES 内。 */
+export function canonicalEventType(subtype) {
+  return EVENT_TYPE_OF[subtype] ?? 'action';
+}
 
 /** AI 性格：影响选目标时元素/威胁/残血三项的权重。 */
 export const AI_PROFILES = Object.freeze({
@@ -218,6 +273,7 @@ function normalizeWave(wave, index, opts) {
       side: 'enemy',
       slot: i,
       index: i,
+      uidHint: `w${index}`,
     }));
   return {
     index,
@@ -256,8 +312,11 @@ export function toEnemyWaves(input, opts = {}) {
  * @param {boolean}[input.bonds=true]  是否结算羁绊
  * @param {string} [input.mode='campaign'] campaign | arena | idle
  * @returns {{ winner, rounds, timeline, rewards, ... }}
+ *
+ * 空阵容不是错误：任何一侧（或两侧）为空都会正常返回一份完整战报，
+ * winner 依次为 我方空→`enemy`、敌方空→`player`、双方皆空→`draw`。
  */
-export function simulateBattle(input = {}) {
+export function simulateBattle(input) {
   const {
     playerWeapons = [],
     enemyWaves = [],
@@ -271,7 +330,7 @@ export function simulateBattle(input = {}) {
     mode = 'campaign',
     playerAi = 'balanced',
     enemyAi = null,
-  } = input;
+  } = (input && typeof input === 'object' ? input : {});
 
   const rng = toRng(rngSource ?? seed, seed ?? 1);
   const playbackSpeed = clamp(num(speed, 1) || 1, 0.25, 8);
@@ -281,7 +340,7 @@ export function simulateBattle(input = {}) {
   const rawPlayers = (Array.isArray(playerWeapons) ? playerWeapons : [playerWeapons])
     .filter(Boolean)
     .slice(0, 5)
-    .map((w, i) => toCombatUnit(w, { catalog, side: 'player', slot: i, index: i }));
+    .map((w, i) => toCombatUnit(w, { catalog, side: 'player', slot: i, index: i, uidHint: 'p' }));
   const playerBonds = useBonds ? computeBonds(rawPlayers) : [];
   const players = (useBonds ? applyBonds(rawPlayers, playerBonds) : rawPlayers.map(cloneUnit))
     .map((u, i) => ({ ...u, side: 'player', slot: i, ai: u.ai ?? playerAi }));
@@ -302,16 +361,25 @@ export function simulateBattle(input = {}) {
     mode,
   };
 
-  const emit = (type, payload = {}) => {
+  /**
+   * 追加一条时间轴事件。
+   * `subtype` 是引擎内部的细分语义，`type` 是播放器只需要认的 6 种规范类型；
+   * `t` 保留给旧版战报渲染，与 `subtype` 恒同值。
+   */
+  const emit = (subtype, payload = {}) => {
     const event = {
       seq: battle.seq++,
       at: Math.round(battle.clock),
-      t: type,
       round: battle.round,
       wave: battle.wave,
       ...payload,
+      // 放在展开之后：payload 不允许覆写这三个字段，
+      // 「timeline 每条都带合法 type」是对外的硬保证。
+      type: canonicalEventType(subtype),
+      subtype,
+      t: subtype,
     };
-    battle.clock += (EVENT_DURATION[type] ?? 200) / playbackSpeed;
+    battle.clock += (EVENT_DURATION[subtype] ?? 200) / playbackSpeed;
     battle.timeline.push(event);
     return event;
   };
@@ -686,12 +754,20 @@ export function simulateBattle(input = {}) {
   let clearedWaves = 0;
 
   if (battle.players.length === 0 || waves.length === 0) {
-    const winner = battle.players.length === 0 ? 'enemy' : 'player';
+    // 空阵容是合法输入（新档、清空阵容的预览、只想看奖励估算）：
+    // 不抛错，按「谁站在场上谁赢，都不在场则平」给一个说得通的结论。
+    const winner = battle.players.length === 0
+      ? (waves.length === 0 ? 'draw' : 'enemy')
+      : 'player';
     emit('end', {
       winner,
       rounds: 0,
       timeout: false,
-      text: winner === 'player' ? '无敌可战，直接凯旋' : '无兵可用，战斗失败',
+      text: winner === 'player'
+        ? '无敌可战，直接凯旋'
+        : winner === 'draw'
+          ? '双方皆无可战之器，不战而散'
+          : '无兵可用，战斗失败',
     });
     return finalize({
       battle,
@@ -1078,6 +1154,7 @@ const REPORT_PREFIX = Object.freeze({
   shield: '  ▢',
   status: '  ◈',
   dot: '  ~',
+  buff: '  ◈',
   kill: '  ✖',
   end: '◆',
 });
@@ -1085,19 +1162,20 @@ const REPORT_PREFIX = Object.freeze({
 /**
  * 把 timeline 渲染成纯文本战报（UI 降级显示 / 测试断言 / 控制台调试）。
  * @param {object} result simulateBattle 的返回值
- * @param {object} [opts] { types, showSeq }
+ * @param {object} [opts] { types, showSeq } types 可写规范类型，也可写子类型
  */
 export function formatBattleReport(result, opts = {}) {
   if (!result) return '';
   const allow = opts.types ? new Set(opts.types) : null;
   const lines = [];
-  for (const ev of result.timeline) {
-    if (allow && !allow.has(ev.t)) continue;
-    const prefix = REPORT_PREFIX[ev.t] ?? ' ';
-    const text = ev.text ?? ev.t;
+  for (const ev of result.timeline ?? []) {
+    const subtype = ev.subtype ?? ev.t ?? ev.type;
+    if (allow && !allow.has(subtype) && !allow.has(ev.type)) continue;
+    const prefix = REPORT_PREFIX[subtype] ?? ' ';
+    const text = ev.text ?? subtype;
     lines.push(`${opts.showSeq ? `#${String(ev.seq).padStart(3, '0')} ` : ''}${prefix} ${text}`);
   }
-  const reward = Object.entries(result.rewards)
+  const reward = Object.entries(result.rewards ?? {})
     .filter(([, v]) => v > 0)
     .map(([k, v]) => `${k} +${v}`)
     .join('，');
