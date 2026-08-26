@@ -12,6 +12,7 @@ export function isMuted(): boolean {
 
 function ac(): AudioContext | null {
   if (muted) return null;
+  if (typeof AudioContext === "undefined") return null;
   ctx ??= new AudioContext();
   return ctx;
 }

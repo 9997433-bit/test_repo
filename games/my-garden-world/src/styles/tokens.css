@@ -9,9 +9,11 @@
   --jade-soft: #7ea392;
   --plum: #8b3a4a;
   --sky: #9eb7c8;
+  --water: #6fb7d9;
   --night: #1b2430;
   --shadow: rgba(43, 33, 24, 0.28);
   --radius: 16px;
+  --dock-h: 84px;
   --font-display: "Ma Shan Zheng", "STKaiti", serif;
   --font-body: "Noto Serif SC", "Songti SC", serif;
   color-scheme: light;
