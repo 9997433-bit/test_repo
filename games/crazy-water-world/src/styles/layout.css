@@ -1,0 +1,176 @@
+/* ============================================================
+   layout.css · 结构层 + 样式引入枢纽
+   ------------------------------------------------------------
+   main.js 只引 tokens.css 与本文件；皮肤 / 动效 / 无障碍
+   通过下面的 @import 内联（Vite 构建期展开，无额外请求）。
+   本文件只管结构：网格、定位、尺寸、滚动、断点。
+   颜色与质感一律在 sea.css，不在这里写。
+   ============================================================ */
+@import "./sea.css";
+@import "./motion.css";
+@import "./a11y.css";
+
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 10px;
+}
+
+.meters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: var(--fs-small);
+}
+
+.bar {
+  position: relative;
+  min-width: 76px;
+  height: 14px;
+  overflow: hidden;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+}
+
+/* ---------- 海面与浮层 ---------- */
+.sea-wrap {
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+}
+
+.sea-wrap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 顶部多留 20px 给遮阳棚下摆 */
+.overlay {
+  position: absolute;
+  inset: 20px 12px 12px;
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.panel {
+  pointer-events: auto;
+  max-width: min(420px, 44vw);
+  max-height: 64vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* ---------- 底部船坞 ---------- */
+.dock {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+
+.dock > button {
+  flex: none;
+  scroll-snap-align: center;
+}
+
+/* 内容不溢出时居中，溢出时可完整滚到两端 */
+.dock > button:first-child {
+  margin-inline-start: auto;
+}
+
+.dock > button:last-child {
+  margin-inline-end: auto;
+}
+
+/* ---------- 标题页 ---------- */
+.title-screen {
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+/* ---------- 仓库格与手账 ---------- */
+.bag {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+  font-size: var(--fs-small);
+}
+
+.bag b {
+  display: block;
+}
+
+.log {
+  max-height: 150px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: var(--fs-small);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- 窄屏：面板上下分列，让出海面中心 ---------- */
+@media (max-width: 760px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .overlay {
+    inset: 16px 8px 8px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: space-between;
+  }
+
+  .panel {
+    max-width: 100%;
+  }
+
+  .overlay .panel:first-child {
+    max-height: 36vh;
+  }
+
+  .overlay .panel:last-child {
+    max-height: 24vh;
+  }
+}
+
+@media (max-width: 380px) {
+  .meters {
+    gap: 6px;
+  }
+
+  .bar {
+    min-width: 56px;
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "crazy-water-world",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "疯狂水世界 · 海上末日建造生存 — 独立目录网页复刻",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 4174",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4174",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bench": "node scripts/bench.mjs",
+    "probe": "node scripts/probe.mjs",
+    "stress": "node scripts/stress.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}

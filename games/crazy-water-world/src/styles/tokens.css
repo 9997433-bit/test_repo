@@ -1,0 +1,198 @@
+/* ============================================================
+   疯狂水世界 · 设计令牌 tokens.css
+   夏日废海卡通：阳光泡沫 × 旧木板 × 救生圈 × 歪遮阳棚
+   ------------------------------------------------------------
+   本文件只放：CSS 变量、字体、基础重置。
+   结构布局见 layout.css，皮肤见 sea.css，动效见 motion.css，
+   无障碍见 a11y.css。后轮 UI 请直接消费这些变量与
+   data-weather / data-phase / data-reduce-motion 钩子，勿硬编码色值。
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- 基色 · 海 ---- */
+  --sea-deep: #063544;
+  --sea: #0e7c8a;
+  --sea-mid: #0b6b78; /* 按钮海色：白字对比约 5.7:1 */
+  --sea-foam: #d8f6f4;
+  --sea-glint: #9adcf0;
+
+  /* ---- 基色 · 筏（木板 / 绳 / 纸） ---- */
+  --wood: #c9843a;
+  --wood-light: #e0a35e;
+  --wood-dark: #7a4a1e;
+  --rope: #d4b483;
+  --sand: #fff7e8;
+  --paper: #fffdf6;
+
+  /* ---- 基色 · 阳光与警示 ---- */
+  --sun: #ffd166;
+  --sun-deep: #f4a259;
+  --coral: #ff6b6b;
+  --kelp: #3dcc8a;
+  --kelp-deep: #1f9e64;
+  --buoy: #ef476f; /* 救生圈 / 鱼漂红 */
+
+  /* ---- 墨与卡片 ---- */
+  --ink: #16323c;
+  --ink-soft: #3f5a64;
+  --card: #fff7e8f0;
+  --card-solid: #fff7e8;
+
+  /* ---- 语义 ---- */
+  --accent: var(--sun);
+  --danger: var(--coral);
+  --safe: var(--kelp);
+  --info: #4cc9f0;
+  --focus-ring: var(--ink);
+
+  /* ---- 资源色（与 src/data/resources.js RESOURCE_META 同步） ---- */
+  --res-wood: #c9843a;
+  --res-plastic: #7ec8e3;
+  --res-scrap: #8a93a0;
+  --res-rope: #d4b483;
+  --res-stone: #6d6a67;
+  --res-raw-fish: #5ec8d8;
+  --res-fillet: #ffb4a2;
+  --res-meal: #f4a259;
+  --res-fresh-water: #4cc9f0;
+  --res-wheat: #f0d060;
+  --res-seed: #8bc34a;
+  --res-salt: #f5f5f5;
+  --res-blueprint: #7c6ff0;
+  --res-hourglass: #ffd166;
+  --res-badge: #e09f3e;
+  --res-shard: #ef476f;
+
+  /* ---- 天气天空（与 src/data/weather.js WEATHERS.sky 同步） ---- */
+  --sky-clear-hi: #7ec8e3;
+  --sky-clear-lo: #0e7c8a;
+  --sky-haze-hi: #9bb7c4;
+  --sky-haze-lo: #3d6d78;
+  --sky-rain-hi: #4a6270;
+  --sky-rain-lo: #16323c;
+  --sky-storm-hi: #1b2a33;
+  --sky-storm-lo: #06151b;
+  --sky-tsunami-hi: #14243a;
+  --sky-tsunami-lo: #3a1020;
+  --sky-hi: var(--sky-clear-hi);
+  --sky-lo: var(--sky-clear-lo);
+  --night-alpha: 0; /* 夜幕浓度，由 data-phase 钩子驱动 */
+
+  /* ---- 字体 ---- */
+  --font-display: "ZCOOL KuaiLe", "Noto Sans SC", system-ui, sans-serif;
+  --font-body: "Noto Sans SC", system-ui, -apple-system, "PingFang SC", sans-serif;
+  --fs-hero: clamp(44px, 8vw, 84px);
+  --fs-h2: 20px;
+  --fs-body: 14px;
+  --fs-small: 12px;
+  --fs-tiny: 11px;
+
+  /* ---- 空间 / 圆角 / 描边 ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-s: 10px;
+  --radius-m: 14px;
+  --radius-l: 20px;
+  --radius-pill: 999px;
+  --line: 2px;
+  --line-strong: 3px;
+
+  /* ---- 阴影（贴纸式：硬投影 + 软环境光） ---- */
+  --shadow-panel: 0 4px 0 rgba(22, 50, 60, 0.16), 0 16px 40px rgba(4, 32, 40, 0.35);
+  --shadow-pop: 0 3px 0 var(--ink);
+  --shadow: var(--shadow-panel); /* 兼容旧引用 */
+
+  /* ---- 动效预算（详见 docs/ART_DIRECTION.md 第 6 节） ---- */
+  --dur-tap: 90ms;
+  --dur-quick: 160ms;
+  --dur-pop: 240ms;
+  --dur-scene: 1200ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ---- 触控热区 ---- */
+  --tap-min: 44px;
+  --tap-comfort: 48px;
+
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+/* 天气 / 昼夜钩子：后轮 UI 在 html 或 .shell 上落 data-weather / data-phase，
+   天空与夜幕即随 --sky-hi/--sky-lo/--night-alpha 平滑过渡（见 motion.css）。 */
+[data-weather="clear"] {
+  --sky-hi: var(--sky-clear-hi);
+  --sky-lo: var(--sky-clear-lo);
+}
+[data-weather="haze"] {
+  --sky-hi: var(--sky-haze-hi);
+  --sky-lo: var(--sky-haze-lo);
+}
+[data-weather="rain"] {
+  --sky-hi: var(--sky-rain-hi);
+  --sky-lo: var(--sky-rain-lo);
+}
+[data-weather="storm"] {
+  --sky-hi: var(--sky-storm-hi);
+  --sky-lo: var(--sky-storm-lo);
+}
+[data-weather="tsunami"] {
+  --sky-hi: var(--sky-tsunami-hi);
+  --sky-lo: var(--sky-tsunami-lo);
+}
+[data-phase="dusk"] {
+  --night-alpha: 0.14;
+}
+[data-phase="night"] {
+  --night-alpha: 0.3;
+}
+
+/* ---- 基础重置 ---- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  background: var(--sea-deep);
+}
+
+body {
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+.icon-btn,
+input,
+select {
+  font: inherit;
+}
+
+button,
+.icon-btn {
+  cursor: pointer;
+  border: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ZCOOL KuaiLe 只有 400 字重，强设 400 防浏览器伪加粗糊字 */
+h1,
+h2,
+h3,
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
