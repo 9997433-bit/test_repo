@@ -141,6 +141,7 @@ const SKELETON = `
       <span data-ref="happy"></span>
       <span data-ref="warmth"></span>
       <span data-ref="pop"></span>
+      <button class="xw-topbtn" data-act="speed" data-ref="speed" title="一个游戏时折合多少真实秒数，点一下换档"></button>
       <button class="xw-topbtn" data-act="mute" data-ref="mute" title="M 键切换"></button>
       <button class="xw-topbtn" data-act="save" title="S 键保存">记下这一天</button>
     </div>
@@ -154,6 +155,7 @@ const SKELETON = `
       <span class="xw-roof">蘑菇屋</span>
     </button>
     <div class="buildings" data-ref="buildings"></div>
+    <div class="xw-yard" data-ref="yard" aria-hidden="true"></div>
     <div class="fields" data-ref="fields"></div>
     <div class="xw-scene-tip" data-ref="sceneTip"></div>
   </section>
@@ -187,6 +189,7 @@ function mount(root) {
     if (act === "seed") call(h.setSeed, id);
     else if (act === "plot") call(h.onPlot, id);
     else if (act === "expand") call(h.expand);
+    else if (act === "cover") call(h.cover, id);
     else if (act === "harvestall") call(h.harvestAll);
     else if (act === "select") call(h.select, id);
     else if (act === "deliver") call(h.deliver, id);
@@ -206,6 +209,7 @@ function mount(root) {
     else if (act === "sell") call(h.sell, id, b === "max" ? "max" : Number(b) || undefined);
     else if (act === "place") call(h.place, id);
     else if (act === "pet") call(h.pet, id);
+    else if (act === "speed") call(h.cycleSpeed);
     else if (act === "mute") call(h.toggleMute);
     else if (act === "save") call(h.save);
     else if (act === "tutskip") call(h.skipTutorial);
@@ -216,7 +220,11 @@ function mount(root) {
 
 /* ---------- 主渲染 ---------- */
 
-export function render(root, state, handlers, now = Date.now()) {
+/**
+ * `queries` 是组合根递过来的只读系统查询（canPlant / feedCost / 温室口径）。
+ * UI 不许 import systems，缺哪一项就退回保守默认，按钮宁可显示得笨一点也不撒谎。
+ */
+export function render(root, state, handlers, queries = {}, now = Date.now()) {
   if (!root) return;
   if (!root.__refs) root.__refs = mount(root);
   const refs = root.__refs;
@@ -243,15 +251,19 @@ export function render(root, state, handlers, now = Date.now()) {
   setText(refs.happy, `幸福 ${state.resources.happiness}`);
   setText(refs.warmth, `温馨 ${state.resources.warmth}`);
   setText(refs.pop, `人口 ${state.resources.pop}/${state.resources.popCap}`);
+  setText(refs.speed, `时速 ${(state.meta.hourMs || 6000) / 1000}秒/时`);
   setText(refs.mute, state.meta.muted ? "声音：关" : "声音：开");
 
   renderFields(refs, state, tutHint, now, progress, times);
   renderBuildings(refs, state, ui, tutHint);
-  renderToolbar(refs, state, ui, tutHint, now);
-  renderDetail(refs, state, ui, now, progress, times);
+  renderYard(refs, state);
+  renderToolbar(refs, state, ui, tutHint, now, queries);
+  renderDetail(refs, state, ui, now, progress, times, queries);
   renderSide(refs, state);
   renderTutorial(refs, state, step);
   renderToast(refs, ui, now);
+  // 田块刚重建完再挂飘字，不然同一帧的 setHtml 会把它冲掉。
+  spawnFloat(refs, ui);
 
   setText(refs.sceneTip, sceneTip(state, step));
 
@@ -361,15 +373,24 @@ function renderBuildings(refs, state, ui, tutHint) {
 
 /* ---------- 常驻工具条 ---------- */
 
-function renderToolbar(refs, state, ui, tutHint, now) {
+function renderToolbar(refs, state, ui, tutHint, now, queries) {
   const seed = ui.seed || "rice";
+  const allowed = typeof queries.canPlant === "function" ? (id) => queries.canPlant(state, id) : () => true;
   const seeds = CROPS.map((c, i) => {
+    // 系统那边 plant() 会按 unlockLevel 拒收，按钮先自己灰掉，别让人白点一下再吃飘字。
+    const locked = !allowed(c.id) || c.unlockLevel > state.meta.level;
     const off = !c.seasons.includes(state.meta.season);
-    const poor = state.resources.coin < c.seedCost;
-    const cls = ["xw-seed", c.id === seed ? "is-on" : "", off ? "off-season" : "", poor ? "is-poor" : ""].filter(Boolean).join(" ");
+    const poor = !locked && state.resources.coin < c.seedCost;
+    const cls = ["xw-seed", c.id === seed ? "is-on" : "", locked ? "is-locked" : "", off ? "off-season" : "", poor ? "is-poor" : ""]
+      .filter(Boolean)
+      .join(" ");
     const key = i < SEED_KEYS ? `<span class="k">${i + 1}</span>` : "";
-    return `<button class="${cls}" data-act="seed" data-id="${c.id}" aria-pressed="${c.id === seed}" title="${c.seedCost} 金币 · ${off ? "反季，长得慢" : "当季"}">
-      ${key}${esc(c.name)}<span class="xw-price">${c.seedCost}</span>
+    const title = locked
+      ? `小镇到 Lv.${c.unlockLevel} 才卖这种种子`
+      : `${c.seedCost} 金币 · ${off ? "反季，长得慢" : "当季"}`;
+    const tail = locked ? `<span class="xw-price">Lv.${c.unlockLevel}</span>` : `<span class="xw-price">${c.seedCost}</span>`;
+    return `<button class="${cls}" data-act="seed" data-id="${c.id}" aria-pressed="${c.id === seed}" title="${esc(title)}"${locked ? " disabled" : ""}>
+      ${key}${esc(c.name)}${tail}
     </button>`;
   }).join("");
 
@@ -418,7 +439,7 @@ function renderSide(refs, state) {
 
 /* ---------- 左侧：上下文面板 ---------- */
 
-function renderDetail(refs, state, ui, now, progress, times) {
+function renderDetail(refs, state, ui, now, progress, times, queries) {
   const id = ui.selected || "wish";
   let html;
   if (id === "mushroom") html = detailMushroom(state, now, times);
@@ -426,7 +447,8 @@ function renderDetail(refs, state, ui, now, progress, times) {
   else if (id === "__build") html = detailBuildList(state);
   else if (id === "kitchen") html = detailKitchen(state, ui, now, progress, times);
   else if (id === "stall") html = detailStall(state, ui);
-  else html = detailBuilding(state, id, now, progress, times);
+  else if (id === "greenhouse") html = detailGreenhouse(state, queries);
+  else html = detailBuilding(state, id, now, progress, times, queries);
   setHtml(refs.detail, html);
 }
 
@@ -596,6 +618,47 @@ function detailStall(state, ui) {
     ${worthless.length ? `<p class="ghost">没人收：${worthless.map(([id]) => esc(itemName(id))).join("、")}</p>` : ""}`;
 }
 
+/* ---------- 温室：一块一块把地罩进去 ---------- */
+
+/**
+ * 温室建成只是前置条件，免季节要按地块买（80 金 + 锯×1，全村上限 3 块）。
+ * 口径全部来自 farm 的只读查询，缺了就用契约默认值兜底。
+ */
+function detailGreenhouse(state, queries) {
+  const def = BUILDINGS.find((b) => b.id === "greenhouse");
+  if (!state.buildings.greenhouse?.built) return unbuiltPanel(state, def);
+
+  const covered =
+    typeof queries.isGreenhousePlot === "function" ? queries.isGreenhousePlot : (p) => p?.greenhouse === true;
+  const cap = queries.greenhouseCap ?? 3;
+  const coin = queries.greenhouseCoin ?? 80;
+  const saw = queries.greenhouseSaw ?? 1;
+  const count =
+    typeof queries.greenhousePlotCount === "function"
+      ? queries.greenhousePlotCount(state)
+      : state.plots.filter(covered).length;
+
+  const full = count >= cap;
+  const poor = state.resources.coin < coin || (state.resources.saw || 0) < saw;
+  const rows = state.plots
+    .map((p) => {
+      const on = covered(p);
+      const crop = CROPS.find((c) => c.id === p.cropId);
+      const what = p.status === "growing" || p.status === "ready" ? crop?.name || "作物" : PLOT_LABEL[p.status] || "地块";
+      const why = on ? "已罩上" : full ? "罩不下了" : poor ? "材料不够" : "罩进温室";
+      return `<div class="xw-line${on ? " is-done" : ""}">
+        <span><b>${esc(p.id)}</b><span class="ghost"> ${esc(what)}${on ? " · 一年四季都是春天" : ""}</span></span>
+        <button class="xw-topbtn${on || full || poor ? "" : " is-go"}" data-act="cover" data-id="${p.id}"${on || full || poor ? " disabled" : ""}>${esc(why)}</button>
+      </div>`;
+    })
+    .join("");
+
+  return `<h2>温室 <span class="ghost">已罩 ${count}/${cap} 块</span></h2>
+    <p class="ghost">玻璃罩子一扣，这块地就不认季节，也不会再枯。一次罩一块，${coin} 金 + ${esc(itemName("saw"))}×${saw}。</p>
+    ${poor && !full ? `<p class="xw-warn">身上有 ${state.resources.coin} 金 · ${esc(itemName("saw"))}×${state.resources.saw || 0}，还差一点。</p>` : ""}
+    ${rows}`;
+}
+
 function detailWish(state) {
   const wishes = state.wishes || [];
   const rows = wishes
@@ -679,7 +742,12 @@ function renderJobRows(jobs, now, progress, times) {
     .join("");
 }
 
-function detailBuilding(state, id, now, progress, times) {
+/** production 没把 feedCost 递过来时退回 1 份，宁可少报也别把按钮锁死。 */
+function feedNeed(state, buildingId, queries) {
+  return typeof queries.feedCost === "function" ? queries.feedCost(state, buildingId) : 1;
+}
+
+function detailBuilding(state, id, now, progress, times, queries) {
   const def = BUILDINGS.find((b) => b.id === id);
   if (!def || !state.buildings[id]?.built) return unbuiltPanel(state, def);
 
@@ -705,10 +773,16 @@ function detailBuilding(state, id, now, progress, times) {
     })
     .join("");
 
+  // 冬天牲口多吃两成，攒够零头的那一口要扣 2 份：按钮直接把真实份数写出来。
+  const need = animal ? Math.max(1, Number(feedNeed(state, id, queries)) || 1) : 0;
+  const have = animal ? state.inv[animal.feedId] || 0 : 0;
+  const full = jobs.length >= slots;
   const feedRow = animal
     ? `<div class="xw-line">
-        <span><b>喂${esc(animal.name)}</b><span class="ghost"> ${esc(itemName(animal.feedId))}×1 → ${esc(itemName(animal.productId))}×1 · ${Math.round(animal.cycleMs / 1000)}秒</span></span>
-        <button class="xw-topbtn" data-act="feed" data-b="${id}"${(state.inv[animal.feedId] || 0) < 1 || jobs.length >= slots ? " disabled" : ""}>投喂</button>
+        <span><b>喂${esc(animal.name)}</b><span class="ghost"> ${esc(itemName(animal.feedId))}×${need} → ${esc(itemName(animal.productId))}×1 · ${Math.round(animal.cycleMs / 1000)}秒</span></span>
+        <button class="xw-topbtn" data-act="feed" data-b="${id}" title="${esc(`${itemName(animal.feedId)} ${have}/${need}${need > 1 ? "（冬天这一口多吃一份）" : ""}`)}"${have < need || full ? " disabled" : ""}>${
+          full ? "圈里满了" : have < need ? `差 ${esc(itemName(animal.feedId))}×${need - have}` : `投喂（${esc(itemName(animal.feedId))}×${need}）`
+        }</button>
       </div>`
     : "";
 
@@ -737,6 +811,42 @@ function renderTutorial(refs, state, step) {
     refs.tutDots,
     TUTORIAL.map((_, i) => `<span class="xw-dot${i <= step ? " on" : ""}"></span>`).join(""),
   );
+}
+
+/**
+ * 收获飘字：`ui.fx` 带 text 时往地块上挂一个 `.xw-fx`（样式契约见 ART_DIRECTION）。
+ * 动画 900ms，节点由挂它的人负责收走；`fx.n` 递增，同一个信号只挂一次。
+ * 找不到那块地（比如「全部收获」）就退到村景上，居中飘一条。
+ */
+let lastFloat = 0;
+function spawnFloat(refs, ui) {
+  const fx = ui.fx;
+  if (!fx || !fx.text || fx.n === lastFloat) return;
+  lastFloat = fx.n;
+  const host =
+    (fx.at && refs.root.querySelector(`.plot[data-id="${fx.at}"]`)) || refs.root.querySelector(".village");
+  if (!host) return;
+  const node = host.ownerDocument.createElement("span");
+  node.className = fx.tone === "bad" ? "xw-fx bad" : "xw-fx";
+  node.textContent = fx.text;
+  host.appendChild(node);
+  setTimeout(() => node.remove(), 1200);
+}
+
+/**
+ * 村景里的剪影挂点（`.xw-yard` / `.xw-npc[data-kind]`）：住客、两只宠物，
+ * 圈舍盖起来之后再添一只对应的牲口。只是挂点，长什么样交给样式层。
+ */
+function renderYard(refs, state) {
+  const npc = (kind, id) => `<i class="xw-npc" data-kind="${kind}"${id ? ` data-id="${esc(id)}"` : ""}></i>`;
+  const nodes = [
+    ...(state.guests || []).map((g) => npc("guest", g.id)),
+    ...(state.pets || []).map((p) => npc("pet", p.id)),
+    state.buildings.coop?.built ? npc("chick") : "",
+    state.buildings.sheepfold?.built ? npc("sheep") : "",
+    state.buildings.barn?.built ? npc("cow") : "",
+  ];
+  setHtml(refs.yard, nodes.filter(Boolean).join(""));
 }
 
 function renderToast(refs, ui, now) {

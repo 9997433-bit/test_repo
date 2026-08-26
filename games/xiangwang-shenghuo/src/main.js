@@ -1,10 +1,33 @@
 import { createStore, addInv } from "./core/store.js";
-import { createInitialState, createInitialUi, advanceTime, levelFor, TUTORIAL_TOTAL } from "./core/engine.js";
+import {
+  createInitialState,
+  createInitialUi,
+  advanceTime,
+  levelFor,
+  nextHourMs,
+  HOUR_MS_CHOICES,
+  TUTORIAL_TOTAL,
+} from "./core/engine.js";
 import { writeSave, readSave } from "./core/save.js";
 import { applyOfflineCatchup, humanGap } from "./core/offline.js";
 import { applyFurnitureWarmth, placeFurniture } from "./core/furniture.js";
-import { tickPlots, till, plant, harvest, harvestAll, expandPlot, catchUpPlots } from "./systems/farm/index.js";
-import { enqueueJob, collectJob, feedAnimal, unlockSlot, tickProduction } from "./systems/production/index.js";
+import {
+  tickPlots,
+  till,
+  plant,
+  harvest,
+  harvestAll,
+  expandPlot,
+  catchUpPlots,
+  canPlant,
+  expandGreenhousePlot,
+  isGreenhousePlot,
+  greenhousePlotCount,
+  GREENHOUSE_PLOT_CAP,
+  GREENHOUSE_COIN,
+  GREENHOUSE_SAW,
+} from "./systems/farm/index.js";
+import { enqueueJob, collectJob, feedAnimal, unlockSlot, tickProduction, feedCost } from "./systems/production/index.js";
 import {
   deliverWish,
   inviteGuest,
@@ -15,7 +38,7 @@ import {
   tickVillage,
   refreshWishes,
 } from "./systems/village/index.js";
-import { CROPS, GUESTS, RECIPES } from "./data/index.js";
+import { CROPS, GUESTS, RECIPES, ITEM_NAMES } from "./data/index.js";
 import { render } from "./ui/screens.js";
 import { chirp, fanfare, setMuted, resumeAudio } from "./audio/sfx.js";
 import "./styles/tokens.css";
@@ -32,9 +55,13 @@ function withUi(state, patch) {
   return { ...state, ui: { ...createInitialUi(), ...(state.ui || {}), ...patch } };
 }
 
-function withFx(state, kind) {
+/**
+ * fx 是给 main.js 的音效通道和 UI 的飘字共用的一次性信号：`n` 递增去重，
+ * `info` 里可以带 `{ text, at }`，UI 就照着往那块地上挂一个 `.xw-fx`。
+ */
+function withFx(state, kind, info) {
   fxSeq += 1;
-  return withUi(state, { fx: { kind, n: fxSeq } });
+  return withUi(state, { fx: { kind, n: fxSeq, ...(info || {}) } });
 }
 
 function toast(state, text, tone = "bad", fxKind) {
@@ -46,10 +73,10 @@ function toast(state, text, tone = "bad", fxKind) {
 }
 
 /** 系统返回 { ok:false, reason } 时只飘字，不写进闲话本。 */
-function applyResult(state, result, fxKind) {
+function applyResult(state, result, fxKind, fxInfo) {
   if (!result) return state;
   if (result.ok === false) return toast(state, result.reason || "这会儿做不了");
-  return withFx(result.state || result, fxKind);
+  return withFx(result.state || result, fxKind, fxInfo);
 }
 
 /** 引导只前进不后退，玩家跳步操作也算完成。 */
@@ -137,14 +164,20 @@ function applyAction(state, action) {
     return res.ok ? advanceTutorial(applyResult(state, res, "plant"), 2) : applyResult(state, res);
   }
   if (type === "farm/harvest") {
+    // 作物在收之前读：harvest 成功后地里就空了，飘字凑不出「+2 稻谷」。
+    const crop = CROPS.find((c) => c.id === state.plots.find((p) => p.id === payload.plotId)?.cropId);
     const res = harvest(state, payload);
-    return res.ok ? advanceTutorial(applyResult(state, res, "harvest"), 3) : applyResult(state, res);
+    if (!res.ok) return applyResult(state, res);
+    const fx = crop ? { text: `+${crop.yieldQty} ${ITEM_NAMES[crop.yieldId] || crop.name}`, at: payload.plotId } : null;
+    return advanceTutorial(applyResult(state, res, "harvest", fx), 3);
   }
   if (type === "farm/harvest_all") {
     const res = harvestAll(state);
-    return res.ok ? advanceTutorial(applyResult(state, res, "harvest"), 3) : applyResult(state, res);
+    if (!res.ok) return applyResult(state, res);
+    return advanceTutorial(applyResult(state, res, "harvest", { text: `收了 ${res.count} 块地` }), 3);
   }
   if (type === "farm/expand") return applyResult(state, expandPlot(state), "build");
+  if (type === "farm/cover") return applyResult(state, expandGreenhousePlot(state, payload), "build");
 
   if (type === "prod/enqueue") return applyResult(state, enqueueJob(state, payload), "build");
   if (type === "prod/collect") {
@@ -196,6 +229,13 @@ function applyAction(state, action) {
     const muted = !state.meta.muted;
     const next = { ...state, meta: { ...state.meta, muted } };
     return muted ? next : withFx(next, "ui");
+  }
+  // 时速只认 3 / 6 / 12 秒三档，别的值一律当没按过。
+  if (type === "meta/settings") {
+    const { hourMs } = payload;
+    if (!HOUR_MS_CHOICES.includes(hourMs) || hourMs === state.meta.hourMs) return state;
+    const next = { ...state, meta: { ...state.meta, hourMs } };
+    return toast(next, `一个游戏时改成 ${hourMs / 1000} 秒。`, "good", "ui");
   }
   if (type === "meta/seed") return withFx(withUi(state, { seed: payload.cropId }), "ui");
   if (type === "meta/sell") {
@@ -283,6 +323,9 @@ const handlers = {
   },
   expand() {
     store.dispatch({ type: "farm/expand", payload: {} });
+  },
+  cover(plotId) {
+    store.dispatch({ type: "farm/cover", payload: plotId ? { plotId } : {} });
   },
   harvestAll() {
     store.dispatch({ type: "farm/harvest_all", payload: {} });
@@ -374,6 +417,9 @@ const handlers = {
   toggleMute() {
     store.dispatch({ type: "meta/mute", payload: {} });
   },
+  cycleSpeed() {
+    store.dispatch({ type: "meta/settings", payload: { hourMs: nextHourMs(store.getState().meta.hourMs) } });
+  },
   save() {
     const okSave = writeSave(store.getState());
     store.dispatch({
@@ -384,6 +430,21 @@ const handlers = {
   skipTutorial() {
     store.dispatch({ type: "meta/tutorial", payload: {} });
   },
+};
+
+/**
+ * UI 层不许 import systems（见 ARCHITECTURE §8.1 的 import 矩阵），
+ * 但按钮要照系统的真实口径置灰。组合根在这儿把只读查询递过去，
+ * screens.js 一律按「有就用、没有就退回保守默认」处理。
+ */
+const queries = {
+  canPlant,
+  feedCost,
+  isGreenhousePlot,
+  greenhousePlotCount,
+  greenhouseCap: GREENHOUSE_PLOT_CAP,
+  greenhouseCoin: GREENHOUSE_COIN,
+  greenhouseSaw: GREENHOUSE_SAW,
 };
 
 /* ---------- 渲染循环 ---------- */
@@ -401,7 +462,7 @@ function paint() {
   const state = store.getState();
   setMuted(!!state.meta.muted);
   playFx(state);
-  render(root, state, handlers);
+  render(root, state, handlers, queries);
 }
 
 let dirty = true;
@@ -438,7 +499,9 @@ window.addEventListener("keydown", (ev) => {
   if (key >= "1" && key <= "6") {
     const crop = CROPS[Number(key) - 1];
     if (crop) {
-      handlers.setSeed(crop.id);
+      // 没解锁的种子按键也别选中：否则工具条上会亮着一个点不动的按钮。
+      if (canPlant(store.getState(), crop.id)) handlers.setSeed(crop.id);
+      else store.dispatch({ type: "meta/toast", payload: { text: `${crop.name}要小镇 Lv.${crop.unlockLevel}。`, tone: "bad" } });
       ev.preventDefault();
     }
     return;
