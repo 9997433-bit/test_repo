@@ -1,0 +1,26 @@
+:root {
+  --ink: #2b2118;
+  --ink-soft: #5a4636;
+  --paper: #f4e6c8;
+  --paper-deep: #e7d3a8;
+  --vermilion: #c23b2e;
+  --gold: #c9a227;
+  --jade: #3d6b5a;
+  --jade-soft: #7ea392;
+  --plum: #8b3a4a;
+  --sky: #9eb7c8;
+  --night: #1b2430;
+  --shadow: rgba(43, 33, 24, 0.28);
+  --radius: 16px;
+  --font-display: "Ma Shan Zheng", "STKaiti", serif;
+  --font-body: "Noto Serif SC", "Songti SC", serif;
+  color-scheme: light;
+}
+
+[data-night="1"] {
+  --paper: #2a3038;
+  --paper-deep: #1f242b;
+  --ink: #f0e6d2;
+  --ink-soft: #cbbfa8;
+  --shadow: rgba(0, 0, 0, 0.45);
+}
