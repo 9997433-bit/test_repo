@@ -1,19 +1,23 @@
 import { emit } from "./events";
-import { saveState } from "./save";
+import { flushSave, scheduleSave } from "./save";
 import { WATER_CAP, WATER_REGEN_MS, type GameState } from "./state";
 import { advanceClock } from "./time";
 import { tickGarden } from "../systems/garden";
 import { tickOrders } from "../systems/orders";
 import { tickSpirits } from "../systems/spirits";
 
-let raf = 0;
-let last = 0;
-let accSave = 0;
+const MAX_STEP_MS = 100;
+const SAVE_TICK_MS = 500;
 
 export function startLoop(get: () => GameState, onFrame: () => void): () => void {
-  last = performance.now();
+  let raf = 0;
+  let last = performance.now();
+  let accSave = 0;
+  let stopped = false;
+
   const step = (t: number) => {
-    const dt = Math.min(100, t - last);
+    if (stopped) return;
+    const dt = Math.min(MAX_STEP_MS, Math.max(0, t - last));
     last = t;
     const state = get();
     state.now += dt;
@@ -27,15 +31,20 @@ export function startLoop(get: () => GameState, onFrame: () => void): () => void
     tickOrders(state);
     tickSpirits(state, dt);
     accSave += dt;
-    if (accSave > 1500) {
+    if (accSave >= SAVE_TICK_MS) {
       accSave = 0;
-      saveState(state);
+      scheduleSave(state);
     }
     onFrame();
     raf = requestAnimationFrame(step);
   };
+
   raf = requestAnimationFrame(step);
-  return () => cancelAnimationFrame(raf);
+  return () => {
+    stopped = true;
+    cancelAnimationFrame(raf);
+    flushSave();
+  };
 }
 
 export function notifyRare(text: string): void {
