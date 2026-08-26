@@ -1,5 +1,5 @@
 import { recipeById } from "../../data/recipes.js";
-import { animalByBuilding } from "../../data/animals.js";
+import { animalByBuilding, WINTER_FEED_SURCHARGE } from "../../data/animals.js";
 import { buildingById } from "../../data/buildings.js";
 import { guestById } from "../../data/guests.js";
 import { addInv, hasInv, spendInv } from "../../core/store.js";
@@ -9,8 +9,8 @@ export const MAX_SLOTS = 6;
 /** 产量零头攒着不丢，竹仔的 1.1 倍长期真能兑现出那多出来的一成。 */
 const CARRY_EPSILON = 1e-9;
 
-/** 冬天牲口多吃两成：每次投喂记 0.2 的账，攒满一份才真的多扣一件饲料。 */
-export const WINTER_FEED_SURCHARGE = 0.2;
+/** 冬天牲口多吃两成：每次投喂记 0.2 的账，攒满一份才真的多扣一件饲料。数值事实源在 data/animals.js。 */
+export { WINTER_FEED_SURCHARGE };
 
 const BUFF_MIN = 0.5;
 const BUFF_MAX = 2;
@@ -150,10 +150,8 @@ export function enqueueJob(state, { buildingId, recipeId } = {}, nowMs = Date.no
   if (slot < 0) return { ok: false, reason: "生产位满了", state };
   const spent = spendInv(state, recipe.inputs || {});
   if (!spent.ok) return { ok: false, reason: "原料不够", state };
-  const timeMs =
-    buildingId === "kitchen"
-      ? Math.max(1, Math.round(recipe.timeMs * guestBuffFactor(state, "kitchen")))
-      : recipe.timeMs;
+  // buff target 与 buildingId 同名，一行同时管住灶台叔叔（kitchen 0.8）和苇姐（weavery 0.85）；没人对口就是 1 倍。
+  const timeMs = Math.max(1, Math.round(recipe.timeMs * guestBuffFactor(state, buildingId)));
   const job = {
     id: makeJobId(state, "job", nowMs),
     buildingId,
