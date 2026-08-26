@@ -1,39 +1,41 @@
-# 超能下蛋鸭 · 验收标准与步骤（Round 1）
+# 超能下蛋鸭 · 验收标准与步骤（Round 2 重评）
 
 - 所有者：F4 SOTA 验收 · `claude-fable-5-thinking-xhigh`（本文件与 `SOTA_CHECKLIST.md` 独占写入）
-- 适用范围：`games/chao-neng-xia-dan-ya/` 全部交付；逐项 ID 与优先级见 `SOTA_CHECKLIST.md`
-- 判定等级：L0 脚手架 / L1 可玩基线（P0 全过 + §1 全绿）/ L2 SOTA 达标（+P1 全过）/ L3 精品加分（+P2 ≥60%）
+- 适用范围：`games/chao-neng-xia-dan-ya/` 全部交付；逐项 ID、L0/L1/L2 打分与缺陷登记见 `SOTA_CHECKLIST.md`
+- 判定等级：L0 未达可玩基线 / L1 可玩基线（P0 全部 ≥L1 且无 L0 + §1 全绿）/ L2 SOTA 达标（+P1 全部 ≥L1，带条件 ≤2）/ L3 精品加分（+P2 ≥60%）
 
 ## 判定总则
 
-1. 每项按 `SOTA_CHECKLIST.md` 的 ID 给出结论：**通过 / 不通过 / 带条件通过**。「带条件通过」必须登记缺陷编号、整改责任人与目标轮次；L2 判定时带条件项 ≤2。
-2. 自动化链（§1）是硬门槛：任何一步红即整轮判 L0/L1 失败，无论手动体验多好。
-3. 数值口径以 `.agent_workspace/GDD.md` 为准；GDD 与实现冲突时，先改其一并同步单测，再验收（禁止「实现即标准」）。
-4. 验收人不得修改实现代码；发现问题只登记缺陷并指派所有者。
+1. 每项按 `SOTA_CHECKLIST.md` 的 ID 给出 **L0 / L1 / L2**（等价于不通过 / 带条件通过 / 通过）。L1 必须登记缺陷与责任人。
+2. 自动化链（§1）是硬门槛：任何一步红即整轮判 L1 失败，无论手动体验多好。
+3. 数值口径以 `.agent_workspace/GDD.md` 为准；GDD 与实现冲突时，先改其一并同步单测，再验收（禁止「实现即标准」）。Round 2 已登记三处冲突：连击倍率、回收阈值、震屏幅度（见 `SOTA_CHECKLIST.md` §四）。
+4. 验收人不得修改实现代码；发现问题只登记缺陷并指派所有者。本轮登记的实装缺陷：暂停中 Esc 叠开弹窗（IN-07）、多点触控抢瞄准（IN-08）、`resolveHit` effects/comboDelta 未消费（R3-4）。
+5. **测试必须对准在用实现**：断言写在未接线模块上（如当前 TC-01 断言 `src/physics` 而战斗跑 `core/sim.js`）不计入对应 TC 项的通过证据。
 
 ## 0. 环境准备
 
 ```bash
 cd games/chao-neng-xia-dan-ya
-node --version        # 需 ≥ 20（Round 1 实测 v22.14.0）
+node --version        # 需 ≥ 20（Round 2 实测 v22.14.0）
 npm install
 ```
 
-期望：安装 0 错误；仓库无需全局依赖（干净 clone 必须可复现，见 A5）。
+期望：安装 0 错误；干净 clone 必须可复现（A5）。
 
 ## 1. 自动化链验收（A 系列）
 
 | # | 命令 | 通过标准 | 关联 ID |
 | --- | --- | --- | --- |
-| A1 | `npm test` | 全绿；自 Round 2 起必须包含 TC-01…TC-04 与 TC-06 的断言（仅 3 条脚手架冒烟不再构成通过） | TC-01…04 |
+| A1 | `npm test` | 全绿；且必须包含对**在用实现**的 TC-01…TC-04 与 TC-06 断言 | TC-01…04 |
 | A2 | `npm run probe` | 输出 JSON：`ok: true` 且含整回合字段 `shots ≥ 1`、`hits ≥ 1`、`waveCleared: true`；失败退出码非 0 | TC-06 |
 | A3 | `npm run bench` | 输出 JSON 含 `pass: true`；场景口径：30 蛋 + 200 静态体 + 8 力场，单帧（2 个 1/120 子步）p95 < 4ms；1000 次 `predictTrajectory`（90 步 / 3 反弹）< 500ms | TC-05 |
-| A4 | `npm run build` | 0 错误 0 警告级失败；产物可用 `npm run preview` 打开 | — |
+| A4 | `npm run build` | 0 错误 0 警告（当前 `BONDS`/`BOND_TABLE` 2 条导出警告即属不达标）；产物可用 `npm run preview` 打开 | — |
 | A5 | 干净 clone 复跑 A1–A4 | 结果一致（防本地缓存假绿） | — |
 
 ## 2. 手动验收脚本（M 系列）
 
 前置：`npm run dev`，打开 `http://localhost:4174`，桌面 Chrome 最新版。每个脚本按步骤顺序执行，任一步不满足期望即该步关联 ID 判不通过。
+（M1–M6 步骤与 Round 1 版本一致，为 Round 3 复验与录屏取证的执行底稿，此处保留全文。）
 
 ### M1 · Peggle 手感（PF-01…07、PF-10/11）
 
@@ -98,26 +100,42 @@ npm install
 2. `bench` 与 `probe` 的原始 JSON。
 3. 演示视频 ≥20s：瞄准 → 发射 → 连击 → 结算完整链路。
 4. 触控模拟录屏（M4）与键盘通关录屏（M5）各一段。
-5. 逐 ID 打分表（通过 / 不通过 / 带条件），回写 `SOTA_CHECKLIST.md` 复选框。
+5. 逐 ID 打分表（L0/L1/L2），回写 `SOTA_CHECKLIST.md`。
 
 ## 4. 回归守则
 
-1. 物理常量（重力 / 步长 / 弹性 / 初速范围）变更必须同轮更新 GDD、单测与本文件口径，三者不一致判红。
-2. 任何 P0 项由绿转红即阻断合并，责任所有者本轮内修复。
-3. 共享文件（`package.json` / `vite.config.js` / `README.md`）只追加；新增 npm script 必须在本文件 §1 登记验收标准。
-4. 性能口径只认 TC-05 与 M6；禁止引用脚手架期 no-op bench 数值。
+1. 物理常量（重力 / 步长 / 弹性 / 初速范围 / 回收阈值）变更必须同轮更新 GDD、单测与本文件口径，三者不一致判红。
+2. 任何 P0 项等级下降（L2→L1、L1→L0）即视为回归，阻断合并，责任所有者本轮内修复。
+3. 共享文件（`package.json` / `vite.config.js` / `README.md` / `index.html`）只追加；新增 npm script 必须在本文件 §1 登记验收标准。
+4. 性能口径只认 TC-05 与 M6；Round 1 空转 bench 数值（13554 steps/ms 等）永久禁用；Round 2 起基准必须标注被测积分器（在用 / 上游）。
+5. 单测/probe/bench 的被测对象必须与战斗在用实现一致（总则 5），「测 A 用 B」不计入通过证据。
 
-## 5. Round 1 基线实测快照（2026-08-26，commit `2119fe3`）
+## 5. Round 2 实测快照（2026-08-26，commit `9f5d444`，全新 worktree + `npm install`）
 
 | 命令 | 实测结果 | 验收结论 |
 | --- | --- | --- |
-| `npm test` | 3/3 通过（仅脚手架冒烟：空世界步进、单次伤害、默认队伍长度） | 链路通、覆盖不构成验收证据 |
-| `npm run probe` | `{ ok: true, time: 0.00833, damage: 12 }` | 桩输出，未覆盖整回合（TC-06 未过） |
-| `npm run bench` | `{ steps: 10000, ms: 0.74, stepsPerMs: 13554.65 }` | 空转 no-op，数值无效（TC-05 未过） |
-| `npm run build` | ✓ 7 modules，JS 1.05kB / gzip 0.69kB | 通过（仅证明脚手架完整） |
+| `npm test` | 5 文件全过：18 通过 / 1 skip（零威力零伤契约待 O2），含物理 6、战斗 5、存档 2、英雄 3、冒烟 3 | **命令级绿**；但 TC-01/02/03/06 契约断言仍缺 / 对象错位（断言 `src/physics`，战斗在用 `core/sim.js`），详见清单轴 E |
+| `npm run probe` | 退出码 0，`ok: true`，9/9 检查过；`heroCount: 18`；`round2.zeroPowerNoDamage: "pending"`，其余 4 项 `implemented` | 命令级绿；仍非整回合语义（无 `shots/hits/waveCleared`），TC-06 未过 |
+| `npm run bench` | 真上游物理：12 蛋+48 静态 10000 步 meanStep 0.00054ms；`predictTrajectory` 240 步 ×1000 次 meanCall 0.0355ms、0 空数组 | 数值真实可引用；场景与契约（30+200+8）不符、无 `pass` 字段，TC-05 带条件 |
+| `node scripts/stress.mjs` | 24 蛋+80 静态 3000 步：p50 0.0001ms / p95 0.0231ms / p99 0.0308ms；估算 p99 物理帧 0.062ms = 4ms 预算的 **1.5%**，`estimatedP99WithinBudget: true` | 上游物理性能余量巨大；被测对象仍非在用积分器 |
+| `npm run build` | ✓ 96 modules，JS 242.75kB / gzip 89.16kB，CSS 29.33kB；**2 条警告**：`BONDS`、`BOND_TABLE` 不存在于 `src/data/index.js`（`combat/bonds.js` 走 fallback） | 带条件：产物可用，警告即 R3-6 数据契约缺口 |
+| `npm run preview` | 构建产物 HTTP 200，资源引用完整（冒烟） | 通过 |
+| A5 干净环境复跑 | 本轮全程在全新 worktree + 全新 `npm install` 中执行，结果同上 | 通过 |
 
-结论：当前状态 = **L0 脚手架**。P0 22 项中 0 项可判通过；`stepWorld` 无碰撞、`predictTrajectory` 返回空、无 UI 主循环，M1–M6 全部无法执行。差距明细见 `SOTA_CHECKLIST.md` §二，Round 2 靶向清单见 §三。
+补充说明：
+
+- 评审时共享环境的 4174 端口已有其他代理的 dev server 占用（返回含 `/@vite/client` 的开发版页面），preview 冒烟改用 4175 端口验证构建产物，不影响结论。
+- Round 2 在途分支（O4 切物理、F3 BONDS 别名、O2 effects 契约、G2 bench 重跑、F2 juice CSS）未合入基线，本快照不含其效果；合入后按回归守则 2 复评相关 ID。
+
+### 结论
+
+当前状态 = **未达 L1，但可玩闭环完整成立**（对比 Round 1 的 L0 脚手架：P0 由 0/22 升至 17/22 ≥L1）。
+
+- 自动化链五条命令全部命令级绿，A3/A4 带条件（场景口径 / 导出警告）。
+- 阻断 L1 的 5 项 P0 全部集中在**确定性与测试链**：PF-07（帧长驱动物理不可复现）、TC-01/02/03/06（断言缺失或对象错位）。
+- 手动脚本 M1–M6 本轮未整轮执行（本轮为文档重评轮），已通过代码走查确认 M1–M3、M5 的绝大多数步骤具备执行条件；M4 步骤 5（多点触控）与 M5 步骤 1 的 `R` 键、步骤 2 的按住加速**预期不通过**（IN-08 L0、IN-03/05 L1），Round 3 修复后随录屏取证一并执行。
+- Round 3 攻坚项与责任人见 `SOTA_CHECKLIST.md` §三（R3-1…R3-14）；其中 R3-1…R3-6 为 L1 阻断项，R3-7…R3-14 为 L2 冲刺项。
 
 ## 6. 开放问题
 
-与 `SOTA_CHECKLIST.md` §四同步维护（英雄数量 18/20 口径、键盘调角键位入契约、`user-scalable=no` 的非战斗屏处理、no-op bench 数值禁用）。裁决结果落地后由 F4 在下一轮验收中更新两文件。
+与 `SOTA_CHECKLIST.md` §四同步维护：羁绊数据三源、战斗管线双实现（双暴击 / 双爆蛋）、英雄 18/20 口径、空格蓄力语义、`user-scalable=no`、回收与震屏数值口径。裁决结果落地后由 F4 在 Round 3 验收中更新两文件。
