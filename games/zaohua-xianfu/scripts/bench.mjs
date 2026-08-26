@@ -7,6 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const battleRuns = 200;
 const battleBudgetMs = 800;
 const productionRuns = 5000;
+const expectedProductionChecksum = 1011.25;
 const warmupRuns = 10;
 
 function roundMs(value) {
@@ -21,7 +22,14 @@ function errorReport(error) {
     produceIters: 0,
     produceMs: null,
     battle: { runs: 0, expectedRuns: battleRuns, budgetMs: battleBudgetMs, elapsedMs: null },
-    production: { runs: 0, expectedRuns: productionRuns, elapsedMs: null },
+    production: {
+      runs: 0,
+      expectedRuns: productionRuns,
+      elapsedMs: null,
+      checksum: null,
+      expectedChecksum: expectedProductionChecksum,
+    },
+    towerStress: { ok: false, completedBattles: 0 },
     error: {
       name: error instanceof Error ? error.name : "Error",
       message: error instanceof Error ? error.message : String(error),
@@ -34,6 +42,7 @@ try {
   const { produce } = await import(pathToFileURL(join(root, "src/mansion/production.js")).href);
   const { reduce, defaultState } = await import(pathToFileURL(join(root, "src/core/store.js")).href);
   const { towerEnemy } = await import(pathToFileURL(join(root, "src/data/enemies.js")).href);
+  const { runTowerStress } = await import(pathToFileURL(join(root, "scripts/stress.mjs")).href);
 
   const state = reduce(defaultState(), {
     type: "CHOOSE_FACTION",
@@ -79,7 +88,13 @@ try {
     }
   }
   const productionElapsedMs = performance.now() - productionStart;
-  const productionChecksum = Object.values(productionTotals).reduce((sum, amount) => sum + amount, 0);
+  const productionChecksum = Number(
+    Object.values(productionTotals)
+      .reduce((sum, amount) => sum + amount, 0)
+      .toFixed(4),
+  );
+  const checksumDrifted = productionChecksum !== expectedProductionChecksum;
+  const towerStress = runTowerStress();
 
   const battlesOk =
     wins + losses === battleRuns &&
@@ -89,9 +104,10 @@ try {
   const productionOk =
     invalidProduction === 0 &&
     Number.isFinite(productionChecksum) &&
-    productionChecksum > 0;
+    productionChecksum > 0 &&
+    !checksumDrifted;
   const report = {
-    ok: battlesOk && productionOk,
+    ok: battlesOk && productionOk && towerStress.ok,
     battles: battleRuns,
     wins,
     losses,
@@ -113,8 +129,18 @@ try {
       runs: productionRuns,
       elapsedMs: roundMs(productionElapsedMs),
       invalid: invalidProduction,
-      checksum: Number(productionChecksum.toFixed(4)),
+      checksum: productionChecksum,
+      expectedChecksum: expectedProductionChecksum,
+      ...(checksumDrifted
+        ? {
+            checksumDrift: {
+              old: expectedProductionChecksum,
+              new: productionChecksum,
+            },
+          }
+        : {}),
     },
+    towerStress,
   };
   console.log(JSON.stringify(report, null, 2));
   if (!report.ok) process.exitCode = 1;
