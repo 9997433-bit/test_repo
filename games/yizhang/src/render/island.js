@@ -199,6 +199,11 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   crustMat.onBeforeCompile = (shader) => {
     shader.uniforms.uMacro = { value: textures.arenaMacro };
     shader.uniforms.uMacroScale = { value: 1 / (R * 2.15) };
+    // 采样步长必须跟着贴图分辨率走：写死成 512 的话，低画质那张 128 的图
+    // 取样点会落在同一个纹素里，梯度恒为零，大尺度起伏在低配上就整个消失了。
+    shader.uniforms.uMacroTexel = {
+      value: 2 / (textures.arenaMacro?.image?.width ?? 512),
+    };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n varying vec3 vMacroPos;')
       .replace(
@@ -208,7 +213,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\n uniform sampler2D uMacro;\n uniform float uMacroScale;\n varying vec3 vMacroPos;'
+        '#include <common>\n uniform sampler2D uMacro;\n uniform float uMacroScale;\n uniform float uMacroTexel;\n varying vec3 vMacroPos;'
       )
       .replace(
         '#include <map_fragment>',
@@ -224,7 +229,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
          {
-           float e = 2.0 / 512.0;
+           float e = uMacroTexel;
            float hL = texture2D(uMacro, macroUv - vec2(e, 0.0)).r;
            float hR = texture2D(uMacro, macroUv + vec2(e, 0.0)).r;
            float hD = texture2D(uMacro, macroUv - vec2(0.0, e)).r;
