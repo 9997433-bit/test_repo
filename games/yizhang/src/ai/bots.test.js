@@ -144,7 +144,7 @@ describe("性格差异", () => {
     const weak = makePlayer("WEAK", { x: 0, z: 14 });
     weak.impact = 1.2;
     const state = makeState([bot, healthy, weak], { arenaRadius: 20 });
-    const log = run(state, ["B1"], { seconds: 5, rng: counter(5) });
+    const log = run(state, ["B1"], { seconds: 5, rng: counter(5), pin: ["SAFE", "WEAK"] });
     const last = log.samples[log.samples.length - 1];
     const me = last.find((p) => p.id === "B1");
     const dWeak = Math.hypot(me.x - weak.x, me.z - weak.z);
@@ -166,7 +166,17 @@ describe("性格差异", () => {
 });
 
 describe("走位安全", () => {
-  it("长时间跑动不会把自己送下台", () => {
+  it("追着贴边的目标打，也不会自己走下台", () => {
+    const bot = makePlayer("B1", { persona: "brute", gloveId: "cotton", x: 0, z: 0 });
+    const bait = makePlayer("P", { x: 0, z: 18.5 });
+    const state = makeState([bot, bait], { arenaRadius: 20 });
+    const log = run(state, ["B1"], { seconds: 12, rng: counter(41), pin: ["P"] });
+    const maxR = Math.max(...log.samples.map((s) => Math.hypot(s[0].x, s[0].z)));
+    expect(maxR).toBeLessThan(20);
+    expect(state.players[0].alive).toBe(true);
+  });
+
+  it("混战中出界的只可能是被扇出去的（自己不走空）", () => {
     const bots = BOT_PERSONAS.map((persona, i) =>
       makePlayer(`B${i}`, {
         persona,
@@ -179,7 +189,7 @@ describe("走位安全", () => {
     const log = run(state, bots.map((b) => b.id), { seconds: 20, rng: counter(23) });
     for (const p of state.players) {
       expect(Number.isFinite(p.x) && Number.isFinite(p.z)).toBe(true);
-      expect(Math.hypot(p.x, p.z)).toBeLessThan(20);
+      if (Math.hypot(p.x, p.z) >= 20) expect(p.lastHitBy).toBeTruthy();
     }
     expect(log.slaps).toBeGreaterThan(30);
   });

@@ -11,6 +11,8 @@
 //  * 无 three / DOM 依赖；所有写入都是可 structuredClone 的纯 JSON。
 //  * 冷却按绝对时间存 `attacker.cd = { slapAt, skillAt }`，因此 sim 可以每帧无脑调用，
 //    没冷却好就返回空命中列表 / { ok:false }。
+//  * 被击退者会拿到 `knockbackT`（秒）。sim 在这段时间内必须**大幅削弱地面摩擦与
+//    位移控制**，否则冲量当帧就被摩擦吃掉，谁也扇不出岛。tickStatuses 负责倒计时。
 
 import {
   ARENA,
@@ -458,6 +460,7 @@ export function tickStatuses(state, dt) {
       pushEvent(state, { type: "awaken", playerId: p.id, gloveId: p.awakenGloveId || activeGloveId(p), duration: AWAKEN.duration, t: now });
     }
 
+    if (num(p.knockbackT) > 0) p.knockbackT = Math.max(0, num(p.knockbackT) - dt);
     if (num(p.impact) > 0) p.impact = Math.max(0, num(p.impact) - IMPACT.decayPerSec * dt);
     if (num(p.awakenedT) <= 0 && num(p.meter) > 0) {
       p.meter = clamp01(num(p.meter) - METER.decayPerSec * dt);

@@ -35,8 +35,13 @@ export const IMPACT = {
 export const HIT = {
   reachHeight: 2.2,
   closeBonus: 0.35,
-  liftRatio: 0.18,
-  liftMax: 5.5,
+  liftRatio: 0.26,
+  liftMax: 6,
+  // 受击后的「飞行窗口」：这段时间内 sim 应大幅削弱地面摩擦与转向控制，
+  // 否则击退瞬间就被摩擦吃光，永远打不出岛。写在 target.knockbackT 上。
+  knockbackTimePerSpeed: 0.055,
+  knockbackTimeMin: 0.18,
+  knockbackTimeMax: 0.9,
   frozenKnockbackMul: 1.25,
   behindMul: 1.15,
   behindAngleDeg: 100,

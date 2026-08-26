@@ -1,7 +1,7 @@
 // 异掌 · 冲量 / 掌意 / 碎地 / 反击 的底层写入层。
 // combat/index.js 与 combat/skills.js 共用，避免循环依赖。
 
-import { HIT, IMPACT, METER, ARENA } from "./constants.js";
+import { ARENA, HIT, IMPACT, METER } from "./constants.js";
 import { applyStatus, refreshDerived } from "./statuses.js";
 import {
   clamp,
@@ -52,6 +52,11 @@ export function applyKnockback(state, target, dirX, dirZ, mag, lift = 0, opts = 
   }
   target.lastHitBy = opts.srcId ?? target.lastHitBy ?? null;
   target.lastHitAt = num(opts.now, num(state && state.t));
+  if (opts.knockbackWindow !== false) {
+    const speed = Math.hypot(impulse.x, impulse.z);
+    const window = clamp(speed * HIT.knockbackTimePerSpeed, HIT.knockbackTimeMin, HIT.knockbackTimeMax);
+    target.knockbackT = Math.max(num(target.knockbackT), window);
+  }
   return impulse;
 }
 

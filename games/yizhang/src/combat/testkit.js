@@ -36,6 +36,17 @@ export function makePlayer(id, opts = {}) {
   };
 }
 
+/** 站的位置有没有地板：出台缘、或踩在已碎的子块上都算悬空。 */
+export function hasFloorAt(state, x, z) {
+  if (Math.hypot(x, z) > state.arena.radius) return false;
+  for (const tile of state.tiles || []) {
+    const broken = tile.broken === true || num(tile.hp, 1) <= 0;
+    if (!broken) continue;
+    if (Math.hypot(x - num(tile.x), z - num(tile.z)) <= num(tile.r, 1.5)) return false;
+  }
+  return true;
+}
+
 export function makeTiles(ringRadius = 6, count = 8, hp = 100) {
   const tiles = [];
   for (let i = 0; i < count; i++) {
@@ -101,7 +112,8 @@ export function stepSim(state, inputs = {}, dt = 1 / 60, opts = {}) {
     const scale = num(p.moveScale, 1);
     const wantVx = world.x * MOVE_SPEED * scale;
     const wantVz = world.z * MOVE_SPEED * scale;
-    if (!p.dashing) {
+    // 击退窗口内几乎没有位移控制权（combat 通过 knockbackT 告知）。
+    if (!p.dashing && num(p.knockbackT) <= 0) {
       p.vx += (wantVx - p.vx) * Math.min(1, ACCEL * dt * 0.1 + 0.12);
       p.vz += (wantVz - p.vz) * Math.min(1, ACCEL * dt * 0.1 + 0.12);
     }
@@ -120,20 +132,19 @@ export function stepSim(state, inputs = {}, dt = 1 / 60, opts = {}) {
 
   tickStatuses(state, dt);
 
-  const R = state.arena.radius;
   for (const p of state.players) {
     if (!p.alive) continue;
     p.vy += GRAVITY * dt;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.z += p.vz * dt;
-    const r = Math.hypot(p.x, p.z);
-    const onTile = r <= R;
+    const onTile = hasFloorAt(state, p.x, p.z);
     if (onTile && p.y <= 0) {
       p.y = 0;
       p.vy = 0;
       p.grounded = true;
-      const damp = Math.exp(-FRICTION * dt * (p.dashing ? 0.1 : 1));
+      const friction = num(p.knockbackT) > 0 ? FRICTION * 0.12 : FRICTION;
+      const damp = Math.exp(-friction * dt * (p.dashing ? 0.1 : 1));
       if (!p.dashing) {
         p.vx *= damp;
         p.vz *= damp;
