@@ -1,0 +1,40 @@
+:root {
+  --sea-deep: #063544;
+  --sea: #0e7c8a;
+  --sea-foam: #d8f6f4;
+  --wood: #c9843a;
+  --wood-dark: #7a4a1e;
+  --sun: #ffd166;
+  --coral: #ff6b6b;
+  --kelp: #3dcc8a;
+  --ink: #16323c;
+  --card: #fff7e8ee;
+  --shadow: 0 12px 40px #04202866;
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  background: var(--sea-deep);
+}
+
+button,
+.icon-btn {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+}
+
+h1,
+h2,
+.display {
+  font-family: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+}
