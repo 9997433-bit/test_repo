@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | `src/data/heroes.js` | `HEROES` `HERO_LIST` `RESERVED_HERO_IDS` | 18 只英雄：id/中文名/种族/流派/稀有度/元素/基础攻/能量/技能 id/升星词条 ×4/立绘色/简介 |
 | `src/data/skills.js` | `SKILLS` `SKILL_LIST` | 18 个招牌技能 + 通用大招 `golden_smash`（触发时机 + 数值参数） |
-| `src/data/synergies.js` | `SCHOOLS` `SYNERGIES` `RACES` `RACE_TECH` `BONDS` `BOND_TABLE` | 4 流派 2/3/4 件套数值、种族科技；`BONDS`/`BOND_TABLE` 为 combat 直接消费的羁绊总表（含种族羁绊与预留 support 流派） |
+| `src/data/synergies.js` | `SCHOOLS` `SYNERGIES` `RACES` `RACE_TECH` `BONDS` `BOND_TABLE` | 4 流派 2/3/4 件套数值（流派羁绊战斗事实源）、种族科技；`BONDS`/`BOND_TABLE` 为历史契约别名：`races` 子表是种族羁绊战斗事实源，`schools` 子表是英雄层展示投影（含预留 support 流派） |
 | `src/data/enemies.js` | `ENEMIES` `ELITE_MODS` `BOSSES` `BOSS_LIST` | 11 种敌人（含精英厨子狐）、精英词缀、6 章 BOSS（HP/护甲/抗性/接触伤害/技能/阶段） |
 | `src/data/stages.js` | `CHAPTERS` `STAGES` `CHAPTER_SCALING` `LAYOUT_FEATURES` | 6 章主题、24 关布局摘要 + 特征标签 + 敌人波次 + 倍率 + 奖励 |
 | `src/data/artifacts.js` | `ARTIFACTS` `ROGUE_RULES` `ROGUE_WAVE_SCALING` `ROGUE_WAVE_BANDS` | 24 件肉鸽神器（4 稀有度）、三选一规则、无尽波次曲线与敌人池 |
@@ -103,28 +103,43 @@
 
 ## 4. 羁绊（上场 5 人计数）
 
-羁绊数据分两层导出（同源，F3 负责数值）：
+羁绊数据分两层导出（同源，F3 负责数值），事实源口径与 combat 实码对齐（Round 3 裁决）：
 
-- `SYNERGIES`：设计视角的进阶键契约（`comboWindowBonusSec` / `autoEnchantFirstEgg` /
-  `brickShockChance` 等行为键），档位语义为「高档包含并覆盖低档同名键」。
-- `BONDS`（别名 `BOND_TABLE`）：**combat 直接消费的战斗投影**，形状与
-  `src/combat/bonds.js` 的 fallback 表一致——`schools`/`races` 两张子表，
-  `tiers[0/1/2]` 对应 2/3/4 人档，每档 `{ count, name, desc, mods }`；`mods` 只用
-  `combat/modifiers.js` 的 `MOD_SPEC` 词汇，且**高档已折叠低档效果（结算只取最高档）**。
-  两表冲突时以 `BONDS` 为战斗事实源；SYNERGIES 的行为键待 combat 支持后再投影。
+- `SYNERGIES`：**流派羁绊的战斗事实源**。`combat/bonds.js` 的 `synergyBondTable` 主读
+  本表并把设计键翻成 `MOD_SPEC` 词汇（进阶行为键 `autoEnchantFirstEgg` /
+  `brickShockChance` 等进 `raw`，由对应层自取）。档位语义为「高档包含并覆盖低档同名键」。
+- `BONDS`（别名 `BOND_TABLE`）：历史契约表，形状与 `src/combat/bonds.js` 的 fallback 表
+  一致——`schools`/`races` 两张子表，`tiers[0/1/2]` 对应 2/3/4 人档，每档
+  `{ count, name, desc, mods }`，`mods` 只用 `MOD_SPEC` 词汇且高档已折叠低档效果。
+  其中 **`races` 是种族羁绊的战斗事实源**（`raceBondTable` 直读）；`schools` 仅作英雄层
+  （`heroes/squad.js`）展示投影，数值须与 `SYNERGIES` 同步，冲突时以 `SYNERGIES` 为准。
 
-### 4.1 流派羁绊（`BONDS.schools`，落表值）
+### 4.0 乘区裁决：直殴身份 × 羁绊主蛋（Round 3）
+
+结算管线（`combat/damage.js`）中，直殴流派身份 `SCHOOL_MODIFIER.brute.damageMult = 1.25`
+只作用于**直殴英雄自己打出的蛋**；羁绊 `mainEggMult` 是**全队主蛋**乘区（非直殴队友同样
+受益）。二者作用域不同、分属两个乘区，**按管线相乘一次属设计意图，不是双实现**。裁决如下：
+
+1. `mainEggMult` 多来源（羁绊档位、神器等）之间按 `MOD_SPEC` 的 `max` 语义取最高，
+   **绝不叠乘**；与身份乘区的相乘只发生一次。
+2. 原 2 件档 1.25 与身份相乘得 ×1.5625，判定为过冲（违反 §2.1 防爆约束）：
+   铁蛋 `mainEggMult` 由 1.25 下调为 **1.2**。
+3. 落成合计（直殴英雄主蛋）：2 件 1.25×1.2 = **×1.5**；4 件 1.25×1.4 = **×1.75**
+   （主蛋伤害天花板）。非直殴队友主蛋分别吃 ×1.2 / ×1.4。
+
+### 4.1 流派羁绊（`SYNERGIES` 生效值，战斗事实源）
 
 | 流派 | 2 件 | 3 件 | 4 件（禽王光环） |
 | --- | --- | --- | --- |
-| 连击 | 连击衰减 -25%，暴伤 +10% | 另加暴击率 +10%；爆蛋时刻 ×1.5 | 另加全队攻 +10%；爆蛋提前 4 层 |
-| 直殴 | 攻 +10% + 击退 | 攻 +18%，击退 +2，穿透 +1 | 攻 +30%，穿透 +2，破甲 +15% |
-| 属性 | 元素强度 +12% | 元素 +25%，反应 ×1.3，附着 +1 层 | 元素 +40%，反应 ×1.3，能量回复 +25% |
-| 碰撞 | 碰撞加成 +15% | 碰撞 +30%，分裂 +12% | 碰撞 +50%，分裂 +20%，能量回复 +20% |
+| 连击 | 连击窗口 +0.8s，每层 +2% 暴伤 | 另加连击≥10 暴击率 +15%；爆蛋时刻 ×1.5 | 另加爆蛋后保留 50% 层数；全队攻 +10% |
+| 直殴 | 全队主蛋 ×1.2（直殴英雄合计 ×1.5）+ 击退 | 另加 30% 碎砖冲击波（80% 攻击） | 主蛋提升至 ×1.4（合计 ×1.75），穿透 +1 |
+| 属性 | 元素伤害 +12% | 另加反应 ×1.3，同元素触发 3 → 2 层 | 另加每回合首蛋自动附魔；反应回能 10 |
+| 碰撞 | 每碰撞 +3%（上限 +30%） | 另加弹性 +0.06；钉碰撞 25% 弹出 40% 小蛋 | 上限提至 +60%；回收按碰撞返能 2/次（上限 30） |
 | 辅助（预留） | 治疗 +15% | 治疗/护盾 +30% | 治疗/护盾 +50%，能量 +30% |
 
-辅助流为预留流派（云朵雀 / 倒霉鸭方向），本版 18 只无人携带，仅保证 combat 流派枚举完备。
-任意流派凑满 4 件另触发 combat 侧「禽王光环」（全队伤害 +10%、能量回复 +15%）。
+辅助流为预留流派（云朵雀 / 倒霉鸭方向），本版 18 只无人携带，数据只落在 `BONDS.schools`
+以保证 combat 流派枚举完备。数据表 4 件档自带「禽王光环·X」命名；仅当消费内置 fallback 表
+时 combat 才额外补一层通用禽王光环（全队伤害 +10%、能量回复 +15%）。
 
 ### 4.2 种族羁绊（`BONDS.races`，弱于流派的第二层）
 
@@ -135,8 +150,12 @@
 | 鹅族 | 护盾 +12% | +25%，破甲 +5% | +40%，破甲 +12%（本版仅 3 鹅，暂不可达） |
 | 百鸟 | 元素强度 +8% | +18%，能量 +10% | +30%，能量 +20% |
 
-英雄表 `race` 用 `chicken`，combat 常量枚举用 `chick`：`BONDS.races` 两个键指向同一
-对象，任一口径均可命中。
+**种族键统一口径（Round 3 裁决）：数据层唯一用 `chicken`**——`HEROES.race` /
+`RACES` / `RACE_TECH` / `BONDS.races` 全部同键，不再为 `chick` 建重复键。归一责任在
+消费方：combat 侧 `RACE.CHICK` 枚举值即 `"chicken"`，查表前经 `RACE_ALIAS` 归一
+（`chick`/`chickens` 等遗留写法 → `chicken`）；展示层 `core/catalog.js` 把 `chicken`
+归一成绘制口径 `chick` 后再喂 `ui/art.js`（art.js 只认归一化后的英雄对象，不得直接
+消费原始数据表的 `race` 字段）。
 
 ### 4.3 种族科技（`RACE_TECH`，图鉴拥有数触发，肉鸽不生效）
 
@@ -226,7 +245,11 @@
   physics（O1）、combat（O2）、modes/ui（O4）实现；数值参数全部在表内。
 - 升星词条 `starPerks[].mod` 的键与 `SKILLS[].params` 同名键为覆盖关系（combat 合并时
   以高星值覆盖基础值）。
-- 羁绊契约：combat 统一读 `DATA.BONDS`（或等价别名 `DATA.BOND_TABLE`），形状见第 4 节；
-  `combat/bonds.js` 的内置 fallback 表仅作数据缺失兜底与单测隔离，正常构建下不应生效。
+- 羁绊契约：流派羁绊 combat 主读 `DATA.SYNERGIES`（`synergyBondTable` 翻译），种族羁绊
+  读 `DATA.BONDS.races`（等价别名 `DATA.BOND_TABLE`），事实源口径与乘区裁决见第 4 节；
+  `BONDS.schools` 为英雄层展示投影，数值须与 `SYNERGIES` 同步；`combat/bonds.js` 的内置
+  fallback 表仅作数据缺失兜底与单测隔离，正常构建下不应生效。
+- 种族键契约：数据层 `race` 唯一口径 `chicken`（第 4.2 节裁决）；任何直接消费数据表
+  `race` 字段的代码须自行经 `RACE_ALIAS`（combat）或 `core/catalog`（展示层）归一。
 - 存档字段沿用 `core/store.js`：`heroLevels`（1–40）、`heroStars`（1–5）、`shards`、
   `dex`、`adventureStage`（1–24 顺序号）、`towerFloor`、`bestRogueWave`、`bestRaidDamage`。

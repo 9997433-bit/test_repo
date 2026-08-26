@@ -18,7 +18,11 @@ export const SCHOOLS = {
  * - eggBurstMult          「爆蛋时刻」伤害倍率
  * - burstKeepStacksPct    爆蛋后保留的连击层数比例
  * - teamAtkPct            全队攻击加成
- * - mainEggMult           主蛋伤害倍率（取最高档，不叠乘）
+ * - mainEggMult           全队主蛋伤害倍率。多来源间按 MOD_SPEC `max` 取最高、不叠乘；
+ *                         与直殴流派身份（combat/constants `SCHOOL_MODIFIER.brute.damageMult`
+ *                         ×1.25，只作用于直殴英雄自己的蛋）分属两个乘区，结算管线相乘一次
+ *                         （Round 3 裁决：属设计意图）。合计封顶：直殴英雄主蛋
+ *                         2 件 1.25×1.2=×1.5，4 件 1.25×1.4=×1.75；非直殴队友只吃本键。
  * - brickShockChance/brickShockPct 击碎砖块触发冲击波概率/伤害（攻击%）
  * - pierce                主蛋穿透 +N
  * - elementDmgPct         元素伤害加成
@@ -61,8 +65,9 @@ export const SYNERGIES = {
       {
         count: 2,
         name: "铁蛋",
-        desc: "主蛋伤害 ×1.25，命中砖块附带击退。",
-        mod: { mainEggMult: 1.25 },
+        /* Round 3 裁决：1.25 与直殴身份 ×1.25 相乘过冲（×1.5625），下调为 1.2。 */
+        desc: "全队主蛋伤害 ×1.2（直殴英雄乘上身份 ×1.25 合计 ×1.5），命中砖块附带击退。",
+        mod: { mainEggMult: 1.2 },
       },
       {
         count: 3,
@@ -73,7 +78,7 @@ export const SYNERGIES = {
       {
         count: 4,
         name: "禽王光环·直殴",
-        desc: "主蛋伤害提升至 ×1.4，并获得 1 层穿透。",
+        desc: "全队主蛋伤害提升至 ×1.4（直殴英雄合计 ×1.75，主蛋伤害天花板），并获得 1 层穿透。",
         mod: { mainEggMult: 1.4, pierce: 1 },
       },
     ],
@@ -150,27 +155,20 @@ export const RACE_TECH = {
 /* ------------------------------------------------------------------ */
 
 /**
- * 鸡族羁绊单独具名：hero 表 race 用 "chicken"，combat/constants 的 RACE 枚举
- * 用 "chick"，两个键指向同一对象，保证任一口径都能命中。
- */
-const CHICKEN_RACE_BOND = {
-  name: "鸡族",
-  tiers: [
-    { count: 2, name: "鸡群冲锋", desc: "连击获取 +10%", mods: { comboGainMult: 1.1 } },
-    { count: 3, name: "斗鸡战阵", desc: "连击获取 +22%，暴击伤害 +8%", mods: { comboGainMult: 1.22, critDmg: 0.08 } },
-    { count: 4, name: "金鸡报晓", desc: "连击获取 +35%，暴击伤害 +16%", mods: { comboGainMult: 1.35, critDmg: 0.16 } },
-  ],
-};
-
-/**
- * 羁绊总表（`src/combat/bonds.js` 的数据源，形状与其 fallback 表一致）：
+ * 羁绊总表（历史契约 `BONDS` / `BOND_TABLE`，形状与 `src/combat/bonds.js` 的 fallback 表一致）：
  * - `schools[school].tiers[i]` / `races[race].tiers[i]`，i = 0/1/2 对应上场 2/3/4 人档；
  * - 每档 `{ count, name, desc, mods }`，**档位不累计**，高档 mods 已折叠低档效果；
  * - `mods` 只用 `src/combat/modifiers.js` MOD_SPEC 词汇（mergeMods 直接可用）；
  *   SYNERGIES 里的进阶行为键（autoEnchantFirstEgg / brickShockChance 等）不在此表，
  *   需要时读 SYNERGIES 原始 `mod`；
  * - `support` 为预留流派（云朵雀 / 倒霉鸭方向），本版 18 只无人携带，仅保证枚举完备；
- * - 数值口径与 SYNERGIES 同源（F3 负责），本表与 SYNERGIES 冲突时以本表为战斗事实源。
+ * - 事实源口径（Round 3 裁决，与 combat 实码对齐）：**流派羁绊以 `SYNERGIES` 为战斗事实源**
+ *   （`combat/bonds.js` 的 `synergyBondTable` 主读并翻译），`schools` 子表仅作历史契约与
+ *   英雄层（`heroes/squad.js`）展示投影，数值须与 SYNERGIES 同步、冲突时以 SYNERGIES 为准；
+ *   **种族羁绊以本表 `races` 为战斗事实源**（`raceBondTable` 直读）。
+ * - 种族键唯一口径为 `chicken`（与 heroes/RACES/RACE_TECH 同键）：combat 查表前经
+ *   `RACE_ALIAS` 归一（`chick` → `chicken`），展示层由 `core/catalog.js` 自行归一，
+ *   本表不再为 `chick` 建重复键。
  */
 export const BONDS = {
   schools: {
@@ -197,26 +195,27 @@ export const BONDS = {
         },
       ],
     },
+    /* 直殴：与 SYNERGIES.brute 同步的折叠投影（Round 3 裁决值），brickShock 行为键读 SYNERGIES。 */
     brute: {
       name: "直殴流",
       tiers: [
         {
           count: 2,
           name: "铁蛋",
-          desc: "攻击 +10%，命中附带击退",
-          mods: { atkMult: 1.1, knockback: 1 },
+          desc: "全队主蛋伤害 ×1.2（直殴英雄合计 ×1.5），命中附带击退",
+          mods: { mainEggMult: 1.2, knockback: 1 },
         },
         {
           count: 3,
           name: "重锤",
-          desc: "攻击 +18%，击退 +2，穿透 +1",
-          mods: { atkMult: 1.18, knockback: 2, pierce: 1 },
+          desc: "铁蛋全效；击碎砖块 30% 概率震出 80% 攻击的冲击波",
+          mods: { mainEggMult: 1.2, knockback: 1 },
         },
         {
           count: 4,
           name: "禽王光环·直殴",
-          desc: "攻击 +30%，击退 +3，穿透 +2，破甲 +15%",
-          mods: { atkMult: 1.3, knockback: 3, pierce: 2, armorShred: 0.15 },
+          desc: "全队主蛋伤害提升至 ×1.4（直殴英雄合计 ×1.75），穿透 +1",
+          mods: { mainEggMult: 1.4, knockback: 1, pierce: 1 },
         },
       ],
     },
@@ -291,8 +290,14 @@ export const BONDS = {
     },
   },
   races: {
-    chicken: CHICKEN_RACE_BOND,
-    chick: CHICKEN_RACE_BOND,
+    chicken: {
+      name: "鸡族",
+      tiers: [
+        { count: 2, name: "鸡群冲锋", desc: "连击获取 +10%", mods: { comboGainMult: 1.1 } },
+        { count: 3, name: "斗鸡战阵", desc: "连击获取 +22%，暴击伤害 +8%", mods: { comboGainMult: 1.22, critDmg: 0.08 } },
+        { count: 4, name: "金鸡报晓", desc: "连击获取 +35%，暴击伤害 +16%", mods: { comboGainMult: 1.35, critDmg: 0.16 } },
+      ],
+    },
     duck: {
       name: "鸭族",
       tiers: [
