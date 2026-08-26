@@ -32,8 +32,8 @@
 ## Round 状态
 
 - Round 1：10/10 已回收并合入父分支
-- Round 2：进行中（注入本简报）
-- Round 3：未开始
+- Round 2：10/10 已回收并合入父分支
+- Round 3：进行中（注入 Round 2 简报）
 
 ## 基线实测（主调度器 Round 0）
 
@@ -85,3 +85,39 @@ npm test     67/67 pass
 npm run probe  passed（首征兵 cost=8）
 npm run bench  36/36 settled, playerWins 33/36 (91%)
 ```
+
+## 《Round 2 结论简报》
+
+### 演进对比
+
+| 项 | Round 1 末 | Round 2 末 |
+| --- | --- | --- |
+| 单测 | 67 | 134 |
+| headless 胜率 | 91% | 47%（目标 45–55%） |
+| juice | 仅 sfx/toast | skill/kill/leak/merge 上屏 + fx.css |
+| AI 布阵 | `cellDistToPath` 内外圈 | 覆盖窗口 + `placement.js` |
+| 回放 | 模块级 `enemySeq` | per-side 序列 + replay 测试 |
+| 教程/触控 | 静态文案 | 教练条、`touch-action: none`、系统字体回退 |
+
+### 潜在边界风险
+
+- 平局仍偏玩家；决胜波（10–12）灵敏度极高（HP 斜率 ±1 可摆数个点）
+- `fx.css` 与 `juice.js` 双轨演出，需合流以免 diff 洗掉 class
+- `rollRecruit` 课程计数挂 WeakMap，restart/load 可能漂阶段
+- 无头对局里英雄觉醒仍稀少（约 0.08/侧）
+- `board/hand.js`、`classifyDrop`、`atkBonus` 仍少运行时消费者
+
+### SOTA 验收差距
+
+- 强制 FTUE / 本地记忆仍缺
+- 微信离线字体未自托管 woff2
+- 无障碍键盘路径未全覆盖
+- 缺少真机触控与 60fps 实机录证
+
+### Round 2 合入后实测
+
+```
+npm test     134/134 pass
+npm run bench  36/36 settled, playerWins 17/36 (47.2%), 171–242s
+```
+
