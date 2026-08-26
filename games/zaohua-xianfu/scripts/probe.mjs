@@ -162,7 +162,7 @@ function actionsReport() {
   };
 }
 
-async function portReport(pkg) {
+function portReport(pkg) {
   const commandHasPort = (command) =>
     typeof command === "string" && new RegExp(`(?:^|\\s)--port(?:=|\\s+)${expectedPort}(?:\\s|$)`).test(command);
   const scripts = {
@@ -171,10 +171,16 @@ async function portReport(pkg) {
   };
   const config = { server: false, preview: false, strict: false, error: null };
   try {
-    const vite = (await import(pathToFileURL(join(root, "vite.config.js")).href)).default;
-    config.server = vite?.server?.port === expectedPort;
-    config.preview = vite?.preview?.port === expectedPort;
-    config.strict = vite?.server?.strictPort === true && vite?.preview?.strictPort === true;
+    const source = readFileSync(join(root, "vite.config.js"), "utf8");
+    const section = (name) =>
+      source.match(new RegExp(`\\b${name}\\s*:\\s*\\{([\\s\\S]*?)\\}`, "m"))?.[1] ?? "";
+    const server = section("server");
+    const preview = section("preview");
+    const hasExpectedPort = (body) => new RegExp(`\\bport\\s*:\\s*${expectedPort}\\b`).test(body);
+    const hasStrictPort = (body) => /\bstrictPort\s*:\s*true\b/.test(body);
+    config.server = hasExpectedPort(server);
+    config.preview = hasExpectedPort(preview);
+    config.strict = hasStrictPort(server) && hasStrictPort(preview);
   } catch (error) {
     config.error = errorText(error);
   }
@@ -217,7 +223,7 @@ try {
   errors.push(`actions: ${errorText(error)}`);
 }
 try {
-  port = await portReport(packageData);
+  port = portReport(packageData);
 } catch (error) {
   errors.push(`port: ${errorText(error)}`);
 }
