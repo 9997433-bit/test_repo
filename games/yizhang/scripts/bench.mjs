@@ -16,8 +16,8 @@ const WARMUP_STEPS = 60 * 10;
 
 try {
   const simulation = await loadSimulation();
-  const wiredCombat = getWiredCombat(simulation);
   let state = createFourPlayerMatch(simulation);
+  const wiredCombat = getWiredCombat(simulation);
   let view = simulation.getView(state);
   validateRoster(view);
   let inputFrames = makeBenchInputFrames(view);
