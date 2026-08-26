@@ -1,4 +1,5 @@
 import { EVENTS } from "../data/copy.js";
+import { A11Y } from "../data/a11y.js";
 import { persist } from "../core/state.js";
 import { formatGold } from "../core/economy.js";
 import { reward } from "../core/actions.js";
@@ -55,33 +56,20 @@ export function maybeEvent(state, now = Date.now()) {
 }
 
 /* ------------------------------------------------------------------ 文案 */
-/** copy.js 只给了标题/正文/两个按钮，结果文案留在事件模块里按 id 兜。 */
-const ACCEPT_LINES = {
-  lost: "丝巾物归原主，她记住了你家试衣间。",
-  thief: "隐藏款回到货架，围观的人默默鼓了掌。",
-  ask: "围巾配好了，小女孩说妈妈一定会喜欢。",
-};
+/**
+ * 收尾文案全部取自 copy.js 的 `resolve` / `decline`（UX_NARRATIVE §7 接线项），
+ * 本模块不再自带平行文案表。老档/新增事件漏填时退回正文，宁可重复也不留空 toast。
+ */
+function resolveLine(ev) {
+  return ev.resolve || ev.body;
+}
 
-const DECLINE_LINES = {
-  lost: "丝巾进了失物箱，她大概会自己找回来。",
-  thief: "保安把人拦下了，功劳没记在你头上。",
-  ask: "小女孩自己挑了条藏青色的，走了。",
-};
-
-const MISS_LINES = {
-  lost: "等你回过神，丝巾和客人都不见了。",
-  thief: "犹豫的几秒里，那只手已经离开了货架。",
-  ask: "抬头时，母女俩已经走到扶梯口了。",
-};
-
-const FALLBACK = {
-  accept: "事情办妥了，人气悄悄上涨。",
-  decline: "你没接这一茬，商场照常运转。",
-  miss: "你慢了一步，人群把这件事冲散了。",
-};
-
-function line(table, ev, kind) {
-  return table[ev.id] || FALLBACK[kind];
+/**
+ * 婉拒与超时错过的结果相同：什么都没损失，只是少赚一笔。
+ * 按 §4 禁则，不扣既得资源的场合不写损失暗示，两条路径共用 decline。
+ */
+function declineLine(ev) {
+  return ev.decline || ev.body;
 }
 
 /* ------------------------------------------------------------------ 弹窗 */
@@ -98,12 +86,15 @@ export function renderEventModal(host, state, ev, onClose) {
   const dlg = document.createElement("dialog");
   // 保留 .modal：app.js 用它判断"当前是否已有弹窗"，避免事件叠弹。
   dlg.className = "modal fm-ev";
+  // showModal 的原生语义已够，但降级路径与部分读屏仍要显式的 dialog + modal。
+  dlg.setAttribute("role", "dialog");
+  dlg.setAttribute("aria-modal", "true");
   dlg.setAttribute("aria-labelledby", titleId);
   dlg.setAttribute("aria-describedby", bodyId);
   dlg.innerHTML = `
     <div class="fm-ev-sheet">
       <div class="fm-ev-clock"><i data-clock></i></div>
-      <span class="fm-ev-tag">突发事件</span>
+      <span class="fm-ev-tag">${esc(A11Y.dialog.label)}</span>
       <h3 id="${titleId}">${esc(ev.title)}</h3>
       <p class="fm-ev-body" id="${bodyId}">${esc(ev.body)}</p>
       <div class="fm-ev-chips">
@@ -115,7 +106,7 @@ export function renderEventModal(host, state, ev, onClose) {
         <button class="btn" type="button" data-yes autofocus>${esc(ev.yes)}</button>
         <button class="btn ghost" type="button" data-no>${esc(ev.no)}</button>
       </div>
-      <p class="fm-ev-foot">Esc 或「${esc(ev.no)}」= 婉拒 · <b data-left>${Math.ceil(AUTO_MS / 1000)}</b> 秒后自动错过</p>
+      <p class="fm-ev-foot">${esc(A11Y.dialog.escHint)}，等同「${esc(ev.no)}」 · <b data-left>${Math.ceil(AUTO_MS / 1000)}</b> 秒后自动错过</p>
     </div>`;
 
   const sheet = dlg.querySelector(".fm-ev-sheet");
@@ -124,6 +115,7 @@ export function renderEventModal(host, state, ev, onClose) {
   let left = AUTO_MS;
   let prev = Date.now();
   let settled = false;
+  let opener = null;
 
   // 倒计时只在页面可见时走，切后台回来不会白白错过。
   const ticker = setInterval(() => {
@@ -137,11 +129,19 @@ export function renderEventModal(host, state, ev, onClose) {
     if (left <= 0) finish("timeout");
   }, CLOCK_MS);
 
+  /** 降级路径没有原生模态，Esc 与 Tab 循环得自己兜（UX_NARRATIVE §5.1–5.2）。 */
   function onKey(e) {
     if (e.key === "Escape") {
       e.preventDefault();
       finish("esc");
+      return;
     }
+    if (e.key !== "Tab") return;
+    const stops = [dlg.querySelector("[data-yes]"), dlg.querySelector("[data-no]")];
+    const at = stops.indexOf(document.activeElement);
+    e.preventDefault();
+    const next = at < 0 ? 0 : (at + (e.shiftKey ? stops.length - 1 : 1)) % stops.length;
+    stops[next].focus();
   }
 
   function finish(outcome) {
@@ -154,14 +154,11 @@ export function renderEventModal(host, state, ev, onClose) {
       const res = reward(state, { gold, xp });
       persist(state);
       sfx.coin();
-      state.toast = `${line(ACCEPT_LINES, ev, "accept")}${gold ? ` +${formatGold(gold)} 金` : ""}${xp ? ` · 阅历 +${xp}` : ""}`;
+      state.toast = `${resolveLine(ev)}${gold ? ` +${formatGold(gold)} 金` : ""}${xp ? ` · 阅历 +${xp}` : ""}`;
       if (!res.ok && res.toast) state.toast = res.toast;
-    } else if (outcome === "timeout") {
-      sfx.tap();
-      state.toast = `${line(MISS_LINES, ev, "miss")}${gold ? `（少赚 ${formatGold(gold)} 金）` : ""}`;
     } else {
       sfx.tap();
-      state.toast = `${line(DECLINE_LINES, ev, "decline")}${gold ? `（少赚 ${formatGold(gold)} 金）` : ""}`;
+      state.toast = declineLine(ev);
     }
     noteOutcome(outcome === "accept");
 
@@ -171,6 +168,8 @@ export function renderEventModal(host, state, ev, onClose) {
       /* 不支持 dialog 的环境直接摘节点 */
     }
     dlg.remove();
+    // showModal 会自己把焦点还回去；降级路径得手动还，键盘用户才不会掉回文档开头。
+    if (opener?.isConnected && typeof opener.focus === "function") opener.focus();
     onClose?.();
   }
 
@@ -192,10 +191,9 @@ export function renderEventModal(host, state, ev, onClose) {
   if (typeof dlg.showModal === "function") {
     dlg.showModal();
   } else {
+    opener = document.activeElement;
     dlg.classList.add("fm-ev-fallback");
     dlg.setAttribute("open", "");
-    dlg.setAttribute("role", "dialog");
-    dlg.setAttribute("aria-modal", "true");
     document.addEventListener("keydown", onKey);
     dlg.querySelector("[data-yes]").focus();
   }

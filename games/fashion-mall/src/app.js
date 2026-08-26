@@ -1,9 +1,12 @@
 import { TICK_MS } from "./data/balance.js";
+import { HUD, OFFLINE, SYSTEM, FAIL } from "./data/copy.js";
+import { A11Y } from "./data/a11y.js";
 import { hydrate, persist, settle } from "./core/state.js";
 import { totalOnlinePerSec, charmOf, formatGold } from "./core/economy.js";
+import { OFFLINE_CAP_HOURS } from "./core/limits.js";
 import { exportSave, clearSave, loadCorruptBackup } from "./core/save.js";
 import * as actions from "./core/actions.js";
-import { setText } from "./ui/dom.js";
+import { esc, setText } from "./ui/dom.js";
 import { renderIntro } from "./ui/intro.js";
 import { renderMall } from "./mall/mallView.js";
 import { renderFastfood } from "./minigames/fastfood.js";
@@ -21,8 +24,11 @@ import { sfx } from "./core/audio.js";
 const PERSIST_MS = 4000;
 const EVENT_MS = 28000;
 const TOAST_MS = 2600;
+/** 短于半小时的离开走 OFFLINE.short 轻量变体（UX_NARRATIVE §6.1）。 */
+const OFFLINE_SHORT_HOURS = 0.5;
 
 const app = document.getElementById("app");
+app.setAttribute("aria-label", A11Y.app);
 const state = hydrate();
 sfx.setMuted(state.muted);
 
@@ -41,36 +47,62 @@ const SHOP_VIEWS = {
   fortune: renderFortune,
 };
 
+/** 页签可见文案与读屏说明分两处取：底栏只放两个字，完整语义留给 A11Y.nav。 */
+const NAV_ITEMS = [
+  { tab: "mall", text: "商场", label: A11Y.nav.mall },
+  { tab: "look", text: "换装", label: A11Y.nav.look },
+  { tab: "home", text: "豪宅", label: A11Y.nav.home },
+  { tab: "team", text: "伙伴", label: A11Y.nav.team },
+  { tab: "more", text: "更多", label: A11Y.nav.more },
+];
+
 function hudMarkup() {
   return `
     <header class="topbar">
       <div class="brand">时尚百货城</div>
-      <div class="pills">
+      <div class="pills" role="group" aria-label="${esc(A11Y.hud.region)}">
         <span class="pill" id="pill-gold"></span>
         <span class="pill" id="pill-rate"></span>
         <span class="pill" id="pill-charm"></span>
         <span class="pill" id="pill-level"></span>
       </div>
     </header>
-    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"
+      aria-label="${esc(A11Y.toastRegion)}" hidden></div>
     <main id="stage"></main>
-    <nav class="nav">
-      <button data-tab="mall">商场</button>
-      <button data-tab="look">换装</button>
-      <button data-tab="home">豪宅</button>
-      <button data-tab="team">伙伴</button>
-      <button data-tab="more">更多</button>
+    <nav class="nav" aria-label="${esc(A11Y.nav.region)}">
+      ${NAV_ITEMS.map(
+        (n) => `<button data-tab="${n.tab}" aria-label="${esc(n.label)}">${n.text}</button>`,
+      ).join("")}
     </nav>`;
+}
+
+/** emoji 是装饰，语义由 HUD 标签和 aria-label 承担；两者都只在变化时落笔。 */
+function paintPill(node, text, label) {
+  if (!node) return;
+  if (node.textContent !== text) node.textContent = text;
+  if (node.getAttribute("aria-label") !== label) node.setAttribute("aria-label", label);
 }
 
 /** 每 tick 只改文本节点，不重建 innerHTML。 */
 function paintHud() {
   const gold = app.querySelector("#pill-gold");
   if (!gold) return;
-  setText(gold, `💰 ${formatGold(state.gold)}`);
-  setText(app.querySelector("#pill-rate"), `📈 ${formatGold(totalOnlinePerSec(state))}/秒`);
-  setText(app.querySelector("#pill-charm"), `✨ 魅力 ${charmOf(state.outfit)}`);
-  setText(app.querySelector("#pill-level"), `⭐ Lv.${state.level}`);
+  const goldText = formatGold(state.gold);
+  const rateText = formatGold(totalOnlinePerSec(state));
+  const charm = charmOf(state.outfit);
+  paintPill(gold, `💰 ${HUD.gold} ${goldText}`, A11Y.hud.gold(goldText));
+  paintPill(
+    app.querySelector("#pill-rate"),
+    `📈 ${HUD.rate} ${rateText}${HUD.perSec}`,
+    A11Y.hud.rate(rateText),
+  );
+  paintPill(app.querySelector("#pill-charm"), `✨ ${HUD.charm} ${charm}`, A11Y.hud.charm(charm));
+  paintPill(
+    app.querySelector("#pill-level"),
+    `⭐ ${HUD.level} ${state.level}`,
+    A11Y.hud.level(state.level),
+  );
 }
 
 function paintNav() {
@@ -152,26 +184,28 @@ function renderMore(stage) {
   const muteBtn = stage.querySelector("#mute");
   setText(muteBtn, state.muted ? "音效：关" : "音效：开");
   muteBtn.onclick = () => {
-    const res = actions.toggleMute(state);
+    actions.toggleMute(state);
     sfx.setMuted(state.muted);
     setText(muteBtn, state.muted ? "音效：关" : "音效：开");
     persist(state);
-    showToast(res.toast);
+    showToast(state.muted ? SYSTEM.muteOn : SYSTEM.muteOff);
   };
 
   stage.querySelector("#exp").onclick = () => {
     stage.querySelector("#dump").value = exportSave(state);
-    showToast("已导出到文本框");
+    showToast(SYSTEM.exportDone);
   };
   stage.querySelector("#imp").onclick = () => {
     const res = actions.importState(state, stage.querySelector("#dump").value);
-    if (!res.ok) return showToast(res.toast);
+    if (!res.ok) return showToast(FAIL[res.reason] ?? res.toast);
     persist(state);
     sfx.setMuted(state.muted);
     go("mall");
-    showToast(res.toast);
+    showToast(SYSTEM.importDone);
   };
+  // 清空是不可逆的：先问一句，再动存档。
   stage.querySelector("#wipe").onclick = () => {
+    if (typeof confirm === "function" && !confirm(SYSTEM.wipeConfirm)) return;
     clearSave();
     location.reload();
   };
@@ -180,10 +214,7 @@ function renderMore(stage) {
   if (backup) {
     const note = stage.querySelector("#corrupt-note");
     note.hidden = false;
-    setText(
-      note,
-      `检测到一份无法识别的旧档备份（${new Date(backup.at).toLocaleString()}），已保留未删除。`,
-    );
+    setText(note, SYSTEM.corruptKept(new Date(backup.at).toLocaleString()));
   }
 }
 
@@ -223,10 +254,18 @@ function paint() {
   if (pending || state.toast) showToast(pending || state.toast);
 }
 
+/** 离店回执：金额 > 时长 > 封顶（UX_NARRATIVE §6.1），切后台几分钟只报一句轻的。 */
+function offlineReceipt(result) {
+  if (result.hours < OFFLINE_SHORT_HOURS) return OFFLINE.short;
+  const summary = OFFLINE.summary(result.hours.toFixed(1), formatGold(result.gold));
+  if (result.hours <= OFFLINE_CAP_HOURS) return summary;
+  return `${summary}${OFFLINE.cappedNote(String(OFFLINE_CAP_HOURS))}`;
+}
+
 function applySettle(now = Date.now()) {
   const result = settle(state, now);
   if (result.mode === "offline" && result.gold > 0) {
-    showToast(`离开 ${result.hours.toFixed(1)} 小时，到账 ${formatGold(result.gold)}`);
+    showToast(offlineReceipt(result));
   }
   for (const note of result.notes) showToast(note);
   return result;
