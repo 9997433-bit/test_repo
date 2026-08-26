@@ -79,12 +79,12 @@
 | A | R2-F1 SOTA 复审 | 已完成，量规已合入并加 Parent 续评 | `bc-12976fc6-5973-5c3d-8929-d5a82b6cf9da` |
 | A | R2-O1 核心硬化 | 已完成，limits/settle/被动XP 已合入 | `bc-296eba5b-282c-5f4c-9873-253fac73aa28` |
 | A | R2-O3 CSS 接线 | 已完成，main.css token 化已合入 | `bc-3dc5f228-7843-5491-b82c-b6178be28951` |
-| B | R2-O2 小游戏单测 | 运行中 | `bc-3c2aa0f4-0423-5a82-be7e-f71e296136eb` |
+| B | R2-O2 小游戏单测 | 已完成，F3 表适配层 + 30 测已合入 | `bc-3c2aa0f4-0423-5a82-be7e-f71e296136eb` |
 | B | R2-O4 HUD文案接线 | 已完成，HUD/商场/事件 copy 已合入 | `bc-6d654f68-fc2b-5f5a-9bee-36baaff1801b` |
 | C | R2-G2 模拟脚本 | 已完成，simulate + bench 地板已合入 | `bc-ae73f2e8-0ebc-57ea-ad67-2389d991637b` |
 | C | R2-G1 补测 | 已完成，contracts 测试已合入 | `bc-ac408e7a-ec0d-5f7c-8e47-820d6de66ee3` |
 | D | R2-F4 UX 文档 | 已完成，§7 接线表已合入 | `bc-e0a4b102-578b-563e-8b08-69f51c4e2626` |
-| D | R2-F3 经济文档 | 运行中 | `bc-aa28d078-b516-5e60-9633-25cba71c2e61` |
+| D | R2-F3 经济文档 | 已完成，节奏表已合入并加 Parent 续评 | `bc-aa28d078-b516-5e60-9633-25cba71c2e61` |
 | D | R2-F2 视觉文档 | 运行中 | `bc-20f792f7-985c-5bc8-a44d-33eb6c34e387` |
 
 ## 已实现基线（Parent 预置）
