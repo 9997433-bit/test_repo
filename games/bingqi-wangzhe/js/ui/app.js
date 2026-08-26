@@ -182,10 +182,9 @@ export function mountApp(root, injectedGame) {
   if (hasCoreRuntime(injectedGame) && !game.hasCore) {
     const settle = (probe) => {
       if (mounted) return;
-      if (probe) {
-        const live = createUiGame(injectedGame, mockOptions, probe);
-        if (live.hasCore) useGame(live);
-      }
+      // 探测结果无论成败都换上：即使退回 mock，probe 也把「哪个子系统缺席」
+      // 的真实情况带了回来，「背包 → 设置 → 数据来源」才不会一律报红。
+      if (probe) useGame(createUiGame(injectedGame, mockOptions, probe));
       mount();
     };
     const guard = setTimeout(() => settle(null), 3000);
