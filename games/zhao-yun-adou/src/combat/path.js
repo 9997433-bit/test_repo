@@ -15,26 +15,38 @@ export function pathPoints(width, height, flipY) {
   return pts;
 }
 
+const ORIGIN = { x: 0, y: 0 };
+
+function isPoint(p) {
+  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
+}
+
 /**
  * 预计算折线的分段长度与累计长度，避免每帧重复求和。
  * 战斗每 tick 会做 (格子 × 敌人) 次采样，缓存后开销可忽略。
+ *
+ * 坏点（缺坐标、NaN）在这里就剔除：留到采样阶段会把整条路线的距离
+ * 一起污染成 NaN，射程判定随之全盘失效。
  */
 export function measurePath(pts) {
+  const points = Array.isArray(pts) ? pts.filter(isPoint) : [];
   const seg = [];
   const cum = [0];
   let total = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  for (let i = 1; i < points.length; i++) {
+    const len = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
     seg.push(len);
     total += len;
     cum.push(total);
   }
-  return { pts, seg, cum, total };
+  return { pts: points, seg, cum, total };
 }
 
 const measured = new WeakMap();
 
 function measureCached(pts) {
+  // WeakMap 只收对象键，非数组输入直接量一次，别让缓存本身抛出来。
+  if (!Array.isArray(pts)) return measurePath(pts);
   let m = measured.get(pts);
   if (!m) {
     m = measurePath(pts);
@@ -49,7 +61,9 @@ export function pathLength(pts) {
 
 /** 折线上进度 t 处的坐标（measured 版本供战斗热循环使用）。 */
 export function pointOn(m, t) {
-  const clamped = Math.max(0, Math.min(1, t));
+  if (!m || !Array.isArray(m.pts) || !m.pts.length) return { ...ORIGIN };
+  // t 非有限值按起点算：当成「已走到终点」会凭空判出一次漏怪。
+  const clamped = Number.isFinite(t) ? Math.max(0, Math.min(1, t)) : 0;
   let remain = clamped * m.total;
   for (let i = 0; i < m.seg.length; i++) {
     const len = m.seg[i];
@@ -73,6 +87,9 @@ export function pointAt(pts, t) {
 export function nearestOn(m, x, y) {
   let best = 0;
   let bestD = Infinity;
+  if (!m || !Array.isArray(m.seg) || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return { t: best, dist: bestD };
+  }
   for (let i = 0; i < m.seg.length; i++) {
     const a = m.pts[i];
     const b = m.pts[i + 1];

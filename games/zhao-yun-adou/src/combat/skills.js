@@ -211,26 +211,32 @@ export const SKILL_FX = {
  */
 export function castSkill(side, heroUnit, enemies, ctx = {}) {
   const hero = heroById(heroUnit?.id);
-  if (!hero) return blank(heroUnit?.id || "unknown", "");
-  const alive = (enemies || []).filter((e) => e && e.hp > 0);
+  // 没有技能定义的武将行（新增数据写漏了）也走 blank：一次配置疏忽不该
+  // 在每一帧的战斗循环里抛异常。
+  if (!hero || !hero.skill) return blank(heroUnit?.id || "unknown", "");
+  const alive = (Array.isArray(enemies) ? enemies : []).filter((e) => e && e.hp > 0);
   const out = blank(hero.skill.id, hero.skill.name);
-  const handler = HANDLERS[hero.skill.id];
+  const handler = Object.prototype.hasOwnProperty.call(HANDLERS, hero.skill.id)
+    ? HANDLERS[hero.skill.id]
+    : null;
   if (handler) {
+    const fronts = alive.map((e) => e.t).filter((t) => Number.isFinite(t));
     handler(
       {
         side,
         hero,
         heroUnit,
         enemies: alive,
-        frontT: alive.length ? Math.max(...alive.map((e) => e.t)) : null,
+        frontT: fronts.length ? Math.max(...fronts) : null,
         cellIndex: ctx.cellIndex ?? -1,
         reach: ctx.reach ?? hero.range,
       },
       out,
     );
   }
-  heroUnit.cooldown = hero.skill.cd;
-  out.cooldown = hero.skill.cd;
-  out.damage = Number(out.damage.toFixed(2));
+  const cd = Number.isFinite(hero.skill.cd) ? hero.skill.cd : 0;
+  heroUnit.cooldown = cd;
+  out.cooldown = cd;
+  out.damage = Number.isFinite(out.damage) ? Number(out.damage.toFixed(2)) : 0;
   return out;
 }

@@ -93,7 +93,7 @@ export function opponentOf(side) {
 
 /** 弱化版本的当前波配置：血少、跑快、赏钱低、没有 boss。 */
 export function pressureSpec(wave, opts = {}) {
-  const base = waveSpec(Math.max(1, wave || 1));
+  const base = waveSpec(Number.isFinite(wave) ? Math.max(1, wave) : 1);
   const hpMul = opts.hpMul ?? CONFIG.hpMul;
   return {
     ...base,
@@ -105,8 +105,12 @@ export function pressureSpec(wave, opts = {}) {
   };
 }
 
+/** 账本必须是对象：读档带回一个数字/布尔时，往上写字段会被静默吞掉。 */
 function ledgerOf(side) {
-  if (!side.pressure) side.pressure = { wave: 0, received: 0, sent: 0 };
+  const ledger = side.pressure;
+  if (!ledger || typeof ledger !== "object" || Array.isArray(ledger)) {
+    side.pressure = { wave: 0, received: 0, sent: 0 };
+  }
   return side.pressure;
 }
 
@@ -121,16 +125,18 @@ export function sendPressure(side, otherSide, opts = {}) {
   if (!target || !Array.isArray(target.spawnQueue)) return null;
   if (!CONFIG.enabled && !opts.force) return null;
 
-  const wave = Math.max(1, target.wave || side?.wave || 1);
+  const waveHint = Number.isFinite(target.wave) ? target.wave : side?.wave;
+  const wave = Math.max(1, Number.isFinite(waveHint) ? waveHint : 1);
   const ledger = ledgerOf(target);
-  if (ledger.wave !== wave) {
+  if (ledger.wave !== wave || !Number.isFinite(ledger.received)) {
     ledger.wave = wave;
     ledger.received = 0;
   }
   const cap = opts.cap ?? CONFIG.perWaveCap;
   if (cap >= 0 && ledger.received >= cap && !opts.force) return null;
 
-  const count = Math.max(1, Math.round(opts.count ?? CONFIG.count));
+  const requested = opts.count ?? CONFIG.count;
+  const count = Math.max(1, Math.round(Number.isFinite(requested) ? requested : 1));
   const spec = pressureSpec(wave, opts);
   target.spawnQueue.push({
     remain: count,

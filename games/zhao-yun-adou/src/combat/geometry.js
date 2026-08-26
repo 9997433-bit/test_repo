@@ -75,7 +75,8 @@ export function lanePoint(t) {
 }
 
 export function reachOf(range) {
-  return Math.max(0, range || 0) * REACH.scale + REACH.pad;
+  const tier = Number.isFinite(range) ? Math.max(0, range) : 0;
+  return tier * REACH.scale + REACH.pad;
 }
 
 /** 格心到路线进度 t 的直线距离（格）。 */
@@ -116,6 +117,8 @@ export function falloffFor(range) {
     outer,
     outer2: outer * outer,
     factor(distance) {
+      // 距离算不出来（坏坐标）时给 0：给 1 等于让一发满伤白送出去。
+      if (!Number.isFinite(distance)) return 0;
       if (distance <= reach) return 1;
       if (distance >= outer || span <= 0) return 0;
       return 1 - (distance - reach) / span;
@@ -132,11 +135,12 @@ export function hitFactor(index, t, range) {
  * 战斗不需要它，但 AI 摆位与 UI 射程提示需要，故一并导出。
  */
 export function coverageWindows(index, range, samples = 96) {
+  const steps = Number.isFinite(samples) ? Math.max(1, Math.floor(samples)) : 96;
   const reach = reachOf(range);
   const out = [];
   let open = null;
-  for (let i = 0; i <= samples; i++) {
-    const t = i / samples;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
     const hit = distanceToProgress(index, t) <= reach;
     if (hit && !open) open = { from: t, to: t };
     else if (hit && open) open.to = t;
