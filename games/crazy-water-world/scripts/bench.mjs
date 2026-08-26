@@ -13,10 +13,10 @@ const TARGET_BUILDINGS = 64;
 const TARGET_RAFT_SIDE = 24;
 const STOCK = 1_000_000_000;
 const BUDGET_P95_MS = {
-  tick: 2.5,
-  stepSim: 4,
-  spawn: 1.5,
-  battle: 12,
+  tick: 0.5,
+  stepSim: 0.75,
+  spawn: 0.25,
+  battle: 2,
 };
 
 function round(value) {
