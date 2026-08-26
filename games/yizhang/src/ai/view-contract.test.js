@@ -131,21 +131,24 @@ describe("think() 吃 getView 快照", () => {
     bot.z = 0;
     human.x = 8;
     human.z = 0;
+    // 台心一个左右对称的圆洞：单纯的「离洞越近推得越狠」在这种形状上会左右抵消，
+    // Bot 必须靠前视绕行才不会从正中间踩空。
     for (const tile of state.arena.tiles) {
-      if (Math.hypot(tile.x, tile.z) <= 3) {
+      if (Math.hypot(tile.x, tile.z) <= 5) {
         tile.alive = false;
         tile.hp = 0;
       }
     }
 
     let closestToHole = Infinity;
+    const rng = counter(31);
     for (let i = 0; i < 300; i++) {
       const view = getView(state);
-      step(state, { [bot.id]: think(view, bot.id, counter(31)) }, DT);
+      step(state, { [bot.id]: think(view, bot.id, rng) }, DT);
       closestToHole = Math.min(closestToHole, Math.hypot(bot.x, bot.z));
     }
-    expect(bot.alive).toBe(true);
-    expect(closestToHole).toBeGreaterThan(1.5);
+    expect(bot.deaths).toBe(0);
+    expect(closestToHole).toBeGreaterThan(3);
   });
 
   it("6 秒混战：三只 bot 都在动、在扇，并且贴上了人", () => {

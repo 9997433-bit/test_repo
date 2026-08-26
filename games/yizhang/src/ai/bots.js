@@ -307,40 +307,46 @@ function brokenTiles(view) {
   return out;
 }
 
-/**
- * 排斥力算的是「离洞多近」，碎块左右对称时两边的切向分量会互相抵消，
- * 于是 Bot 顶着洞正中央直直走下去。所以再加一道前视：
- * 沿着打算走的方向采样几步，只要踩到洞就换个方向。
- */
-function holeAhead(holes, me, dirX, dirZ, reach) {
-  if (!holes.length) return false;
-  const steps = 4;
-  for (let i = 1; i <= steps; i++) {
-    const s = (reach * i) / steps;
+const DETOUR_STEPS = 6;
+
+/** 沿 dir 走，返回踩空之前还能走多远（一路都是实地就是 reach）。 */
+function clearRun(holes, me, dirX, dirZ, reach) {
+  const step = reach / DETOUR_STEPS;
+  for (let i = 1; i <= DETOUR_STEPS; i++) {
+    const s = step * i;
     const x = num(me.x) + dirX * s;
     const z = num(me.z) + dirZ * s;
     for (const h of holes) {
-      if (Math.hypot(x - h.x, z - h.z) <= h.r + 0.7) return true;
+      if (Math.hypot(x - h.x, z - h.z) <= h.r + 0.7) return s - step;
     }
   }
-  return false;
+  return reach;
 }
 
-/** 找一个不踩空的方向：从原方向起按 strafeSign 那侧优先，左右交替试。 */
-function detourAround(holes, me, dirX, dirZ, reach, strafeSign) {
-  if (!holeAhead(holes, me, dirX, dirZ, reach)) return { x: dirX, z: dirZ, detoured: false };
-  for (const deg of [35, 70, 105, 140, 180]) {
-    for (const side of [strafeSign, -strafeSign]) {
-      const a = (deg * Math.PI) / 180 * side;
+/**
+ * 排斥力算的是「离洞多近」，碎块左右对称时两边的切向分量互相抵消，
+ * 于是 Bot 顶着洞正中央直直走下去。这里再加一道前视：
+ * 采样一圈候选方向，挑第一个走得通的；一个都走不通就挑能多走几步的那个。
+ * 候选按偏角从小到大、并且 spin 那一侧优先，绕行方向才不会每帧翻面。
+ */
+function detourAround(holes, me, dirX, dirZ, reach, spin) {
+  const straight = clearRun(holes, me, dirX, dirZ, reach);
+  if (straight >= reach) return { x: dirX, z: dirZ, detoured: false };
+
+  let best = { x: dirX, z: dirZ, run: straight };
+  for (const deg of [30, 60, 90, 120, 150, 180]) {
+    for (const side of deg === 180 ? [spin] : [spin, -spin]) {
+      const a = ((deg * Math.PI) / 180) * side;
       const c = Math.cos(a);
       const s = Math.sin(a);
       const nx = dirX * c - dirZ * s;
       const nz = dirX * s + dirZ * c;
-      if (!holeAhead(holes, me, nx, nz, reach)) return { x: nx, z: nz, detoured: true };
-      if (deg === 180) break;
+      const run = clearRun(holes, me, nx, nz, reach);
+      if (run >= reach) return { x: nx, z: nz, detoured: true };
+      if (run > best.run + 0.05) best = { x: nx, z: nz, run };
     }
   }
-  return { x: dirX, z: dirZ, detoured: false };
+  return { x: best.x, z: best.z, detoured: true };
 }
 
 /**
