@@ -56,7 +56,7 @@
 .app（isolation:isolate，自身画天空渐变+暗角）
 ├─ ::before   --z-scene(0)   雾带/三重远山（纯 radial-gradient 剪影，零图片）
 ├─ .sky       --z-scene(0)   晨昏暖色、星、日月（层内微序 z:1 不设令牌）
-├─ .stage     --z-stage(1)   摆件挂牌行 + 花园 + 花灵灵玉（::before/::after）
+├─ .stage     --z-stage(1)   挂牌行 + 陈设景物层(.decor-scene) + 花园 + 灵玉（::before/::after）
 ├─ .hud/.dock --z-chrome(2)
 ├─ .petals    --z-petals(3)  花瓣飘过全景（pointer-events:none）
 ├─ .sheet     --z-sheet(5)   花笺面板
@@ -65,6 +65,10 @@
 ├─ .toast-wrap --z-toast(9)  墨签（可浮在卷轴之上）
 └─ ::after    --z-grain(11)  宣纸噪纹（feTurbulence data-URI，不拦指针）
 ```
+
+`.stage` 内部：`.decor-scene`（陈设 SVG，`scene/decor-layer.ts` 所有，自带注入式
+样式与聚焦态）铺在花圃之下、`pointer-events:none`；灵玉伪元素 z:1 浮在花圃之上、
+花瓣与花笺之下。
 
 层级一律取 `--z-*` 令牌，禁止手写数字（收获/水花迸发粒子由 TS 内联 `z-index:20`
 铺在最顶，属例外）。花瓣层与噪纹层必须保持 `pointer-events: none`。
@@ -89,17 +93,17 @@
 ## 五、装扮主题 `[data-theme]`（春晓/盛夏/秋宴/冬雪/墨雅）
 
 `tokens.css` 已备好五个主题块，只覆写 `--theme-wash`（花笺/牌面晕染）与
-`--decor-cord/glyph/rim`（挂牌配色）。同一选择器**双重职责**：
+`--decor-cord/glyph/rim`（挂牌配色）。同一主题块**三重职责**：
 
-1. 挂在 `#app` 上 → 全局主题：所有花笺淡染主题色、全部挂牌换色；
-2. 挂在单个 `.decor-chip` 上 → 该摆件按自己的 `theme` 字段着色。
+1. `[data-theme]` 挂在 `#app` 上 → 全局主题：所有花笺淡染主题色、未标注挂牌换色；
+2. `[data-theme]` 挂在单个 `.decor-chip` 上 → 该摆件按 `theme` 字段着色；
+3. `[data-decor="…"]` 别名 → 陈设层已给每块挂牌写入 `data-decor`，主题块按
+   `THEMES` 归属映射同一套色，**per-摆件着色已生效，无需接线**；元素自身命中的
+   别名优先于从 `#app` 继承的全局主题。
 
-接线契约（owner: 引擎/渲染层，CSS 无需再动）：
+仍差一处接线（owner: 引擎，CSS 无需再动）：
 
 ```ts
-// garden-view.ts 摆件循环内，一行：per-摆件着色
-chip.dataset.theme = d.theme;
-
 // app.ts frame()，一行：全局主题（需要先在 state 里记住玩家最后套用的主题）
 root.dataset.theme = state.decorTheme ?? "";
 ```
@@ -108,38 +112,42 @@ root.dataset.theme = state.decorTheme ?? "";
 
 ## 六、庭院摆件层与花灵驻园层
 
-### 摆件 · 廊下挂牌（已生效，无需接线）
+### 摆件 · 挂牌 + 陈设景物（均已生效）
 
-`.decor-row` 里的每个 `.decor-chip` 渲染为檐下挂牌：
+摆件入景分两层。**景物层**归 `scene/decor-layer.ts`（自带注入式样式）：SVG 画进
+园中槽位、点按挂牌可聚焦。**挂牌行**归本样式域，每个 `.decor-chip` 渲染为檐下挂牌：
 
 - `::before` 画朱绳与绳结（`--decor-cord`）；
 - `::first-letter` 把文本首字（即摆件 glyph，如「灯 纱灯」的「灯」）放大设色
-  （`--decor-glyph` 掺墨），纯 CSS 拿到印字，渲染层零改动；
-- 牌面 `--surface-*` 纸底 + 泥金牌沿 + 主题晕染，昼夜自动翻色；
+  （`--decor-glyph` 掺墨），纯 CSS 拿到印字；陈设层聚焦反白（`.is-focus`）时
+  印字随之反白；
+- 牌面 `--surface-*` 纸底 + 泥金牌沿 + 主题晕染，昼夜自动翻色；per-摆件配色
+  由 `[data-decor]` 别名驱动（见 §五），已生效；
 - 入夜 `--decor-glow` 点灯（挂牌泛暖光）；
 - `plaque-sway` 以绳结为轴轻曳，`nth-child` 错开周期与相位。
 
+挂牌行高与花园高度联动：`.decor-row` 48px（≤640px 42px）+ 4px 间距 =
+`.garden { height: calc(100% - 52px) }`（≤640px 46px），改其一必须同步另一处；
+陈设层注入样式把行锁成单行横滑，正是为了不破坏这个恒等式。
+
 ### 花灵 · 驻园灵玉（CSS 已就位，一行接线点亮）
 
-出战花灵以「灵玉」驻在花园右上：玉牌里一枚灵字（菊/池/蝶/雪/灯），外罩灵光
-雾晕徐徐起伏，入夜灵光更盛。**零新增 DOM**——本体与雾晕分别画在
-`.stage::after/::before` 上，显隐由 `--spirit-display` 控制：
+出战花灵以「灵玉」悬于园心上空（两侧檐角与月洞门都是陈设槽位，中央上空常空）：
+玉牌里一枚灵字（菊/池/蝶/雪/灯），外罩灵光雾晕徐徐起伏，入夜灵光更盛。
+**零新增 DOM**——本体与雾晕分别画在 `.stage::after/::before` 上，显隐由
+`--spirit-display` 控制：
 
 ```ts
 // app.ts frame()，一行（owner: 引擎）：
 if (root.dataset.spirit !== (state.activeSpirit ?? "")) root.dataset.spirit = state.activeSpirit ?? "";
 ```
 
-未接线、空值或未知 id 都不命中 `[data-spirit]` 令牌块 → 伪元素保持
-`display:none`，优雅降级。
+`audio/soundscape.ts` 已在读 `root.dataset.spirit` 驱动环境音，接上这一行
+视听两侧同时点亮。未接线、空值或未知 id 都不命中 `[data-spirit]` 令牌块 →
+伪元素保持 `display:none`，优雅降级。
 
-花灵面板的请灵卡（带 `aria-pressed` 的 `.card`）已获通用灵牌样式：首字放大作
-灵字、出战卡罩灵光。再加一行可点亮 per-灵配色：
-
-```ts
-// panels.ts renderSpirit 循环内，一行（owner: UI 层）：
-b.dataset.spirit = s.id;
-```
+花灵面板的请灵卡（带 `aria-pressed` 的 `.card`）：首字放大作灵字、出战卡罩
+灵光；`panels.ts` 已写入 `b.dataset.spirit = s.id`，per-灵配色**已生效**。
 
 ## 七、动效规范
 
@@ -207,10 +215,10 @@ b.dataset.spirit = s.id;
 
 ## 十、已知缺口（下一轮）
 
-1. `[data-theme]` 与 `[data-spirit]` 的三处一行接线（见 §五/§六，owner: 引擎/UI 层）；
-   全局主题还需 state 记录玩家最后套用的主题。
+1. 剩两处一行接线（owner: 引擎）：`root.dataset.spirit`（§六，顺带点亮花灵环境音）
+   与 `root.dataset.theme`（§五，需 state 先记录玩家最后套用的主题）。
 2. 花瓣颜色由 TS 内联写死，建议改读季节令牌（春桃粉/夏荷白/秋枫赤/冬雪白）。
 3. `index.html` 的 `theme-color` 仍是旧棕色 `#3d2a1c`，建议随昼夜切换（owner: 引擎）。
-4. 摆件目前统一入「廊下挂牌行」；真正的场景落位（亭/桥/池画进园中）需要渲染层
-   新增摆放坐标系，届时 CSS 再扩 `[data-decor]` 剪影层。
+4. `decor-layer.ts` 的注入式 `<style>` 里仍有裸色值与手写 z（属陈设层所有）；
+   长期应并回样式域、改读令牌。
 5. `main.css` 存量裸色值（土面高光、进度条渐变、星点等）继续向令牌收敛。

@@ -286,12 +286,17 @@
    只覆写主题专属变量（--theme-wash / --decor-*），不碰语义层与场景层，
    因此声明在夜色块之后也不会打架；组件消费时一律
    color-mix(…, var(--text)) 掺墨，昼夜自动适配。
-   同一选择器双重职责：
-   1) 挂在 #app 上 → 全局主题（花笺晕染 + 全部挂牌换色）；
-   2) 挂在单个 .decor-chip 上 → 该摆件按自己的 theme 字段着色。
+   同一主题块三重职责：
+   1) [data-theme] 挂在 #app 上 → 全局主题（花笺晕染 + 未标注挂牌换色）；
+   2) [data-theme] 挂在单个 .decor-chip 上 → 该摆件按 theme 字段着色；
+   3) [data-decor="…"] 别名 → 陈设层（decor-layer.ts）已给挂牌写入
+      data-decor，按 THEMES 归属映射到同一套主题色，零接线即点亮。
+      元素自身命中的别名优先于从 #app 继承的全局主题（per-摆件身份优先）。
    ============================================================ */
 
-[data-theme="spring"] {
+[data-theme="spring"],
+[data-decor="lantern"],
+[data-decor="swing"] {
   /* 春晓 · 桃夭 */
   --theme-wash: rgba(206, 110, 140, 0.09);
   --decor-cord: #c26480;
@@ -299,7 +304,10 @@
   --decor-rim: rgba(194, 100, 128, 0.45);
 }
 
-[data-theme="summer"] {
+[data-theme="summer"],
+[data-decor="chimes"],
+[data-decor="pond"],
+[data-decor="bridge"] {
   /* 盛夏 · 石青荷风 */
   --theme-wash: rgba(51, 88, 126, 0.08);
   --decor-cord: var(--c-azure);
@@ -307,7 +315,9 @@
   --decor-rim: rgba(60, 95, 150, 0.4);
 }
 
-[data-theme="autumn"] {
+[data-theme="autumn"],
+[data-decor="screen"],
+[data-decor="scarecrow"] {
   /* 秋宴 · 赭金 */
   --theme-wash: rgba(138, 90, 43, 0.1);
   --decor-cord: var(--c-ochre);
@@ -315,7 +325,9 @@
   --decor-rim: rgba(179, 130, 46, 0.55);
 }
 
-[data-theme="winter"] {
+[data-theme="winter"],
+[data-decor="snowlion"],
+[data-decor="brazier"] {
   /* 冬雪 · 青瓷 */
   --theme-wash: rgba(125, 160, 180, 0.12);
   --decor-cord: #7d99a8;
@@ -323,7 +335,10 @@
   --decor-rim: rgba(125, 153, 168, 0.5);
 }
 
-[data-theme="ink"] {
+[data-theme="ink"],
+[data-decor="path"],
+[data-decor="pavilion"],
+[data-decor="moongate"] {
   /* 墨雅 · 焦墨泥金 */
   --theme-wash: rgba(45, 37, 26, 0.06);
   --decor-cord: var(--c-ink-nong);
