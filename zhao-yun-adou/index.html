@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f3ead6" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23f3ead6'/%3E%3Ctext x='32' y='46' font-size='46' text-anchor='middle' fill='%23b23a2f' font-family='serif'%3E%E6%96%97%3C/text%3E%3C/svg%3E"
+    />
+    <meta name="description" content="赵云与阿斗 · 汉字合成水墨塔防：征兵、合并升阶、拼字觉醒武将，双方同守阿斗，先破对岸者胜。" />
+    <title>赵云与阿斗 · 汉字塔防</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      字体是锦上添花：tokens.css 已备好宋/楷系统字体栈，断网或被墙时视觉照样成立。
+      所以这张外链表不许挡首屏 —— 先按 print 媒体加载（非阻塞），到货再切 all。
+    -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
+    <script type="module" crossorigin src="./assets/index-DbwzAvY2.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DPiKg3Dq.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <!--
+      战斗演出层：与 #app 平级，样式由 styles/fx.css 提供。
+      渲染层的同构 diff 只重写 #app 子树，飘字与泼墨挂在这里才活得过下一帧。
+    -->
+    <div id="fx-layer" aria-hidden="true"></div>
+    <noscript>
+      <!-- 样式随 main.js 一起加载，禁用脚本时只能靠内联样式说话。 -->
+      <div
+        style="
+          max-width: 520px;
+          margin: 12vh auto;
+          padding: 28px 24px;
+          border: 2px solid #1c1610;
+          background: #f3ead6;
+          box-shadow: 8px 10px 0 rgba(28, 22, 16, 0.2);
+          color: #1c1610;
+          font-family: 'Noto Serif SC', 'Songti SC', serif;
+        "
+      >
+        <p
+          style="
+            display: inline-block;
+            margin: 0;
+            padding: 2px 8px;
+            border: 2px solid #b23a2f;
+            color: #b23a2f;
+            font-size: 12px;
+            letter-spacing: 0.3em;
+          "
+        >
+          长坂坡
+        </p>
+        <h1 style="margin: 10px 0 6px; font-size: 34px; font-weight: 400">赵云与阿斗</h1>
+        <p style="margin: 0 0 10px; font-size: 14px; line-height: 1.8; color: #3a3126">
+          本作是纯前端实时对战：征兵、合并升阶、拼字觉醒武将全靠 JavaScript 驱动，
+          <strong>当前浏览器禁用了脚本，棋盘无法运行</strong>。
+        </p>
+        <p style="margin: 0; font-size: 13px; line-height: 1.8; color: #3a3126">
+          请在浏览器设置中允许本站运行 JavaScript 后刷新页面；若使用隐私/脚本拦截插件，请为本页放行。
+        </p>
+      </div>
+    </noscript>
+  </body>
+</html>
