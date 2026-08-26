@@ -19,6 +19,11 @@
  *   - 进世界的蛋 id 由 `world.eggSeq` 分配，不吃模块级自增计数器；
  *   - 变帧驱动一律经 `advanceWorld`，它把 elapsed 钳进 `MAX_FRAME_TIME`
  *     再切成固定步，掉帧只影响补几步、不影响每步的结果。
+ *
+ * 唯一的例外是**绕过工厂自己发 id 的调用方**：`createEgg()` 与 `makeXxx()`
+ * 工厂各有一个模块级计数器（`core/sim.js` 走的就是这条路）。要逐位复现
+ * 这类回放，开跑前调一次 `resetEggIds()` + `resetBodyIds()`；只想验证解算
+ * 本身可以用 `hashWorld(world, { ids: false })` 把 id 排除在外。
  * 校验工具见 `determinism.js`（`hashWorld` / `checkDeterminism`）。
  *
  * ## 克隆安全
@@ -86,7 +91,8 @@ let nextEggId = 1;
  *
  * 经 `spawnEgg` / `launchEgg` / `splitEgg` 入场的蛋走的是世界自己的
  * `world.eggSeq`（见 `allocEggId`），天然可复现；这个模块级计数器只服务
- * 直接调 `createEgg()` 再自行 push 的调用方，回放前复位一次即可对齐。
+ * 直接调 `createEgg()` 再自行 push 的调用方，回放前与 `resetBodyIds()`
+ * 一起复位即可对齐。
  */
 export function resetEggIds(value = 1) {
   nextEggId = value;
@@ -1115,9 +1121,9 @@ function handlePortal(world, egg, body, ctx) {
   egg.portalUses++;
   egg.restTimer = 0;
   if (ctx.emit) {
+    // 只给入口记命中：出口不吃蛋，也就不该出现在命中统计里
     world.stats.portalUses++;
     body.hits++;
-    dest.lastHitTime = world.time;
     emit(world, {
       type: "portal",
       egg,

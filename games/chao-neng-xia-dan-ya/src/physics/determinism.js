@@ -174,30 +174,39 @@ const BODY_NUMBERS = ["x", "y", "r", "hw", "hh", "x1", "y1", "x2", "y2", "hp", "
 /**
  * 世界的确定性摘要（uint32）。
  *
- * 只覆盖会影响后续演化的状态：时钟、随机数、蛋、静态体的生死与几何。
- * 事件队列、统计计数这类「消费一次就走」的旁路默认不进摘要，避免消费时机
- * 差异造成假告警；需要严格比对时传 `{ stats: true, events: true }`。
+ * 覆盖会影响后续演化的模拟状态：时钟、随机数、蛋、静态体的生死与几何。
+ * 三类旁路默认不进摘要，需要时按需打开：
+ *   - `accumulator`：`advanceWorld` 的亚步余量，取决于宿主喂进来的帧长。
+ *     同一串固定步在 60fps 与抖动帧下模拟结果完全一致，只有这点余量不同
+ *     （量级 1e-15），把它算进摘要只会制造假告警。
+ *   - `stats`：命中/回收计数，供 HUD 读，不参与解算。
+ *   - `events`：一次性队列，取决于消费时机。
+ *
+ * `{ ids: false }` 可以跳过 id 只比几何：直接 `createEgg()` 再自行 push 的调用方
+ * （如 `core/sim.js`）吃的是模块级计数器，两次运行的 id 会不同，但轨迹应当逐位
+ * 一致——这个开关就是用来把「id 来源」和「解算」两件事分开定位的。
  *
  * @param {object} world
- * @param {{stats?: boolean, events?: boolean}} [opts]
+ * @param {{stats?, events?, accumulator?, ids?: boolean}} [opts]
  * @returns {number} 0..2^32-1
  */
 export function hashWorld(world, opts = {}) {
+  const withIds = opts.ids !== false;
   let h = FNV_OFFSET;
   h = mixNumber(h, world.time);
   h = mixNumber(h, world.stepIndex);
-  h = mixNumber(h, world.accumulator);
+  if (opts.accumulator) h = mixNumber(h, world.accumulator);
   h = mixNumber(h, world.dt);
   h = mixNumber(h, world.gravity);
   h = mixU32(h, world.rngState >>> 0);
   h = mixNumber(h, world.contactSeq);
-  h = mixNumber(h, world.eggSeq);
+  if (withIds) h = mixNumber(h, world.eggSeq);
 
   const eggs = world.eggs || [];
   h = mixU32(h, eggs.length);
   for (let i = 0; i < eggs.length; i++) {
     const egg = eggs[i];
-    h = mixString(h, egg.id);
+    if (withIds) h = mixString(h, egg.id);
     h = mixFlag(h, egg.alive);
     h = mixFlag(h, egg.sleeping);
     for (let k = 0; k < EGG_NUMBERS.length; k++) h = mixNumber(h, egg[EGG_NUMBERS[k]]);
@@ -207,7 +216,7 @@ export function hashWorld(world, opts = {}) {
   h = mixU32(h, statics.length);
   for (let i = 0; i < statics.length; i++) {
     const body = statics[i];
-    h = mixString(h, body.id);
+    if (withIds) h = mixString(h, body.id);
     h = mixFlag(h, body.active !== false);
     for (let k = 0; k < BODY_NUMBERS.length; k++) {
       const v = body[BODY_NUMBERS[k]];
@@ -219,7 +228,7 @@ export function hashWorld(world, opts = {}) {
   h = mixU32(h, fields.length);
   for (let i = 0; i < fields.length; i++) {
     const f = fields[i];
-    h = mixString(h, f.id ?? f.type ?? "");
+    h = mixString(h, withIds ? f.id ?? f.type ?? "" : f.type ?? "");
     h = mixFlag(h, f.active !== false);
     h = mixNumber(h, f.ax);
     h = mixNumber(h, f.ay);

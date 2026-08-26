@@ -38,7 +38,10 @@ export function ensureStampSlot(body) {
   return body;
 }
 
-/** 供测试/回放使用：重置自增 id，保证多次构造结果可比对 */
+/**
+ * 供测试/回放使用：重置静态体自增 id，保证多次构造结果可比对。
+ * 逐位复现一整局时与 `resetEggIds()` 成对调用（见 world.js 头注）。
+ */
 export function resetBodyIds(value = 1) {
   nextBodyId = value;
 }
