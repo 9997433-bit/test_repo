@@ -445,10 +445,11 @@
     });
     if (res.damage <= 0) return res;
     creep.hp -= res.damage;
+    creep._hitFlash = 0.16;
     if (this.settings.dmgNumbers) {
       this.float(creep.x, creep.y - 12, Math.round(res.damage).toString(), res.multiplier >= 1.4 ? "#ffee66" : "#ffffff");
     }
-    this.spark(creep.x, creep.y, "#ffe082");
+    this.spark(creep.x, creep.y - 6, source && source.def && source.def.color ? source.def.color : "#ffe082");
     if (source) {
       if (source.slow) creep.slow = Math.max(creep.slow, 1.6);
       if (source.poison) creep.poison = Math.max(creep.poison, 2.4);
