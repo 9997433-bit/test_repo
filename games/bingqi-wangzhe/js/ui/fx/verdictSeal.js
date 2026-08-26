@@ -22,10 +22,10 @@ export function verdictSeal(winner, opts = {}) {
   const face = FACE[winner] || FACE.draw;
   const el = h(`.seal.${face.cls}`, { role: 'img', 'aria-label': `${face.char}·${opts.caption || face.caption}` },
     h('.seal__ink'),
-    h('.seal__body',
+    h('.seal__stamp',
       h('.seal__char', { text: face.char }),
-      h('.seal__caption', { text: opts.caption || face.caption })),
-    opts.grade ? h('.seal__grade', { text: opts.grade }) : null);
+      opts.grade ? h('.seal__grade', { text: opts.grade }) : null),
+    h('.seal__caption', { text: opts.caption || face.caption }));
   if (reducedMotion()) el.classList.add('is-instant');
   return el;
 }

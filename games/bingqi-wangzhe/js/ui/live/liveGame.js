@@ -484,10 +484,24 @@ export function createLiveGame(runtime, override = {}) {
     });
   }
 
+  /**
+   * 技能 id → 中文名。
+   *
+   * 战斗层有自己一套技能库；`data/skills.js` 里的 id（`sk_*`）不在其中，
+   * 会被合成成一个同名兜底技能，于是战报里印出来的是 `施展【sk_leiting_tu】`。
+   * 战斗层不归界面改，就在这里备一张字典，演出时把 id 换回「雷霆突」。
+   */
+  const skillNames = Object.fromEntries(
+    Object.values(skillById || {})
+      .filter((s) => s && s.id && s.name)
+      .map((s) => [s.id, s.name])
+  );
+
   /** 引擎结果 → 战报组件吃的形状（保留完整 timeline 供弹道演出）。 */
   function normalizeResult(result) {
     return {
       engine: true,
+      skillNames,
       engineVersion: result.engineVersion,
       winner: result.winner,
       rounds: result.rounds,

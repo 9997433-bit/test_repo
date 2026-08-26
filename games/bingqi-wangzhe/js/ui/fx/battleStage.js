@@ -195,13 +195,21 @@ export function createBattleStage(result, opts = {}) {
     setTimeout(() => from.classList.remove('is-acting'), 240);
   }
 
+  // 战斗层对未知技能 id 会合成一个同名技能，战报里就成了「施展【sk_leiting_tu】」。
+  // 逻辑层随战报带来一张 id→名字的字典，这里把它换回可读的中文。
+  const skillNames = result.skillNames || null;
+  function readable(text) {
+    if (!skillNames || !text) return text || '';
+    return text.replace(/【([A-Za-z0-9_]+)】/g, (m, id) => (skillNames[id] ? `【${skillNames[id]}】` : m));
+  }
+
   function pushLog(event) {
     const kind = event.t === 'kill' ? 'kill' : event.side === 'enemy' ? 'foe' : event.side === 'player' ? 'ally' : 'sys';
     const row = h(`.tl.tl--${kind}`, {
       style: { '--el': event.element ? `var(--el-${event.element})` : null }
     },
     h('.tl__round.t-num', { text: event.round ? `R${event.round}` : '—' }),
-    h('.tl__text', event.html ? { html: event.html } : { text: event.text || '' }));
+    h('.tl__text', event.html ? { html: event.html } : { text: readable(event.text) }));
     timelineEl.append(row);
     if (!reduced) timelineEl.scrollTop = timelineEl.scrollHeight;
     // 只留最近 80 条，长仗不至于把弹层撑爆。
@@ -213,6 +221,7 @@ export function createBattleStage(result, opts = {}) {
   function seal() {
     if (sealed) return;
     sealed = true;
+    field.classList.add('is-sealed');
     stampSeal(field, result.winner, {
       grade: result.grade ? `${result.grade} 阶` : '',
       caption: result.winner === 'player'
