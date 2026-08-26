@@ -34,23 +34,15 @@ function setText(node, text) {
   if (node && node.textContent !== text) node.textContent = text;
 }
 
-/** 只有内容真的变了才重建，避免每帧把用户正在点的按钮换掉 */
+/**
+ * 只有内容真的变了才重建。进度条与倒计时不写进 HTML，
+ * 而是每帧直接改 style/textContent，这样按钮不会在按下和抬起之间被换掉。
+ */
 function setHtml(node, html) {
   if (node && node.__sig !== html) {
     node.innerHTML = html;
     node.__sig = html;
   }
-}
-
-/**
- * 进度与倒计时不进 HTML 签名，改成每帧直接写 style/textContent，
- * 这样按钮不会在 mousedown 和 mouseup 之间被换掉。
- */
-
-function fromHtml(html) {
-  const tpl = document.createElement("template");
-  tpl.innerHTML = html.trim();
-  return tpl.content.firstElementChild;
 }
 
 function secs(ms) {
@@ -226,9 +218,9 @@ export function render(root, state, handlers, now = Date.now()) {
   setText(refs.pop, `人口 ${state.resources.pop}/${state.resources.popCap}`);
   setText(refs.mute, state.meta.muted ? "声音：关" : "声音：开");
 
-  renderFields(refs, state, ui, tutHint, now, progress, times);
+  renderFields(refs, state, tutHint, now, progress, times);
   renderBuildings(refs, state, ui, tutHint);
-  renderToolbar(refs, state, ui, tutHint, now, times);
+  renderToolbar(refs, state, ui, tutHint, now);
   renderDetail(refs, state, ui, now, progress, times);
   renderSide(refs, state);
   renderTutorial(refs, state, step);
@@ -260,7 +252,8 @@ function sceneTip(state, step) {
 
 /* ---------- 田地 ---------- */
 
-function renderFields(refs, state, ui, tutHint, now, progress, times) {
+function renderFields(refs, state, tutHint, now, progress, times) {
+  const needPop = Math.min(2 + state.plots.length, state.resources.popCap);
   const hintTill = tutHint === "till";
   const hintPlant = tutHint === "plant";
   const hintHarvest = tutHint === "harvest";
@@ -284,7 +277,7 @@ function renderFields(refs, state, ui, tutHint, now, progress, times) {
     .join("");
   setHtml(
     refs.fields,
-    `${html}<button class="plot empty xw-expand" data-act="expand" title="40 金币 + 1 把锹">+ 开垦</button>`,
+    `${html}<button class="plot empty xw-expand" data-act="expand" title="40 金币 · 铁锹×1 · 人手 ${state.resources.pop}/${needPop}">+ 开垦</button>`,
   );
 
   for (const p of state.plots) {
@@ -333,7 +326,7 @@ function renderBuildings(refs, state, ui, tutHint) {
 
 /* ---------- 常驻工具条 ---------- */
 
-function renderToolbar(refs, state, ui, tutHint, now, times) {
+function renderToolbar(refs, state, ui, tutHint, now) {
   const seed = ui.seed || "rice";
   const seeds = CROPS.map((c, i) => {
     const off = !c.seasons.includes(state.meta.season);
@@ -345,15 +338,17 @@ function renderToolbar(refs, state, ui, tutHint, now, times) {
     </button>`;
   }).join("");
 
-  const readyPet = (state.pets || []).some((p) => !p.readyAt || p.readyAt <= now);
+  const readyPets = (state.pets || []).filter((p) => !p.readyAt || p.readyAt <= now).length;
   const doneAll = (state.jobs || []).filter((j) => j.status === "done").length;
+  const needPop = Math.min(2 + state.plots.length, state.resources.popCap);
+  const expandOk = state.resources.pop >= needPop && state.resources.coin >= 40 && state.resources.shovel >= 1;
   const html = `
     <div class="xw-seedrow${tutHint === "plant" ? " xw-hint" : ""}">
       <span class="xw-label">种子</span>${seeds}
     </div>
     <div class="xw-quick">
-      <button class="xw-topbtn" data-act="expand">开垦新地（40金 + 锹）</button>
-      <button class="xw-topbtn" data-act="pet">${readyPet ? "逗逗宠物" : "宠物在打盹"}</button>
+      <button class="xw-topbtn${expandOk ? "" : " is-poor"}" data-act="expand" title="40 金币 · 铁锹×1 · 人手 ${state.resources.pop}/${needPop}">开垦新地（40金 · 锹1 · 人手${needPop}）</button>
+      <button class="xw-topbtn" data-act="pet" title="摸一摸换 3 枚金币">${readyPets ? `逗逗宠物（${readyPets}）` : "宠物在打盹"}</button>
       <button class="xw-topbtn" data-act="collectall"${doneAll ? "" : " disabled"}>收走做好的${doneAll ? `（${doneAll}）` : ""}</button>
       <span class="ghost xw-keys">键盘：1-6 选种子 · S 记下这一天 · M 静音 · Esc 关面板</span>
     </div>`;
@@ -529,13 +524,14 @@ function detailBuilding(state, id, now, progress, times) {
 
   const done = jobs.filter((j) => j.status === "done").length;
   return `<h2>${esc(def.name)} <span class="ghost">工位 ${jobs.length}/${slots}</span></h2>
-    ${feedRow}
-    ${recipeRows}
-    ${jobRows ? `<h3 class="xw-h3">正在做</h3>${jobRows}` : "<p class='ghost'>炉子凉着，安排点活吧。</p>"}
     <div class="row">
       <button class="xw-topbtn${done ? " is-go" : ""}" data-act="collect" data-b="${id}"${done ? "" : " disabled"}>收走做好的${done ? `（${done}）` : ""}</button>
       <button class="xw-topbtn" data-act="unlock" data-b="${id}"${slots >= 6 ? " disabled" : ""}>加个工位（${40 + slots * 20} 金）</button>
-    </div>`;
+    </div>
+    ${jobRows ? `<h3 class="xw-h3">正在做</h3>${jobRows}` : "<p class='ghost'>炉子凉着，安排点活吧。</p>"}
+    <h3 class="xw-h3">能做的活</h3>
+    ${feedRow}
+    ${recipeRows}`;
 }
 
 /* ---------- 引导与飘字 ---------- */
@@ -561,4 +557,4 @@ function renderToast(refs, ui, now) {
   refs.toast.classList.toggle("bad", show && toast.tone === "bad");
 }
 
-export { RECIPES, fromHtml };
+export { RECIPES };
