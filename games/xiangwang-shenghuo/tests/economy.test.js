@@ -117,6 +117,8 @@ describe("mill chain", () => {
 });
 
 describe("wishes", () => {
+  it.todo("marks an open wish accepted once wish acceptance has a status model");
+
   it("fills the board to three deterministic wishes", () => {
     const refreshed = refreshWishes(createInitialState());
 
