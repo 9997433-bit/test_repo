@@ -1,17 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { createCells } from "../src/board/grid.js";
 import { applyAwaken, scanAwaken } from "../src/board/awaken.js";
+import { HEROES } from "../src/data/heroes.js";
 
 describe("awaken", () => {
-  it("赵 + 云 adjacent becomes 赵云", () => {
+  it.each(HEROES)("awakens $name from either glyph order", (hero) => {
     const cells = createCells();
-    cells[6].unit = { kind: "glyph", glyph: "赵" };
-    cells[7].unit = { kind: "glyph", glyph: "云" };
+    cells[6].unit = { kind: "glyph", glyph: hero.glyphs[1] };
+    cells[7].unit = { kind: "glyph", glyph: hero.glyphs[0] };
+
     const plan = scanAwaken(cells);
-    expect(plan[0].hero.id).toBe("zhaoyun");
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0]).toMatchObject({ keepIndex: 6, dropIndex: 7, hero: { id: hero.id } });
     const heroes = applyAwaken(cells, plan);
-    expect(heroes[0].name).toBe("赵云");
-    expect(cells[6].unit.kind).toBe("hero");
+    expect(heroes).toEqual([hero]);
+    expect(cells[6].unit).toEqual({
+      kind: "hero",
+      id: hero.id,
+      glyph: hero.name,
+      level: 5,
+      cooldown: hero.skill.cd * 0.35,
+      atkBonus: 0,
+    });
     expect(cells[7].unit).toBe(null);
   });
 
