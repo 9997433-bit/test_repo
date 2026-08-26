@@ -4,14 +4,13 @@
 
 | 目录 | 游戏 | 开发端口 |
 | --- | --- | --- |
+| `linghuashi/` | 《灵画师》绘符施法 · 水墨修仙 | 4173 |
 | `zhao-yun-adou/` | 《赵云与阿斗》汉字合成 · 水墨塔防 | 4180 |
-| `linghuashi/` | 《灵画师》（其他任务，如存在） | 4173 |
-| `bingqi-wangzhe/` | 《兵器王者》（其他任务，如存在） | — |
 
-启动本任务游戏：
+启动灵画师：
 
 ```bash
-cd games/zhao-yun-adou
+cd games/linghuashi
 npm install
 npm run dev
 ```
