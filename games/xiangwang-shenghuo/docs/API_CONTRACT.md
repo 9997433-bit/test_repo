@@ -402,8 +402,8 @@ coins = round(wish.coin * (1 + floor(resources.happiness / 10) * 0.04))   // 幸
 | `buildings.stall?.built` | `village.stall_missing` |
 | `inv[itemId] >= qty` | `village.stock_short` |
 
-成功：`inv[itemId] -= qty`；`coin += round((PRICES[itemId] ?? 8) * qty * 1.15)`。
-【R2】`PRICES` 来自新模块 `src/data/prices.js`（Fable-3，见 §9）；现状扁平 8 金是占位。
+成功：`inv[itemId] -= qty`；`coin += stallPrice(itemId, qty)`（= `round(BASE_PRICES[itemId] × qty × 1.15)`）。
+价格事实源**已落地**：`src/data/items.js` 导出 `BASE_PRICES` / `STALL_MARKUP = 1.15` / `priceOf(id)`（缺省 0）/ `stallPrice(id, qty)`。【R2】village 现状仍用扁平 8 金，改为调 `stallPrice`（Opus-3）；`priceOf` 为 0 的物品应拒卖（`village.stock_short` 之前加 `village.worthless`：这个卖不出价）。
 
 ### 5.9 `tickVillage(state): State` — 节拍
 
@@ -487,6 +487,7 @@ reducer 对未知 type **必须**返回原 state 引用（静默）。
 | `village.pet_rest` | 它还想再躺会儿 | petPlay |
 | `village.stall_missing` | 摊位还没支起来 | stallSell |
 | `village.stock_short` | 货不够 | stallSell |
+| `village.worthless` | 这个卖不出价 | stallSell【R2】 |
 
 ## 8. 嘉宾 buff 应用点（恰好 4 处，公式即规格）
 
@@ -504,7 +505,7 @@ reducer 对未知 type **必须**返回原 state 引用（静默）。
 | 模块 | 导出 | 所有者 |
 | --- | --- | --- |
 | `src/data/levels.js` | `XP_TABLE = [0,40,100,180,280,420,600,820,1100,1450]`、`levelForXp(xp)`、`xpForNext(level)`（满级 `Infinity`） | Fable-3 |
-| `src/data/prices.js` | `PRICES: Record<itemId, int>`；建议定价 ≈ `round(直接材料成本 × 1.6 + timeMs/2000)`，缺省回退 8 | Fable-3 |
+| ~~`src/data/prices.js`~~ | 已由落地的 `src/data/items.js`（`BASE_PRICES`/`stallPrice`）取代，见 §5.8 | Fable-3 ✅ |
 | `src/data/wishes.js` 追加 | `WISH_REFRESH_MIN = 120` | Fable-3 |
 | `src/core/buffs.js` | `buffFactor(state, target)` | Opus-4 |
 | `src/core/reasons.js` | `REASONS`（§7 全表）、`msg(code)` | Opus-4 |
@@ -526,7 +527,7 @@ reducer 对未知 type **必须**返回原 state 引用（静默）。
 | 9 | 离线补偿编排：`meta/offline` + `applyOfflineCatchup`（调 farm `catchUpPlots`；日历推进封顶 8h）；farm 本地 `OFFLINE_CAP_MS` 改 import 去重 | Opus-4 + Opus-1 |
 | 10 | `hydrate`/`MIGRATIONS`/`SAVE_VERSION`（§2.2/2.3） | Opus-4 |
 | 11 | reducer 接线缺口：`village/stall`、`village/wish`、`meta/offline`、`meta/settings`、`farm/harvest_all` | Opus-4 |
-| 12 | 摊位扁平 8 金 → `data/prices.js` 查表 | Fable-3 + Opus-3 |
+| 12 | 摊位扁平 8 金 → 接线已落地的 `data/items.js` `stallPrice`（含 `village.worthless` 拒卖码） | Opus-3 |
 | 13 | `plant` 旧死代码已清（并行落地 ✅）；`collectJob` 畜牧崩溃已修（✅）；feed 圈位上限已加（✅）——单测补 reason 码断言即可 | GPT-sol-1 |
 | 14 | 边界静态测试：`systems/**` 源码禁含 `document.`、`localStorage`、内嵌 `Math.random(`/`Date.now()`（默认参数位除外） | GPT-sol-1 |
 | 15 | UI：做菜按钮按厨房建成隐藏；`farm/harvest_all` 按钮；错误文案改读 `message` | Opus-4 |
