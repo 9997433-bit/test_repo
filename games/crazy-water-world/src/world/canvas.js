@@ -66,12 +66,19 @@ export function seaLayout(state, w, h) {
   };
 }
 
+// 漂浮物只待在木筏两侧的开阔水面：既不会被甲板盖住，点击半径也永远露在外面。
 function flotsamPoint(f, layout, t) {
-  return {
-    x: ((f.x + 1) / 2) * layout.w,
-    y: layout.horizon + 12 + Math.sin(t / 400 + f.x * 4) * 6 + f.y * layout.h * 0.16,
-    r: FLOTSAM_RADIUS * (f.rare ? 0.62 : 0.5),
-  };
+  const r = FLOTSAM_RADIUS * (f.rare ? 0.62 : 0.5);
+  const pad = r + 10;
+  const leftGap = Math.max(0, layout.ox - pad);
+  const rightGap = Math.max(0, layout.w - (layout.ox + layout.raftW + pad));
+  const u = (Math.max(-1, Math.min(1, f.x)) + 1) / 2;
+  const total = leftGap + rightGap;
+  const slide = u * total;
+  const x = total <= 0 ? u * layout.w : slide < leftGap ? slide : layout.ox + layout.raftW + pad + (slide - leftGap);
+  const lane = Math.max(40, layout.h - layout.horizon - 44);
+  const y = layout.horizon + 22 + Math.min(1, Math.max(0, (f.y + 0.1) / 0.6)) * lane + Math.sin(t / 400 + f.x * 4) * 5;
+  return { x: Math.max(r + 2, Math.min(layout.w - r - 2, x)), y: Math.min(layout.h - r - 4, y), r };
 }
 
 function drawSky(ctx, state, layout, t, reduce) {
@@ -312,8 +319,8 @@ function drawWeatherOverlay(ctx, state, layout, t, reduce) {
     ctx.fillRect(0, 0, w, h);
   }
   const day = Math.sin(state.world.timeOfDay * Math.PI * 2);
-  if (day < -0.2) {
-    ctx.fillStyle = `rgba(6, 21, 27, ${Math.min(0.4, (-day - 0.2) * 0.5).toFixed(3)})`;
+  if (day < -0.05) {
+    ctx.fillStyle = `rgba(10, 26, 48, ${Math.min(0.58, (-day - 0.05) * 0.75).toFixed(3)})`;
     ctx.fillRect(0, 0, w, h);
   }
 }
