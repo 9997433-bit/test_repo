@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { FLOWERS } from "../../src/data/flowers";
+import { OFFLINE_CAP_MS, applyOfflineCatchUp } from "../../src/engine/offline";
 import { loadState, migrate, saveState } from "../../src/engine/save";
 import {
   MAX_PLOTS,
@@ -9,9 +10,10 @@ import {
   type ActiveOrder,
 } from "../../src/engine/state";
 import { addExp, takeItem } from "../../src/systems/economy";
-import { fulfillOrder, spawnOrders, tickOrders } from "../../src/systems/orders";
+import { cancelOrder, fulfillOrder, spawnOrders, tickOrders } from "../../src/systems/orders";
 
 const ORDER_TIMEOUT_WAVES = 250;
+const DUPLICATE_ORDER_REFILLS = 250;
 const ORDER_STORM_BUDGET_MS = 250;
 const SAVE_SIZE_BUDGET_BYTES = 64 * 1024;
 
@@ -118,6 +120,79 @@ describe("legacy save migration backfill probe", () => {
     expect(migrated.placedDecor).toEqual([]);
     expect(migrated.quests).toEqual(defaults.quests);
     expect(migrated.stats).toEqual(defaults.stats);
+  });
+});
+
+describe("offline catch-up probe", () => {
+  it("bounds a long absence while settling a maximum-size busy garden", () => {
+    const state = createInitialState(0);
+    state.level = 15;
+    state.water = 0;
+    state.activeSpirit = "suideng";
+    state.plots = Array.from({ length: MAX_PLOTS }, (_, id) => ({
+      ...emptyPlot(id),
+      flowerId: "dream-rose",
+      stage: "seeded" as const,
+      plantedAt: 0,
+      lastTick: 0,
+    }));
+    spawnOrders(state);
+    const deadlines = new Map(state.orders.map((order) => [order.uid, order.dueAt]));
+
+    const report = applyOfflineCatchUp(state, OFFLINE_CAP_MS * 4);
+
+    expect(report).toMatchObject({
+      elapsedMs: OFFLINE_CAP_MS * 4,
+      appliedMs: OFFLINE_CAP_MS,
+      capped: true,
+      water: 40,
+      grown: MAX_PLOTS,
+      bloomed: MAX_PLOTS,
+    });
+    expect(state.now).toBe(OFFLINE_CAP_MS);
+    expect(state.lastSeenAt).toBe(OFFLINE_CAP_MS * 4);
+    expect(state.water).toBe(40);
+    expect(state.plots.every((plot) => plot.stage === "bloom")).toBe(true);
+    expect(
+      state.orders.every(
+        (order) => order.dueAt === (deadlines.get(order.uid) ?? 0) + OFFLINE_CAP_MS,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("duplicate active-order probe", () => {
+  it(`keeps template ids unique across ${DUPLICATE_ORDER_REFILLS} adversarial refills`, () => {
+    let randomCall = 0;
+    const random = vi.spyOn(Math, "random").mockImplementation(() => {
+      const call = randomCall;
+      randomCall += 1;
+      return call % 2 === 0 ? 0 : (Math.floor(call / 2) + 1) / 10_000;
+    });
+
+    try {
+      const state = createInitialState(0);
+      state.level = 12;
+      spawnOrders(state);
+
+      for (let refill = 0; refill < DUPLICATE_ORDER_REFILLS; refill += 1) {
+        const templateIds = state.orders.map((order) => order.templateId);
+        expect(new Set(templateIds).size).toBe(templateIds.length);
+
+        const leaving = state.orders[refill % state.orders.length];
+        expect(leaving).toBeDefined();
+        cancelOrder(state, leaving!.uid);
+
+        const replenishedIds = state.orders.map((order) => order.templateId);
+        expect(state.orders).toHaveLength(5);
+        expect(new Set(replenishedIds).size).toBe(replenishedIds.length);
+        expect(replenishedIds).not.toContain(leaving!.templateId);
+      }
+
+      expect(state.stats.cancelled).toBe(DUPLICATE_ORDER_REFILLS);
+    } finally {
+      random.mockRestore();
+    }
   });
 });
 
