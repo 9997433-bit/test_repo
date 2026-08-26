@@ -8,7 +8,7 @@
 | ID | 职能 | 指定 slug | Agent ID | 执行环境 |
 | --- | --- | --- | --- | --- |
 | F1 | 架构契约 | `claude-fable-5-thinking-xhigh` | `bc-0eb09f65-3399-5518-913d-e91bfae00a2d` | 隔离 worktree · 已完成并合入 `a316961` |
-| F2 | 美术 UX | `claude-fable-5-thinking-xhigh` | `bc-3831a4a1-d4a2-5367-818f-3992c90b4373` | 隔离 worktree |
+| F2 | 美术 UX | `claude-fable-5-thinking-xhigh` | `bc-3831a4a1-d4a2-5367-818f-3992c90b4373` | 隔离 worktree · 已完成并推送 `513c5d6` |
 | F3 | 玩法数值 | `claude-fable-5-thinking-xhigh` | `bc-1a9ee529-c247-5a9e-a7d1-834748f50d5b` | 云端 VM |
 | F4 | SOTA 验收 | `claude-fable-5-thinking-xhigh` | `bc-2fa60104-0d6d-5928-b7f7-efcad11b6724` | 隔离 worktree · 已完成并推送 `30ed908` |
 | O1 | 物理弹道 | `claude-opus-5-thinking-high-fast` | `bc-63fafdfa-8a57-5c5d-abc8-f0bcc6f5a950` | 隔离 worktree · 已完成并合入 `f63b8cd` |
