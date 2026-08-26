@@ -130,21 +130,17 @@ root.dataset.theme = state.decorTheme ?? "";
 `.garden { height: calc(100% - 52px) }`（≤640px 46px），改其一必须同步另一处；
 陈设层注入样式把行锁成单行横滑，正是为了不破坏这个恒等式。
 
-### 花灵 · 驻园灵玉（CSS 已就位，一行接线点亮）
+### 花灵 · 驻园灵玉（已全链路生效）
 
 出战花灵以「灵玉」悬于园心上空（两侧檐角与月洞门都是陈设槽位，中央上空常空）：
 玉牌里一枚灵字（菊/池/蝶/雪/灯），外罩灵光雾晕徐徐起伏，入夜灵光更盛。
 **零新增 DOM**——本体与雾晕分别画在 `.stage::after/::before` 上，显隐由
-`--spirit-display` 控制：
+`--spirit-display` 控制。
 
-```ts
-// app.ts frame()，一行（owner: 引擎）：
-if (root.dataset.spirit !== (state.activeSpirit ?? "")) root.dataset.spirit = state.activeSpirit ?? "";
-```
-
-`audio/soundscape.ts` 已在读 `root.dataset.spirit` 驱动环境音，接上这一行
-视听两侧同时点亮。未接线、空值或未知 id 都不命中 `[data-spirit]` 令牌块 →
-伪元素保持 `display:none`，优雅降级。
+接线现状：`ui/hud.ts` 每帧把 `state.activeSpirit` 写到根节点
+`data-spirit`（`SPIRIT_ATTR`），灵玉随请灵/休灵即时切换；
+`audio/soundscape.ts` 监听同一属性驱动环境音，视听同源。空值或未知 id 不命中
+`[data-spirit]` 令牌块 → 伪元素保持 `display:none`，优雅降级。
 
 花灵面板的请灵卡（带 `aria-pressed` 的 `.card`）：首字放大作灵字、出战卡罩
 灵光；`panels.ts` 已写入 `b.dataset.spirit = s.id`，per-灵配色**已生效**。
@@ -215,8 +211,8 @@ if (root.dataset.spirit !== (state.activeSpirit ?? "")) root.dataset.spirit = st
 
 ## 十、已知缺口（下一轮）
 
-1. 剩两处一行接线（owner: 引擎）：`root.dataset.spirit`（§六，顺带点亮花灵环境音）
-   与 `root.dataset.theme`（§五，需 state 先记录玩家最后套用的主题）。
+1. 剩一处一行接线（owner: 引擎）：`root.dataset.theme`（§五，需 state 先记录
+   玩家最后套用的主题）。
 2. 花瓣颜色由 TS 内联写死，建议改读季节令牌（春桃粉/夏荷白/秋枫赤/冬雪白）。
 3. `index.html` 的 `theme-color` 仍是旧棕色 `#3d2a1c`，建议随昼夜切换（owner: 引擎）。
 4. `decor-layer.ts` 的注入式 `<style>` 里仍有裸色值与手写 z（属陈设层所有）；

@@ -351,7 +351,7 @@ button { font-family: var(--font-body); }
 .stage::after {
   /* 灵玉本体：悬于园心上空（两侧檐角与月洞门都是陈设槽位，见 decor-art SLOTS） */
   content: var(--spirit-glyph, "灵");
-  top: 44px;
+  top: 62px; /* 挂牌行（48+4px）之下，花圃上沿之上 */
   left: calc(50% - 28px);
   width: 56px;
   height: 56px;
@@ -374,7 +374,7 @@ button { font-family: var(--font-body); }
 .stage::before {
   /* 灵光雾晕 */
   content: "";
-  top: 26px;
+  top: 44px;
   left: calc(50% - 44px);
   width: 88px;
   height: 100px;
@@ -739,8 +739,8 @@ button { font-family: var(--font-body); }
   .decor-chip { font-size: 12px; margin-top: 11px; }
   .garden { height: calc(100% - 46px); gap: 9px; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); }
   .plot-name { font-size: 10px; }
-  .stage::after { top: 40px; left: calc(50% - 23px); width: 46px; height: 46px; font-size: 21px; }
-  .stage::before { top: 24px; left: calc(50% - 35px); width: 70px; height: 80px; }
+  .stage::after { top: 54px; left: calc(50% - 23px); width: 46px; height: 46px; font-size: 21px; }
+  .stage::before { top: 38px; left: calc(50% - 35px); width: 70px; height: 80px; }
   .dock { gap: 10px; }
   .dock-btn { min-width: 56px; }
   .dock-btn .seal { width: 42px; height: 42px; font-size: 22px; }
