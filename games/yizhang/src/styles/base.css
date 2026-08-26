@@ -1,0 +1,123 @@
+/* ============================================================
+   异掌 · 基底：重置、画布、通用材质、可达性
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--yz-bg);
+  color: var(--yz-text);
+  font-family: var(--yz-font-text);
+  font-size: var(--yz-fs-md);
+  line-height: 1.5;
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* [hidden] 永远生效，JS 用它开关屏幕/浮层 */
+[hidden] {
+  display: none !important;
+}
+
+/* ---- #gl · 全视口 WebGL 画布 ----
+   WebGL 首帧前显示暮蓝天空渐变占位，避免黑闪。
+   touch-action:none：画布上的触摸只交给视角拖拽，不滚动页面。 */
+#gl {
+  position: fixed;
+  inset: 0;
+  z-index: var(--yz-z-gl);
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  background: linear-gradient(
+    180deg,
+    #2b3b58 0%,
+    var(--yz-ink-700) 46%,
+    var(--yz-ink-950) 100%
+  );
+}
+
+/* ---- 通用材质 · 磨砂暗玻璃板 ----
+   配方：玻璃底 + 顶部 1px 受光 + 底部 1px 暗沿 + 拉丝微纹理，
+   backdrop 轻降饱和（玻璃后的战场稍退，饱和让给识别色）。 */
+.yz-plate {
+  background:
+    repeating-linear-gradient(
+      105deg,
+      rgb(240 235 223 / 0.02) 0 1px,
+      transparent 1px 3px
+    ),
+    linear-gradient(180deg, rgb(240 235 223 / 0.05), rgb(240 235 223 / 0) 42%),
+    var(--yz-glass);
+  border: 1px solid var(--yz-frame);
+  border-radius: var(--yz-r2);
+  box-shadow:
+    inset 0 1px 0 var(--yz-edge-hi),
+    inset 0 -1px 0 var(--yz-edge-lo),
+    0 2px 10px rgb(4 7 12 / 0.35);
+  backdrop-filter: blur(10px) saturate(0.85);
+  -webkit-backdrop-filter: blur(10px) saturate(0.85);
+}
+
+/* HUD 默认不吃指针；可交互元素挂 .yz-tap 或原生 button */
+.yz-tap,
+#hud button {
+  pointer-events: auto;
+}
+
+/* 可滚动区（选掌网格等）：允许纵向平移 */
+.yz-scroll {
+  overflow-y: auto;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: var(--yz-steel-700) transparent;
+}
+
+/* ---- 焦点：1px 骨白细线 + 偏移，明度对比而非发光 ---- */
+:focus-visible {
+  outline: 1px solid var(--yz-bone-100);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--yz-accent-dim);
+  color: var(--yz-bone-100);
+}
+
+/* ---- 弱动效：系统偏好或手动 data-reduced-motion="1" ----
+   扫光/脉动/入场全部退化为直达终态。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+[data-reduced-motion="1"] *,
+[data-reduced-motion="1"] *::before,
+[data-reduced-motion="1"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

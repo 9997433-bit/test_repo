@@ -1,0 +1,223 @@
+/* ============================================================
+   异掌 · 触控层（横屏优先，竖屏可用）
+   开关：html 或 body 设 data-touch="1" 时显示（JS 检测粗指针后设置）。
+   结构：
+   .yz-touch
+   ├── .yz-stick-zone          左下走位区（触点落区，JS 在区内生成摇杆）
+   │   └── .yz-stick > .yz-stick-nub
+   └── .yz-cluster             右下按钮簇（栅格布点，8px 间距）
+       ├── .yz-tbtn--jump / --skill
+       └── .yz-tbtn--dash / --switch / --slap
+   尺寸法：扇击 ≥72dp（实做 88/76px），其余 ≥48dp；全部避开安全区。
+   JS 钩子：.yz-stick 的 --x/--y（区内定位）与 --sx/--sy（推杆位移）、
+            .is-active、按钮 .is-pressed、技能钮内放 .yz-cd。
+   相机拖拽不在此层：右侧空白触摸直接落在 #gl 画布上。
+   ============================================================ */
+
+.yz-touch {
+  position: fixed;
+  inset: 0;
+  z-index: var(--yz-z-touch);
+  display: none;
+  pointer-events: none;
+}
+
+[data-touch="1"] .yz-touch {
+  display: block;
+}
+
+/* ---- 左下走位区：透明落区，触点在哪摇杆在哪 ---- */
+.yz-stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: min(42vw, 360px);
+  height: min(52vh, 320px);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* 摇杆底盘：磨砂玻璃环，闲置半隐为「落点提示」 */
+.yz-stick {
+  position: absolute;
+  left: var(--x, 54%);
+  top: var(--y, 58%);
+  transform: translate(-50%, -50%);
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 1px solid rgb(154 164 176 / 0.45);
+  background: rgb(11 16 28 / 0.32);
+  box-shadow:
+    inset 0 1px 0 var(--yz-edge-hi),
+    inset 0 0 0 10px rgb(8 12 20 / 0.18);
+  opacity: 0.32;
+  transition: opacity var(--yz-t-fast) var(--yz-ease);
+}
+
+.yz-stick.is-active {
+  opacity: 0.9;
+}
+
+/* 杆帽：磨损金属盖，左上受光；跟指无过渡，回中带落定 */
+.yz-stick-nub {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 34% 28%,
+    var(--yz-steel-300) 0%,
+    var(--yz-steel-500) 44%,
+    var(--yz-steel-700) 100%
+  );
+  border: 1px solid var(--yz-ink-950);
+  box-shadow:
+    inset 0 1px 0 rgb(240 235 223 / 0.28),
+    0 2px 6px rgb(4 7 12 / 0.5);
+  transform: translate(var(--sx, 0px), var(--sy, 0px));
+  transition: transform var(--yz-t-fast) var(--yz-ease);
+}
+
+.yz-stick.is-active .yz-stick-nub {
+  transition: none;
+}
+
+/* ---- 右下按钮簇 ---- */
+.yz-cluster {
+  position: absolute;
+  right: var(--yz-inset-r);
+  bottom: var(--yz-inset-b);
+  display: grid;
+  grid-template-areas:
+    ".    jump  skill"
+    "dash switch slap";
+  gap: var(--yz-s1);
+  place-items: end;
+  pointer-events: none;
+}
+
+/* 通用触钮：磨砂玻璃盘 + 金属圈 + 拉丝微纹理，按下沉入 */
+.yz-tbtn {
+  pointer-events: auto;
+  touch-action: none;
+  appearance: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--yz-steel-700);
+  color: var(--yz-bone-300);
+  font-family: var(--yz-font-display);
+  font-size: var(--yz-fs-md);
+  letter-spacing: 0.04em;
+  background:
+    repeating-linear-gradient(
+      105deg,
+      rgb(240 235 223 / 0.02) 0 1px,
+      transparent 1px 3px
+    ),
+    radial-gradient(
+      circle at 34% 26%,
+      rgb(240 235 223 / 0.07),
+      rgb(240 235 223 / 0) 55%
+    ),
+    rgb(13 19 31 / 0.55);
+  box-shadow:
+    inset 0 1px 0 var(--yz-edge-hi),
+    inset 0 -1px 0 var(--yz-edge-lo),
+    0 2px 8px rgb(4 7 12 / 0.4);
+  backdrop-filter: blur(6px) saturate(0.85);
+  -webkit-backdrop-filter: blur(6px) saturate(0.85);
+  transition:
+    transform var(--yz-t-fast) var(--yz-ease),
+    filter var(--yz-t-fast) var(--yz-ease);
+}
+
+/* 机加工内槽圈：一圈 1px 暗线，材质感而非描边 */
+.yz-tbtn::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 1px solid rgb(8 12 20 / 0.5);
+  pointer-events: none;
+}
+
+.yz-tbtn:active,
+.yz-tbtn.is-pressed {
+  transform: scale(0.94);
+  filter: brightness(1.18);
+}
+
+.yz-tbtn:disabled,
+.yz-tbtn.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* 扇击：最大主钮（≥72dp），骨白字更亮 */
+.yz-tbtn--slap {
+  grid-area: slap;
+  width: 88px;
+  height: 88px;
+  font-size: 22px;
+  color: var(--yz-bone-100);
+  border-color: var(--yz-steel-500);
+}
+
+/* 技能：随当前手套识别色描沿（唯一饱和点） */
+.yz-tbtn--skill {
+  grid-area: skill;
+  border-color: color-mix(in oklab, var(--yz-accent) 48%, var(--yz-steel-700));
+  color: color-mix(in oklab, var(--yz-accent) 55%, var(--yz-bone-100));
+}
+
+.yz-tbtn--switch {
+  grid-area: switch;
+  width: var(--yz-touch-min);
+  height: var(--yz-touch-min);
+  font-size: var(--yz-fs-sm);
+}
+
+.yz-tbtn--dash {
+  grid-area: dash;
+  width: var(--yz-touch-min);
+  height: var(--yz-touch-min);
+  font-size: var(--yz-fs-sm);
+}
+
+.yz-tbtn--jump {
+  grid-area: jump;
+  width: var(--yz-touch-min);
+  height: var(--yz-touch-min);
+  font-size: var(--yz-fs-sm);
+}
+
+/* ---- 竖屏：簇整体收紧，扇击 76px 仍 ≥72dp ---- */
+@media (orientation: portrait) {
+  .yz-stick-zone {
+    width: 46vw;
+    height: 38vh;
+  }
+
+  .yz-cluster {
+    bottom: calc(var(--yz-inset-b) + var(--yz-s2));
+  }
+
+  .yz-tbtn--slap {
+    width: 76px;
+    height: 76px;
+    font-size: 19px;
+  }
+
+  .yz-tbtn--skill {
+    width: 52px;
+    height: 52px;
+  }
+}
