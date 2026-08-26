@@ -447,14 +447,16 @@ function artifactCard(state, a) {
   const preview = equipPreview(state, a);
   const eq = preview.kind === "equipped";
   const own = preview.kind !== "locked";
+  const usable = eq || preview.kind === "free" || preview.kind === "swap";
   const src = artifactSource(a);
-  const label =
-    preview.kind === "equipped" ? "卸下" : preview.kind === "swap" ? "换上" : preview.kind === "free" ? "佩戴" : "未获";
+  const label = { equipped: "卸下", swap: "换上", free: "佩戴", locked: "未获" }[preview.kind] ?? "不可佩";
   const hint = !own
     ? `<div class="muted art-src">${src.ready ? `出自 ${esc(src.text)}` : esc(src.text)}</div>`
     : preview.kind === "swap"
       ? `<div class="muted art-src">槽位已满：换上将顶下 <b>${esc(preview.dropped.join("、"))}</b></div>`
-      : "";
+      : preview.kind === "blocked"
+        ? `<div class="muted art-src">${esc(SLOT_LABEL[a.slot] ?? a.slot)}槽暂未开放，佩戴不生效</div>`
+        : "";
   return `<div class="art-card ${eq ? "in" : ""}">
     <div class="d-main">
       <div class="d-head"><b>${esc(a.name)}</b>${chip(esc(SLOT_LABEL[a.slot] ?? a.slot))}${chip(
@@ -465,7 +467,7 @@ function artifactCard(state, a) {
       ${hint}
     </div>
     <div class="d-acts">
-      <button class="${own && !eq ? "gold" : ""}" ${own ? "" : "disabled"} data-act="equip" data-aid="${a.id}"
+      <button class="${usable && !eq ? "gold" : ""}" ${usable ? "" : "disabled"} data-act="equip" data-aid="${a.id}"
         title="${esc(preview.kind === "swap" ? `槽位已满，会顶下 ${preview.dropped.join("、")}` : a.desc)}">${esc(label)}</button>
     </div></div>`;
 }
