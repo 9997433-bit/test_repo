@@ -1,72 +1,258 @@
+/* ============================================================
+   造化仙府 · 仙府沙盘
+   漆木框沙盘 + 等高线,空地为粉线圈地,建筑为浮雕小筑。
+   ============================================================ */
 .plot-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
+  gap: clamp(4px, 1vw, 7px);
   aspect-ratio: 1;
   max-width: 520px;
+  width: 100%;
+  padding: clamp(7px, 1.6vw, 13px);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-gold-dim);
+  /* 顶光 + 等高线 + 沙色渐暗 */
+  background:
+    radial-gradient(120% 90% at 50% 6%, rgba(243, 230, 201, 0.06), transparent 58%),
+    repeating-radial-gradient(
+      circle at 46% 42%,
+      rgba(243, 230, 201, 0.024) 0 2px,
+      transparent 2px 28px
+    ),
+    linear-gradient(180deg, #2c2115, #221910);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 10px 26px rgba(0, 0, 0, 0.42),
+    inset 0 -2px 0 rgba(243, 230, 201, 0.04),
+    var(--shadow-card);
 }
+
 .plot {
-  border: 1px dashed rgba(243, 230, 201, 0.22);
-  border-radius: 8px;
-  min-height: 64px;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(27, 20, 15, 0.35);
+  gap: 1px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 2px;
+  border: 1px dashed rgba(243, 230, 201, 0.16);
+  border-radius: var(--r-sm);
+  background: rgba(18, 13, 9, 0.22);
   cursor: pointer;
-  position: relative;
+  transition:
+    border-color var(--t-fast) var(--ease-brush),
+    background-color var(--t-fast) var(--ease-brush),
+    transform var(--t-fast) var(--ease-brush),
+    box-shadow var(--t-fast) var(--ease-brush);
 }
+.plot:hover {
+  border-color: var(--line-gold);
+  background-color: rgba(212, 160, 23, 0.07);
+}
+/* 建筑地块:纸面受光、金丝勒边,微微离沙而起 */
 .plot.filled {
-  border-style: solid;
+  border: 1px solid rgba(212, 160, 23, 0.32);
   background:
-    linear-gradient(180deg, rgba(212, 160, 23, 0.16), rgba(27, 20, 15, 0.2)),
-    rgba(47, 107, 79, 0.18);
+    linear-gradient(180deg, rgba(243, 230, 201, 0.11), rgba(243, 230, 201, 0.02) 48%, rgba(0, 0, 0, 0.16)),
+    linear-gradient(180deg, rgba(47, 107, 79, 0.15), rgba(47, 107, 79, 0.04));
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(243, 230, 201, 0.12);
+}
+.plot.filled:hover {
+  transform: translateY(-1px);
+  border-color: rgba(233, 185, 73, 0.55);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(243, 230, 201, 0.16);
 }
 .plot .glyph {
   font-family: var(--font-title);
-  font-size: 1.5rem;
-  line-height: 1;
+  font-size: clamp(1rem, 3.4vw, 1.5rem);
+  line-height: 1.1;
+  color: var(--paper-bright);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
 }
-.plot .lv { font-size: 0.7rem; color: var(--gold); }
-.plot.sel { outline: 2px solid var(--gold); }
+/* 建筑名(中段 span):窄屏时舍名留字 */
+.plot.filled > span:not(.glyph):not(.lv) {
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  color: var(--paper-dim);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 等级金签 */
+.plot .lv {
+  font-size: 0.58rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  color: var(--ink-0);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-radius: 999px;
+  padding: 0 0.38em;
+  margin-top: 1px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.plot.sel {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 5px rgba(212, 160, 23, 0.16), 0 4px 10px rgba(0, 0, 0, 0.4);
+}
 
-.build-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
-.hero-card, .art-card {
+.build-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.build-list button {
+  font-size: 0.8rem;
+  padding: 0.34rem 0.6rem;
+}
+
+/* ------------------------------------------------------------
+   名录笺:弟子 / 法器条目,上阵者鎏金侧栏。
+   ------------------------------------------------------------ */
+.hero-card,
+.art-card {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 0.6rem;
-  padding: 0.55rem 0.65rem;
+  padding: 0.58rem 0.7rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   margin-bottom: 0.45rem;
+  background: linear-gradient(180deg, rgba(243, 230, 201, 0.032), transparent);
+  transition: border-color var(--t-fast) var(--ease-brush);
+  min-width: 0;
 }
-.hero-card.in { border-color: var(--gold); }
+.hero-card:hover,
+.art-card:hover {
+  border-color: var(--line-gold);
+}
+.hero-card > div,
+.art-card > div {
+  min-width: 0;
+}
+.hero-card button,
+.art-card button {
+  flex: none;
+}
+.hero-card .muted,
+.art-card .muted {
+  font-size: 0.78rem;
+}
+.hero-card.in {
+  border-color: rgba(212, 160, 23, 0.5);
+  background: linear-gradient(90deg, rgba(212, 160, 23, 0.1), transparent 55%);
+  box-shadow: inset 3px 0 0 var(--gold);
+}
 
+/* ------------------------------------------------------------
+   气血/修为条:墨槽金焰,推移 280ms。
+   ------------------------------------------------------------ */
 .hpbar {
-  height: 8px;
-  background: #3a2a20;
-  border-radius: 99px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #16100b, #241a12);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(243, 230, 201, 0.07);
   overflow: hidden;
   position: relative;
 }
 .hpbar > i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #c23b22, #d4a017);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cinnabar-deep), var(--cinnabar) 45%, var(--gold));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: width var(--t-med) var(--ease-brush);
 }
-.unit-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-.log-list { max-height: 180px; overflow: auto; font-size: 0.82rem; }
-.log-list li { margin: 0.2rem 0; color: var(--paper-dim); }
 
+.unit-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+/* 府报:朱点起行,虚线分条 */
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 190px;
+  overflow: auto;
+  font-size: 0.8rem;
+  scrollbar-width: thin;
+}
+.log-list li {
+  position: relative;
+  padding: 0.3rem 0 0.3rem 0.95rem;
+  color: var(--paper-dim);
+  border-bottom: 1px dashed rgba(243, 230, 201, 0.08);
+}
+.log-list li:first-child {
+  color: var(--paper);
+}
+.log-list li::before {
+  content: "";
+  position: absolute;
+  left: 0.15rem;
+  top: 0.78em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--cinnabar);
+  opacity: 0.75;
+}
+
+/* 灵气升腾:慢速轻粒,减少动效时整体撤去 */
 .spirit-orb {
-  width: 10px; height: 10px; border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
   background: var(--spirit);
-  box-shadow: 0 0 10px var(--spirit);
+  box-shadow: 0 0 10px var(--spirit), 0 0 3px var(--paper-bright);
   animation: rise 3.6s linear infinite;
-  position: absolute; opacity: 0.7;
+  position: absolute;
+  opacity: 0.7;
+  pointer-events: none;
 }
 @keyframes rise {
-  from { transform: translateY(8px); opacity: 0.1; }
-  to { transform: translateY(-28px); opacity: 0; }
+  from {
+    transform: translateY(8px);
+    opacity: 0.1;
+  }
+  to {
+    transform: translateY(-28px);
+    opacity: 0;
+  }
+}
+
+/* 窄屏:沙盘满幅,舍建筑名,只留字号金签 */
+@media (max-width: 560px) {
+  .plot-grid {
+    max-width: none;
+  }
+  .plot.filled > span:not(.glyph):not(.lv) {
+    display: none;
+  }
+  .plot .glyph {
+    font-size: clamp(0.95rem, 5.5vw, 1.3rem);
+  }
+  .plot .lv {
+    font-size: 0.54rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spirit-orb {
+    display: none;
+  }
+  .plot.filled:hover {
+    transform: none;
+  }
 }
