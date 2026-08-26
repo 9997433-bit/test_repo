@@ -14,16 +14,12 @@ export function challengeWave(state, now = Date.now()) {
   return { ...result, wave };
 }
 
-export function waveReward(wave, win, resources) {
-  if (!win) {
-    return {
-      loseTax: {
-        herb: (resources.herb ?? 0) * 0.3,
-        wood: (resources.wood ?? 0) * 0.3,
-        ore: (resources.ore ?? 0) * 0.3,
-      },
-    };
-  }
+/**
+ * 潮胜入账；潮败不在这里收税。败仗按 AD-12 定案只没收「未收取产出」，
+ * 由 core/store.js#waveLossTax 结算，库存分毫不动，故此处败战返回空账。
+ */
+export function waveReward(wave, win) {
+  if (!win) return {};
   return {
     stone: 14 + wave * 3,
     qi: 20 + wave * 2,
