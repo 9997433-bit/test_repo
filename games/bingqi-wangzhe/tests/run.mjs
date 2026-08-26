@@ -4,6 +4,13 @@ import { fileURLToPath } from 'node:url';
 
 const FORGE_SAMPLE_SIZE = 384;
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
+const FIRST_FORGE_SEEDS = Array.from({ length: 32 }, (_, index) => 0x510000 + index);
+const IRON_FORGE_OPTIONS = {
+  stage: 'iron',
+  elementBias: null,
+  useLucky: false,
+  useMasterForge: false,
+};
 const results = [];
 
 async function importModule(relativePath, requiredExports = []) {
@@ -45,6 +52,20 @@ async function probe(name, fn) {
     results.push(result);
     console.error(`[FAIL] ${name}: ${message}`);
   }
+}
+
+async function probeIfModulesPresent(name, relativePaths, fn) {
+  const missing = relativePaths.filter((relativePath) => {
+    const url = new URL(relativePath, import.meta.url);
+    return !existsSync(fileURLToPath(url));
+  });
+  if (missing.length > 0) {
+    const reason = `缺少模块：${missing.join(', ')}`;
+    results.push({ name, status: 'skipped', durationMs: 0, reason });
+    console.error(`[SKIP] ${name}: ${reason}`);
+    return;
+  }
+  await probe(name, fn);
 }
 
 function makeFundedState(createInitialState) {
@@ -100,12 +121,7 @@ async function sampleForgeDistribution(seed, sampleSize) {
     const previousLength = state.weapons.length;
     const output = forgeWeapon(
       state,
-      {
-        stage: 'iron',
-        elementBias: null,
-        useLucky: false,
-        useMasterForge: false,
-      },
+      IRON_FORGE_OPTIONS,
       rng,
     );
     assert.equal(
@@ -399,6 +415,140 @@ await probe('离线挂机 8 小时封顶', async () => {
   };
 });
 
+await probeIfModulesPresent(
+  '首锻品质至少为 uncommon（多种子）',
+  ['../js/core/rng.js', '../js/core/state.js', '../js/forge/forge.js'],
+  async () => {
+    const { createRng } = await importModule('../js/core/rng.js', ['createRng']);
+    const { createInitialState } = await importModule('../js/core/state.js', ['createInitialState']);
+    const { forgeWeapon } = await importModule('../js/forge/forge.js', ['forgeWeapon']);
+    const qualityRank = new Map(
+      ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'].map((quality, rank) => [
+        quality,
+        rank,
+      ]),
+    );
+    const observed = {};
+
+    for (const seed of FIRST_FORGE_SEEDS) {
+      const state = createInitialState({ seed });
+      const previousLength = state.weapons.length;
+      const output = forgeWeapon(state, IRON_FORGE_OPTIONS, createRng(seed));
+      assert.equal(output?.ok, true, `种子 ${seed} 的首锻失败：${output?.reason ?? '未知原因'}`);
+      const weapon = extractForgedWeapon(output, state, previousLength);
+      assert.ok(weapon, `种子 ${seed} 的首锻未产生兵器`);
+      assert.ok(qualityRank.has(weapon.quality), `种子 ${seed} 返回未知品质：${weapon.quality}`);
+      assert.ok(
+        qualityRank.get(weapon.quality) >= qualityRank.get('uncommon'),
+        `种子 ${seed} 的首锻品质为 ${weapon.quality}，低于 uncommon`,
+      );
+      observed[weapon.quality] = (observed[weapon.quality] ?? 0) + 1;
+    }
+
+    return { seeds: FIRST_FORGE_SEEDS.length, minimumQuality: 'uncommon', observed };
+  },
+);
+
+await probeIfModulesPresent(
+  'serialize 往返保留 forge.pity',
+  ['../js/core/state.js'],
+  async () => {
+    const { createInitialState, hydrate, serialize } = await importModule(
+      '../js/core/state.js',
+      ['createInitialState', 'hydrate', 'serialize'],
+    );
+    const state = createInitialState({ seed: 0x5170 });
+    if (!state.forge?.pity || typeof state.forge.pity !== 'object') {
+      return { fieldPresent: false };
+    }
+
+    for (const [index, pity] of Object.values(state.forge.pity).entries()) {
+      pity.epic = 2 + index;
+      pity.legendary = 5 + index;
+    }
+    const expected = JSON.parse(JSON.stringify(state.forge.pity));
+    const serialized = serialize(state);
+    assert.deepEqual(serialized?.forge?.pity, expected, 'serialize() 丢失或改写了 forge.pity');
+    const restored = hydrate(JSON.stringify(serialized));
+    assert.deepEqual(restored?.forge?.pity, expected, 'hydrate(serialize(state)) 未保留 forge.pity');
+    return { fieldPresent: true, stages: Object.keys(expected) };
+  },
+);
+
+await probeIfModulesPresent(
+  'challengeStage 空体力失败且不发奖励',
+  ['../js/main.js'],
+  async () => {
+    const { createBoundGame } = await importModule('../js/main.js', ['createBoundGame']);
+    const game = createBoundGame({
+      seed: 0x517a,
+      now: () => 2_000_000_000_000,
+      autoLoad: false,
+      autoSave: false,
+    });
+
+    try {
+      assert.equal(typeof game.challengeStage, 'function', '组合游戏缺少 challengeStage()');
+      const firstStage = game.stages?.()[0];
+      assert.ok(firstStage?.id, '未找到可挑战的首关');
+      const forged = game.forge?.forgeWeapon(game.state, IRON_FORGE_OPTIONS, game.rng);
+      assert.equal(forged?.ok, true, `测试阵容首锻失败：${forged?.reason ?? forged?.error ?? '未知原因'}`);
+      assert.equal(game.setLineup(0, forged.weapon.uid)?.ok, true, '测试兵器无法上阵');
+
+      const stamina = game.getResource('stamina');
+      assert.ok(stamina > 0, '初始体力必须为正，才能构造空体力边界');
+      assert.equal(game.spend({ stamina }, 'round3-empty-stamina'), true, '无法耗尽测试体力');
+      assert.equal(game.getResource('stamina'), 0, '测试体力未归零');
+
+      const resourcesBefore = JSON.parse(JSON.stringify(game.state.resources));
+      const campaignBefore = JSON.parse(JSON.stringify(game.state.campaign));
+      const outcome = game.challengeStage(firstStage.id);
+      assert.equal(outcome?.ok, false, '空体力挑战必须失败');
+      assert.match(
+        `${outcome?.reason ?? ''} ${outcome?.error ?? ''}`,
+        /体力|stamina/i,
+        '空体力失败结果必须说明体力不足',
+      );
+      assert.deepEqual(game.state.resources, resourcesBefore, '空体力失败不得扣资源或发奖励');
+      assert.deepEqual(game.state.campaign, campaignBefore, '空体力失败不得推进关卡或挑战次数');
+      return { stageId: firstStage.id, stamina: 0, rewarded: false };
+    } finally {
+      game.destroy?.();
+    }
+  },
+);
+
+await probeIfModulesPresent(
+  'STARTER_KIT 或初始资源支持至少 2 次精铁锻',
+  ['../js/core/state.js', '../js/data/balance.js'],
+  async () => {
+    const { createInitialState } = await importModule('../js/core/state.js', ['createInitialState']);
+    const balance = await importModule('../js/data/balance.js');
+    const ironCost = balance.FORGE_COST?.iron;
+    assert.ok(ironCost && typeof ironCost === 'object', 'FORGE_COST.iron 缺失');
+
+    const forgeCapacity = (resources) => {
+      const capacities = Object.entries(ironCost)
+        .filter(([, amount]) => Number(amount) > 0)
+        .map(([id, amount]) => Math.floor(Number(resources?.[id] ?? 0) / Number(amount)));
+      return capacities.length > 0 ? Math.min(...capacities) : 0;
+    };
+    const initialCapacity = forgeCapacity(createInitialState().resources);
+    const starterCapacity = forgeCapacity(balance.STARTER_KIT);
+    const available = Math.max(initialCapacity, starterCapacity);
+    assert.ok(
+      available >= 2,
+      `开局资源不足 2 次精铁锻：初始资源 ${initialCapacity} 次，STARTER_KIT ${starterCapacity} 次`,
+    );
+    return {
+      requiredForges: 2,
+      source: starterCapacity >= initialCapacity ? 'STARTER_KIT' : 'initialResources',
+      supportedForges: available,
+      ironCost,
+    };
+  },
+);
+
 const totals = {
   passed: results.filter(({ status }) => status === 'passed').length,
   skipped: results.filter(({ status }) => status === 'skipped').length,
@@ -409,7 +559,9 @@ const summary = {
   totals,
   forgeSampleSize: FORGE_SAMPLE_SIZE,
   tests: results,
-  gaps: [],
+  gaps: results
+    .filter(({ status }) => status === 'skipped')
+    .map(({ name, reason }) => ({ name, reason })),
 };
 
 console.log(JSON.stringify(summary, null, 2));
