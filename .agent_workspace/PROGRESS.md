@@ -94,5 +94,5 @@
 | Opus-2 探索接线 | 排队 | — |
 | Opus-3 战斗闭环 | 排队 | — |
 | Opus-4 UX 债 | 排队 | — |
-| GPT-sol-1 快照单测 | 运行中 | `bc-c3910345-5529-5a59-be22-f9a0d63eed44` |
+| GPT-sol-1 快照单测 | 已完成 · 已合并 `cursor/cww-battle-tests-ed44`（37 测） | `bc-c3910345-5529-5a59-be22-f9a0d63eed44` |
 | GPT-sol-2 委任密集 bench | 排队 | — |
