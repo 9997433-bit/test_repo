@@ -3,9 +3,11 @@
 // {key,name,hp,atk,def,spd,lane} 被 ui/**、combat/battle.js、bench/probe
 // 直接消费，禁止改名。敌人 skill 字段 battle.js 已原生支持（taunt/burst/heal/
 // aoe/hook/multishot/buff），Boss 机制差异由数据直接点亮，无需改战斗代码。
-// 快照冻结（tests/combat-contract.test.js，动了就破快照）：
-//   STAGES[0].enemies[0] 必须是 raider(1, 0.7)；STAGES[29].enemies 整组
-//   （潮汐领主 + 4 护卫）必须字节不变——B30 的再平衡要等快照重录后进行。
+// 快照契约（tests/combat-contract.test.js）：
+//   STAGES[0].enemies[0] 必须是 raider(1, 0.7)（本轮未动）。
+//   STAGES[29].enemies 本轮已按 Round 3 验收口径再平衡（hp×6 atk×2.6 escort×0.85，
+//   2 星队 0/128、4 星队 118/128，见 GDD §8.2），「满编挑战终局 Boss」快照需重录
+//   （vitest -u），重录由测试所有方执行，本文件不改测试。
 //
 // 字段（Round 2 接线）：
 //   boss        是否 Boss 关（5 的倍数；UI 做强调、战前提示 mechanics 文案）。
@@ -23,9 +25,11 @@
 //   兵种系数：火枪 hp×0.75 atk×1.35；蛙人 hp×0.9 atk×1.1 spd108；
 //   鱼叉手 hp×0.8 atk×1.25。1–9 关用降倍率杂兵补足 5 人头（首关全场 ×0.55–0.7，
 //   保证米娅单人可胜的开局承诺）。
-//   Boss 是曲线的门神：本体 hp×4.8–13 / atk×1.9–3.4 逐 Boss 覆写（Round 2 战斗
+//   Boss 是曲线的门神：本体 hp×4.8–13 / atk×2.3–3.4 逐 Boss 覆写（Round 2 战斗
 //   实装酒劲叠层、连珠多段、治疗护盾后联盟侧大幅变强，Boss 倍率随之整体上调；
-//   B30 受快照冻结维持 hp×3.8 atk×1.3），护卫 = 本关杂兵 × escortMult。
+//   B30 于 Round 3 解冻重做：hp×6 atk×2.6 escort×0.85——2 星队 0/128 全灭、
+//   3 星队 0/128（终局墙）、4 星队 118/128 可过、5 星队 128/128 巡礼），
+//   护卫 = 本关杂兵 × escortMult。
 
 function base(n) {
   return {
@@ -88,7 +92,7 @@ const BOSSES = {
     atkMult: 3.4,
     escortMult: 1,
     mechanics: "开战即把你的后排钩进前排：给脆皮留保命血量或先手集火他。",
-    firstClear: { shard: 15, blueprint: 1, badge: 1, coins: 90, diamonds: 2 },
+    firstClear: { shard: 30, blueprint: 1, badge: 1, coins: 90, diamonds: 2 },
   },
   15: {
     key: "siren",
@@ -98,7 +102,7 @@ const BOSSES = {
     atkMult: 2.3,
     escortMult: 1,
     mechanics: "每 3 回合给残血敌人回 60：输出不够会被她奶成车轮战。",
-    firstClear: { shard: 20, blueprint: 2, badge: 1, coins: 120 },
+    firstClear: { shard: 50, blueprint: 2, badge: 1, coins: 120 },
   },
   20: {
     key: "kraken_arm",
@@ -108,7 +112,7 @@ const BOSSES = {
     atkMult: 2.3,
     escortMult: 1,
     mechanics: "每 5 回合横扫全队 45% 溅射：全员血线要厚，奶量要跟上。",
-    firstClear: { shard: 25, blueprint: 2, badge: 1, coins: 150, diamonds: 3 },
+    firstClear: { shard: 75, blueprint: 2, badge: 1, coins: 150, diamonds: 3 },
   },
   25: {
     key: "iron_whale",
@@ -118,14 +122,20 @@ const BOSSES = {
     atkMult: 2.3,
     escortMult: 0.95,
     mechanics: "开场嘲讽 + 超厚血量：这是一场 DPS 检定，24 回合内啃不动就是平局。",
-    firstClear: { shard: 30, blueprint: 2, badge: 1, coins: 200 },
+    firstClear: { shard: 105, blueprint: 2, badge: 1, coins: 200 },
   },
   30: {
     key: "tide_lord",
     name: "潮汐领主",
     skill: { name: "灭世潮涌", star: 1, kind: "burst", value: 3.2, period: 4 },
-    mechanics: "每 4 回合 3.2 倍潮涌重击：终局考试，四星前排 + 双辅助再来。",
-    firstClear: { shard: 40, blueprint: 3, badge: 2, coins: 300, diamonds: 5 },
+    // Round 3 再平衡（原冻结值 hp×3.8 atk×1.3 escort×0.7 导致 2 星队 113/128 胜的倒挂）。
+    // 校准口径：campaign.js 真实种子 128 盐——★2 全灭 0/128、★3 仍 0/128、
+    // ★4 满编 118/128、★5 满编 128/128（见 GDD §8.2）。
+    hpMult: 6,
+    atkMult: 2.6,
+    escortMult: 0.85,
+    mechanics: "每 4 回合 3.2 倍潮涌重击：终局考试，全员四星再来，三星就是送。",
+    firstClear: { shard: 120, blueprint: 3, badge: 2, coins: 300, diamonds: 5 },
   },
 };
 
@@ -147,7 +157,7 @@ function waveFor(n) {
 export const STAGES = Array.from({ length: 30 }, (_, i) => {
   const n = i + 1;
   const boss = BOSSES[n];
-  // Boss 关护卫 = 本关杂兵前 4 名 × escortMult；默认 ×0.7 仅剩快照冻结的 B30 在用。
+  // Boss 关护卫 = 本关杂兵前 4 名 × escortMult；六个 Boss 均已显式覆写，×0.7 仅作兜底。
   const em = boss?.escortMult ?? 0.7;
   const escort = (u) => ({ ...u, hp: Math.round(u.hp * em), atk: Math.round(u.atk * em) });
   const grunts = boss ? waveFor(n).slice(0, 4).map(escort) : waveFor(n);
@@ -165,6 +175,22 @@ export const STAGES = Array.from({ length: 30 }, (_, i) => {
     enemies,
   };
 });
+
+/**
+ * 海盗袭击波（events.js pirate_raid 的消费入口，纯数据派生、零战斗代码改动）：
+ * 以「当前最高通关关卡」的杂兵表为底，整体乘 powerMult 得到 5 名敌人，
+ * 形状与 STAGES[n].enemies 完全一致，可直接喂给 simulateBattle。
+ * bestStage = 0（还没通关）时按第 1 关口径出最弱波。
+ */
+export function raidWave(bestStage, powerMult = 1) {
+  const n = Math.max(1, Math.min(30, Math.round(Number.isFinite(bestStage) ? bestStage : 1) || 1));
+  const mult = Number.isFinite(powerMult) && powerMult > 0 ? powerMult : 1;
+  return waveFor(n).map((u) => ({
+    ...u,
+    hp: Math.max(1, Math.round(u.hp * mult)),
+    atk: Math.max(1, Math.round(u.atk * mult)),
+  }));
+}
 
 // 关卡规则（teamCap/replayRewardMult 已被 ui/screens/campaign.js 消费）。
 export const STAGE_RULES = {

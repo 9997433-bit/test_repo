@@ -4,7 +4,9 @@
 // 节点坐标用 seaSeed + tick 播种的 mulberry32 摆放。字段均为纯数据，无逻辑。
 //
 // shard 的两条获取链之一在这里（另一条是 Boss 关首通，见 stages.js）：
-// 深海稀有点可重复刷取，用于补齐升星缺口（全里程碑需 ~160，关卡提供 140）。
+// 深海稀有点可重复刷取，用于补齐升星缺口。Round 3 B30 重做后全里程碑需 ~300
+// （终局全员★4，见 GDD §8.2/§8.3），B25 前关卡供 270，缺口 ~30 由海沟复刷补
+// （trench 期望 ≈1.3 shard/次 ≈ 20–25 次下潜），复玩动机保留。
 //
 // 字段语义：
 //   unlock       进入条件 { dockLevel, stage? }（潜水船坞等级 / 已通关数）。
@@ -82,9 +84,10 @@ export const DIVE_ZONES = {
       { res: "hourglass", n: [2, 3], w: 20 },
       { res: "badge", n: [1, 1], w: 16 },
     ],
-    rareChance: 0.6,
+    rareChance: 0.65,
     rares: [
-      { res: "shard", n: [2, 3], w: 60 },
+      // 期望 ≈ 0.65 × (70/110) × 3 ≈ 1.3 shard/次：终局升星缺口的主力复刷位。
+      { res: "shard", n: [2, 4], w: 70 },
       { res: "badge", n: [1, 2], w: 22 },
       { res: "blueprint", n: [2, 3], w: 18 },
     ],
