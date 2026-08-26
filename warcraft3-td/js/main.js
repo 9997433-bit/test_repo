@@ -89,6 +89,7 @@
     this.hud.applyStaticStrings();
     this.hud.renderWavePreview();
     this.card.build();
+    this.menus.refresh();
   };
 
   // ----------------------------------------------------------- lifecycle

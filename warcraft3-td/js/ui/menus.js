@@ -32,6 +32,7 @@
 
   Menus.prototype.hide = function () {
     this.open = false;
+    this._screen = null;
     this.wrap.classList.remove('show');
     this.card.innerHTML = '';
   };
@@ -43,11 +44,21 @@
     if (wire) wire(this.card);
   };
 
+  /**
+   * Redraw whichever screen is currently up. Every label in a modal is baked
+   * into innerHTML when it opens, so a language switch has to rebuild it or
+   * the open menu keeps the previous locale.
+   */
+  Menus.prototype.refresh = function () {
+    if (this.open && this._screen) this._screen();
+  };
+
   // ------------------------------------------------------------- start
 
   Menus.prototype.showStart = function () {
     var app = this.app;
     var self = this;
+    this._screen = function () { self.showStart(); };
     var best = Storage.load().best;
     var diffs = ['easy', 'normal', 'hard', 'insane'];
     var heroes = ['warden', 'swordmaster', 'nightblade', 'dreadknight'];
@@ -93,7 +104,6 @@
       card.querySelector('#lang-toggle').addEventListener('click', function () {
         I18N.setLang(I18N.lang === 'zh' ? 'en' : 'zh');
         app.onLanguageChange();
-        self.showStart();
       });
       card.querySelector('#start-go').addEventListener('click', function () {
         Audio.unlock();
@@ -122,6 +132,7 @@
   Menus.prototype.showPause = function () {
     var app = this.app;
     var self = this;
+    this._screen = function () { self.showPause(); };
     var html = '<h1>' + t('menu') + '</h1>';
     html += '<div class="stat-lines">' +
       t('wave') + ': <b>' + app.game.waveIndex + '/' + app.game.totalWaves + '</b><br>' +
@@ -152,6 +163,7 @@
   Menus.prototype.showSettings = function () {
     var app = this.app;
     var self = this;
+    this._screen = function () { self.showSettings(); };
     var s = app.settings;
     var html = '<h1>' + t('settings') + '</h1><div class="settings-grid">';
     html += '<label>' + t('setLanguage') + '</label><div>' +
@@ -176,7 +188,6 @@
         if (!b) return;
         I18N.setLang(b.dataset.lang);
         app.onLanguageChange();
-        self.showSettings();
       });
       card.querySelector('#s-master').addEventListener('input', function () {
         s.master = this.value / 100;
@@ -211,6 +222,7 @@
   Menus.prototype.showEnd = function (result) {
     var app = this.app;
     var self = this;
+    this._screen = function () { self.showEnd(result); };
     var g = app.game;
     var win = result === 'victory';
 
