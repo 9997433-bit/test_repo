@@ -40,7 +40,7 @@ body::before {
   pointer-events: none;
   background-image: var(--tex-grain), var(--tex-fiber);
   background-size: 120px 120px, 300px 300px;
-  opacity: 0.3;
+  opacity: 0.24;
 }
 
 /* 陈年晕边：四角吃墨更深 */
@@ -58,8 +58,9 @@ body::after {
   );
 }
 
+/* 竖幅立轴：桌面端也保持小游戏的纵向构图，格子不被拉膘 */
 #app {
-  max-width: 980px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 14px clamp(10px, 3vw, 18px) calc(26px + env(safe-area-inset-bottom));
 }

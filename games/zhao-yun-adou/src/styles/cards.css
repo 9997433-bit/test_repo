@@ -12,7 +12,8 @@
 .hand {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 112px));
+  justify-content: center;
   gap: 6px;
 }
 
@@ -45,6 +46,14 @@
 
 .card:active {
   cursor: grabbing;
+}
+
+/* 触控契约：兵营里的触摸让给拖牌（与 board.css 的 #grid-player 同一条铁律，
+   兜底 main.js decorate() 的内联写法）。空槽 .ghost 不可拖，无需豁免 ——
+   页面纵向滚动仍可从兵营之外任意区域发起。 */
+.hand,
+.hand .card {
+  touch-action: none;
 }
 
 .card.selected {

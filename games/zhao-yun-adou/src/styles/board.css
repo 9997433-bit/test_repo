@@ -112,9 +112,9 @@
   background-image:
     linear-gradient(180deg, rgba(251, 245, 230, 0.85), rgba(251, 245, 230, 0) 34%),
     var(--tex-hills);
-  background-repeat: no-repeat, repeat-x;
-  background-size: 100% 100%, auto 62%;
-  background-position: center top, left bottom;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 52%;
+  background-position: center top, center bottom;
   box-shadow: inset 0 1px 4px rgba(var(--ink-rgb), 0.09);
 }
 
@@ -133,7 +133,10 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  /* minmax(0, 96px)：小屏均匀收缩，大屏封顶不膘 */
+  grid-template-columns: repeat(5, minmax(0, 96px));
+  justify-content: center;
+  align-content: center;
   gap: 5px;
   padding: 6px;
   border-radius: var(--radius-m);
@@ -167,6 +170,14 @@
 
 .half.ai .cell {
   cursor: default;
+}
+
+/* 触控契约：我方棋盘上的触摸全部让给拖拽/落子，浏览器不得拿去滚动或缩放。
+   main.js 的 decorate() 会内联写一遍同样的值，这里是不依赖 JS 时序的兜底 ——
+   首帧渲染完成前、或 decorate 因异常没跑到时，拖拽在触屏上依然成立。 */
+#grid-player,
+#grid-player .cell {
+  touch-action: none;
 }
 
 /* 锁格：麻绳纹封条，锁字隐约可见（提示铲子目标） */

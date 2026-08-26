@@ -62,9 +62,19 @@
   --tier-5-line: rgba(180, 86, 15, 0.5);
   --tier-5-wash: rgba(180, 86, 15, 0.1);
 
-  /* —— 字体 —— */
-  --font-body: "Noto Serif SC", "Songti SC", "STSong", serif;
-  --font-brush: "Ma Shan Zheng", "STKaiti", "KaiTi", cursive;
+  /* —— 字体 ——
+     离线铁律：Google Fonts 只是锦上添花，断网/被墙时整套视觉必须成立。
+     正文回退到各平台宋体（macOS Songti / Windows SimSun / Linux UMing）；
+     笔书回退到各平台楷体（macOS Kaiti / Windows KaiTi·DFKai / Linux UKai），
+     兜底用 serif 而非 cursive —— 西文 cursive 常映射到手写体（如 Comic Sans），
+     会瞬间击碎水墨棋谱的世界观。 */
+  --font-body:
+    "Noto Serif SC", "Source Han Serif SC", "Source Han Serif CN",
+    "Songti SC", "STSong", "SimSun", "NSimSun", "AR PL UMing CN", serif;
+  --font-brush:
+    "Ma Shan Zheng", "Xingkai SC", "STXingkai",
+    "Kaiti SC", "STKaiti", "KaiTi", "DFKai-SB", "BiauKai", "AR PL UKai CN",
+    "Noto Serif SC", "Songti SC", "SimSun", serif;
 
   /* —— 圆角（纸是手裁的：小、且四角略歪） —— */
   --radius-s: 3px;
@@ -93,9 +103,13 @@
   --dur-flick: 120ms;
   --dur-move: 260ms;
   --dur-burst: 480ms;
+  --dur-splash: 620ms; /* 泼墨绽开 */
+  --dur-float: 820ms;  /* 飘字上浮 */
+  --dur-quake: 420ms;  /* 技能震屏 */
 
   /* —— 层级 —— */
   --z-float: 30;    /* 飘字 */
+  --z-fx: 40;       /* 战斗演出层 #fx-layer（泼墨等），压过棋盘、让位覆层 */
   --z-overlay: 50;  /* 结算/菜单覆层 */
   --z-texture: 90;  /* 全局纸纹压在一切之上，统一质感 */
 

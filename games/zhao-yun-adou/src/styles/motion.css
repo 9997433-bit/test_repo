@@ -148,35 +148,7 @@
   animation: none;
 }
 
-/* —— 飘字：伤害/馒头数字，纸色描边保证在墨迹上可读 —— */
-
-.fx-float {
-  position: absolute;
-  z-index: var(--z-float);
-  pointer-events: none;
-  font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--cinnabar);
-  text-shadow:
-    0 0 3px var(--paper-bright),
-    0 0 6px var(--paper-bright);
-  animation: ink-rise 0.8s ease-out forwards;
-}
-
-@keyframes ink-rise {
-  0% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1.12);
-  }
-  70% {
-    opacity: 0.9;
-  }
-  100% {
-    opacity: 0;
-    transform: translate(5px, -32px) scale(0.92) rotate(3deg);
-  }
-}
+/* —— 飘字 / 泼墨 / 技能震屏：整个战斗演出层迁往 fx.css —— */
 
 /* —— 覆层入场（起点不透明度 ≥0.85：冻结在首帧也完全可用） —— */
 

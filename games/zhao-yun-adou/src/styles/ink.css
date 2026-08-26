@@ -8,7 +8,8 @@
    cards    兵营手牌 + 按钮
    pieces   棋子品阶着色（cell 与 card 共用，须在两者之后）
    overlay  册页面板与覆层
-   motion   全部关键帧（冻结容错设计，见文件头注释）
+   motion   棋盘自身的关键帧（冻结容错设计，见文件头注释）
+   fx       战斗演出层：飘字 / 泼墨 / 技能震屏（接线契约见文件头）
    ============================================================ */
 
 @import "./tokens.css";
@@ -19,3 +20,4 @@
 @import "./pieces.css";
 @import "./overlay.css";
 @import "./motion.css";
+@import "./fx.css";
