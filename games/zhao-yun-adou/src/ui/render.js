@@ -139,7 +139,7 @@ function handHtml(side, ui) {
   return Array.from({ length: HAND_LIMIT }, (_, i) => {
     const card = side.hand[i];
     if (!card) {
-      return `<div class="card ghost" title="空位 · 征兵后入营"><span class="zy-face">空</span><b class="zy-kind">${i + 1}</b></div>`;
+      return `<div class="card ghost" title="空位 · 征兵后入营">空<em class="zy-key">${i + 1}</em></div>`;
     }
     const label = cardLabel(card);
     return `<div class="card ${unitClass(card)} ${ui.selected === i ? "selected" : ""}" data-hand="${i}" title="${esc(label.title)}">
@@ -281,44 +281,46 @@ function overPanel(state, p, a) {
   </div></div>`;
 }
 
+/*
+ * 渲染层自带的信息层样式：只补 `ink.css` 没有的元件（品阶点、卡面标签、
+ * 教程条），色彩与间距一律引用 tokens.css 的变量，且避开棋子底部那道「批条」
+ * （pieces.css 的 ::after，位于 bottom 7%）。
+ */
 const EXTRA_CSS = `
-#app .hud { gap: 8px 14px; }
-#app .hud .zy-stat { display: flex; align-items: baseline; gap: 6px; font-size: 14px; }
-#app .zy-k { font-size: 11px; letter-spacing: 0.2em; opacity: 0.62; }
-#app .zy-sub { font-style: normal; font-size: 11px; opacity: 0.62; }
-#app .zy-chip { border: 1px solid currentColor; color: var(--cinnabar, #b23a2f); font-size: 10px; letter-spacing: 0.2em; padding: 0 5px; }
-#app .zy-chip.zy-hot { color: var(--gold, #c9a24a); }
-#app .cell { position: relative; overflow: hidden; }
+#app .hud .zy-stat { display: flex; align-items: baseline; gap: 6px; }
+#app .zy-k { font-size: 11px; letter-spacing: 0.2em; color: var(--ink-faint, #8b8071); }
+#app .zy-sub { font-style: normal; font-size: 11px; color: var(--ink-faint, #8b8071); }
+#app .zy-chip { align-self: center; border: 1px solid currentColor; border-radius: 2px; color: var(--cinnabar, #b23a2f); font-size: 10px; letter-spacing: 0.2em; padding: 0 4px; }
+#app .zy-chip.zy-hot { color: var(--gold-ink, #9a7524); }
 #app .cell .zy-face { line-height: 1; pointer-events: none; }
-#app .cell.hero .zy-face { font-size: 21px; letter-spacing: -1px; }
-#app .zy-pips { position: absolute; left: 0; right: 0; bottom: 2px; text-align: center; font-size: 8px; letter-spacing: 2px; font-style: normal; opacity: 0.8; pointer-events: none; }
-#app .zy-tag { position: absolute; top: 2px; right: 4px; font-size: 10px; font-style: normal; opacity: 0.72; font-family: "Noto Serif SC", serif; pointer-events: none; }
-#app #btn-recruit { display: flex; align-items: baseline; gap: 6px; justify-content: center; }
-#app #btn-recruit .zy-sub { opacity: 0.75; letter-spacing: 0; }
-#app .zy-tag.zy-ready { color: var(--gold, #c9a24a); opacity: 1; }
-#app .card { position: relative; gap: 1px; }
-#app .card .zy-face { font-size: 27px; line-height: 1.05; pointer-events: none; }
-#app .card .zy-kind { font-family: "Noto Serif SC", serif; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; opacity: 0.85; pointer-events: none; }
-#app .card .zy-sub { pointer-events: none; }
-#app .card .zy-key { position: absolute; top: 3px; left: 5px; font-size: 9px; font-style: normal; opacity: 0.4; font-family: "Noto Serif SC", serif; pointer-events: none; }
-#app .card.ghost .zy-kind { opacity: 0.5; }
+#app .cell.hero .zy-face { font-size: clamp(15px, 3.4vw, 21px); letter-spacing: -1px; }
+#app .zy-pips { position: absolute; left: 0; right: 0; bottom: 14%; text-align: center; font-size: 8px; line-height: 1; letter-spacing: 2px; font-style: normal; opacity: 0.75; text-shadow: none; pointer-events: none; }
+#app .zy-tag { position: absolute; top: 3px; right: 4px; font-family: var(--font-body, serif); font-size: 10px; font-style: normal; line-height: 1; color: var(--ink-faint, #8b8071); text-shadow: none; pointer-events: none; }
+#app .zy-tag.zy-ready { color: var(--gold-ink, #9a7524); }
+#app .card:not(.ghost) { row-gap: 2px; padding-bottom: 12px; }
+#app .card:not(.ghost) .zy-face { font-size: clamp(24px, 6vw, 28px); line-height: 1.05; pointer-events: none; }
+#app .card .zy-kind { font-family: var(--font-body, serif); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; line-height: 1; text-shadow: none; pointer-events: none; }
+#app .card .zy-sub { line-height: 1; text-shadow: none; pointer-events: none; }
+#app .card .zy-key { position: absolute; top: 4px; left: 6px; font-family: var(--font-body, serif); font-size: 9px; font-style: normal; line-height: 1; letter-spacing: 0; color: var(--ink-faint, #8b8071); text-shadow: none; pointer-events: none; }
 #app .card.zy-shovel .zy-face { color: var(--moss, #6b7a6a); }
-#app .card.zy-token .zy-face { color: var(--gold, #c9a24a); }
-#app .zy-coach { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--ink-soft, #3a3126); }
-#app .zy-coach b { font-family: "Ma Shan Zheng", cursive; font-size: 17px; color: var(--cinnabar, #b23a2f); line-height: 1; }
-#app .zy-coach .zy-dots { margin-left: auto; letter-spacing: 3px; opacity: 0.45; }
+#app .card.zy-token .zy-face { color: var(--gold-ink, #9a7524); }
+#app #btn-recruit .zy-sub { color: inherit; opacity: 0.68; letter-spacing: 0; text-shadow: none; }
+#app .zy-coach { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; color: var(--ink-soft, #4a4033); }
+#app .zy-coach b { font-family: var(--font-brush, cursive); font-size: 17px; line-height: 1; color: var(--cinnabar, #b23a2f); }
+#app .zy-coach .zy-dots { margin-left: auto; letter-spacing: 3px; color: var(--ink-faint, #8b8071); }
 #app .zy-tutor { list-style: none; margin: 16px 0; padding: 0; display: grid; gap: 12px; }
-#app .zy-tutor li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; border-left: 2px solid rgba(178, 58, 47, 0.3); padding-left: 10px; }
-#app .zy-tutor b { font-family: "Ma Shan Zheng", cursive; font-size: 20px; color: var(--cinnabar, #b23a2f); line-height: 1; }
-#app .zy-tutor strong { display: block; font-size: 14px; margin-bottom: 2px; }
-#app .zy-tutor span { display: block; font-size: 12px; line-height: 1.7; color: var(--ink-soft, #3a3126); }
-#app .zy-keys { font-size: 11px; letter-spacing: 0.08em; opacity: 0.55; margin: 0 0 14px; }
+#app .zy-tutor li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; padding-left: 10px; border-left: 2px solid rgba(var(--cinnabar-rgb, 178, 58, 47), 0.3); }
+#app .zy-tutor b { font-family: var(--font-brush, cursive); font-size: 20px; line-height: 1; color: var(--cinnabar, #b23a2f); }
+#app .zy-tutor strong { display: block; margin-bottom: 2px; font-size: 14px; }
+#app .zy-tutor span { display: block; font-size: 12px; line-height: 1.7; color: var(--ink-soft, #4a4033); }
+#app .zy-keys { margin: 0 0 14px; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-faint, #8b8071); }
 #app .zy-score { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 12px; margin: 14px 0 18px; }
 #app .zy-score div { display: grid; gap: 2px; }
-#app .zy-score strong { font-size: 16px; font-weight: 600; }
-@media (max-width: 520px) {
+#app .zy-score strong { font-size: 16px; font-weight: 600; color: var(--cinnabar, #b23a2f); }
+@media (max-width: 560px) {
   #app .zy-score { grid-template-columns: repeat(2, 1fr); }
   #app .card .zy-sub { display: none; }
+  #app .card:not(.ghost) { padding-bottom: 10px; }
 }`;
 
 let stylesInjected = false;
