@@ -1,241 +1,240 @@
-# 架构（Round 1 审计版 · SOTA 基线）
+# 架构（Round 2 复审版）
 
-> 本文档由 Round1 架构审计升级，基于对 `src/` 全量源码的通读（commit 所在分支 `cursor/linghuashi-sota-a345`）。
-> 记法约定：**[现状]** = 当前代码已如此；**[缺陷]** = 当前代码与本架构相悖，Round 2 必须修复；**[目标]** = Round 2 应实现的形态。
-> 接口签名的精确定义见 `docs/API_CONTRACT.md`，本文只讲边界、状态机、路由、预算与隔离。
+> 基线：分支 `cursor/linghuashi-sota-a345`，commit `565e333` + 复审时点未提交的工作树
+> （画阁 raw 回放、音频总线、`progression/settle.js`、契约/画阁测试等尚未提交，树仍在并行演进）。
+> 接口精确签名见 `docs/API_CONTRACT.md`（下称"契约"），漂移定案见契约 §9。
+> 记法：**[现状]** = 代码已如此；**[残余]** = 与目标形态仍有差距，指向契约 §9 条目。
+> Round 1 审计版列出的 D1（上帝文件）、D2（结算无限刷）、D4（painter 泄漏）、
+> D5（天赋未接入）、D7（六式误判）、D9（相位判定）均已在现码中消除，本版不再赘述。
 
 ## 1. 总览与设计原则
 
-独立 Vite + 原生 ES Module，零框架。原则按优先级排序：
+独立 Vite + 原生 ES Module，零框架。原则按优先级：
 
-1. **纯函数域逻辑**：combat / drawing(识别) / progression / classes 的全部规则必须是无 DOM、无全局副作用的纯函数或纯状态机，可被 vitest 直接测试（`tests/`）与 node 直跑（`scripts/probe.mjs`、`scripts/bench.mjs`）。
-2. **DOM 只出现在两处**：`src/ui/**`（屏幕渲染）与 `src/drawing/canvas.js`（画布输入/墨迹绘制）。`src/audio/` 允许 WebAudio。其余模块 import `window`/`document` 即架构违规。
-3. **单向数据流**：输入(笔迹/点击) → 域函数产出新状态/事件 → store 提交 → UI 渲染。UI 不得内联游戏规则（数值结算、解锁判定）。**[缺陷]** 当前 `ui/screens.js` 内联了胜利奖励结算与墨客解锁判定（见 §10-D1/D7）。
-4. **一切副作用有拥有者、有析构**：定时器、事件监听、AudioContext、painter 必须由创建者持有句柄并在屏幕卸载时释放。**[缺陷]** 当前战斗 interval 与 resize 监听无人释放（§10-D2/D4）。
-5. **数据驱动**：`src/data/` 是唯一数值来源，代码不写魔法数值（伤害系数、消耗等应逐步迁入表）。
+1. **纯函数域逻辑**：combat / drawing(识别·几何·合成·回放) / progression / classes 全部是无 DOM、
+   无全局副作用的纯函数或封闭状态机，vitest 直测（`tests/`，复审终点 9 文件 62 用例全绿）
+   + node 直跑（`scripts/probe.mjs`、`bench.mjs`、`scribble-probe.mjs`）。
+2. **DOM 只出现在**：`src/ui/**`、`src/drawing/canvas.js`（画布 IO 适配器）、
+   `src/drawing/replay.js`（回放画布，只写不读输入）。`src/audio/**` 只碰 WebAudio 与手势监听。
+3. **单向数据流**：输入（笔迹/按键/点击）→ 域函数产出新 save/战斗状态 → `store.set`（对象或函数补丁）
+   → 显式 `navigate`/局部 paint 渲染。UI 不内联规则——**[残余]** 战斗胜负结算仍内联在
+   `screen-battle.finish`，`progression/settle.js` 已备好未接线（契约 §9-3）。
+4. **副作用有拥有者、有析构**：每屏 render 返回 dispose，由 `ui/screens.js` 的 WeakMap 统一在
+   切屏/重绘/卸载前执行；战斗 interval、keydown、教程弹层、画阁回放 rAF/timer 均已入 dispose。
+5. **确定性**：识别、墨刷、合成轨迹、战斗 RNG 全部种子化（mulberry32 / hash01），
+   域层禁 `Math.random`/`Date.now`——**[残余]** hub 调 `catchBeast` 未注入 rng（契约 §9-8），
+   战斗种子 `stage.id.length + save.xp` 偏弱（契约 §9-17）。
+6. **数据驱动**：`src/data/` 是数值唯一来源，表内自带平衡方法论注释（职业加成预算、境界曲线、
+   敌人锚点、符箓定价）——**[残余]** 收兽定价兜底、天赋成本 12 仍写在代码里（契约 §9-7/12）。
 
 ## 2. 分层与模块边界
 
 ```
-第4层  presentation   src/ui/**  src/styles/**  src/audio/**
-第3层  application    src/core/engine.js（boot/loop）  src/core/store.js  src/core/events.js  src/main.js
-第2层  domain         src/combat/**  src/drawing/geometry|recognizer|ink.js  src/progression/**  src/classes/**
-第1层  data           src/data/**
-边界件 io-adapter     src/drawing/canvas.js（DOM 输入 → 域内 Stroke 事件的唯一适配器）
+第4层 presentation  src/ui/**（screens 注册表 + 6 屏 + keycast/tutorial/painter-host/audio-bridge）
+                    src/styles/**   src/audio/**（bus + sfx + index）
+第3层 application   src/core/engine.js（boot）  core/store.js  core/events.js[死]  core/loop.js[待接线]
+第2层 domain        src/combat/**   src/drawing/{geometry,features,recognizer,ink,synth,templates,replay}.js
+                    src/progression/**   src/classes/**
+第1层 data          src/data/**
+边界件 io-adapter   src/drawing/canvas.js（指针事件 → Stroke 的唯一输入适配器）
 ```
 
-### 2.1 依赖方向规则（import 白名单）
+### 2.1 依赖方向白名单
 
 | 模块 | 允许 import | 明确禁止 |
 | --- | --- | --- |
-| `data/**` | 无（叶子层，仅常量与查表函数） | 一切上层 |
-| `combat/**` | `data/**`、combat 内部 | `ui`、`core/store`、`drawing`、DOM |
-| `drawing/geometry.js` `recognizer.js` `ink.js` | drawing 内部、无 DOM | `combat`、`ui`、store |
-| `drawing/canvas.js` | drawing 内部；DOM 事件仅限于此 | `combat`、store |
-| `progression/**`、`classes/**` | `data/**` | `ui`、DOM、store |
-| `core/store.js`、`core/events.js` | 无 | 域层、UI |
-| `core/engine.js` | `core/*`、`ui/router`（[目标]） | 域层直接调用（结算应经 progression 纯函数） |
-| `ui/**` | 所有下层 | 被任何下层 import；被其他游戏 import |
-| `audio/**` | 无 | 一切域层 |
+| `data/**` | 无 | 一切上层 |
+| `combat/**` | `data/**`、combat 内部、`classes/talents`+`progression/beasts`（仅 `combat/mods.js`，该模块待删，契约 §9-1） | `ui`、store、drawing、DOM |
+| `drawing/*`（除 canvas/replay） | drawing 内部 | DOM、combat、store |
+| `drawing/canvas.js` `replay.js` | drawing 内部；DOM 仅限于此 | combat、store |
+| `progression/**`、`classes/**` | `data/**`、彼此（settle→classes/unlock） | ui、DOM、store |
+| `core/store.js` `events.js` `loop.js` | 无（store 触 localStorage） | 域层、UI |
+| `core/engine.js` | `ui/screens`、`ui/audio-bridge` | 域层直调 |
+| `audio/**` | audio 内部 | store、域层（静音由 ui/audio-bridge 单向推入） |
+| `ui/**` | 所有下层 | 被任何下层 import；跨游戏 import |
 
-**违规判定**：任何"下层 import 上层"或"域层触 DOM"即 review 打回。当前源码符合此矩阵（`ui/screens.js` 违规点在职责内聚而非 import 方向）。
+现状合规。`ui/screen-battle.js` 同时 import `talentMult`/`beastBonus` 组装 modifiers 属预期
+（presentation 组装、domain 消费）。
 
-### 2.2 各模块单一职责
+### 2.2 单一职责速览
 
-- `drawing/`：点序列 → `Stroke`（类型/精度/笔势）。识别是纯几何评分（`geometry.js` 特征 + `recognizer.js` 打分排序），无 ML、无异步。
-- `combat/`：`createBattle` 状态机，`cast`（玩家笔迹入招）与 `tick`（时间推进/敌方行动）。**[目标]** 输出结构化事件流而非仅文本日志（§10-D3、契约 §3.4）。
-- `progression/`：存档 → 存档 的纯变换（挂机、突破、灵兽、[目标]战斗结算 `settleBattle`、修正聚合 `deriveModifiers`）。
-- `classes/`：职业/天赋数值修正。**[缺陷]** `talentMult` 目前无任何调用方，天赋点了没有战斗效果（§10-D5）。
-- `core/`：store（三层状态，§3）、事件总线（**[缺陷]** `createBus` 当前是死代码）、boot 与路由宿主。
-- `ui/`：屏幕模块与路由。**[缺陷]** 当前是单个 259 行上帝文件 `screens.js`（§10-D1）。
+- `drawing/`：点序列 → `Stroke`。识别 = features.js 三分辨率特征 + recognizer.js 打分门控；
+  synth.js 合成标准轨迹（键盘施法/字形/探针共用）；replay.js 归一化存储与画阁回放；
+  ink.js 增量墨刷（提按/飞白，begin/extend/end）；canvas.js 指针适配 + 纸纹烘焙。
+- `combat/`：`createBattle` 封闭状态机——cast（连击/暴击/克制/五行/破甲乘区）、
+  tick（冷却累计推进敌方节拍、回气、控场冻结）、intent 同步。modifiers 经
+  `normalizeModifiers` 白名单进入（契约 §3.2）。
+- `progression/`：save→save 纯变换（idle 幂等结算、breakthrough、beasts 收兽/合成/洗练、
+  settle 恰好一次结算[待接线]）。`classes/`：天赋乘区与墨客解锁（unlockMo 唯一权威）。
+- `core/`：store（函数补丁、TRANSIENT_KEYS、画阁清洗）、engine（boot/navigate/持久化钩子）、
+  loop（固定步长时钟，待接线）、events（死代码）。
+- `ui/`：屏幕注册表 + disposer 生命周期；painter 单例宿主；键盘施法通路；教程弹层；音频桥。
 
 ## 3. 状态管理
 
-### 3.1 三层状态（[目标]，当前混在一起）
+### 3.1 状态分层 [现状]
 
-| 层 | 内容 | 持久化 | 归属 |
-| --- | --- | --- | --- |
-| `save`（持久） | version、playerName、classId、realmId、xp、qiPills、buns、talents、beasts、gallery、lastSeenAt、idleUntil、settings、tutorialDone、inkUnlocked | localStorage `linghuashi.save.v<N>` | store |
-| `session`（会话） | screen、stageId、lastResult、lastStage、notice、idleClaim | 不持久化（刷新丢弃可接受；battle 深链恢复见 §5.4） | store |
-| `runtime`（瞬态） | 进行中的 BattleState、painter 句柄、定时器 | 永不入 store | 各屏幕闭包持有，unmount 释放 |
+| 层 | 内容 | 落盘 |
+| --- | --- | --- |
+| save 核心 | `defaultSave()` 全字段（version/classId/realmId/xp/qiPills/buns/talents/beasts/gallery/clearedStages/时间戳/settings/tutorialDone/inkUnlocked） | ✅ `linghuashi.save.v1` |
+| 运行时追加 | screen、stageId、lastResult、lastStage、lastReward | ✅（**[残余]** 会话态混入存档，契约 §9-4） |
+| 会话提示 | idleClaim、idleClaimed、idleNoticeShown、notice、inkJustUnlocked | ❌ persist 时按 TRANSIENT_KEYS 剔除 |
+| runtime | BattleState、painter/interval/rAF 句柄、教程弹层 | 永不入 store，屏幕闭包持有，dispose 释放 |
 
-**[缺陷]** 现状：`screen/stageId/notice/lastResult/idleClaim` 全部写进持久化 save（`store.persist` 序列化整个 state），瞬态 UI 状态污染存档；`defaultSave()` 甚至未声明这些字段，存档 shape 不封闭（§10-D6）。
+### 3.2 store 语义 [现状]
 
-### 3.2 store 语义
-
-- `set(patch)` 浅合并。**规则**：嵌套对象（`settings`、`talents`、`idleClaim`）必须整体替换、不得部分传入，否则浅合并会静默丢字段。域函数（`tickIdle` 等）返回完整新 save 对象，与 patch 语义混用是允许的（整对象也是合法 patch），但调用方要保证不裁剪字段。
-- `subscribe(fn)`：**[现状]** 从未被订阅，渲染靠 `navigate` 手动触发。**[目标]** 路由器订阅 store 只为持久化节流（写盘防抖 ≥1s），渲染仍由显式 navigate 驱动——本游戏无需响应式框架。
-- 迁移：`hydrate` 遇到 `version !== 1` **直接丢档**。**[目标]** 引入 `migrate(oldSave): Save` 链（v1→v2→…），任何存档字段变更必须 bump version 并补迁移函数与往返单测（SOTA 清单"存档往返不丢境界/画阁"）。
+- `set(patch)`：顶层浅合并；**patch 可为函数** `(state) => patch`（返回空则不变更）——
+  战斗结算与画阁追加均用此形式避免闭包旧值。嵌套对象必须整体替换。
+- `subscribe`：有真实订阅方——`ui/audio-bridge` 监听 `settings.mute` 单向推给音频总线。
+  渲染仍由显式 navigate 驱动，非响应式。
+- `hydrate`：version===1 时 defaultSave 打底深度补默认（settings/talents 合并、数组校验、
+  gallery 走 sanitizeGallery 清洗坏档）；version≠1 / JSON 损坏保持内存态不炸。
+  **[残余]** 无 migrate 链与覆盖前备份，下次 persist 会覆盖旧盘（契约 §9-5）；
+  在 migrate 落地前冻结 version 与字段删除。
+- 画阁预算：`GALLERY_LIMIT=24` 笔 × `GALLERY_POINTS=32` 点，满档 JSON <64KB（测试锁定）。
 
 ### 3.3 结算幂等（关键不变量）
 
-任何"发奖励"路径（战斗胜利、挂机领取、突破）必须是**恰好一次**语义：
-- 战斗结算 **[目标]** 收敛为纯函数 `settleBattle(save, stageId, result)`，由路由在 `battle → result` 转移时调用**一次**；BattleSession 的 `finished` 事件只允许触发一次转移（session 内部置 `settled` 标志）。
-- **[缺陷]** 现状是灾难级违规：战斗结束后 interval 不清理，`paint()` 每 200ms 重复执行 `xp += reward.xp` 并重复 `navigate("result")`，胜一场后修为/丹药无限增长，且从 result 回 hub 会被 200ms 后的下一次 tick 强行拽回 result（§10-D2）。
+- 战斗内：`finished` 后 `tick/cast` 全 no-op（t 不推进、end 日志恰一条），契约测试锁定。
+- 屏幕层：`finish()` 由局部 `settled` 标志 + stopClock 保证只跑一次，随即 navigate("result")；
+  旧版"每 200ms 重复发奖"已根除。**[残余]** 恰好一次目前是 UI 局部保证，
+  `settleBattle` 的 `settledBattleId` 令牌机制未接线（契约 §9-3）——跨屏/再入场景无令牌兜底。
+- 挂机：`tickIdle` 自身幂等（同 nowMs 二次调用零产出），hub 的横幅另有 `idleNoticeShown`
+  会话闸门防重复弹播。
+- 墨客解锁：`unlockMo` 幂等（已解锁原样返回同一引用），battle-finish 与 settle.js 均以
+  引用比较判定"本次新解锁"再置一次性 `inkJustUnlocked`。
 
 ## 4. 状态机
 
-### 4.1 屏幕状态机（AppScreen FSM）
+### 4.1 屏幕状态机 [现状]
 
 ```
-                 ┌────────────────────────────────────────────┐
-                 │                    splash                   │
-                 └──────┬──────────────────────────┬──────────┘
-              开卷入世   │                          │ 续写残卷 [guard: classId 已设]
-                        ▼                          ▼
-                 ┌───────────┐   以此入世    ┌───────────┐
-                 │   class   │ ────────────▶ │    hub    │◀──────────────┐
-                 └───────────┘ [guard:       └─┬───┬───┬─┘               │
-                        ▲       classId 已选]  │   │   │                 │
-                 返卷首 │                      │   │   │ 画阁            │
-                        └── splash            │   │   ▼                 │
-                                              │   │  ┌─────────┐  返回  │
-                          选秘境 [set stageId] │   │  │ gallery │────────┤
-                                              ▼   │  └─────────┘        │
-                                        ┌────────┐│                     │
-                          收笔撤退       │ battle ││ 突破/收兽/天赋       │
-                        ┌───────────────┤        ││ (自转移 hub→hub)     │
-                        │               └───┬────┘└─────────────────────┤
-                        │       finished(一次)│                          │
-                        │                   ▼                           │
-                        │             ┌──────────┐        回画阁         │
-                        └──── hub ◀── │  result  │────────────────────▶ hub
-                                      └────┬─────┘
-                                     再战   │ [guard: lastStage 有效]
-                                           └──▶ battle
+splash ─开卷入世→ class ─以此入世[需 classId]→ hub ⇄ gallery
+splash ─续写残卷→ (classId? hub : class)
+hub ─选秘境[set stageId]→ battle ─finished(一次)→ result ─回枢纽→ hub
+battle ─收笔撤退/Esc→ hub          result ─再战→ battle   result ─画阁→ gallery
+启动恢复：battle 深链降级 hub；未知屏降级 splash（core/engine.entryScreen）
 ```
 
-**转移守卫（[目标]，现状仅 splash→hub 有 classId 守卫）**：
+守卫现状:进入 class 确认按钮有 classId 闸门；battle 缺 stageId 静默落 `STAGES[0]`；
+result 深链渲染持久化的 lastResult（语义为"上一场结果"，非假数据）。无集中守卫表——
+可接受，因所有入口按钮本身受状态控制;深链硬化属低优先级。
 
-| 目标屏 | 守卫 | 失败回退 |
-| --- | --- | --- |
-| `hub` | `classId != null` | `class` |
-| `battle` | `classId && stageId 在 STAGES 中` | `hub` |
-| `result` | `session.lastResult ∈ {win,lose}` | `hub`（现状：深链 result 会展示假"败"，§10-D8） |
+**转移副作用归属**：hub 进屏执行一次 `tickIdle`；battle 结束 `finish()` 内联结算
+（目标：移交 settleBattle）；除此之外渲染函数不改 save。
 
-**转移副作用归属**：`hub` 进入时执行 `tickIdle`（现状如此，保留）；`battle → result` 转移时执行一次 `settleBattle`；除此之外屏幕渲染函数不得改 save。
-
-### 4.2 战斗会话状态机（BattleSession FSM · [目标]）
+### 4.2 战斗会话 [现状]
 
 ```
-init ──start──▶ running ──(hp≤0 任一方)──▶ finished(win|lose) ──dispose──▶ disposed
-                  │ ▲
-   running 子状态: │ │
-     awaiting_input ─cast─▶ resolving（同步，单帧内完成）─▶ awaiting_input
-     enemy_cycle: watch(1400ms) → strike(400ms 窗口) → watch …
-     bound: controlMs > 0 时敌方循环挂起，随 tick 递减
+mount ─(教程未读? 弹层暂停 : startClock)→ running(setInterval 200ms 驱动 battle.tick)
+running ─cast(手绘 onStroke / 键盘 keyboardStroke)─ 同步单帧完成
+running ─finished→ settled(stopClock, 一次性结算, navigate result)
+任意态 ─dispose→ 清 interval/rAF/keydown/painter 回调/教程弹层
+敌方节拍：battle 内部 cooldownMs 冷却累计（非相位），被控冻结，单 tick 追击 ≤64 刀；
+intent(观势/蓄势 400ms/被缚) 由 battle 每步同步，UI 渲染预警。
 ```
 
-不变量（可直接转为单测断言，契约 §7）：
-- `finished` 后 `cast`/`tick` 均为幂等 no-op（现状 battle.js 已满足——`if (state.finished) return`，问题出在 UI 层不停 tick+结算）。
-- `finished` 事件对外**恰好发射一次**；session `dispose()` 清掉内部 rAF/interval，可重复调用。
-- 敌方攻击节拍以**逻辑累积时间**判定（记录 `nextEnemyAt`），不得用 `t % 1800 < dtMs` 相位判定——**[缺陷]** 现状相位式判定在 dt 抖动（后台标签 setInterval 被钳到 ≥1000ms）时会丢拍或连击（§10-D9）。
-- 同一 `{player, enemy, seed}` + 相同 cast/tick 序列 ⇒ 逐字节相同的终局状态（可回放性；`mulberry(seed)` 已保证 RNG 确定，但 **[缺陷]** seed 取 `stage.id.length + save.xp` 过弱且随 xp 漂移）。
+不变量（契约 §7）：finished 幂等 ✅ 已测；同 `{player,enemy,seed}`+同操作序列可回放
+（RNG 确定，crit=0 时不掷骰保证旧序列不变）✅ 结构成立、未加深比较测试；
+**[残余]** 时钟为裸 setInterval，后台标签被钳 ≥1s（battle 自身抗抖动，但违反单时钟原则），
+`core/loop.startLoop` 待接线（契约 §9-16）。
 
-### 4.3 笔迹状态机（Stroke FSM）
+### 4.3 笔迹状态机 [现状]
 
 ```
-idle ─pointerdown─▶ inking ─pointermove(≥1px)─▶ inking（增量渲墨、consume 特征）
-inking ─pointerup/pointerleave─▶ recognizing ─classifyStroke─▶ resolved(Stroke) ─onStroke─▶ idle
-inking ─pointercancel─▶ idle（丢弃，**[缺陷]** 现状未处理 pointercancel）
+idle ─pointerdown/touchstart─▶ inking（coalesced 采样、recognizer.consume、brush.extend 增量出墨）
+inking ─pointerup/cancel/leave/touchend─▶ finalize → Stroke → onStroke → 墨迹淡出(fadeMs 520)
 ```
 
-- **[缺陷]** 现状 `canvas.js` 同时注册 pointer 与 touch 两套事件，混合输入设备上可能双触发 start/end；`destroy()` 只移除 4 个 pointer 监听，touch 3 个与 `window.resize` 永久泄漏（§10-D4）。
-- **[目标]** 只用 Pointer Events + `touch-action: none`；resize 用 `ResizeObserver` 并纳入 destroy；识别阈值（现状 `length < 28`、`size/160` 等绝对像素）归一化到画布短边，消除 DPI/尺寸手感差异。
+- destroy 全量解绑（pointer×5 + touch×3 + window.resize），旧 D4 已修。
+- **[残余]** pointercancel 按收笔处理而非丢弃（契约 §9-13）；pointer+touch 双栈并存，
+  混合设备理论上可双触发；识别阈值绝对像素（契约 §9-14）。
+- painter 是跨战斗单例（`ui/painter-host`）：canvas 节点搬进搬出、只解回调不 destroy——
+  刻意设计，规避重复挂载成本；其头注释关于 resize 泄漏的说法已过期（契约 §9-18）。
 
-## 5. 屏幕路由
+## 5. 渲染与可达性
 
-### 5.1 路由器契约（[目标]，替代现状 engine.js 里的裸 navigate）
-
-现状：`navigate(screen)` 字符串直改 store + 全量 `innerHTML` 重建，**没有卸载生命周期**——这是战斗 interval 泄漏这一类 bug 的结构性根因。目标形态（签名细节见契约 §5.2）：
-
-- 每个屏幕是一个模块 `ui/screens/<name>.js`，导出 `{ id, guard?, mount(ctx): unmount }`。
-- `mount(ctx)` 收到 `{ root, store, navigate, params }`，返回 `unmount()`；屏幕创建的一切定时器、监听、painter、AudioContext 引用都在 `unmount` 释放。
-- 路由器职责：查守卫 → 调用上一屏 `unmount()` → 清空 root → `mount` 新屏 → 持久化 session.screen（仅 session，不入 save）。
-- `navigate` 必须防重入：转移进行中收到的 navigate 排队到转移完成后执行（防 `finished` 事件与用户点击竞态）。
-
-### 5.2 渲染策略
-
-全量 `innerHTML` 重建 + 事件重绑是**本项目的既定选择**（屏幕小、零框架、切屏预算 §7 内），不引入 vdom。约束：
-- 高频局部更新（血条、灵气条、战斗日志）必须走**节点引用 + 脏标记**，禁止整屏重建；日志用增量 `insertAdjacentHTML`/节点复用，禁止每 tick 重拼 24 条 innerHTML（现状每 200ms 全量重拼，违反 §7 预算）。
-- 用户可控文本（`playerName`）插入 DOM 必须走 `textContent`，禁止模板串拼接（现状拼进 innerHTML，未来开放改名即 XSS）。
-
-### 5.3 深链/刷新恢复
-
-- 刷新落在 `hub/gallery/class/splash`：直接恢复。
-- 刷新落在 `battle`：战斗 runtime 不持久化，按守卫**降级到 hub**（现状会用持久化的 stageId 静默开一场新战斗，语义可以但属于未声明行为；Round 2 明确为降级 hub + notice"战斗中断"）。
-- 刷新落在 `result`：`lastResult` 属 session 已丢失，守卫回退 hub。
+- 屏幕级：`el()` 构建节点树一次性挂载；切屏走 disposer → 清 root → 重建。
+- 战斗高频区走**节点引用局部更新**：血/气/盾/敌血四条 meter、意图、连击、符键 aria-disabled
+  逐字段 set；战斗日志增量 append（对账 lastLogTop，DOM 上限 40 条）——旧版整屏重拼已根除。
+- 可达性 [现状]：live region 双通道播报（polite/assertive）、meter=progressbar+valuetext、
+  符键条 `aria-keyshortcuts` + 数字键 1-6 施法、Esc 撤退、教程模态焦点陷阱、
+  选职 radiogroup 方向键巡航、日志 `role=log aria-live=polite`、画阁回放尊重
+  `prefers-reduced-motion` 与 `settings.reducedMotion`。
+- 用户文本（playerName）经 `el(..., {text})` 走 textContent，无 innerHTML 拼接注入面。
 
 ## 6. 游戏循环与时基
 
-- **单时钟原则**：整个应用最多一个 rAF 驱动循环（BattleSession 内部），逻辑用固定步长 accumulator（`LOGIC_DT = 100ms`，渲染插值可后置）。禁止散落的 `setInterval` 游戏逻辑——**[缺陷]** 现状 `screens.js` 用 200ms setInterval 直驱 `battle.tick`，后台标签被钳制、切屏泄漏、finished 后空转三害俱全。
-- `document.visibilitychange → hidden`：暂停 session（战斗不吃后台时间；挂机收益由 `tickIdle` 的时间戳差负责，两套时基不得混用）。
-- 时间来源：战斗内只认累计 `state.t`（tick 注入 dt），禁止域层读 `Date.now()`；`tickIdle`/`catchBeast` 的 `nowMs`/`rng` 已经/必须走参数注入（现状 `catchBeast` 默认 `Math.random`，测试需注入种子）。
+- 战斗逻辑时间只认 `state.t`（tick 注入 dt），域层不读 Date.now。
+- 挂机走 `tickIdle(save, nowMs)` 时间戳差，与战斗时基完全隔离。
+- **[残余]** UI 驱动层：battle 屏 setInterval(200) 应迁 `startLoop`（rAF+accumulator，
+  visibilitychange 暂停）；`createTicker` 已有测试。
+- 音频时基：AudioContext 懒建 + 首手势 resume + master 增益统一静音（`audio/bus.js`）。
 
-## 7. 性能预算（可执行 · 附测量方式）
+## 7. 性能预算（沿用，附现状）
 
-| 项 | 预算 | 测量 |
+| 项 | 预算 | 现状/测量 |
 | --- | --- | --- |
-| 笔迹跟手：pointermove → 墨段上屏 | ≤ 1 帧（16.6ms），脚本部分 ≤ 2ms | DevTools Performance，长按连画 5s 无 long task |
-| `classifyStroke` 单笔 | ≤ 4ms（p95，64 重采样点） | `npm run bench`（`scripts/bench.mjs` 已内建 >4ms exit 2 的红线，保留） |
-| `battle.tick` + `cast` 单次 | ≤ 0.5ms | bench 扩展项（Round 2 在 `scripts/bench.mjs` 追加） |
-| 屏幕切换（unmount+mount+首帧） | ≤ 50ms | Performance mark `screen:<id>` |
-| 战斗中每逻辑步 UI 更新（血条+日志） | ≤ 2ms，且无变化时 0 次 DOM 写 | 脏标记；日志增量渲染 |
-| 冷启动 → 可交互（本地 preview） | ≤ 1.5s | Lighthouse TTI |
-| 打包体积（js+css，gzip，不含字体） | ≤ 150KB（零框架，现状远低于此，作为天花板防腐） | `vite build` 产物 |
-| 存档序列化 | ≤ 5ms，JSON ≤ 64KB（gallery 上限 24 条已保证） | 单测 |
-| 内存/句柄 | battle↔hub 往返 10 次后：活跃 interval=0、canvas 相关监听不随往返增长 | DevTools（现状**必败**：resize 监听与 interval 线性泄漏） |
-| Canvas | 单画布 DPR ≤ 2（已实现）；纸纹层与墨迹层分离，纸纹只画一次（现状每笔后整幅随机重绘，违规） |
+| classifyStroke 单笔 | p95 ≤4ms | `npm run bench` 内建 exit 2 红线；另有识别准确率统计与 scribble 硬误报 ≤5% 探针 |
+| battle.tick+cast | ≤0.5ms | 未入 bench（契约 §7-13 残余） |
+| 笔迹跟手 | pointermove→上屏 ≤1 帧 | 增量墨刷 + coalesced 采样；未做 long task 实测 |
+| 屏幕切换 | ≤50ms | 未打 mark |
+| 战斗每逻辑步 UI | ≤2ms，无变化 0 DOM 写 | 节点引用 + 日志增量已达构；未量测 |
+| 存档 | 序列化 ≤5ms、JSON <64KB | 64KB 有测试锁定 |
+| 句柄泄漏 | battle↔hub 往返 N 次不增长 | 结构上已闭环（disposer+单例 painter）；无自动化测试（契约 §7-12） |
+| Canvas | DPR≤2；纸纹离屏烤一次、种子噪点 | ✅ 已实现（旧"每笔重绘+Math.random"已根除） |
+| 打包 | js+css gzip ≤150KB | 天花板防腐，未复测 |
 
-## 8. 多游戏隔离原则（`games/<slug>/`）
+## 8. 多游戏隔离（`games/<slug>/`，硬约束不变）
 
-本仓库将并行放多款游戏，隔离是硬约束（见 `docs/OWNERSHIP.md` 与 `/.agent_workspace/PROGRESS.md`）：
+1. 每游戏独立 `package.json`/`node_modules`/`vite.config.js`/`index.html`/`dist`；跨游戏 import（含 `../` 穿越）一律禁止。
+2. localStorage 前缀 `<slug>.`（本游戏 `linghuashi.save.v1`，合规）。
+3. 端口独占登记（本游戏 dev/preview 4173）。
+4. 设计令牌走 `src/styles/tokens.css` 的 `:root` 变量；无共享 DOM。
+5. 共享代码：初期禁止；≥2 游戏重复的工具提级 `games/_shared/<pkg>/` 显式版本化。
+6. 每游戏自带 test/bench/probe scripts，根目录不聚合。
+7. 文档 `docs/` 自治；跨游戏进度只写 `/.agent_workspace/PROGRESS.md`。
 
-1. **目录**：每款游戏一个 `games/<slug>/`，含独立 `package.json`、`node_modules`、`vite.config.js`、`index.html`、`dist/`。跨游戏 `import` 一律禁止（含相对路径穿越 `../`）。
-2. **存档命名空间**：localStorage key 必须以 `<slug>.` 前缀（本游戏 `linghuashi.save.v1`，已合规）。禁止读写他游戏前缀。
-3. **端口**：dev/preview 端口在 `games/README.md` 登记独占（本游戏 4173）；新游戏顺延 4174+，`strictPort: true` 防串。
-4. **样式**：每游戏是独立 HTML 入口，天然隔离；但设计令牌一律走 `:root` 自定义属性（`src/styles/tokens.css`），类名不加库式前缀但**不得**注入到共享 DOM（本项目无共享 DOM，维持现状即可）。
-5. **共享代码**：初期禁止共享。若 ≥2 款游戏出现相同工具（如 geometry），提升到 `games/_shared/<pkg>/`，以显式版本化子包引入，禁止源码级 copy-paste 之外的隐式共享。
-6. **CI/脚本**：每游戏自带 `test/bench/probe` npm scripts，根目录不聚合、不感知。
-7. **文档**：每游戏 `docs/` 自治；跨游戏进度只写 `/.agent_workspace/PROGRESS.md`。
+## 9. 测试策略分层 [现状]
 
-## 9. 测试策略分层
+| 层 | 载体 | 现状 |
+| --- | --- | --- |
+| 纯函数单测 | `tests/{stroke,combat,progression,store,loop,templates}.test.js` | ✅ Round 1 的 35 用例已扩到复审终点 62 |
+| 契约测试 | `tests/contract.test.js`（finished 幂等 / unlockMo 六式 / tickIdle 幂等） | ✅ 已建，覆盖 3/13 条不变量（缺口见契约 §7） |
+| 画阁回放 | `tests/gallery.test.js`（raw 往返判型、清洗、上限、64KB 预算） | ✅ 18 用例 |
+| 音频 | `tests/audio.test.js`（总线静音/懒建/手势 resume） | ✅ 复审终点新增 |
+| 冒烟探针 | `scripts/probe.mjs`（识别→战斗链路 + scribble 误报） | ✅ |
+| 性能红线 | `scripts/bench.mjs`（p95≤4ms exit 2 + 准确率）、`scribble-probe.mjs`（硬误报 ≤5%） | ✅；tick/cast 项缺 |
+| 手动/E2E | 触屏、键盘全流程、60fps | 未自动化 |
 
-| 层 | 范围 | 载体 | 现状 |
+## 10. 残余缺陷与死代码（Round 2 复审定案）
+
+全部细节与处置见契约 §9，此处按危害排序摘要：
+
+| # | 问题 | 位置 | 契约条目 |
 | --- | --- | --- | --- |
-| 纯函数单测 | recognizer 几何、battle 数值、progression 变换、store 迁移 | `tests/*.test.js`（vitest+jsdom） | 有（3 文件），缺 store 迁移与结算幂等用例 |
-| 冒烟探针 | 识别→战斗跨模块最小链路 | `scripts/probe.mjs` | 有 |
-| 性能红线 | classifyStroke ≤4ms | `scripts/bench.mjs` | 有；Round 2 加 tick/cast 项 |
-| 契约测试 | `API_CONTRACT.md` §7 不变量逐条断言（结算恰好一次、finished 幂等、unmount 零泄漏） | 新增 `tests/contract.test.js` | 无 |
-| 手动/E2E | 触屏可画、键盘教程战、60fps 墨迹 | SOTA_CHECKLIST | 未跑 |
+| R1 | 三套 modifiers 聚合并存：battle 只认 `normalizeModifiers` 白名单，`computeMods`/`battleModifiers` 传入即整体静默失效（且 ACCEPTANCE 还在推荐后者） | `combat/mods.js`、`classes/talents.js` | §9-1/2 |
+| R2 | `settle.js` 恰好一次结算未接线，UI 内联双轨 | `screen-battle.finish` | §9-3 |
+| R3 | `beastValue/rerollPassive/evolveBeast` 引用未定义 `PASSIVE_BASE/PASSIVES`，一经调用即 ReferenceError（现 UI 不可达，潜伏雷） | `progression/beasts.js` | §9-7 |
+| R4 | 会话字段落盘、无 migrate 链、version≠1 下次 persist 覆盖旧盘 | `core/store.js` | §9-4/5 |
+| R5 | `startLoop` 未接线（裸 setInterval）、弱战斗种子、catchBeast 未注入 rng | `screen-battle`、`core/loop.js` | §9-8/16/17 |
+| R6 | 双轨标准轨迹（synth vs templates）、unlock shim 残留、createBus 死代码、reaction().crit 死字段 | drawing/progression/core/combat | §9-6/9/11/15 |
+| R7 | pointercancel 语义（收笔≠丢弃）、pointer+touch 双栈、识别阈值绝对像素 | `drawing/canvas.js`、`recognizer.js` | §9-13/14 |
+| R8 | 契约测试缺口：结算跨屏恰好一次、modifiers 生效对照、零泄漏、tick/cast bench | `tests/`、`scripts/` | §7-10~13 |
 
-## 10. 已知缺陷审计（Round 1 定案 · 按严重度排序）
-
-责任模块对应 `/.agent_workspace/PROGRESS.md` 所有权表；本轮**只记录不改码**。
-
-| # | 缺陷 | 位置 | 责任 | 修复方向（接口见契约） |
-| --- | --- | --- | --- | --- |
-| D1 | `ui/screens.js` 上帝文件：路由表、6 屏、战斗循环、奖励结算、解锁判定、天赋购买全内联；无卸载生命周期；文末 `void REALMS;` 死引用 | `ui/screens.js` 全文 | Opus-4 | 拆 `ui/screens/*.js` + `ui/router.js`，屏幕契约 `mount→unmount`（契约 §5） |
-| D2 | **战斗 interval 永不清理**：胜/负后每 200ms 重复发奖（xp/丹无限刷）并反复 `navigate("result")`，从 result 回 hub 会被拽回；"再战"再叠一个 interval | `ui/screens.js` renderBattle/paint | Opus-4 | BattleSession 收编时钟 + `settleBattle` 恰好一次（契约 §3.5/§4.4） |
-| D3 | 战斗输出是字符串日志，`cast` 的 `events` 只有一个笼统 `cast` 项；UI 无法做伤害飘字/特效/无障碍播报 | `combat/battle.js` push/cast | Opus-2 | 结构化 `BattleEvent` 流（契约 §3.4），log 由 UI 格式化 |
-| D4 | painter 泄漏：`destroy` 不移除 touch×3 与 `window.resize`；胜/负路径根本不调用 destroy；pointer+touch 双注册可能双触发；无 pointercancel | `drawing/canvas.js` | Opus-1 | 契约 §2.3：Pointer Events 单栈 + ResizeObserver + 全量析构 |
-| D5 | **天赋未接入**：`talentMult` 零调用方，点天赋花 12 丹无任何效果；同族死代码：`beastBonus`（灵兽被动无效）、`enemyIntent`（AI 未用）、`createBus`（总线未用）、`reaction().crit`（暴击未实装） | `classes/talents.js`、`progression/beasts.js`、`combat/ai.js`、`core/events.js`、`combat/elements.js` | Opus-2/3 | `deriveModifiers(save)` 注入 `createBattle({modifiers})`（契约 §3.2/§4.2） |
-| D6 | 存档污染与脆弱：`screen/stageId/notice/lastResult/idleClaim` 持久化入 save；`version≠1` 直接丢档无迁移；`set` 浅合并对嵌套对象有静默丢字段风险 | `core/store.js`、`core/engine.js` | Opus-4 | save/session 分层 + `migrate` 链（§3、契约 §5.1） |
-| D7 | 墨客解锁条件错误：`gallery.length >= 6`（任意 6 笔）≠ GDD"集齐六式"（6 种 distinct 轨迹） | `ui/screens.js` paint 内 | Opus-3/4 | `hasSixForms(gallery)` 纯函数（契约 §4.5），并从 UI 移入 progression |
-| D8 | 路由无守卫：深链 `result` 显示假"败"；`battle` 缺 stageId 时静默落 `STAGES[0]`；navigate 字符串无校验 | `core/engine.js`、`ui/screens.js` | Opus-4 | §4.1 守卫表 + §5.3 降级规则 |
-| D9 | 战斗时基脆弱：200ms setInterval（后台钳制/漂移）；敌方攻击 `t % 1800 < dtMs` 相位判定 dt 抖动即错拍；seed=`stage.id.length+xp` 弱种子 | `ui/screens.js`、`combat/battle.js` tick | Opus-2/4 | rAF+accumulator、`nextEnemyAt` 绝对时刻、seed 显式传入（契约 §3.2） |
-| D10 | 数据/规则不一致：`COUNTER` 含 `jian→yao` 但 GDD 克制环无剑修且无人克制剑修；雷→金特殊反应 1.12+死 crit 实际弱于普通压制 1.2；`buns` 无任何消耗出口；`catchBeast` 无成本、默认非种子 RNG；识别阈值绝对像素依赖 DPI | `data/classes.js`、`combat/elements.js`、`progression/beasts.js`、`drawing/recognizer.js` | Fable-3 + Opus-1/2/3 | 数据表对齐 GDD（或修 GDD），crit 实装或删字段，buns 定为收兽成本，阈值归一化 |
-
-次级问题（不占 Top10，Round 2 顺手修）：战斗画布无键盘替代输入（SOTA 清单无障碍项必挂）；战斗日志无 `aria-live`；`settings.mute/reducedMotion` 无 UI 开关；纸纹重绘用 `Math.random` 不可复现；`API_CONTRACT.md` 旧版写的 `createBattle(seed, player, enemy)` 与实际对象参数不符（本轮已在契约中修正为实际签名）。
-
-## 11. Round 2 目标文件结构
+## 11. 现行文件结构（对照 Round 1 目标，已达成拆分）
 
 ```
-src/core/    store.js（+migrate） events.js（启用） engine.js（瘦身为 boot）
-src/ui/      router.js  screens/{splash,class,hub,battle,result,gallery}.js  widgets/log.js
-src/combat/  battle.js  session.js（新增：时钟+事件泵） elements.js  ai.js（接入）
-src/progression/  idle.js  realm.js  beasts.js  settle.js（新增）  modifiers.js（新增，聚合 talents+beasts+realm）
-src/drawing/ canvas.js（重写析构/分层） recognizer.js（consume 实装+归一化） geometry.js  ink.js
+src/core/         store.js  engine.js  loop.js[待接线]  events.js[死]
+src/ui/           screens.js(注册表+disposer)  screen-{splash,class,hub,battle,result,gallery}.js
+                  keycast.js  painter-host.js  tutorial.js  audio-bridge.js  dom.js  components.js  ui.css
+src/combat/       battle.js  elements.js  ai.js  mods.js[待删]  index.js
+src/progression/  idle.js  realm.js  beasts.js  settle.js[待接线]  unlock.js[shim]
+src/classes/      talents.js  unlock.js(墨客解锁权威)
+src/drawing/      canvas.js  recognizer.js  features.js  geometry.js  ink.js  synth.js
+                  templates.js[仅测试]  replay.js  index.js
+src/audio/        bus.js  sfx.js  index.js
 ```
 
-迁移顺序建议：先 D2（止血：session+unmount）→ D1（拆屏）→ D5（modifiers 打通天赋/灵兽）→ D3（事件流）→ 其余并行。
+推进顺序建议：R1（收敛 modifiers 单一实现）→ R2（settle 接线 + 契约测试）→ R3（beasts 常量补齐）
+→ R4（migrate 链）→ 其余并行。

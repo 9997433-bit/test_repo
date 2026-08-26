@@ -1,5 +1,6 @@
 import { classifyStroke } from "../src/drawing/recognizer.js";
 import { createBattle } from "../src/combat/battle.js";
+import { runScribbleProbe, scribbleFailureMessage } from "./scribble-probe.mjs";
 import { generateTrajectory, TRAJECTORY_TYPES } from "./trajectories.mjs";
 
 const failures = [];
@@ -22,9 +23,13 @@ const recognitions = TRAJECTORY_TYPES.map((expectedType) => {
   };
 });
 const recognitionMs = performance.now() - recognitionStartedAt;
+const scribble = runScribbleProbe();
 
 if (TRAJECTORY_TYPES.length !== 6) {
   failures.push(`expected 6 trajectory generators, got ${TRAJECTORY_TYPES.length}`);
+}
+if (!scribble.passed) {
+  failures.push(scribbleFailureMessage(scribble));
 }
 
 const rounds = 50;
@@ -77,6 +82,7 @@ const report = {
     precision: Number(result.precision.toFixed(4)),
   })),
   recognitionMs: Number(recognitionMs.toFixed(3)),
+  scribble,
   battle: {
     rounds,
     casts,
@@ -90,7 +96,7 @@ const report = {
 console.log(JSON.stringify(report, null, 2));
 if (failures.length > 0) {
   for (const failure of failures) console.error(`probe: ${failure}`);
-  process.exitCode = 1;
+  process.exitCode = scribble.passed ? 1 : 2;
 } else {
   console.log("probe ok");
 }

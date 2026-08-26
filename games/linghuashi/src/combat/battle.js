@@ -37,6 +37,16 @@ function clamp(v, lo, hi) {
 // 后台标签页可能一次送来几分钟的 dt，单个 tick 最多补这么多刀，避免瞬间秒杀。
 const MAX_CATCHUP_STRIKES = 64;
 
+// 折线（破军刺）破甲：底噪压低、斜率抬高，让收益集中在高精度笔画上。
+// 满精度仍是每层 0.16，叠加上限 0.35 不变。
+const SHRED_BASE = 0.04;
+const SHRED_PER_PRECISION = 0.12;
+const SHRED_CAP = 0.35;
+
+function shredGain(precision) {
+  return SHRED_BASE + precision * SHRED_PER_PRECISION;
+}
+
 const TALENT_KEYS = { atk: "atkMult", def: "defMult", sup: "supMult" };
 const BEAST_KEYS = { crit: "crit", qiRegen: "qiRegen", shield: "shield" };
 
@@ -159,11 +169,6 @@ export function createBattle({ player, enemy, seed = 1, modifiers } = {}) {
     }
   }
 
-  // crit 为 0 时不掷骰，保证默认配置下 rng 序列与旧版一致。
-  function rollCrit() {
-    return mods.crit > 0 && state.rng() < mods.crit;
-  }
-
   function cast(stroke, elementHint) {
     const events = [];
     if (state.finished || !stroke) return { events, state };
@@ -189,7 +194,8 @@ export function createBattle({ player, enemy, seed = 1, modifiers } = {}) {
     if (COUNTER[state.enemy.classId] === state.player.classId) dmg *= 0.88;
     dmg *= 1 + (state.enemy.shred || 0);
     dmg *= comboMult;
-    const crit = rollCrit();
+    const critChance = mods.crit + (react.crit || 0);
+    const crit = critChance > 0 && state.rng() < Math.min(1, critChance);
     if (crit) dmg *= mods.critMult;
 
     let hit = 0;
@@ -206,7 +212,7 @@ export function createBattle({ player, enemy, seed = 1, modifiers } = {}) {
       hit = deal(state.enemy, dmg * 0.55);
       push(`${talisman.name} · 束缚并伤 ${Math.round(hit)}`, { kind: "ctrl" });
     } else if (stroke.type === "zigzag") {
-      state.enemy.shred = Math.min(0.35, state.enemy.shred + 0.08 + prec * 0.08);
+      state.enemy.shred = Math.min(SHRED_CAP, state.enemy.shred + shredGain(prec));
       hit = deal(state.enemy, dmg * 1.15);
       push(`${talisman.name} · 破甲穿刺 ${Math.round(hit)}`, { kind: "hit" });
     } else if (stroke.type === "spiral") {

@@ -8,8 +8,8 @@
 ## Round 状态
 
 - Round 1：完成（10/10 本地 + 1 云端在途）
-- Round 2：进行中
-- Round 3：未开始
+- Round 2：完成
+- Round 3：进行中
 
 ---
 
@@ -55,3 +55,32 @@
 6. 无障碍与键盘通关教程的自动化探针。
 7. README/GDD/清单与实现对齐。
 8. 边界：坏档、连点施法、pointercancel、多指。
+
+---
+
+## 《Round 2 结论简报》
+
+### 演进对比（相对 Round 1）
+
+- 乱涂硬误报降至 **0%**（400 样本），合成轨迹仍 3000/3000。
+- 画阁写入 raw 点列并可回放；旧档回退标准字形。
+- 音频总线全局 mute；`ui.css` 令牌化，cast-flash 无跳色。
+- 破甲改为 `0.04+0.12×精度`；收兽消耗包子。
+- `settleBattle`/`beginBattle` 已接入战斗屏；`reaction.crit`（金雷引）计入暴击。
+- 契约 / 画阁 / 音频测试补齐，vitest **62** 绿。
+- 灵兽 `PASSIVE_BASE`/`PASSIVES` 补齐，避免洗练崩溃。
+
+### 潜在边界风险
+
+- synth / templates / trajectories 三套轨迹未合一。
+- `combat/mods.js` 与 `battleModifiers` 旁路仍在。
+- 存档无 version migrate；靠 sanitize 容错。
+- pointer+touch 双栈、真机 60fps、减动效开关仍弱。
+- 控制时长对精度偏钝；三栏异种无放生 UI。
+
+### SOTA 验收差距
+
+- 契约文档大体对齐，仍有死代码。
+- 无 History 路由、无离线字体。
+- 乱涂门禁未把 cloud 治疗算进硬误报。
+- Round 3 必收：单一轨迹源、migrate、删死代码、放生/合成 UI、全盘交叉核验、README 对齐。

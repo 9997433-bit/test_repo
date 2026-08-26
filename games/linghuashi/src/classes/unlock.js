@@ -6,7 +6,19 @@ export const MO_REQUIRED_TYPES = 6;
 
 /** 画阁里出现过的不同笔法（去重、剔除 scribble），顺序按六式表。 */
 export function galleryTypes(save) {
-  const seen = new Set((save?.gallery || []).map((g) => g?.type).filter((t) => t && t !== "scribble"));
+  return distinctTypes(save?.gallery);
+}
+
+/**
+ * 六式集齐判定的唯一实现：看的是「不同笔法数」，不是画阁条目数。
+ * 连画六笔直线不算圆满。
+ */
+export function hasSixForms(gallery) {
+  return distinctTypes(gallery).length >= MO_REQUIRED_TYPES;
+}
+
+function distinctTypes(gallery) {
+  const seen = new Set((gallery || []).map((g) => (typeof g === "string" ? g : g?.type)).filter((t) => t && t !== "scribble"));
   const known = MO_STROKE_TYPES.filter((t) => seen.has(t));
   const extra = [...seen].filter((t) => !MO_STROKE_TYPES.includes(t));
   return [...known, ...extra];

@@ -7,21 +7,25 @@ export function isMuted(store) {
   return Boolean(store.get().settings?.mute);
 }
 
-/** 静音开关：aria-pressed 反映状态，改动立即落盘。 */
+/**
+ * 静音开关：aria-pressed 反映状态，改动立即落盘。
+ * 只改存档里的 `settings.mute`，音频总线由 ui/audio-bridge.js 订阅同步，
+ * 因此这一个开关管住所有音效，而不只是落笔声。
+ */
 export function muteToggle(store, { compact = false } = {}) {
   const node = button({ class: "toggle", "aria-pressed": "false" });
   function paint() {
     const muted = isMuted(store);
     node.setAttribute("aria-pressed", muted ? "true" : "false");
-    node.textContent = muted ? `${compact ? "" : "笔声 · "}静音` : `${compact ? "" : "笔声 · "}有声`;
-    node.setAttribute("aria-label", muted ? "笔声已静音，按下恢复音效" : "笔声开启中，按下静音");
+    node.textContent = muted ? `${compact ? "" : "声息 · "}静音` : `${compact ? "" : "声息 · "}有声`;
+    node.setAttribute("aria-label", muted ? "全部音效已静音，按下恢复声息" : "声息开启中，按下静音全部音效");
   }
   node.addEventListener("click", () => {
     const settings = { ...(store.get().settings || {}), mute: !isMuted(store) };
     store.set({ settings });
     store.persist();
     paint();
-    announce(settings.mute ? "已静音" : "已恢复笔声");
+    announce(settings.mute ? "已静音" : "已恢复声息");
   });
   paint();
   return node;

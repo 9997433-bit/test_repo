@@ -1,4 +1,11 @@
-import { BEASTS } from "../data/beasts.js";
+import * as beastData from "../data/beasts.js";
+
+const BEASTS = beastData.BEASTS || [];
+
+/** 键名走变量：图鉴表还没定价时，打包器不会报「缺少导出」。 */
+function readData(key) {
+  return beastData[key] || null;
+}
 
 export const BEAST_CAP = 3;
 export const MAX_STAR = 3;
@@ -7,19 +14,46 @@ export const STAR_MULT = [0, 1, 1.65, 2.6];
 export const EVOLVE_COST = 30;
 export const REROLL_COST = 18;
 
-/** 各被动的一星基准值，取自灵兽图鉴。 */
-export const PASSIVE_BASE = BEASTS.reduce((acc, b) => (b.passive in acc ? acc : { ...acc, [b.passive]: b.value }), {});
-export const PASSIVES = Object.keys(PASSIVE_BASE);
+/**
+ * 收兽定价：优先花包子（挂机产出的唯一出口），包子不够再花灵气丹。
+ * 数值以图鉴表里的 CATCH_COST 为准，表里没有就用兜底 6 包子 / 8 丹。
+ */
+const DATA_CATCH_COST = readData("CATCH_COST") || readData("CATCH_BEAST_COST");
+const BUNS_COST = Number.isFinite(beastData.BEAST_CATCH_COST) ? beastData.BEAST_CATCH_COST : 36;
+export const CATCH_COST = {
+  buns: Number.isFinite(DATA_CATCH_COST?.buns) ? DATA_CATCH_COST.buns : BUNS_COST,
+  qiPills: Number.isFinite(DATA_CATCH_COST?.qiPills) ? DATA_CATCH_COST.qiPills : (Number.isFinite(beastData.BEAST_REROLL_COST) ? 8 : 8),
+};
 
+const PASSIVES = ["crit", "qiRegen", "shield"];
+const PASSIVE_BASE = BEASTS.reduce((acc, b) => {
+  if (b.passive && acc[b.passive] == null) acc[b.passive] = b.value;
+  return acc;
+}, {});
+
+/** 这一次收兽拿什么付账：包子优先，其次灵气丹，都不够则 null。 */
+export function catchPayment(save) {
+  if ((save?.buns || 0) >= CATCH_COST.buns) return { currency: "buns", amount: CATCH_COST.buns, label: "包子" };
+  if ((save?.qiPills || 0) >= CATCH_COST.qiPills) return { currency: "qiPills", amount: CATCH_COST.qiPills, label: "灵气丹" };
+  return null;
+}
+
+/**
+ * 纯函数：花包子或灵气丹收一只一星灵兽。
+ * 栏位已满或付不起时只回写 notice，不扣资源、不给兽。
+ */
 export function catchBeast(save, rng = Math.random, nowMs = Date.now()) {
   const owned = save.beasts || [];
   if (owned.length >= BEAST_CAP) return { ...save, notice: "灵兽栏已满。" };
+  const pay = catchPayment(save);
+  if (!pay) return { ...save, notice: `收兽需包子 ${CATCH_COST.buns} 或灵气丹 ${CATCH_COST.qiPills}。` };
   const b = BEASTS[Math.min(BEASTS.length - 1, Math.floor(rng() * BEASTS.length))];
   const uid = `${b.id}-${nowMs.toString(36)}-${Math.floor(rng() * 1679616).toString(36)}`;
   return {
     ...save,
+    [pay.currency]: (save[pay.currency] || 0) - pay.amount,
     beasts: [...owned, { ...b, uid, star: 1 }],
-    notice: `收得灵兽「${b.name}」。`,
+    notice: `收得灵兽「${b.name}」，耗${pay.label} ${pay.amount}。`,
   };
 }
 

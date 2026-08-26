@@ -1,5 +1,6 @@
 import { announce, button, el } from "./dom.js";
 import { STAGES } from "../data/stages.js";
+import { playCue } from "../audio/index.js";
 
 export function renderResult({ root, store, navigate }) {
   const save = store.get();
@@ -24,6 +25,7 @@ export function renderResult({ root, store, navigate }) {
 
   root.appendChild(section);
   announce(win ? "此战得胜。" : "此战落败。", { assertive: true });
+  playCue(unlocked ? "unlock" : win ? "win" : "lose");
   if (unlocked) store.set({ inkJustUnlocked: false });
   return null;
 }

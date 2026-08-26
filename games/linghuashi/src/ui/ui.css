@@ -26,12 +26,12 @@
 
 button.primary {
   background: var(--seal);
-  color: #fdf7ea;
+  color: var(--paper-bright);
   border-color: var(--seal);
 }
 button.primary:hover {
   background: var(--seal-bright);
-  color: #fff;
+  color: var(--paper-bright);
 }
 button[aria-disabled="true"] {
   opacity: 0.45;
@@ -76,7 +76,7 @@ ul.log-list {
 .toggle[aria-pressed="true"] {
   border-color: var(--seal);
   color: var(--seal);
-  background: rgba(122, 24, 24, 0.08);
+  background: var(--seal-wash);
 }
 
 .badge {
@@ -85,7 +85,7 @@ ul.log-list {
   padding: 0 6px;
   font-size: 0.7rem;
   line-height: 1.5;
-  color: #fdf7ea;
+  color: var(--paper-bright);
   background: var(--seal);
   border-radius: 2px;
   vertical-align: middle;
@@ -278,13 +278,14 @@ ul.log-list {
 .cast-key.flash {
   animation: cast-flash 420ms ease-out;
 }
+/* 收笔帧与纸签静息底同源（--paper-tag），动画结束不跳色 */
 @keyframes cast-flash {
   0% {
-    background: rgba(122, 24, 24, 0.28);
+    background: var(--seal-flash);
     border-color: var(--seal);
   }
   100% {
-    background: rgba(255, 250, 240, 0.55);
+    background: var(--paper-tag);
   }
 }
 kbd {
@@ -293,10 +294,10 @@ kbd {
   min-width: 1.5em;
   text-align: center;
   padding: 1px 5px;
-  border: 1px solid rgba(26, 18, 11, 0.35);
+  border: 1px solid var(--ink-faint);
   border-bottom-width: 2px;
   border-radius: 3px;
-  background: rgba(255, 250, 240, 0.8);
+  background: var(--paper-bright);
 }
 
 .stroke-glyph {
@@ -312,14 +313,14 @@ kbd {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(26, 18, 11, 0.55);
+  background: var(--ink-veil);
   backdrop-filter: blur(3px);
   overflow: auto;
 }
 .tutorial-panel {
   max-width: 720px;
   width: 100%;
-  background: rgba(252, 246, 233, 0.97);
+  background: var(--paper-bright);
 }
 .tutorial-title {
   font-size: 2rem;
@@ -336,8 +337,8 @@ kbd {
   align-items: center;
   gap: 10px;
   padding: 8px;
-  border: 1px solid rgba(26, 18, 11, 0.12);
-  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid var(--ink-hair);
+  background: var(--paper-glare);
 }
 .tutorial-copy {
   display: grid;
@@ -363,7 +364,7 @@ kbd {
   justify-items: center;
   gap: 2px;
   padding: 8px 4px;
-  border: 1px dashed rgba(26, 18, 11, 0.25);
+  border: 1px dashed var(--ink-line);
   font-size: 0.84rem;
   opacity: 0.55;
 }
@@ -372,17 +373,76 @@ kbd {
   border-style: solid;
   border-color: var(--seal);
 }
+.gallery-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .gallery-sub {
   margin: 20px 0 10px;
 }
+.gallery-tip {
+  margin: 0 0 12px;
+}
 .gallery-grid {
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.gallery-cell {
+  display: flex;
 }
 .gallery-item {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+button.gallery-item {
+  cursor: pointer;
+}
+button.gallery-item:hover {
+  border-color: var(--seal);
+}
+.gallery-paper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 7 / 5;
+  border: 1px solid var(--ink-hair);
+  border-radius: 3px;
+  /* 与 drawing/replay.js 回放时铺的纸色同源，边缘不会露出色差。 */
+  background: var(--paper);
+  overflow: hidden;
+}
+.gallery-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* 无笔路的旧记录用淡墨字形占位，一眼能和真回放的焦墨分开。 */
+.gallery-item.is-static .stroke-glyph {
+  width: 70%;
+  height: auto;
+  color: var(--ink-faint);
+}
+.gallery-meta {
+  display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
+  flex-wrap: wrap;
+}
+.gallery-name {
+  font-weight: 600;
+}
+.gallery-flag {
+  font-size: 0.82rem;
 }
 .reward-card {
   display: inline-block;

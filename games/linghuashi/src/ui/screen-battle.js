@@ -3,9 +3,9 @@ import { muteToggle, strokeGlyph } from "./components.js";
 import { acquirePainter, canvasBox, previewStroke, refreshPainter, releasePainter } from "./painter-host.js";
 import { STROKE_KEYS, keyboardStroke, strokeKeyByKey, strokeKeyByType } from "./keycast.js";
 import { openTutorial, shouldShowTutorial } from "./tutorial.js";
-import { unlockMo } from "../classes/unlock.js";
 import { talentMult } from "../classes/talents.js";
 import { beastBonus } from "../progression/beasts.js";
+import { beginBattle, settleBattle } from "../progression/settle.js";
 import { CLASSES } from "../data/classes.js";
 import { STAGES } from "../data/stages.js";
 import { ENEMIES } from "../data/enemies.js";
@@ -13,11 +13,12 @@ import { realmById } from "../data/realms.js";
 import { TALISMANS } from "../data/talismans.js";
 import { createBattle } from "../combat/battle.js";
 import { enemyIntent } from "../combat/ai.js";
-import { playStroke } from "../audio/sfx.js";
+import { playStroke } from "../audio/index.js";
+import { normalizeForStorage } from "../drawing/replay.js";
+import { GALLERY_POINTS, pushGallery } from "../core/store.js";
 
 const TICK_MS = 200;
 const SHIELD_REF = 80;
-const GALLERY_LIMIT = 24;
 const INTENT_TEXT = { bound: "被缚", strike: "蓄势", watch: "观势" };
 
 /**
@@ -37,6 +38,8 @@ export function renderBattle({ root, store, navigate }) {
   const enemy = ENEMIES.find((e) => e.id === stage.enemyId);
   const realm = realmById(save.realmId);
   const cls = CLASSES.find((c) => c.id === save.classId) || CLASSES[0];
+
+  store.set((prev) => beginBattle(prev, stage));
 
   const battle = createBattle({
     player: { id: "player", name: save.playerName, classId: cls.id, element: cls.element, hp: realm.hp, atk: realm.atk, qi: realm.qi },
@@ -220,7 +223,7 @@ export function renderBattle({ root, store, navigate }) {
 
   function cast(stroke, { source } = {}) {
     if (settled || closeTutorial || !stroke) return;
-    playStroke(stroke.type, Boolean(store.get().settings?.mute));
+    playStroke(stroke.type);
     const talisman = TALISMANS[stroke.type] ?? TALISMANS.scribble;
     const label = strokeKeyByType(stroke.type)?.name ?? "涂鸦";
     hintNode.textContent =
@@ -230,9 +233,8 @@ export function renderBattle({ root, store, navigate }) {
     // 只有真正成符的一笔才留痕：灵气不足散掉的笔不该算进画阁与墨客解锁。
     const { events } = battle.cast(stroke, cls.element);
     if (events.length) {
-      store.set((prev) => ({
-        gallery: [...(prev.gallery || []), { type: stroke.type, precision: stroke.precision, at: Date.now() }].slice(-GALLERY_LIMIT),
-      }));
+      const entry = { type: stroke.type, precision: stroke.precision, at: Date.now(), points: strokeTrace(stroke) };
+      store.set((prev) => ({ gallery: pushGallery(prev.gallery, entry) }));
     }
     paint();
   }
@@ -282,22 +284,7 @@ export function renderBattle({ root, store, navigate }) {
     if (settled) return;
     settled = true;
     stopClock();
-    const reward = result === "win" ? stage.reward : null;
-    store.set((prev) => {
-      const patch = { lastResult: result, lastStage: stage.id, lastReward: reward };
-      if (reward) {
-        patch.xp = prev.xp + reward.xp;
-        patch.qiPills = prev.qiPills + reward.qiPills;
-        patch.clearedStages = [...new Set([...(prev.clearedStages || []), stage.id])];
-      }
-      const unlocked = unlockMo(prev);
-      if (unlocked !== prev) {
-        patch.inkUnlocked = true;
-        patch.inkJustUnlocked = true;
-        patch.notice = unlocked.notice;
-      }
-      return patch;
-    });
+    store.set((prev) => settleBattle(prev, { result, stage }));
     navigate("result");
   }
 
@@ -319,4 +306,16 @@ export function renderBattle({ root, store, navigate }) {
 
 function pct(value) {
   return Math.round((Number(value) || 0) * 100);
+}
+
+/**
+ * 给画阁留的点列：手绘与键盘施法的 stroke 都带 raw，
+ * 归一化到 [0,1]² 后与画幅无关，换设备也能按当时的笔路回放。
+ * 拿不到 raw（例如旧的合成入口）就只留 type，画阁自动退回标准字形。
+ */
+function strokeTrace(stroke) {
+  const raw = stroke?.raw;
+  if (!Array.isArray(raw) || raw.length < 2) return null;
+  const points = normalizeForStorage(raw, GALLERY_POINTS);
+  return points.length >= 2 ? points : null;
 }

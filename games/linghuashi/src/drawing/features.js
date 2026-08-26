@@ -57,6 +57,11 @@ export function extractFeatures(rawPoints) {
 
   const lf = lineFit(shape);
   const perpRatio = clamp(lf.maxPerp / Math.max(chord, 1), 0, 4);
+  // Net advance along the stroke's own principal axis, as a fraction of the
+  // travel along it. A line, an arc or a zigzag all march down their spine and
+  // sit at ~1; a loop folds back and sits low; an aimless scrawl also sits low,
+  // which is what separates it from the first group.
+  const axisMonotone = axisProgress(shape, lf.ux, lf.uy);
   // Below this the stroke is effectively closed and chord-relative shape
   // measures stop meaning anything, so bendProfile returns its sentinel.
   const chordUsable = chord >= 0.08 * scale;
@@ -116,6 +121,7 @@ export function extractFeatures(rawPoints) {
     straightness,
     gap,
     perpRatio,
+    axisMonotone,
     bow: bend.bow,
     bowMax: bend.bowMax,
     bendAmp: bend.amp,
@@ -205,6 +211,20 @@ function bendProfile(points, first, last, chord) {
     amp: (maxPos - maxNeg) / chord,
     fit,
   };
+}
+
+/** Signed travel along a unit direction, netted against the distance covered. */
+function axisProgress(points, ux, uy) {
+  let net = 0;
+  let total = 0;
+  let prev = points[0].x * ux + points[0].y * uy;
+  for (let i = 1; i < points.length; i += 1) {
+    const cur = points[i].x * ux + points[i].y * uy;
+    net += cur - prev;
+    total += Math.abs(cur - prev);
+    prev = cur;
+  }
+  return total > 1e-9 ? Math.abs(net) / total : 0;
 }
 
 /** How far the stroke rides off its own low-passed spine: catches fast teeth. */
