@@ -1,0 +1,144 @@
+/**
+ * 灵画师 · 排版层（构图与响应式）
+ * ---------------------------------------------------------------
+ * 立轴构图：卷面在绢案上居中，宽不过 1140px；
+ * 桌面留出案面天地，窄屏卷面铺满、天地杆内收。
+ */
+
+/* —— 立轴在案上的位置 —— */
+.screen {
+  width: min(1140px, 100%);
+  margin-inline: auto;
+}
+@media (min-width: 960px) {
+  .screen {
+    width: min(1140px, calc(100% - 76px));
+    margin-block: 30px;
+    min-height: calc(100% - 60px);
+  }
+}
+@media (max-width: 959px) {
+  .screen {
+    margin-block: 10px;
+    min-height: calc(100% - 20px);
+  }
+  .screen::before,
+  .screen::after {
+    inset-inline: 12px;
+    height: 10px;
+  }
+  .screen::before { top: -5px; }
+  .screen::after { bottom: -5px; }
+}
+
+/* —— 通用动作行 —— */
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+/* —— 卷首（splash / result）—— */
+.hero {
+  max-width: 800px;
+  margin: clamp(20px, 9vh, 96px) auto 0;
+}
+.hero .actions { margin-top: 28px; }
+.hero .stamp {
+  width: 64px;
+  height: 64px;
+  font-size: 1.9rem;
+  margin-bottom: 10px;
+}
+
+/* —— 择道 —— */
+.class-grid {
+  grid-template-columns: repeat(auto-fit, minmax(216px, 1fr));
+  margin-top: 18px;
+}
+.class-card {
+  position: relative;
+  text-align: left;
+  width: 100%;
+  padding: 16px 18px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.class-card.active {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+    inset 0 0 44px var(--seal-wash),
+    var(--shadow-soft);
+}
+/* 选中的道途钤一方小印（纯装饰，状态由 aria-checked 承担） */
+.class-card.active::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--seal);
+  box-shadow:
+    inset 0 0 0 2px rgba(253, 248, 236, 0.5),
+    0 2px 5px rgba(26, 18, 11, 0.3);
+  transform: rotate(-8deg);
+}
+
+/* —— 枢纽 —— */
+.hub-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 840px) {
+  .hub-grid { grid-template-columns: 1fr; }
+}
+
+/* —— 对战 —— */
+.battle-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+.battle-side {
+  position: sticky;
+  top: 18px;
+}
+@media (max-width: 920px) {
+  .battle-layout { grid-template-columns: 1fr; }
+  .battle-side { position: static; }
+}
+
+.portrait {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ink-hair);
+}
+
+/* 落款式竖题：细朱框，仿引首章 */
+.vtitle {
+  writing-mode: vertical-rl;
+  font-family: var(--script);
+  letter-spacing: 0.3em;
+  font-size: 1.1rem;
+  color: var(--seal);
+  border: 1px solid rgba(122, 24, 24, 0.4);
+  border-radius: 4px;
+  padding: 10px 4px;
+  align-self: flex-start;
+  background: var(--seal-wash);
+}
+@media (max-width: 720px) {
+  .vtitle { display: none; }
+  canvas.paper { height: min(46vh, 400px); }
+}

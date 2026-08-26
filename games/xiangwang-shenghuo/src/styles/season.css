@@ -1,0 +1,220 @@
+/* =============================================================
+   四季 × 昼夜 · 场景专属细节（Fable-2）
+   调色由 tokens.css 的 --s-* / [data-phase] 派生完成；
+   这里只放"离散"的季节相位特征：星月、灯火、雪顶、粒子。
+   粒子画布 = .village::after（420×360 平铺，位移取整环，
+   保证首尾无缝；reduced-motion 时静止但仍可见）。
+   ============================================================= */
+
+/* ---------- 黄昏：晚霞染云，蘑菇屋受夕照 ---------- */
+
+[data-phase="dusk"] .sky::after {
+  background-image:
+    radial-gradient(90px 26px at 90px 58px, rgba(255, 208, 165, 0.38), transparent 70%),
+    radial-gradient(130px 32px at 300px 36px, rgba(255, 184, 135, 0.3), transparent 70%),
+    radial-gradient(70px 20px at 432px 88px, rgba(255, 216, 170, 0.26), transparent 70%);
+}
+
+[data-phase="dusk"] .mushroom .cap {
+  box-shadow:
+    inset 7px 9px 12px -6px rgba(255, 190, 120, 0.55),
+    inset 0 -12px 14px -8px rgba(80, 26, 16, 0.6);
+}
+
+/* ---------- 夜晚：星空、月面、灯下牌匾 ---------- */
+
+[data-phase="night"] .sky::after {
+  background-image:
+    radial-gradient(circle 1.2px at 30px 40px, #fff 60%, transparent),
+    radial-gradient(circle 1px at 110px 120px, rgba(255, 255, 255, 0.8) 60%, transparent),
+    radial-gradient(circle 1.6px at 180px 60px, #fff 60%, transparent),
+    radial-gradient(circle 1px at 240px 150px, rgba(255, 255, 255, 0.7) 60%, transparent),
+    radial-gradient(circle 2.2px at 66px 170px, #fff 45%, rgba(200, 220, 255, 0.5) 70%, transparent),
+    radial-gradient(circle 1.2px at 210px 200px, rgba(255, 255, 255, 0.85) 60%, transparent),
+    radial-gradient(circle 1px at 150px 20px, rgba(255, 255, 255, 0.75) 60%, transparent);
+  background-size: 260px 220px;
+  background-repeat: repeat;
+  animation: twinkle 4.5s ease-in-out infinite;
+}
+
+/* 月面环形山 */
+[data-phase="night"] .sky::before {
+  background:
+    radial-gradient(circle at 62% 40%, rgba(178, 194, 220, 0.55) 0 9%, transparent 12%),
+    radial-gradient(circle at 40% 64%, rgba(178, 194, 220, 0.45) 0 7%, transparent 10%),
+    radial-gradient(circle at 52% 24%, rgba(178, 194, 220, 0.4) 0 5%, transparent 8%),
+    radial-gradient(circle at 36% 34%, #ffffff, var(--celestial) 68%);
+}
+
+/* 夜里木牌匾透一点灯气 */
+[data-phase="night"] .bldg {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.2),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.42),
+    0 0 14px rgba(255, 190, 110, 0.16),
+    var(--shadow-soft);
+}
+
+/* 夜里的田垄：描边、标签提亮，苗株打一点月光，别缩进土色里 */
+[data-phase="night"] .plot {
+  border-color: rgba(222, 204, 166, 0.3);
+  color: #f9f0da;
+  text-shadow: 0 1px 2px rgba(5, 8, 14, 0.75);
+}
+
+[data-phase="night"] .plot::before {
+  filter: brightness(1.4) saturate(0.92);
+}
+
+/* 熟地本就金亮，字色保持深墨 */
+[data-phase="night"] .plot.ready {
+  color: #33261a;
+  text-shadow: 0 1px 0 rgba(255, 245, 220, 0.5);
+}
+
+[data-phase="night"] .xw-plot-time {
+  opacity: 1;
+}
+
+/* ---------- 冬：雪顶与霜 ---------- */
+
+[data-season="winter"] .mountain::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94) 20%, rgba(255, 255, 255, 0) 64%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--foliage-2) 42%, var(--sky-hi)),
+      color-mix(in srgb, var(--foliage-2) 62%, var(--sky-lo))
+    );
+}
+
+[data-season="winter"] .mountain::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9) 26%, rgba(255, 255, 255, 0) 58%),
+    linear-gradient(
+      180deg,
+      var(--foliage-2),
+      color-mix(in srgb, var(--foliage-2) 72%, #1c2a22)
+    );
+}
+
+/* 菌盖积雪一圈 */
+[data-season="winter"] .mushroom .cap {
+  box-shadow:
+    inset 0 14px 0 -2px rgba(255, 255, 255, 0.95),
+    inset 0 -12px 14px -8px rgba(90, 30, 18, 0.55),
+    inset 0 6px 10px -4px rgba(255, 245, 235, 0.6);
+}
+
+/* 地块覆霜 */
+[data-season="winter"] .plot {
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -5px 0 rgba(20, 12, 6, 0.22);
+}
+
+/* 冬天土路也发白 */
+[data-season="winter"] .ground::after {
+  opacity: 0.65;
+}
+
+/* =============================================================
+   粒子系统（顺序即层叠优先级，冬雪殿后覆盖萤火）
+   ============================================================= */
+
+/* 春·白日：花瓣斜斜飘 */
+[data-season="spring"][data-phase="day"] .village::after {
+  background-image:
+    radial-gradient(4px 3px at 60px 40px, #f6c1cf 55%, transparent 75%),
+    radial-gradient(3px 2.4px at 170px 150px, #f2aebf 55%, transparent 75%),
+    radial-gradient(4px 3px at 280px 80px, #fad2dc 55%, transparent 75%),
+    radial-gradient(3px 2.2px at 350px 220px, #f6c1cf 55%, transparent 75%),
+    radial-gradient(3.5px 2.6px at 110px 300px, #f2aebf 55%, transparent 75%),
+    radial-gradient(3px 2.4px at 240px 330px, #fad2dc 55%, transparent 75%);
+  background-size: 420px 360px;
+  animation: fall-drift 17s linear infinite;
+  opacity: 0.9;
+}
+
+/* 秋·白日：叶子打着旋落 */
+[data-season="autumn"][data-phase="day"] .village::after {
+  background-image:
+    radial-gradient(4.5px 3.2px at 60px 40px, #d98e4a 55%, transparent 75%),
+    radial-gradient(3.5px 2.6px at 170px 150px, #c8702f 55%, transparent 75%),
+    radial-gradient(4px 3px at 280px 80px, #e0a45c 55%, transparent 75%),
+    radial-gradient(3.5px 2.6px at 350px 220px, #b3552b 55%, transparent 75%),
+    radial-gradient(4px 3px at 110px 300px, #d98e4a 55%, transparent 75%),
+    radial-gradient(3.5px 2.6px at 240px 330px, #c8702f 55%, transparent 75%);
+  background-size: 420px 360px;
+  animation: fall-drift 14s linear infinite;
+  opacity: 0.92;
+}
+
+/* 黄昏与夜晚：萤火虫（冬季除外，见下方雪的覆盖） */
+[data-phase="dusk"] .village::after,
+[data-phase="night"] .village::after {
+  background-image:
+    radial-gradient(circle 3px at 40px 300px, #fff2ae 30%, rgba(255, 220, 120, 0.4) 60%, transparent 75%),
+    radial-gradient(circle 2.4px at 120px 180px, #ffeC9e 30%, rgba(255, 215, 110, 0.35) 60%, transparent 75%),
+    radial-gradient(circle 3.4px at 210px 320px, #fff2ae 30%, rgba(255, 220, 120, 0.45) 60%, transparent 75%),
+    radial-gradient(circle 2px at 300px 240px, #ffe89a 35%, rgba(255, 210, 100, 0.3) 60%, transparent 75%),
+    radial-gradient(circle 3px at 380px 130px, #fff2ae 30%, rgba(255, 220, 120, 0.4) 60%, transparent 75%),
+    radial-gradient(circle 2px at 60px 90px, #ffe89a 35%, rgba(255, 210, 100, 0.3) 60%, transparent 75%),
+    radial-gradient(circle 2.6px at 260px 60px, #ffec9e 30%, rgba(255, 215, 110, 0.35) 60%, transparent 75%);
+  background-size: 420px 360px;
+  animation:
+    firefly-drift 26s linear infinite,
+    firefly-flicker 3.4s var(--ease-soft) infinite;
+}
+
+/* 冬：雪（所有相位，覆盖萤火规则） */
+[data-season="winter"] .village::after {
+  background-image:
+    radial-gradient(circle 2.6px at 50px 30px, rgba(255, 255, 255, 0.95) 55%, transparent 75%),
+    radial-gradient(circle 2px at 140px 120px, rgba(255, 255, 255, 0.8) 55%, transparent 75%),
+    radial-gradient(circle 3.2px at 230px 60px, rgba(255, 255, 255, 0.95) 55%, transparent 75%),
+    radial-gradient(circle 2px at 320px 180px, rgba(240, 248, 255, 0.75) 55%, transparent 75%),
+    radial-gradient(circle 2.6px at 390px 90px, rgba(255, 255, 255, 0.9) 55%, transparent 75%),
+    radial-gradient(circle 2.2px at 90px 240px, rgba(255, 255, 255, 0.85) 55%, transparent 75%),
+    radial-gradient(circle 3px at 190px 300px, rgba(255, 255, 255, 0.92) 55%, transparent 75%),
+    radial-gradient(circle 2px at 300px 330px, rgba(240, 248, 255, 0.75) 55%, transparent 75%),
+    radial-gradient(circle 2.4px at 370px 250px, rgba(255, 255, 255, 0.85) 55%, transparent 75%);
+  background-size: 420px 360px;
+  animation: snowfall 13s linear infinite;
+  opacity: 0.95;
+}
+
+/* 冬夜雪更慢、更静 */
+[data-season="winter"][data-phase="night"] .village::after {
+  animation-duration: 18s;
+  opacity: 0.8;
+}
+
+/* ---------- 粒子与星光动效 ---------- */
+
+/* 位移量 = 平铺尺寸整数倍（420/360），循环无缝 */
+@keyframes fall-drift {
+  from { transform: translate3d(0, -360px, 0); }
+  to { transform: translate3d(-420px, 0, 0); }
+}
+
+@keyframes snowfall {
+  from { transform: translate3d(0, -360px, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes firefly-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-420px, -360px, 0); }
+}
+
+@keyframes firefly-flicker {
+  0%, 100% { opacity: 0.35; }
+  42% { opacity: 0.95; }
+  62% { opacity: 0.55; }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}

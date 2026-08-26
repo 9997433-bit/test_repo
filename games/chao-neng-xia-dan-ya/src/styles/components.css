@@ -1,0 +1,700 @@
+/* ============================================================
+   超能下蛋鸭 · 组件层 components.css
+   按钮 / 卡片 / 芯片(元素·流派·稀有度) / 进度条 / 星级 / 弹窗 / toast
+   命名：BEM-lite（block__element--modifier）+ .is-* 状态 + data-* 枚举
+   所有交互目标 ≥ var(--tap-min) = 44px
+   ============================================================ */
+
+/* ============ 按钮 .btn ============ */
+.btn {
+  -webkit-tap-highlight-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 10px 18px;
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  background-color: var(--night-4);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0) 55%
+  );
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    filter var(--dur-2) var(--ease-out);
+}
+
+.btn:hover {
+  filter: brightness(1.12);
+}
+
+.btn:active {
+  transform: translateY(2px) scale(0.97);
+  box-shadow: var(--shadow-1);
+  filter: brightness(0.96);
+}
+
+.btn:disabled,
+.btn.is-locked {
+  cursor: not-allowed;
+  filter: grayscale(0.75) brightness(0.65);
+  transform: none;
+  box-shadow: none;
+}
+
+/* 主行动：蛋黄金按钮（发射 / 开战 / 领取） */
+.btn--primary {
+  color: var(--ink-on-yolk);
+  background-color: var(--yolk-600);
+  background-image: var(--grad-yolk);
+  border-color: #c77e00;
+  text-shadow: 0 1px 0 rgba(255, 246, 207, 0.55);
+  box-shadow: var(--shadow-1), var(--glow-yolk),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.btn--primary:hover {
+  filter: brightness(1.06) saturate(1.08);
+}
+
+/* 幽灵按钮：次级操作（返回 / 详情） */
+.btn--ghost {
+  background-color: transparent;
+  background-image: none;
+  border-color: color-mix(in srgb, var(--yolk-500) 45%, transparent);
+  color: var(--yolk-300);
+  box-shadow: none;
+}
+
+.btn--ghost:hover {
+  background-color: color-mix(in srgb, var(--yolk-500) 12%, transparent);
+}
+
+/* 危险操作：放弃 / 重置 */
+.btn--danger {
+  background-color: color-mix(in srgb, var(--danger) 28%, var(--night-3));
+  border-color: var(--danger);
+  color: #ffd9e0;
+}
+
+/* 尺寸变体（--sm 命中区仍 ≥44px，靠透明 padding 保证） */
+.btn--lg {
+  min-height: 56px;
+  padding: 14px 28px;
+  font-size: var(--fs-lg);
+  border-radius: var(--radius);
+}
+
+.btn--sm {
+  padding: 6px 12px;
+  font-size: var(--fs-sm);
+}
+
+/* 圆形图标钮（暂停 / 设置 / 音量） */
+.btn--icon {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  font-size: 1.3rem;
+}
+
+/* ============ 面板 & 卡片 ============ */
+.panel {
+  background-color: color-mix(in srgb, var(--night-3) 88%, transparent);
+  background-image: var(--grad-panel);
+  border: 1px solid color-mix(in srgb, var(--yolk-500) 26%, var(--night-line));
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  color: var(--yolk-300);
+  font-size: var(--fs-lg);
+}
+
+/* —— 英雄卡 .hero-card ——
+   结构：portrait / name / lv / stars / school 芯片
+   稀有度走 data-rarity="1..5"，选中态 .is-selected，未解锁 .is-locked */
+.hero-card {
+  --rarity-c: var(--rarity-1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 88px;
+  padding: var(--sp-2);
+  background-color: var(--night-3);
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--rarity-c) 16%, transparent),
+    transparent 46%
+  );
+  border: 2px solid color-mix(in srgb, var(--rarity-c) 60%, var(--night-line));
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  transition:
+    transform var(--dur-2) var(--ease-pop),
+    box-shadow var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out);
+}
+
+.hero-card[data-rarity="2"] { --rarity-c: var(--rarity-2); }
+.hero-card[data-rarity="3"] { --rarity-c: var(--rarity-3); }
+.hero-card[data-rarity="4"] { --rarity-c: var(--rarity-4); }
+.hero-card[data-rarity="5"] { --rarity-c: var(--rarity-5); }
+
+.hero-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-2);
+}
+
+.hero-card.is-selected {
+  border-color: var(--yolk-500);
+  box-shadow: var(--shadow-2), var(--glow-yolk);
+  transform: translateY(-4px);
+}
+
+.hero-card.is-selected::after {
+  content: "✓";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 900;
+  color: var(--ink-on-yolk);
+  background: var(--grad-yolk);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-1);
+}
+
+.hero-card.is-locked {
+  filter: grayscale(0.9) brightness(0.6);
+  cursor: not-allowed;
+}
+
+.hero-card.is-locked::after {
+  content: "🔒";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  filter: none;
+}
+
+/* 头像区：禽类由 Canvas 矢量绘制填入；CSS 只给蛋形底座 */
+.hero-card__portrait {
+  position: relative;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  background:
+    radial-gradient(
+      60% 52% at 50% 62%,
+      color-mix(in srgb, var(--rarity-c) 30%, var(--night-2)),
+      var(--night-2) 78%
+    );
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.hero-card__portrait > canvas,
+.hero-card__portrait > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.hero-card__name {
+  font-size: var(--fs-sm);
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-card__lv {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 1px 7px;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  color: var(--ink);
+  background: rgba(5, 2, 12, 0.66);
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius-pill);
+}
+
+.hero-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+}
+
+/* —— 三选一大卡 .pick-card（肉鸽 / 神器）—— */
+.pick-card {
+  --rarity-c: var(--rarity-3);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  width: min(150px, 28vw);
+  min-height: 190px;
+  padding: var(--sp-3);
+  text-align: center;
+  background-color: var(--night-3);
+  background-image: linear-gradient(
+    200deg,
+    color-mix(in srgb, var(--rarity-c) 22%, transparent),
+    transparent 52%
+  );
+  border: 2px solid color-mix(in srgb, var(--rarity-c) 65%, var(--night-line));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    transform var(--dur-2) var(--ease-pop),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+
+.pick-card[data-rarity="2"] { --rarity-c: var(--rarity-2); }
+.pick-card[data-rarity="3"] { --rarity-c: var(--rarity-3); }
+.pick-card[data-rarity="4"] { --rarity-c: var(--rarity-4); }
+.pick-card[data-rarity="5"] { --rarity-c: var(--rarity-5); }
+
+.pick-card:hover,
+.pick-card:focus-visible {
+  transform: translateY(-6px) scale(1.03);
+  box-shadow: var(--shadow-3),
+    0 0 18px color-mix(in srgb, var(--rarity-c) 45%, transparent);
+}
+
+.pick-card__icon {
+  font-size: 2.4rem;
+  line-height: 1;
+  filter: drop-shadow(0 4px 8px rgba(5, 2, 12, 0.6));
+}
+
+.pick-card__title {
+  font-size: var(--fs-md);
+  font-weight: 800;
+  color: color-mix(in srgb, var(--rarity-c) 70%, var(--ink));
+}
+
+.pick-card__desc {
+  font-size: var(--fs-xs);
+  color: var(--ink-dim);
+  line-height: 1.45;
+}
+
+/* ============ 芯片 .chip：元素 / 流派 / 通用标签 ============
+   色盲三重编码：色相 + 纹样(data-element) + 字形(::before)
+   条纹▲火 · 圆点❆冰 · 网格⚡雷 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  color: var(--ink);
+  background-color: var(--night-4);
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.chip[data-element] {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(5, 2, 12, 0.7);
+}
+
+.chip[data-element]::before {
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.chip[data-element="fire"] {
+  background-color: var(--el-fire-deep);
+  background-image: var(--pat-stripes);
+  border-color: var(--el-fire);
+}
+
+.chip[data-element="fire"]::before {
+  content: "▲";
+}
+
+.chip[data-element="ice"] {
+  background-color: var(--el-ice-deep);
+  background-image: var(--pat-dots);
+  background-size: 8px 8px;
+  border-color: var(--el-ice);
+}
+
+.chip[data-element="ice"]::before {
+  content: "❆";
+}
+
+.chip[data-element="thunder"] {
+  background-color: var(--el-thunder-deep);
+  background-image: var(--pat-grid);
+  border-color: var(--el-thunder);
+}
+
+.chip[data-element="thunder"]::before {
+  content: "⚡";
+}
+
+/* 流派芯片：data-school="combo|brute|elemental|collide|support" */
+.chip[data-school] {
+  --school-c: var(--ink-dim);
+  background-color: color-mix(in srgb, var(--school-c) 20%, var(--night-3));
+  border-color: color-mix(in srgb, var(--school-c) 70%, transparent);
+  color: color-mix(in srgb, var(--school-c) 75%, var(--ink));
+}
+
+.chip[data-school="combo"] { --school-c: var(--school-combo); }
+.chip[data-school="brute"] { --school-c: var(--school-brute); }
+.chip[data-school="elemental"] { --school-c: var(--school-elemental); }
+.chip[data-school="collide"] { --school-c: var(--school-collide); }
+.chip[data-school="support"] { --school-c: var(--school-support); }
+
+/* 羁绊激活态（2/3/4+ 同流派） */
+.chip.is-active {
+  box-shadow: 0 0 8px color-mix(in srgb, var(--school-c, var(--yolk-500)) 55%, transparent);
+  border-style: solid;
+}
+
+/* 奖励芯片（结算掉落） */
+.chip--reward {
+  min-height: 32px;
+  padding: 5px 12px;
+  font-size: var(--fs-sm);
+  background-color: color-mix(in srgb, var(--yolk-500) 14%, var(--night-3));
+  border-color: color-mix(in srgb, var(--yolk-500) 50%, transparent);
+  color: var(--yolk-300);
+}
+
+/* 流派小圆点（卡片角标用） */
+.school-dot {
+  --school-c: var(--ink-dim);
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--school-c);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--school-c) 70%, transparent);
+  flex: none;
+}
+
+.school-dot[data-school="combo"] { --school-c: var(--school-combo); }
+.school-dot[data-school="brute"] { --school-c: var(--school-brute); }
+.school-dot[data-school="elemental"] { --school-c: var(--school-elemental); }
+.school-dot[data-school="collide"] { --school-c: var(--school-collide); }
+.school-dot[data-school="support"] { --school-c: var(--school-support); }
+
+/* ============ 进度条 .bar ============
+   填充走 --value ∈ [0,1]，scaleX 变换保证 60fps */
+.bar {
+  --value: 1;
+  position: relative;
+  height: 14px;
+  background: rgba(5, 2, 12, 0.55);
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.bar__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left center;
+  transform: scaleX(var(--value));
+  background: var(--grad-yolk);
+  transition: transform var(--dur-3) var(--ease-out);
+}
+
+.bar__label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  text-shadow: 0 1px 2px rgba(5, 2, 12, 0.85);
+  pointer-events: none;
+}
+
+.bar--hp .bar__fill {
+  background: var(--grad-hp);
+}
+
+.bar--energy .bar__fill {
+  background: var(--grad-yolk);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--yolk-500) 50%, transparent);
+}
+
+.bar--xp .bar__fill {
+  background: linear-gradient(90deg, var(--neon-teal), var(--neon-blue));
+}
+
+/* 低血预警（≤30% 时 JS 挂 .is-low，脉冲动画见 fx.css） */
+.bar.is-low {
+  border-color: var(--danger);
+}
+
+.bar.is-low .bar__fill {
+  background: linear-gradient(90deg, #ff7a8d, var(--danger));
+}
+
+/* BOSS 血条：加厚 + 分段刻度 */
+.bar--boss {
+  height: 20px;
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--night-line));
+}
+
+.bar--boss::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(10% - 1px),
+    rgba(5, 2, 12, 0.55) calc(10% - 1px) 10%
+  );
+  pointer-events: none;
+}
+
+/* ============ 星级 .stars ============ */
+.stars {
+  display: inline-flex;
+  gap: 2px;
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.stars__star {
+  color: var(--night-line);
+}
+
+.stars__star.is-on {
+  color: var(--yolk-500);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--yolk-500) 60%, transparent);
+}
+
+/* ============ 键位提示 .kbd ============ */
+.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  font-family: var(--font-num);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  color: var(--ink-dim);
+  background: var(--night-2);
+  border: 1px solid var(--night-line);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+}
+
+/* ============ 页签 .tab-bar（模式切换）============ */
+.tab-bar {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  background: rgba(5, 2, 12, 0.45);
+  border: 1px solid var(--night-line);
+  border-radius: var(--radius);
+}
+
+.tab {
+  flex: 1;
+  min-height: var(--tap-min);
+  padding: 8px 12px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-2) var(--ease-out),
+    color var(--dur-2) var(--ease-out);
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab.is-active {
+  color: var(--ink-on-yolk);
+  background: var(--grad-yolk);
+  box-shadow: var(--shadow-1);
+}
+
+/* ============ 列表行 .list-row（结算明细 / 图鉴 / 排行）============ */
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--tap-min);
+  padding: var(--sp-2) var(--sp-3);
+  background: color-mix(in srgb, var(--night-2) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--night-line) 60%, transparent);
+  border-radius: var(--radius-sm);
+}
+
+.list-row + .list-row {
+  margin-top: var(--sp-2);
+}
+
+.list-row__label {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--ink-dim);
+}
+
+.list-row__value {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--yolk-300);
+}
+
+/* ============ 统计对 .stat（角色面板属性）============ */
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.stat__value {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xl);
+  font-weight: 900;
+  color: var(--yolk-500);
+}
+
+.stat__label {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+/* ============ 遮罩 & 弹窗 ============ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: rgba(8, 4, 16, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.modal {
+  z-index: var(--z-modal);
+  width: min(420px, 92vw);
+  max-height: 86dvh;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  background-color: var(--night-3);
+  background-image: var(--grad-panel);
+  border: 1px solid color-mix(in srgb, var(--yolk-500) 35%, var(--night-line));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3), var(--glow-yolk);
+}
+
+.modal__title {
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-xl);
+  color: var(--yolk-300);
+  text-align: center;
+}
+
+.modal__actions {
+  display: flex;
+  gap: var(--sp-3);
+  justify-content: center;
+  margin-top: var(--sp-5);
+}
+
+.modal__actions .btn {
+  flex: 1;
+}
+
+/* ============ Toast .toast ============ */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: var(--z-toast);
+  transform: translateX(-50%);
+  max-width: min(360px, 88vw);
+  padding: 10px 18px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  text-align: center;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--night-4) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--yolk-500) 40%, var(--night-line));
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+}
+
+.toast--ok {
+  border-color: var(--ok);
+  color: color-mix(in srgb, var(--ok) 60%, var(--ink));
+}
+
+.toast--danger {
+  border-color: var(--danger);
+  color: color-mix(in srgb, var(--danger) 55%, var(--ink));
+}

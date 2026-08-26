@@ -1,0 +1,325 @@
+/* ============================================================
+   超能下蛋鸭 · 布局层 layout.css
+   应用壳 / 霓虹招牌 / 屏幕容器 / 舞台框 / 结算屏 / 响应式
+   注意：index.html 只挂 tokens.css + layout.css + fx.css，
+        base/components/hud 由此处 @import 聚合，勿在 html 重复挂。
+   ============================================================ */
+@import "./base.css";
+@import "./components.css";
+@import "./hud.css";
+
+/* ============ 应用壳 ============ */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+/* ============ 霓虹招牌顶栏 ============ */
+.topbar {
+  text-align: center;
+  padding: var(--sp-4) var(--sp-3) 0;
+}
+
+.topbar h1 {
+  display: inline-block;
+  font-size: var(--fs-display);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-indent: 0.12em;
+  background: var(--grad-yolk);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--yolk-500) 45%, transparent))
+    drop-shadow(0 3px 0 rgba(5, 2, 12, 0.55));
+  /* 霓虹偶发闪烁，reduce-motion 自动关闭（fx.css） */
+  animation: kf-neon-flicker 11s linear infinite;
+}
+
+.tagline {
+  margin: var(--sp-1) 0 0;
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.24em;
+  text-indent: 0.24em;
+}
+
+/* ============ 屏幕容器 ============
+   每个游戏屏（菜单/编队/战斗/结算/…）挂 .screen 进场；
+   变体：--menu 居中窄栏、--battle 贴合舞台、--wide 图鉴宽栏 */
+#screen-root {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: var(--sp-4) var(--sp-3);
+}
+
+.screen {
+  width: 100%;
+  max-width: 540px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  animation: kf-screen-enter var(--dur-3) var(--ease-out) both;
+}
+
+.screen--battle {
+  max-width: var(--stage-w);
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.screen--wide {
+  max-width: 860px;
+}
+
+.screen__title {
+  text-align: center;
+  color: var(--yolk-300);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--yolk-500) 30%, transparent);
+}
+
+/* ============ 主菜单模式宫格 ============ */
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-3);
+}
+
+.menu-grid .btn {
+  min-height: 72px;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+/* 编队横排（5 槽） */
+.team-bar {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* 卡片宫格（图鉴 / 选人） */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--sp-3);
+}
+
+/* 三选一横排（肉鸽） */
+.pick-row {
+  display: flex;
+  gap: var(--sp-3);
+  justify-content: center;
+  align-items: stretch;
+}
+
+/* ============ 舞台框 .stage-frame ============
+   Canvas 战场 + HUD 绝对定位容器；霓虹描边 + 内衬光 */
+.stage-frame {
+  position: relative;
+  width: min(var(--stage-w), 100%);
+  margin-inline: auto;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--neon-teal) 35%, var(--night-line));
+  box-shadow:
+    var(--shadow-2),
+    0 0 0 1px rgba(5, 2, 12, 0.8),
+    0 0 22px color-mix(in srgb, var(--neon-teal) 16%, transparent),
+    inset 0 0 40px rgba(5, 2, 12, 0.5);
+  overflow: hidden;
+  /* 战场内手势全部交给游戏逻辑 */
+  touch-action: none;
+}
+
+#stage {
+  display: block;
+  width: 100%;
+  max-height: calc(100dvh - 210px);
+  aspect-ratio: 480 / 800;
+  height: auto;
+  margin-inline: auto;
+  background:
+    radial-gradient(
+      70% 40% at 50% 0%,
+      color-mix(in srgb, var(--neon-violet) 14%, transparent),
+      transparent 70%
+    ),
+    #0d0a14;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 兼容旧脚手架：#stage 直接挂在卡片里时保留圆角与上边距 */
+.boot-card #stage {
+  border-radius: 12px;
+  margin-top: var(--sp-3);
+}
+
+/* ============ 启动卡（脚手架期占位，保持兼容）============ */
+.boot-card {
+  background-color: color-mix(in srgb, var(--panel) 88%, transparent);
+  background-image: var(--grad-panel);
+  border: 1px solid color-mix(in srgb, var(--yolk-500) 35%, transparent);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+  max-width: 520px;
+  box-shadow:
+    var(--shadow-2),
+    0 0 0 1px color-mix(in srgb, var(--neon-teal) 20%, transparent);
+}
+
+/* ============ 结算屏 .result ============
+   结构：grade 印章 → 星级 → 明细行(.list-row 逐行入场) → 奖励芯片 → 按钮
+   行入场顺序走 --i（fx.css 的 .fx-enter 读取） */
+.result {
+  position: relative;
+  width: min(420px, 100%);
+  margin-inline: auto;
+  padding: var(--sp-5);
+  text-align: center;
+  background-color: var(--night-3);
+  background-image: var(--grad-panel);
+  border: 1px solid color-mix(in srgb, var(--yolk-500) 40%, var(--night-line));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+}
+
+.result--win {
+  border-color: color-mix(in srgb, var(--yolk-500) 65%, transparent);
+  box-shadow: var(--shadow-3), var(--glow-yolk);
+}
+
+.result--lose {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--night-line));
+  filter: saturate(0.85);
+}
+
+.result__title {
+  font-size: var(--fs-2xl);
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  color: var(--yolk-300);
+}
+
+.result--lose .result__title {
+  color: var(--ink-dim);
+}
+
+/* 评级印章：data-grade="S|A|B|C" 决定色彩，盖章动画见 fx.css */
+.result__grade {
+  --grade-c: var(--ink-dim);
+  position: absolute;
+  top: -18px;
+  right: -10px;
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-num);
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: var(--grade-c);
+  background: rgba(5, 2, 12, 0.55);
+  border: 3px solid var(--grade-c);
+  border-radius: var(--radius-pill);
+  rotate: 12deg;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--grade-c) 60%, transparent);
+  box-shadow:
+    0 0 16px color-mix(in srgb, var(--grade-c) 35%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--grade-c) 25%, transparent);
+  animation: kf-stamp var(--dur-4) var(--ease-pop) both;
+}
+
+.result__grade[data-grade="S"] { --grade-c: var(--yolk-500); }
+.result__grade[data-grade="A"] { --grade-c: var(--neon-teal); }
+.result__grade[data-grade="B"] { --grade-c: var(--neon-blue); }
+.result__grade[data-grade="C"] { --grade-c: var(--ink-dim); }
+
+.result__stars {
+  margin-top: var(--sp-2);
+  font-size: 1.7rem;
+}
+
+.result__rows {
+  margin-top: var(--sp-4);
+  text-align: initial;
+}
+
+.result__rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  justify-content: center;
+  margin-top: var(--sp-4);
+}
+
+.result__actions {
+  display: flex;
+  gap: var(--sp-3);
+  justify-content: center;
+  margin-top: var(--sp-5);
+}
+
+.result__actions .btn {
+  flex: 1;
+  max-width: 190px;
+}
+
+/* ============ 暂停菜单 ============ */
+.pause-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 240px;
+}
+
+.pause-menu .btn {
+  width: 100%;
+}
+
+/* ============ 响应式 ============ */
+/* 窄屏：收紧留白，招牌缩小间距 */
+@media (max-width: 420px) {
+  #screen-root {
+    padding: var(--sp-3) var(--sp-2);
+  }
+
+  .topbar {
+    padding-top: var(--sp-3);
+  }
+
+  .tagline {
+    letter-spacing: 0.12em;
+    text-indent: 0.12em;
+  }
+
+  .pick-row {
+    gap: var(--sp-2);
+  }
+}
+
+/* 矮屏横持：顶栏折叠为单行，让位给战场 */
+@media (max-height: 620px) {
+  .topbar h1 {
+    font-size: var(--fs-xl);
+  }
+
+  .tagline {
+    display: none;
+  }
+
+  #stage {
+    max-height: calc(100dvh - 150px);
+  }
+}

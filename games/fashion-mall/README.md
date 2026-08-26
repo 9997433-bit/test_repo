@@ -30,12 +30,12 @@ npx --yes serve -l 4173 .
 
 注意必须通过 HTTP 访问，不能用 `file://` 直接打开 `index.html` —— 浏览器会以跨源策略拒绝加载 ES Modules。
 
-GitHub Pages 也必须带上这一级目录，否则会和其他游戏抢仓库根路径：
+GitHub Pages 与同仓库其他游戏一样，独占一级路径（不是 `games/` 前缀）：
 
 - 目录页：<https://9997433-bit.github.io/test_repo/>
-- 本游戏：<https://9997433-bit.github.io/test_repo/games/fashion-mall/>
+- 本游戏：<https://9997433-bit.github.io/test_repo/fashion-mall/>
 
-资源引用全部是相对路径（`./src/...`），挂在 `games/fashion-mall/` 下即可，不要把入口搬到仓库根目录。
+仓库里源码仍在 `games/fashion-mall/`。发布工作流只把 `index.html` + `src/` 拷到 Pages 的 `/fashion-mall/`，不会覆盖其他游戏。
 
 ## 测试
 
