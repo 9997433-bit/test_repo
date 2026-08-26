@@ -12,10 +12,11 @@ export const SIDE_IDS = ["player", "ai"];
 const LOG_LIMIT = 200;
 const DEFAULT_SEED = 20260623;
 /**
- * 引擎与 AI 的内部字段：默认快照不带（契约形状锁在 tests/state.test.js），
+ * AI/引擎的内部字段：默认快照不带（契约形状锁在 tests/state.test.js），
  * 只有 `serialize({ replay: true })` 这种「精确续跑档」才写出来。
+ * 注意 `enemySeq` 不在此列 —— 那是战斗层的存档字段，两种档都要带走。
  */
-const INTERNAL_SIDE_KEYS = ["nextEnemyId", "_acc"];
+const INTERNAL_SIDE_KEYS = ["_acc"];
 
 function createSide(id) {
   return {
@@ -30,9 +31,6 @@ function createSide(id) {
     kills: 0,
     haste: 0,
     wave: 1,
-    // combat/sim.js 仍用模块级自增 id 发牌，同进程里多局会串号；
-    // 每侧自带号段，game 层在每步 tick 后把新出场的敌人收编进来。
-    nextEnemyId: 1,
   };
 }
 
@@ -40,15 +38,6 @@ function withoutInternals(side) {
   const copy = { ...side };
   for (const key of INTERNAL_SIDE_KEYS) delete copy[key];
   return copy;
-}
-
-/** 旧档/外部档没带号段时，从现有敌人推一个不会撞号的起点。 */
-function deriveNextEnemyId(side) {
-  let max = 0;
-  for (const e of side.enemies) {
-    if (Number.isFinite(e?.id) && e.id > max) max = Math.floor(e.id);
-  }
-  return max + 1;
 }
 
 function deepClone(value) {
@@ -325,75 +314,14 @@ export function createGame(opts = {}) {
     return heroes;
   }
 
-  /* ------------------------------------------------------------ 敌人编号对齐 */
-  /*
-   * combat/sim.js 用模块级 `enemySeq` 发 id：跨对局、跨 game 实例单向递增，
-   * 同一颗种子跑两遍拿到的敌人 id 并不相同，存档与回放也就对不上。
-   * 不改 combat 的前提下，game 层在每步 tick 前记下已编号的敌人，
-   * tick 后把新出场的重新收编进本侧 `nextEnemyId` 号段。
-   */
-
-  /** 发一个本侧独有的编号；被存档/测试直接塞进来的号自动跳过。 */
-  function issueEnemyId(side, taken) {
-    let id = Number.isInteger(side.nextEnemyId) && side.nextEnemyId > 0 ? side.nextEnemyId : 1;
-    while (taken.has(id)) id += 1;
-    side.nextEnemyId = id + 1;
-    taken.add(id);
-    return id;
-  }
-
-  function captureEnemies() {
-    const before = new Map();
-    for (const sideId of SIDE_IDS) {
-      const side = state.sides[sideId];
-      const refs = new Set();
-      const ids = new Set();
-      for (const e of side.enemies) {
-        refs.add(e);
-        ids.add(e?.id);
-      }
-      before.set(sideId, { refs, ids });
-    }
-    return before;
-  }
-
-  function alignEnemyIds(before) {
-    for (const sideId of SIDE_IDS) {
-      const side = state.sides[sideId];
-      const known = before.get(sideId);
-      if (!side || !known) continue;
-      for (const e of side.enemies) {
-        if (!e || known.refs.has(e)) continue;
-        e.id = issueEnemyId(side, known.ids);
-        known.refs.add(e);
-      }
-    }
-  }
-
-  /** 出生当帧就阵亡的敌人只在事件里露过面，日志同样要换成本侧号段。 */
-  function stepEmitter(before) {
-    return (type, payload) => {
-      if (type === "kill" && payload && typeof payload === "object") {
-        const known = before.get(payload.side);
-        const side = getSide(payload.side);
-        if (known && side && !known.ids.has(payload.id)) {
-          payload.id = issueEnemyId(side, known.ids);
-        }
-      }
-      emit(type, payload);
-    };
-  }
-
   /** 推进一步；返回 false 表示胜负已分，本帧无需继续推进。 */
   function step(dt) {
-    const before = captureEnemies();
-    const notify = stepEmitter(before);
     state.time += dt;
-    tickSideCombat(state.sides.player, dt, notify);
-    tickSideCombat(state.sides.ai, dt, notify);
-    checkWinner(state, notify);
-    if (state.phase === "playing") maybeAdvanceWave(state, notify);
-    alignEnemyIds(before);
+    tickSideCombat(state.sides.player, dt, emit);
+    tickSideCombat(state.sides.ai, dt, emit);
+    checkWinner(state, emit);
+    if (state.phase !== "playing") return false;
+    maybeAdvanceWave(state, emit);
     return state.phase === "playing";
   }
 
@@ -412,7 +340,7 @@ export function createGame(opts = {}) {
   /**
    * 默认快照与契约一致：纯数据、JSON 安全、不含引擎内部字段。
    * `{ replay: true }`（沿用旧名 `{ rng: true }`）额外带上 rng 游标、结算标记、
-   * 每侧敌人号段与固定步长余量 —— 这份档才能逐帧续跑出同一局。
+   * AI 节流器与固定步长余量 —— 这份档才能逐帧续跑出同一局。
    */
   function serialize(serializeOpts = {}) {
     const replay = serializeOpts.rng === true || serializeOpts.replay === true;
@@ -455,7 +383,7 @@ export function createGame(opts = {}) {
         sides[id] = fresh;
         continue;
       }
-      const side = {
+      sides[id] = {
         ...fresh,
         ...raw,
         id,
@@ -467,11 +395,6 @@ export function createGame(opts = {}) {
         enemies: Array.isArray(raw.enemies) ? raw.enemies : [],
         spawnQueue: Array.isArray(raw.spawnQueue) ? raw.spawnQueue : [],
       };
-      side.nextEnemyId =
-        Number.isInteger(raw.nextEnemyId) && raw.nextEnemyId > 0
-          ? raw.nextEnemyId
-          : deriveNextEnemyId(side);
-      sides[id] = side;
     }
     state.phase = typeof data.phase === "string" ? data.phase : "menu";
     state.winner = data.winner ?? null;
