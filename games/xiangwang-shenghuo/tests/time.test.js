@@ -90,7 +90,7 @@ describe("advanceTime", () => {
 });
 
 describe("offline plot catch-up", () => {
-  it.skip("caps plot progress at eight real hours (pending effective catchUpPlots cap)", () => {
+  it("caps plot progress at eight real hours (pending effective catchUpPlots cap)", () => {
     const savedAt = Date.parse("2026-04-01T00:00:00Z");
     const now = savedAt + 24 * REAL_HOUR_MS;
     const initial = createInitialState();
