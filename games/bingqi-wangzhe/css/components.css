@@ -345,6 +345,79 @@
   opacity: 0.35;
 }
 
+/* ============ 音量滑杆 ============ */
+.volrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.volrow > .icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--gold);
+}
+
+.volrow__val {
+  min-width: 34px;
+  font-size: 11px;
+  color: var(--paper-2);
+  text-align: right;
+}
+
+.slider {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.slider:disabled {
+  opacity: 0.4;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold));
+}
+
+.slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold));
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 1px solid var(--gold-lit);
+  background: radial-gradient(circle at 38% 32%, #fff6d6, #6d4c10);
+  box-shadow: 0 0 8px -1px var(--gold);
+}
+
+.slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--gold-lit);
+  background: radial-gradient(circle at 38% 32%, #fff6d6, #6d4c10);
+  box-shadow: 0 0 8px -1px var(--gold);
+}
+
+.slider:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
 /* ============ 筹码 / 标签 ============ */
 .chip {
   display: inline-flex;

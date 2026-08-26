@@ -3,6 +3,7 @@
 import { h, clear } from '../dom.js';
 import { icon } from '../icons.js';
 import { reducedMotion } from '../motion.js';
+import { play as playCue } from '../audio.js';
 
 /* ----------------------------- 吐司 ----------------------------- */
 
@@ -29,7 +30,11 @@ export function createToaster() {
     el,
     show,
     ok: (t) => show(t, 'ok', 'check'),
-    bad: (t) => show(t, 'bad', 'close'),
+    // 失败提示配一声短促的闷响：吐司会飘走，声音不会被漏看
+    bad: (t) => {
+      playCue('error');
+      return show(t, 'bad', 'close');
+    },
     gold: (t) => show(t, 'gold', 'sparkle')
   };
 }
