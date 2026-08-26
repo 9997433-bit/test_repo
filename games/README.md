@@ -9,6 +9,14 @@
 | `linghuashi/` | 《灵画师》 | 4173 |
 | `bingqi-wangzhe/` | 《兵器王者》 | — |
 
+本地：
+
 ```bash
 cd games/zaohua-xianfu && npm install && npm run dev
 ```
+
+GitHub Pages 按游戏分子路径，互不覆盖：
+
+- 目录页：`https://<user>.github.io/<repo>/`
+- 造化仙府：`https://<user>.github.io/<repo>/zaohua-xianfu/`
+- 赵云与阿斗：`https://<user>.github.io/<repo>/zhao-yun-adou/`

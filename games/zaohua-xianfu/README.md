@@ -14,3 +14,5 @@ npm run dev
 ```
 
 打开 `http://localhost:4174`。
+
+GitHub Pages 地址（与其他游戏分目录）：`https://<user>.github.io/<repo>/zaohua-xianfu/`

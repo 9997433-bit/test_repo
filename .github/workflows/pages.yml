@@ -1,11 +1,12 @@
-name: Deploy 造化仙府 to Pages
+name: Deploy games to Pages
 
 on:
   push:
     branches: [main]
     paths:
-      - "games/zaohua-xianfu/**"
-      - ".github/workflows/pages-zaohua.yml"
+      - "games/**"
+      - ".github/workflows/pages.yml"
+      - ".github/scripts/assemble-pages.sh"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +15,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages-zaohua
+  group: pages
   cancel-in-progress: true
 
 jobs:
@@ -25,16 +26,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
-          cache-dependency-path: games/zaohua-xianfu/package-lock.json
-      - name: Install and build
-        working-directory: games/zaohua-xianfu
-        run: |
-          npm ci
-          npm run build
+      - name: Build each game into its own path
+        run: bash .github/scripts/assemble-pages.sh
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: games/zaohua-xianfu/dist
+          path: site
 
   deploy:
     needs: build
