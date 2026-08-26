@@ -116,12 +116,18 @@ export function createApp(game) {
     renderTabs();
     const body = $("#tab-body");
     const s = state();
+    // 系统页重绘会重建导入/导出文本框，保留玩家已输入/导出的内容
+    const keptIO = body.querySelector("#save-io")?.value;
     if (activeTab === "city") body.innerHTML = tabCity(s);
     else if (activeTab === "army") body.innerHTML = tabArmy(s);
     else if (activeTab === "heroes") body.innerHTML = tabHeroes(s);
     else if (activeTab === "war") body.innerHTML = tabWar(s);
     else if (activeTab === "quests") body.innerHTML = tabQuests(s);
     else body.innerHTML = tabSys(s);
+    if (keptIO) {
+      const ta = body.querySelector("#save-io");
+      if (ta && !ta.value) ta.value = keptIO;
+    }
   }
 
   // ———— 内政 ————
