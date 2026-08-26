@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { collectPassives } from "../src/combat/artifacts.js";
 import { simulate } from "../src/combat/battle.js";
+import { offlineEfficiency } from "../src/core/offline.js";
 import { loadSave } from "../src/core/save.js";
-import { defaultState, reduce } from "../src/core/store.js";
+import { slotUsage, snapshotForSave } from "../src/core/state.js";
+import { defaultState, reduce, waveLossTax } from "../src/core/store.js";
+import { ARTIFACT_DROPS } from "../src/data/artifacts.js";
 import { towerEnemy } from "../src/data/enemies.js";
 import { adjacencyBonus } from "../src/mansion/layout.js";
+import { produce } from "../src/mansion/production.js";
 import { applyBreakthrough } from "../src/progression/realm.js";
 
 function bootFaction(faction = "mortal") {
@@ -88,32 +92,118 @@ describe("regressions", () => {
     expect(passives.skillMul).toBe(1);
   });
 
-  it("equips only owned artifacts and evicts the oldest fifth slot", () => {
+  it("equips only owned artifacts and evicts within the same slot", () => {
     const state = {
       ...bootFaction(),
-      ownedArtifacts: ["qixing", "lundao", "huagu", "taixu", "qinglong"],
-      equipped: ["qixing", "lundao", "huagu", "taixu"],
+      ownedArtifacts: ["qixing", "lundao", "huagu", "zhumo", "canyang", "yaoguang"],
+      equipped: ["qixing", "lundao", "huagu", "zhumo"],
     };
 
     const rejected = reduce(state, { type: "EQUIP_ARTIFACT", artifactId: "zhuque" });
-    const equipped = reduce(state, { type: "EQUIP_ARTIFACT", artifactId: "qinglong" });
+    const attack = reduce(state, { type: "EQUIP_ARTIFACT", artifactId: "canyang" });
+    const defend = reduce(state, { type: "EQUIP_ARTIFACT", artifactId: "yaoguang" });
 
     expect(rejected).toBe(state);
-    expect(equipped.equipped).toEqual(["lundao", "huagu", "taixu", "qinglong"]);
+    expect(attack.equipped).toEqual(["qixing", "lundao", "huagu", "canyang"]);
+    expect(defend.equipped).toEqual(["lundao", "huagu", "zhumo", "yaoguang"]);
   });
 
-  it("charges the 30 percent resource tax after a failed beast wave", () => {
+  it("caps artifacts at one attack, one defend, and two utility slots", () => {
+    const owned = ["qixing", "yaoguang", "lundao", "huagu", "taixu", "zhumo", "canyang"];
+    let state = { ...bootFaction(), ownedArtifacts: owned, equipped: [] };
+
+    for (const id of owned) state = reduce(state, { type: "EQUIP_ARTIFACT", artifactId: id });
+
+    expect(state.equipped).toEqual(["yaoguang", "huagu", "taixu", "canyang"]);
+    expect(slotUsage(state.equipped)).toEqual({ attack: 1, defend: 1, util: 2 });
+  });
+
+  it("forfeits only uncollected output after a failed beast wave", () => {
+    const resources = { qi: 50, herb: 100, wood: 80, ore: 40, stone: 70, pills: 3, jade: 5 };
     const state = {
       ...bootFaction(),
-      resources: { qi: 50, herb: 100, wood: 80, ore: 40, stone: 70, pills: 3, jade: 5 },
+      resources,
+      meta: { ...bootFaction().meta, lastTick: 10_000 },
+      offline: { pending: { herb: 12, qi: 30 }, seconds: 900, at: 10_000 },
       wave: { wave: 4, best: 2 },
       combat: { kind: "wave", result: { winner: "b", wave: 4 } },
     };
 
-    const next = reduce(state, { type: "RESOLVE_COMBAT" });
+    const next = reduce(state, { type: "RESOLVE_COMBAT", now: 11_000 });
 
-    expect(next.resources).toEqual({ qi: 50, herb: 70, wood: 56, ore: 28, stone: 70, pills: 3, jade: 5 });
+    expect(next.resources).toEqual(resources);
+    expect(next.offline.pending).toBeNull();
+    expect(next.meta.lastTick).toBe(11_000);
     expect(next.wave).toEqual(state.wave);
     expect(next.combat).toBeNull();
+    expect(next.log[0].text).toContain("灵草");
+  });
+
+  it("keeps an empty larder harmless when a beast wave is lost", () => {
+    const base = bootFaction();
+    const state = {
+      ...base,
+      buildings: [],
+      realm: { index: 0, layer: 1, exp: 0, heartDemon: 0 },
+      meta: { ...base.meta, lastTick: 11_000 },
+      offline: { pending: null, seconds: 0, at: 0 },
+      combat: { kind: "wave", result: { winner: "b", wave: 2 } },
+    };
+
+    const next = reduce(state, { type: "RESOLVE_COMBAT", now: 11_000 });
+
+    expect(next.resources).toEqual(state.resources);
+    expect(waveLossTax(state, 11_000).total).toBeNull();
+    expect(next.log[0].text).toContain("此败只失一波所得");
+  });
+
+  it("reads artifact drop nodes from the data table", () => {
+    const towerFive = { ...bootFaction(), tower: { floor: 5, best: 4 }, combat: { kind: "tower", result: { winner: "a", floor: 5 } } };
+    const waveFive = { ...bootFaction(), wave: { wave: 5, best: 4 }, combat: { kind: "wave", result: { winner: "a", wave: 5 } } };
+
+    const tower = reduce(towerFive, { type: "RESOLVE_COMBAT", now: 1 });
+    const wave = reduce(waveFive, { type: "RESOLVE_COMBAT", now: 1 });
+
+    for (const drop of ARTIFACT_DROPS.filter((d) => d.via === "tower" && d.at <= 5)) {
+      expect(tower.ownedArtifacts).toContain(drop.id);
+    }
+    for (const drop of ARTIFACT_DROPS.filter((d) => d.via === "wave" && d.at <= 5)) {
+      expect(wave.ownedArtifacts).toContain(drop.id);
+    }
+    for (const drop of ARTIFACT_DROPS.filter((d) => d.at > 5)) {
+      expect(tower.ownedArtifacts).not.toContain(drop.id);
+      expect(wave.ownedArtifacts).not.toContain(drop.id);
+    }
+  });
+
+  it("banks offline output through the array-driven efficiency instead of full rate", () => {
+    const base = bootFaction();
+    const state = { ...base, meta: { ...base.meta, lastTick: 1_000 } };
+    const hours = 2;
+    const now = 1_000 + hours * 3600 * 1000;
+
+    const booted = reduce(state, { type: "BOOT", loaded: state, now });
+    const efficiency = offlineEfficiency(state);
+
+    expect(efficiency).toBeCloseTo(0.56);
+    expect(booted.offline.pending.qi).toBeCloseTo(produce(state, hours * 3600).qi * efficiency);
+    expect(booted.log[0].text).toContain("56%");
+  });
+
+  it("never persists a full combat transcript", () => {
+    const state = bootFaction();
+    const result = simulate({
+      seed: 3,
+      heroIds: state.party,
+      foes: towerEnemy(3).foes,
+      state,
+      equipped: state.equipped,
+    });
+
+    const snapshot = snapshotForSave({ ...state, combat: { kind: "tower", result } });
+
+    expect(result.frames.length).toBeGreaterThan(1);
+    expect(snapshot.combat.result.frames).toHaveLength(1);
+    expect(JSON.stringify(snapshot).length).toBeLessThan(8_000);
   });
 });
