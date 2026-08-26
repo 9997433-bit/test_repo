@@ -94,7 +94,8 @@ describe("访邻名录", () => {
 
     sheet.querySelector<HTMLButtonElement>('.neighbor-card[data-neighbor="sister"]')!.click();
 
-    expect(sheet.querySelector(".visit-banner")?.textContent).toContain("邻家阿姊的园子");
+    expect(sheet.querySelector("#visit-title")?.textContent).toBe("邻家阿姊的园子");
+    expect(sheet.querySelector(".visit-banner")?.textContent).toContain("邻家阿姊");
     expect(sheet.querySelectorAll(".visit-tool")).toHaveLength(2);
     const plots = neighborGarden(state, "sister")!.plots;
     expect(sheet.querySelectorAll(".visit-plot")).toHaveLength(plots.length);

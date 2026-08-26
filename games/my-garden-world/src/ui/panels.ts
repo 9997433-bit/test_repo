@@ -429,9 +429,9 @@ function renderNeighborList(sheet: HTMLElement, state: GameState, rerender: () =
         : `${def.name}，${def.unlockLevel} 阶后来往`,
     );
     card.innerHTML =
-      `<h4><span aria-hidden="true" style="${SEAL_STYLE}">${def.seal}</span>${def.name} <small>${heartRow(entry.hearts)}</small></h4>` +
-      `<div class="muted">${entry.unlocked ? def.greeting : `${def.unlockLevel} 阶后来往`}</div>` +
-      `<div class="muted">${entry.unlocked ? (spent ? "今日已叨扰，明日再来" : `可浇 ${entry.waterLeft} · 可摘 ${entry.pickLeft}`) : "隔篱只见花影"}</div>`;
+      `<h4><span aria-hidden="true" style="${SEAL_STYLE}">${def.seal}</span><span style="white-space:nowrap">${def.name}</span></h4>` +
+      `<div class="muted"><small>${heartRow(entry.hearts)}</small> · ${entry.unlocked ? (spent ? "今日已叨扰，明日再来" : `可浇 ${entry.waterLeft} · 可摘 ${entry.pickLeft}`) : `${def.unlockLevel} 阶后来往`}</div>` +
+      `<div class="muted">${entry.unlocked ? def.greeting : "隔篱只见花影"}</div>`;
     card.addEventListener("click", () => {
       visitFocus = def.id;
       visitTool = "water";
@@ -469,7 +469,7 @@ function renderNeighborGarden(sheet: HTMLElement, state: GameState, neighborId: 
   banner.style.cssText = "display:flex;align-items:center;gap:10px;margin:2px 0 10px";
   banner.innerHTML =
     `<span aria-hidden="true" style="${SEAL_STYLE};width:34px;height:34px;font-size:19px;flex:0 0 auto">${def.seal}</span>` +
-    `<span><strong>${def.name}的园子 <small>${heartRow(garden.hearts)}</small></strong>` +
+    `<span><strong style="white-space:nowrap">${def.name} <small>${heartRow(garden.hearts)}</small></strong>` +
     `<div class="muted">${garden.greeting}</div></span>`;
   const home = document.createElement("button");
   home.type = "button";
