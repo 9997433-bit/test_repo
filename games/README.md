@@ -22,7 +22,7 @@
 | 兵器王者 | https://9997433-bit.github.io/test_repo/bingqi-wangzhe/ |
 | 边境要塞塔防 | https://9997433-bit.github.io/test_repo/warcraft3-td/ |
 | 我的花园世界 | 源码在 `games/my-garden-world/`，本地 `npm run dev` 走 :5173 |
-| 蘑菇屋·慢生活 | 源码在 `games/xiangwang-shenghuo/`，本地 `npm run dev` 走 :4175 |
+| 蘑菇屋·慢生活 | https://9997433-bit.github.io/test_repo/xiangwang-shenghuo/ |
 
 ```bash
 cd games/my-garden-world && npm install && npm run dev        # :5173
