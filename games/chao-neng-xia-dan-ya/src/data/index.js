@@ -4,7 +4,7 @@
  */
 export { HEROES, HERO_LIST, RESERVED_HERO_IDS } from "./heroes.js";
 export { SKILLS, SKILL_LIST } from "./skills.js";
-export { SCHOOLS, SYNERGIES, RACES, RACE_TECH } from "./synergies.js";
+export { SCHOOLS, SYNERGIES, RACES, RACE_TECH, BONDS, BOND_TABLE } from "./synergies.js";
 export { ENEMIES, ELITE_MODS, BOSSES, BOSS_LIST } from "./enemies.js";
 export { CHAPTERS, STAGES, CHAPTER_SCALING, LAYOUT_FEATURES } from "./stages.js";
 export { ARTIFACTS, ROGUE_RULES, ROGUE_WAVE_SCALING, ROGUE_WAVE_BANDS } from "./artifacts.js";

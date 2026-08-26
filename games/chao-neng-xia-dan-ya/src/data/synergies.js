@@ -144,3 +144,182 @@ export const RACE_TECH = {
   goose: { race: "goose", need: 3, name: "鹅族气势", desc: "能量获取 +10%", mod: { energyGainPct: 0.1 } },
   bird: { race: "bird", need: 5, name: "百鸟朝凤", desc: "全队攻击 +5%", mod: { atkPct: 0.05 } },
 };
+
+/* ------------------------------------------------------------------ */
+/* BONDS：combat 消费的羁绊总表（SYNERGIES 的战斗投影别名）              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 鸡族羁绊单独具名：hero 表 race 用 "chicken"，combat/constants 的 RACE 枚举
+ * 用 "chick"，两个键指向同一对象，保证任一口径都能命中。
+ */
+const CHICKEN_RACE_BOND = {
+  name: "鸡族",
+  tiers: [
+    { count: 2, name: "鸡群冲锋", desc: "连击获取 +10%", mods: { comboGainMult: 1.1 } },
+    { count: 3, name: "斗鸡战阵", desc: "连击获取 +22%，暴击伤害 +8%", mods: { comboGainMult: 1.22, critDmg: 0.08 } },
+    { count: 4, name: "金鸡报晓", desc: "连击获取 +35%，暴击伤害 +16%", mods: { comboGainMult: 1.35, critDmg: 0.16 } },
+  ],
+};
+
+/**
+ * 羁绊总表（`src/combat/bonds.js` 的数据源，形状与其 fallback 表一致）：
+ * - `schools[school].tiers[i]` / `races[race].tiers[i]`，i = 0/1/2 对应上场 2/3/4 人档；
+ * - 每档 `{ count, name, desc, mods }`，**档位不累计**，高档 mods 已折叠低档效果；
+ * - `mods` 只用 `src/combat/modifiers.js` MOD_SPEC 词汇（mergeMods 直接可用）；
+ *   SYNERGIES 里的进阶行为键（autoEnchantFirstEgg / brickShockChance 等）不在此表，
+ *   需要时读 SYNERGIES 原始 `mod`；
+ * - `support` 为预留流派（云朵雀 / 倒霉鸭方向），本版 18 只无人携带，仅保证枚举完备；
+ * - 数值口径与 SYNERGIES 同源（F3 负责），本表与 SYNERGIES 冲突时以本表为战斗事实源。
+ */
+export const BONDS = {
+  schools: {
+    combo: {
+      name: "连击流",
+      tiers: [
+        {
+          count: 2,
+          name: "小连段",
+          desc: "连击衰减 -25%，暴击伤害 +10%",
+          mods: { comboDecayMult: 0.75, critDmg: 0.1 },
+        },
+        {
+          count: 3,
+          name: "大连段",
+          desc: "连击衰减 -25%，暴伤 +10%，暴击率 +10%，「爆蛋时刻」伤害 ×1.5",
+          mods: { comboDecayMult: 0.75, critDmg: 0.1, critChance: 0.1, burstDamageMult: 1.5 },
+        },
+        {
+          count: 4,
+          name: "禽王光环·连击",
+          desc: "大连段全效，全队攻击 +10%，爆蛋时刻提前 4 层",
+          mods: { comboDecayMult: 0.75, critDmg: 0.1, critChance: 0.1, burstDamageMult: 1.5, atkMult: 1.1, burstThresholdDelta: -4 },
+        },
+      ],
+    },
+    brute: {
+      name: "直殴流",
+      tiers: [
+        {
+          count: 2,
+          name: "铁蛋",
+          desc: "攻击 +10%，命中附带击退",
+          mods: { atkMult: 1.1, knockback: 1 },
+        },
+        {
+          count: 3,
+          name: "重锤",
+          desc: "攻击 +18%，击退 +2，穿透 +1",
+          mods: { atkMult: 1.18, knockback: 2, pierce: 1 },
+        },
+        {
+          count: 4,
+          name: "禽王光环·直殴",
+          desc: "攻击 +30%，击退 +3，穿透 +2，破甲 +15%",
+          mods: { atkMult: 1.3, knockback: 3, pierce: 2, armorShred: 0.15 },
+        },
+      ],
+    },
+    elemental: {
+      name: "属性流",
+      tiers: [
+        {
+          count: 2,
+          name: "附魔学徒",
+          desc: "元素附着强度 +12%",
+          mods: { elementPowerMult: 1.12 },
+        },
+        {
+          count: 3,
+          name: "反应大师",
+          desc: "元素强度 +25%，反应伤害 ×1.3，每次附着多叠 1 层",
+          mods: { elementPowerMult: 1.25, reactionMult: 1.3, elementStackBonus: 1 },
+        },
+        {
+          count: 4,
+          name: "禽王光环·属性",
+          desc: "元素强度 +40%，反应 ×1.3，附着 +1 层，能量回复 +25%",
+          mods: { elementPowerMult: 1.4, reactionMult: 1.3, elementStackBonus: 1, energyMult: 1.25 },
+        },
+      ],
+    },
+    collide: {
+      name: "碰撞流",
+      tiers: [
+        {
+          count: 2,
+          name: "弹力初醒",
+          desc: "碰撞伤害加成 +15%",
+          mods: { collisionDamageMult: 1.15 },
+        },
+        {
+          count: 3,
+          name: "弹力全开",
+          desc: "碰撞加成 +30%，分裂概率 +12%",
+          mods: { collisionDamageMult: 1.3, splitChance: 0.12 },
+        },
+        {
+          count: 4,
+          name: "禽王光环·碰撞",
+          desc: "碰撞加成 +50%，分裂 +20%，能量回复 +20%",
+          mods: { collisionDamageMult: 1.5, splitChance: 0.2, energyMult: 1.2 },
+        },
+      ],
+    },
+    support: {
+      name: "辅助流",
+      tiers: [
+        {
+          count: 2,
+          name: "后勤班组",
+          desc: "治疗 +15%",
+          mods: { healMult: 1.15 },
+        },
+        {
+          count: 3,
+          name: "守护协奏",
+          desc: "治疗 +30%，护盾 +30%",
+          mods: { healMult: 1.3, shieldMult: 1.3 },
+        },
+        {
+          count: 4,
+          name: "圣光禽群",
+          desc: "治疗 +50%，护盾 +50%，能量 +30%",
+          mods: { healMult: 1.5, shieldMult: 1.5, energyMult: 1.3 },
+        },
+      ],
+    },
+  },
+  races: {
+    chicken: CHICKEN_RACE_BOND,
+    chick: CHICKEN_RACE_BOND,
+    duck: {
+      name: "鸭族",
+      tiers: [
+        { count: 2, name: "鸭群阵型", desc: "暴击率 +3%", mods: { critChance: 0.03 } },
+        { count: 3, name: "鸭群突进", desc: "暴击率 +6%，攻击 +5%", mods: { critChance: 0.06, atkMult: 1.05 } },
+        { count: 4, name: "万鸭奔腾", desc: "暴击率 +10%，攻击 +10%", mods: { critChance: 0.1, atkMult: 1.1 } },
+      ],
+    },
+    goose: {
+      name: "鹅族",
+      tiers: [
+        { count: 2, name: "鹅军仪仗", desc: "护盾 +12%", mods: { shieldMult: 1.12 } },
+        { count: 3, name: "铁翼鹅阵", desc: "护盾 +25%，破甲 +5%", mods: { shieldMult: 1.25, armorShred: 0.05 } },
+        /* 本版仅 3 只鹅，4 人档待预留英雄补齐后可达。 */
+        { count: 4, name: "天鹅绒军团", desc: "护盾 +40%，破甲 +12%，击退 +1", mods: { shieldMult: 1.4, armorShred: 0.12, knockback: 1 } },
+      ],
+    },
+    bird: {
+      name: "百鸟",
+      tiers: [
+        { count: 2, name: "飞禽编队", desc: "元素附着强度 +8%", mods: { elementPowerMult: 1.08 } },
+        { count: 3, name: "群鸟蔽日", desc: "元素强度 +18%，能量回复 +10%", mods: { elementPowerMult: 1.18, energyMult: 1.1 } },
+        { count: 4, name: "百鸟朝凤", desc: "元素强度 +30%，能量回复 +20%", mods: { elementPowerMult: 1.3, energyMult: 1.2 } },
+      ],
+    },
+  },
+};
+
+/** BOND_TABLE：BONDS 的等价别名（combat 侧两个键名都可读）。 */
+export const BOND_TABLE = BONDS;
