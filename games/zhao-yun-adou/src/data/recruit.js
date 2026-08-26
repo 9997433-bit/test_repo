@@ -34,9 +34,18 @@ export const CURRICULUM_ROLLS = 20;
 // 以局内 rng 实例为键的抽卡计数（每局新建 rng，天然按局重置，保持可复现）。
 const rollCounts = new WeakMap();
 
-export function rollRecruit(rng) {
-  const n = (rollCounts.get(rng) || 0) + 1;
-  rollCounts.set(rng, n);
+export function resetRecruitRolls(rng) {
+  if (rng) rollCounts.delete(rng);
+}
+
+export function setRecruitRolls(rng, n) {
+  if (rng) rollCounts.set(rng, Math.max(0, Math.floor(n) || 0));
+}
+
+/** `rollIndex` 若传入则按该序号选表且不改 WeakMap（供存档续跑）。 */
+export function rollRecruit(rng, rollIndex) {
+  const n = Number.isFinite(rollIndex) ? Math.floor(rollIndex) : (rollCounts.get(rng) || 0) + 1;
+  if (!Number.isFinite(rollIndex)) rollCounts.set(rng, n);
   const table = n <= CURRICULUM_ROLLS ? EARLY_WEIGHTS : RECRUIT_WEIGHTS;
   const pick = rng.weighted(table);
   if (pick.kind === "unit") {

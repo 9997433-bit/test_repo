@@ -5,7 +5,7 @@ import { createCells } from "../board/grid.js";
 import { canMerge, mergeUnits, applyShenbing } from "../board/merge.js";
 import { scanAwaken, applyAwaken } from "../board/awaken.js";
 import { HAND_LIMIT, START_HEARTS, START_MANTOU, recruitCost } from "../data/units.js";
-import { rollRecruit } from "../data/recruit.js";
+import { CURRICULUM_ROLLS, RECRUIT_WEIGHTS, resetRecruitRolls, rollRecruit, setRecruitRolls } from "../data/recruit.js";
 import { enqueueWave, tickSideCombat, maybeAdvanceWave, checkWinner } from "../combat/sim.js";
 
 export const SIDE_IDS = ["player", "ai"];
@@ -121,6 +121,7 @@ export function createGame(opts = {}) {
     if (Number.isFinite(startOpts.seed)) state.seed = startOpts.seed >>> 0;
     // 同种子重开必须复现同一局：回到序列起点。
     rng.reseed(state.seed);
+    resetRecruitRolls(rng);
     stepper?.reset();
     state.phase = "playing";
     state.winner = null;
@@ -153,6 +154,7 @@ export function createGame(opts = {}) {
     state.sides = { player: createSide("player"), ai: createSide("ai") };
     state.log = [];
     rng.reseed(state.seed);
+    resetRecruitRolls(rng);
     emit("reset", { seed: state.seed });
     return true;
   }
@@ -186,6 +188,34 @@ export function createGame(opts = {}) {
     return state.phase === "paused";
   }
 
+  /**
+   * 一局内（双方合计）已抽次数 —— 课程化掉落的阶段判据。
+   * 每次成功征兵恰好给对应阵营 `recruitCount` 加一，所以两侧相加即全局抽数：
+   * 它本来就在存档里，因此重开清零、读档续跑都自动对齐，无需另立字段。
+   */
+  function recruitRolls() {
+    let total = 0;
+    for (const id of SIDE_IDS) {
+      const count = state.sides[id]?.recruitCount;
+      if (Number.isFinite(count) && count > 0) total += Math.floor(count);
+    }
+    return total;
+  }
+
+  /**
+   * `rollRecruit` 自己的课程计数挂在模块级 WeakMap 上、以 rng 实例为键：
+   * restart 复用同一个 rng 不清零，load 换了实例又接不上，掉落表阶段会漂移。
+   * 这里每抽递给它一个一次性宿主（它因此恒定停在「第 1 抽 = 教程权重」），
+   * 阶段改由 `recruitRolls()` 判定，过了课程期就把完整权重表递回去。
+   */
+  function drawRecruitCard(nth) {
+    const host = {
+      weighted: (table) => state.rng.weighted(nth > CURRICULUM_ROLLS ? RECRUIT_WEIGHTS : table),
+      pick: (items) => state.rng.pick(items),
+    };
+    return rollRecruit(host);
+  }
+
   function recruit(sideId = "player") {
     const side = getSide(sideId);
     if (!side) return null;
@@ -195,7 +225,7 @@ export function createGame(opts = {}) {
     if (side.mantou < cost) return { error: "no-mantou" };
     side.mantou -= cost;
     side.recruitCount += 1;
-    const card = rollRecruit(state.rng);
+    const card = rollRecruit(state.rng, recruitRolls());
     if (!card) {
       side.mantou += cost;
       side.recruitCount -= 1;
@@ -407,6 +437,7 @@ export function createGame(opts = {}) {
     state.log = Array.isArray(data.log) ? data.log.slice(-LOG_LIMIT) : [];
     rng.reseed(state.seed);
     if (Number.isFinite(data.rngState)) rng.setState(data.rngState);
+    setRecruitRolls(rng, recruitRolls());
     stepper?.reset();
     if (stepper && Number.isFinite(data.stepPending)) stepper.setPending(data.stepPending);
     const payload = { seed: state.seed, phase: state.phase };

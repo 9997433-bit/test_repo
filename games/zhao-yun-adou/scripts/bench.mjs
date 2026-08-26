@@ -14,6 +14,9 @@ const MATCHES = 36;
 const MAX_TICKS = 12_000;
 const DT = 0.05;
 const MAX_MATCH_MS = 2_000;
+const MIN_SETTLED_RATE = 0.8;
+const MIN_WIN_RATE = 0.4;
+const MAX_WIN_RATE = 0.6;
 
 function preferredCell(side, card) {
   const empty = side.cells.filter((cell) => cell.unlocked && !cell.unit);
@@ -153,9 +156,12 @@ const totalDuration = results.reduce(
 const totalTicks = results.reduce((sum, result) => sum + result.ticks, 0);
 const totalSimTimeMs = performance.now() - benchStartedAt;
 const settledRate = settled.length / MATCHES;
+const winRate = settled.length === 0 ? 0 : playerWins / settled.length;
 const maxSimTimeMs = Math.max(...simTimes);
 const passed =
-  settledRate >= 0.8 &&
+  settledRate >= MIN_SETTLED_RATE &&
+  winRate >= MIN_WIN_RATE &&
+  winRate <= MAX_WIN_RATE &&
   maxSimTimeMs <= MAX_MATCH_MS &&
   invariantViolations.length === 0;
 const report = {
@@ -163,9 +169,7 @@ const report = {
   settled: settled.length,
   settledRate: Number(settledRate.toFixed(4)),
   playerWins,
-  winRate: Number(
-    (settled.length === 0 ? 0 : playerWins / settled.length).toFixed(4),
-  ),
+  winRate: Number(winRate.toFixed(4)),
   leaksByWave: matchMetrics.leaksByWave,
   avgAwakenedHeroes: matchMetrics.avgAwakenedHeroes,
   avgAwakenedHeroesBySide: matchMetrics.avgAwakenedHeroesBySide,
@@ -178,7 +182,9 @@ const report = {
   p95SimTimeMs: Number(percentile95(simTimes).toFixed(2)),
   maxSimTimeMs: Number(maxSimTimeMs.toFixed(2)),
   thresholds: {
-    minSettledRate: 0.8,
+    minSettledRate: MIN_SETTLED_RATE,
+    minWinRate: MIN_WIN_RATE,
+    maxWinRate: MAX_WIN_RATE,
     maxMatchSimTimeMs: MAX_MATCH_MS,
   },
   invariantViolations: invariantViolations.slice(0, 20),
