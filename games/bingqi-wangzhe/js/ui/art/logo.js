@@ -1,18 +1,28 @@
-/** 顶栏 / 开屏用的「兵」字朱印，内联绘制，不依赖外部路径。 */
+/** 顶栏 / 开屏用朱印，路径绘制，不依赖外部文件或中文字体。 */
 
 import { fromHTML } from '../dom.js';
+
+const MARK = `
+  <rect width="72" height="72" rx="12" fill="#0b0a09"/>
+  <rect x="5" y="5" width="62" height="62" rx="10" fill="#9b1f16"/>
+  <rect x="9.5" y="9.5" width="53" height="53" rx="8" fill="none" stroke="#e4b84a" stroke-width="2"/>
+  <g fill="#f7ecd2">
+    <rect x="20" y="18" width="32" height="4.4" rx="1.2"/>
+    <rect x="24" y="28.5" width="24" height="3.8" rx="1"/>
+    <rect x="33.8" y="18" width="4.4" height="28" rx="1.2"/>
+    <path d="M35 45.5L18.5 58.2l3.2 2.6L37 48.4z"/>
+    <path d="M37 45.5L53.5 58.2l-3.2 2.6L35 48.4z"/>
+  </g>
+`;
 
 export function brandSeal({ size = 28, className = 'brand__seal' } = {}) {
   return fromHTML(`
 <svg class="${className}" viewBox="0 0 72 72" width="${size}" height="${size}" aria-hidden="true" focusable="false">
-  <rect width="72" height="72" rx="12" fill="#0b0a09"/>
-  <rect x="5" y="5" width="62" height="62" rx="10" fill="#9b1f16"/>
-  <rect x="9.5" y="9.5" width="53" height="53" rx="8" fill="none" stroke="#e4b84a" stroke-width="2"/>
-  <text x="36" y="48" text-anchor="middle" font-family="STSong, Songti SC, Noto Serif SC, serif" font-size="34" font-weight="700" fill="#f7ecd2">兵</text>
+  ${MARK}
 </svg>`);
 }
 
-/** 把相对仓库资源的路径钉到本模块，避免 Pages 子路径 / 缺斜杠把图解析到站点根。 */
+/** 把相对游戏根的资源钉到本模块，避免 Pages 子路径把图解析到站点根。 */
 export function assetUrl(relFromGameRoot) {
   return new URL(`../../../${relFromGameRoot.replace(/^\.\//, '')}`, import.meta.url).href;
 }
