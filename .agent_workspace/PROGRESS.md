@@ -1,3 +1,8 @@
+# 编排进度索引
+
+- 《灵画师》：本文
+- 《赵云与阿斗》：见 `PROGRESS.zhao-yun-adou.md`
+
 # 灵画师 SOTA 复刻 · 编排进度
 
 - 目标：在独立目录 `games/linghuashi/` 实现《灵画师》SOTA 级网页复刻。
