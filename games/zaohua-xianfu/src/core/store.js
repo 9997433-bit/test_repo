@@ -110,10 +110,12 @@ function describeYield(add) {
 }
 
 /**
- * 兽潮败仗的代价是「未收取的产出」，不是无差别抄家：
+ * 兽潮败仗的代价是「未收取的产出」（GDD/AD-12），不是无差别抄家：
  * - 挂机匣里还没领的那一笔全数散失；
  * - 上一次入账到此刻之间、尚未进库的这一小段府产一并作废（把 lastTick 推到当下）。
  * 已入库的资源分毫不动——想少赔就先把挂机匣收了再推潮。
+ * 一场兽潮在一次 dispatch 内结算完，「当波产出」除了挂机匣就只剩这不足一个 TICK 的尾巴，
+ * 所以税基取「挂机匣 + 未入账尾巴」，日志逐项列清散失了什么。
  */
 export function waveLossTax(state, now = Date.now()) {
   const pending = normalizeYield(state?.offline?.pending);
