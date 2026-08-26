@@ -54,17 +54,28 @@ export function qualifyingArrangements(state: GameState, order: ActiveOrder): Ar
     .sort((a, b) => a.score - b.score);
 }
 
+/**
+ * 花材订单的构成：flowerIds 为点名花材（重复表示多枝）；
+ * flowerCount 超出点名的缺口按「任意花材」补足。
+ */
+export function orderParts(order: ActiveOrder): { named: [string, number][]; filler: number } {
+  const need = new Map<string, number>();
+  for (const id of order.flowerIds ?? []) need.set(id, (need.get(id) ?? 0) + 1);
+  const namedTotal = [...need.values()].reduce((s, n) => s + n, 0);
+  const filler = Math.max(0, (order.flowerCount ?? (namedTotal || 1)) - namedTotal);
+  return { named: [...need.entries()], filler };
+}
+
 /** 交付前的只读预检：不动库存，UI 用它来禁用交付按钮。 */
 export function orderReady(state: GameState, order: ActiveOrder): boolean {
   if (order.requireScore) return qualifyingArrangements(state, order).length > 0;
-  const needIds = order.flowerIds ?? [];
-  if (needIds.length) {
-    const need = new Map<string, number>();
-    for (const id of needIds) need.set(id, (need.get(id) ?? 0) + 1);
-    for (const [id, n] of need) if ((state.inventory[id] ?? 0) < n) return false;
-    return true;
+  const { named, filler } = orderParts(order);
+  let namedTotal = 0;
+  for (const [id, n] of named) {
+    if ((state.inventory[id] ?? 0) < n) return false;
+    namedTotal += n;
   }
-  return totalInventory(state) >= (order.flowerCount ?? 1);
+  return totalInventory(state) >= namedTotal + filler;
 }
 
 /** "任意 N 枝"订单按最廉价花材扣除，保护稀有库存。 */
@@ -97,11 +108,13 @@ export function fulfillOrder(state: GameState, uid: string, arrangementId?: stri
       return false;
     }
     state.arrangements = state.arrangements.filter((a) => a.id !== art.id);
-  } else if (order.flowerIds?.length) {
-    for (const id of order.flowerIds) takeItem(state, id, 1);
-  } else if (!takeCheapest(state, order.flowerCount ?? 1)) {
-    emit({ type: "toast", text: "库存花材不足", tone: "warn" });
-    return false;
+  } else {
+    const { named, filler } = orderParts(order);
+    for (const [id, n] of named) takeItem(state, id, n);
+    if (filler > 0 && !takeCheapest(state, filler)) {
+      emit({ type: "toast", text: "库存花材不足", tone: "warn" });
+      return false;
+    }
   }
   addCoins(state, order.coin);
   addExp(state, order.exp);

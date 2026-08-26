@@ -47,14 +47,17 @@ describe("app smoke: full tutorial loop", () => {
     boot(el("#app"));
     tick(50);
 
-    // 第 0 幕：故事弹窗；教程期非许可按钮被禁用
-    expect(el(".modal.tutorial").textContent).toContain("荒园信");
+    // 第一折：故事弹窗；教程期非许可按钮被禁用
+    expect(el(".modal.tutorial").textContent).toContain("荒园来信");
     expect(dockBtn("workshop").disabled).toBe(true);
     expect(dockBtn("water").disabled).toBe(true);
     el<HTMLButtonElement>(".modal-card .cta").click();
     tick(50);
 
-    // 第 1 幕：播种。coach 横幅出现，花种解锁
+    // 第二折：播种。先看开场折子，收起后化为 coach 横幅
+    expect(el(".modal.tutorial").textContent).toContain("下一粒种");
+    el<HTMLButtonElement>(".modal-card .cta").click();
+    tick(50);
     expect(document.querySelector(".modal.tutorial")).toBeNull();
     expect(el(".coach").textContent).toContain("花种");
     expect(dockBtn("seed").disabled).toBe(false);
@@ -70,14 +73,20 @@ describe("app smoke: full tutorial loop", () => {
     tick(50);
     expect(el('.plot[data-plot-id="0"]').getAttribute("aria-label")).toContain("小雏菊");
 
-    // 第 2 幕：浇水（键盘/点击路径）
+    // 第三折：浇水（键盘/点击路径）
+    expect(el(".modal.tutorial").textContent).toContain("引一瓢水");
+    el<HTMLButtonElement>(".modal-card .cta").click();
+    tick(50);
     expect(el(".coach").textContent).toContain("洒水");
     dockBtn("water").click();
     tick(400);
     el<HTMLButtonElement>('.plot[data-plot-id="0"]').click();
     tick(50);
 
-    // 第 3 幕：三段生长，每段补一次水
+    // 第四折：三段生长，每段补一次水
+    expect(el(".modal.tutorial").textContent).toContain("剪一枝花");
+    el<HTMLButtonElement>(".modal-card .cta").click();
+    tick(50);
     expect(el(".coach").textContent).toContain("收获");
     for (let stage = 0; stage < 3; stage++) {
       tick(5200);
@@ -91,7 +100,10 @@ describe("app smoke: full tutorial loop", () => {
     el<HTMLButtonElement>('.plot[data-plot-id="0"]').click();
     tick(50);
 
-    // 第 4 幕：交单。教程保底雏菊订单存在且可交付
+    // 第五折：交单。教程保底雏菊订单存在且可交付
+    expect(el(".modal.tutorial").textContent).toContain("接头一单");
+    el<HTMLButtonElement>(".modal-card .cta").click();
+    tick(50);
     expect(el(".coach").textContent).toContain("订单");
     dockBtn("order").click();
     tick(50);
@@ -104,7 +116,7 @@ describe("app smoke: full tutorial loop", () => {
     tick(50);
 
     // 尾声：结业弹窗 → 全部解锁
-    expect(el(".modal.tutorial").textContent).toContain("花园由你");
+    expect(el(".modal.tutorial").textContent).toContain("自此看花");
     el<HTMLButtonElement>(".modal-card .cta").click();
     tick(50);
     expect(document.querySelector(".modal.tutorial")).toBeNull();

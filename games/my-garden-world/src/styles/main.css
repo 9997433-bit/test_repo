@@ -12,23 +12,53 @@ body {
 button { font-family: var(--font-body); }
 :focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 
-/* ---------- 舞台布局 ---------- */
+/* ---------- 舞台布局（天色由 tokens 的四季/昼夜变量驱动） ---------- */
 .app {
   height: 100%;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(180deg, #7fa98c 0%, #cdbd92 42%, #8a6a45 100%);
-  transition: background 2s ease;
+  isolation: isolate;
+  background:
+    radial-gradient(140% 100% at 50% 28%, transparent 55%, var(--vignette) 100%),
+    radial-gradient(120% 58% at 50% -12%, var(--sky-glow), transparent 56%),
+    linear-gradient(180deg, var(--sky-hi) 0%, var(--sky-mid) 46%, var(--sky-lo) 100%);
 }
-.app[data-season="summer"] { background: linear-gradient(180deg, #6aa8c2 0%, #d7e3a4 42%, #6d8b4e 100%); }
-.app[data-season="autumn"] { background: linear-gradient(180deg, #d08b4c 0%, #e7c27a 40%, #7a3e2b 100%); }
-.app[data-season="winter"] { background: linear-gradient(180deg, #8aa4b8 0%, #e8eef4 40%, #9aa7b2 100%); }
+
+/* 远山三层 + 山腰云雾（纸本设色） */
+.app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 44%, var(--mist) 57%, transparent 72%),
+    radial-gradient(46% 30% at 12% 56%, var(--mtn-far) 0 61%, transparent 62%),
+    radial-gradient(54% 26% at 86% 58%, var(--mtn-far) 0 61%, transparent 62%),
+    radial-gradient(38% 24% at 46% 61%, var(--mtn-mid) 0 61%, transparent 62%),
+    radial-gradient(58% 20% at 108% 68%, var(--mtn-near) 0 61%, transparent 62%),
+    radial-gradient(52% 19% at -8% 70%, var(--mtn-near) 0 61%, transparent 62%);
+}
+
+/* 宣纸纸纹 */
+.app::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: var(--grain-blend);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
 
 .hud, .stage, .dock { position: relative; z-index: 3; }
 
-/* ---------- 天空：昼夜灯光 ---------- */
+/* ---------- 天空：晨昏过渡层（夜色底色已由 tokens 的 data-night 变量承担） ---------- */
 .sky { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .sky::before {
   /* 晨昏暖色 */
@@ -38,19 +68,8 @@ button { font-family: var(--font-body); }
   opacity: 0;
   transition: opacity 2.4s ease;
 }
-.sky::after {
-  /* 夜幕靛青 */
-  content: "";
-  position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(9, 16, 38, 0.78), rgba(13, 22, 46, 0.6) 55%, rgba(10, 16, 34, 0.5));
-  opacity: 0;
-  transition: opacity 2.4s ease;
-}
 [data-phase="dawn"] .sky::before { opacity: 0.85; }
 [data-phase="dusk"] .sky::before { opacity: 1; }
-[data-phase="dawn"] .sky::after { opacity: 0.16; }
-[data-phase="dusk"] .sky::after { opacity: 0.22; }
-[data-phase="night"] .sky::after { opacity: 0.86; }
 
 .stars { position: absolute; inset: 0; opacity: 0; transition: opacity 2.4s ease; z-index: 1; }
 [data-phase="night"] .stars { opacity: 1; }
@@ -87,17 +106,36 @@ button { font-family: var(--font-body); }
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 14px 6px;
+  padding: calc(8px + var(--safe-t)) 14px 6px;
   align-items: center;
   flex-wrap: wrap;
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   font-family: var(--font-display);
-  font-size: 28px;
+  font-size: clamp(21px, 3.2vw, 28px);
   letter-spacing: 0.08em;
-  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.25);
+  color: var(--text);
+  text-shadow: 0 1px 0 var(--edge-hi);
 }
-.is-night .brand { text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); color: #f0e6d2; }
+/* 落款印章 */
+.brand::after {
+  content: "園";
+  display: grid;
+  place-items: center;
+  width: 1.05em;
+  height: 1.05em;
+  font-size: 0.62em;
+  letter-spacing: 0;
+  color: #f8ead2;
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 4px;
+  transform: rotate(-4deg) translateY(-0.08em);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 214, 0.4), 0 2px 5px var(--shadow-soft);
+  text-shadow: none;
+}
 .pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .pill {
   background: color-mix(in srgb, var(--paper) 84%, transparent);
@@ -144,8 +182,8 @@ button { font-family: var(--font-body); }
     radial-gradient(2.5px 2.5px at 24% 62%, rgba(30, 18, 8, 0.5) 45%, transparent 55%),
     radial-gradient(2px 2px at 66% 44%, rgba(30, 18, 8, 0.4) 45%, transparent 55%),
     radial-gradient(2px 2px at 48% 76%, rgba(30, 18, 8, 0.42) 45%, transparent 55%),
-    radial-gradient(circle at 50% 68%, #6d4b2d 0%, #4a331d 62%, #3a2814 100%);
-  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px rgba(80, 50, 24, 0.42), inset 0 -8px 14px rgba(0, 0, 0, 0.22);
+    radial-gradient(circle at 50% 68%, var(--soil-dry-hi) 0%, var(--soil-dry-lo) 66%, var(--soil-edge) 100%);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--soil-rim), inset 0 -8px 14px rgba(0, 0, 0, 0.22);
   position: relative;
   cursor: pointer;
   transform: perspective(420px) rotateX(10deg);
@@ -153,7 +191,12 @@ button { font-family: var(--font-body); }
 }
 .plot:hover { transform: perspective(420px) rotateX(7deg) translateY(-4px); }
 .plot.is-selected { box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--gold), inset 0 -8px 14px rgba(0, 0, 0, 0.22); }
-.plot.is-wet { filter: brightness(0.94) saturate(1.08); }
+.plot.is-wet {
+  --soil-dry-hi: var(--soil-wet-hi);
+  --soil-dry-lo: var(--soil-wet-lo);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--soil-rim), inset 0 -8px 14px var(--soil-sheen);
+}
+.plot.is-wet.is-selected { box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--gold), inset 0 -8px 14px var(--soil-sheen); }
 .plot.is-wilt { filter: grayscale(0.45) brightness(0.92); }
 .plot.is-ready { animation: breathe 2.2s ease-in-out infinite; }
 @keyframes breathe {
@@ -205,7 +248,7 @@ button { font-family: var(--font-body); }
   border: 1.5px solid rgba(214, 236, 248, 0.85);
   background: transparent;
 }
-.plot-badges .drop.full { background: var(--water); border-color: color-mix(in srgb, var(--water) 70%, #fff); }
+.plot-badges .drop.full { background: var(--water-drop-lo); border-color: var(--water-drop-hi); }
 .plot.is-thirsty .drop:not(.full) { animation: thirst 1.2s ease-in-out infinite alternate; }
 @keyframes thirst { from { opacity: 0.4; } to { opacity: 1; } }
 .plot-badges .fert-star { color: #f4d35e; font-size: 12px; font-style: normal; text-shadow: 0 0 6px rgba(244, 211, 94, 0.8); }
@@ -214,7 +257,7 @@ button { font-family: var(--font-body); }
   position: absolute; left: 8px; right: 8px; bottom: 7px;
   display: block; text-align: center; pointer-events: none;
 }
-.plot-name { display: block; font-size: 11px; color: #f3e6c8; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+.plot-name { display: block; font-size: 11px; color: var(--soil-text); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
 .plot-bar { display: block; height: 4px; background: rgba(20, 12, 5, 0.7); border-radius: 4px; margin-top: 4px; overflow: hidden; }
 .plot-bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7ec8a3, #e7c56b); transition: width 0.3s linear; }
 
@@ -266,7 +309,7 @@ button { font-family: var(--font-body); }
 .sheet {
   position: absolute;
   left: 12px; right: 12px;
-  bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--dock-clear) + var(--safe-b));
   max-height: 52%;
   overflow: auto;
   padding: 0 14px 14px;
@@ -394,12 +437,14 @@ button { font-family: var(--font-body); }
 }
 .modal-card h2 { font-family: var(--font-display); margin: 0; font-weight: 400; font-size: 30px; }
 .modal-card p { margin: 0; line-height: 1.8; }
+.modal-card .step-label { font-size: 12px; letter-spacing: 0.14em; }
+.modal-card .objective { font-weight: 700; color: var(--jade); }
 .modal-card .cta { justify-self: end; background: var(--vermilion); color: #fff8e8; border: none; font-size: 15px; padding: 9px 22px; }
 
 .coach {
   position: absolute;
   left: 50%; transform: translateX(-50%);
-  bottom: calc(var(--dock-h) + 10px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--dock-clear) + 10px + var(--safe-b));
   z-index: 6;
   display: flex; align-items: center; gap: 8px;
   background: color-mix(in srgb, var(--paper) 94%, transparent);
@@ -476,7 +521,7 @@ button { font-family: var(--font-body); }
 
 /* ---------- 移动端 ---------- */
 @media (max-width: 640px) {
-  :root { --dock-h: 92px; }
+  :root { --dock-clear: 96px; }
   .brand { font-size: 20px; }
   .pill { font-size: 11px; padding: 3px 8px; }
   .garden { gap: 9px; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); }

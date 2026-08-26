@@ -9,6 +9,11 @@ const GOAL_EVENT: Record<TutorialGoal, GameEvent["type"]> = {
   order: "orderDone",
 };
 
+const CN_NUM = ["一", "二", "三", "四", "五", "六", "七", "八", "九"] as const;
+function cn(n: number): string {
+  return CN_NUM[n - 1] ?? String(n);
+}
+
 /** 当前 goal 步骤应被完成事件推进时返回 true（由 app 在事件总线上调用）。 */
 export function tutorialEventAdvances(state: GameState, e: GameEvent): boolean {
   if (state.tutorialDone) return false;
@@ -28,6 +33,9 @@ export function coachTargetId(state: GameState): string | null {
   return beat?.goal ? (beat.allow?.[0] ?? null) : null;
 }
 
+/** goal 折的开场折子只看一次（内存态；刷新后重看无妨）。 */
+const introSeen = new Set<string>();
+
 export function renderTutorial(host: HTMLElement, state: GameState, onNext: () => void): void {
   host.querySelector(".modal.tutorial")?.remove();
   host.querySelector(".coach")?.remove();
@@ -37,26 +45,38 @@ export function renderTutorial(host: HTMLElement, state: GameState, onNext: () =
     state.tutorialDone = true;
     return;
   }
-  if (beat.goal) {
+  const stepLabel = `第${cn(state.tutorialStep + 1)}折 · 共${cn(TUTORIAL.length)}折`;
+
+  if (beat.goal && introSeen.has(beat.id)) {
     const coach = document.createElement("div");
     coach.className = "coach";
     coach.setAttribute("role", "status");
-    coach.innerHTML = `<span class="coach-seal" aria-hidden="true">引</span><span class="coach-text">${beat.hint ?? beat.body}</span>`;
+    coach.innerHTML = `<span class="coach-seal" aria-hidden="true">引</span><span class="coach-text">${beat.hint ?? beat.objective ?? beat.body}</span>`;
     host.append(coach);
     return;
   }
+
   const box = document.createElement("div");
   box.className = "modal tutorial";
   box.setAttribute("role", "dialog");
   box.setAttribute("aria-modal", "true");
   box.setAttribute("aria-labelledby", "tutorial-title");
   box.innerHTML = `<div class="modal-card">
+    <div class="muted step-label">${stepLabel}</div>
     <h2 id="tutorial-title">${beat.title}</h2>
+    ${beat.objective ? `<p class="objective">◌ 目标 · ${beat.objective}</p>` : ""}
     <p>${beat.body}</p>
     <button type="button" class="cta">${beat.cta}</button>
   </div>`;
   const btn = box.querySelector("button");
-  btn?.addEventListener("click", onNext);
+  btn?.addEventListener("click", () => {
+    if (beat.goal) {
+      introSeen.add(beat.id);
+      renderTutorial(host, state, onNext);
+    } else {
+      onNext();
+    }
+  });
   host.append(box);
   btn?.focus();
 }

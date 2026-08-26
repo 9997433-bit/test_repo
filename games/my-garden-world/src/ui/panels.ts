@@ -3,7 +3,7 @@ import { DECORATIONS, THEMES } from "../data/decorations";
 import { SPIRITS } from "../data/spirits";
 import type { GameState, ActiveOrder } from "../engine/state";
 import { seasonLabel } from "../engine/time";
-import { orderReady, qualifyingArrangements } from "../systems/orders";
+import { orderParts, orderReady, qualifyingArrangements } from "../systems/orders";
 import { scoreArrangement, VASES } from "../systems/workshop";
 import { totalInventory } from "../systems/economy";
 
@@ -81,15 +81,14 @@ function renderSeed(sheet: HTMLElement, state: GameState, sel: PanelSelection, h
 
 function orderStatus(state: GameState, o: ActiveOrder): string {
   if (o.requireScore) return `需作品 ≥ ${o.requireScore} 分`;
-  if (o.flowerIds?.length) {
-    return o.flowerIds
-      .map((id) => {
-        const have = state.inventory[id] ?? 0;
-        return `${FLOWER_MAP[id]?.name ?? id}×1 ${have >= 1 ? "已备" : "缺"}`;
-      })
-      .join("，");
-  }
-  return `任意花材 ${o.flowerCount ?? 1} 枝 · 现有 ${totalInventory(state)}`;
+  const { named, filler } = orderParts(o);
+  const parts = named.map(([id, n]) => {
+    const have = state.inventory[id] ?? 0;
+    return `${FLOWER_MAP[id]?.name ?? id}×${n} ${have >= n ? "已备" : `缺${n - have}`}`;
+  });
+  if (filler > 0) parts.push(`另加任意 ${filler} 枝`);
+  parts.push(`匣中共 ${totalInventory(state)} 枝`);
+  return parts.join(" · ");
 }
 
 function renderOrder(sheet: HTMLElement, state: GameState, sel: PanelSelection, h: PanelHandlers): void {

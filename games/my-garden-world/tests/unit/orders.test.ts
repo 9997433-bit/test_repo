@@ -55,6 +55,26 @@ describe("fulfillOrder", () => {
     expect(s.inventory.daisy).toBe(1);
   });
 
+  it("named-plus-filler orders take named stems then cheapest fillers", () => {
+    const s = createInitialState();
+    addItem(s, "peony", 1);
+    addItem(s, "daisy", 2);
+    addItem(s, "star-tulip", 1);
+    s.orders = [makeOrder({ flowerIds: ["peony"], flowerCount: 3 })];
+    expect(orderReady(s, s.orders[0]!)).toBe(true);
+    expect(fulfillOrder(s, "test-1")).toBe(true);
+    expect(s.inventory.peony).toBeUndefined();
+    expect(s.inventory.daisy).toBeUndefined();
+    expect(s.inventory["star-tulip"]).toBe(1);
+  });
+
+  it("filler shortfall blocks readiness even when named stems exist", () => {
+    const s = createInitialState();
+    addItem(s, "peony", 1);
+    const o = makeOrder({ flowerIds: ["peony"], flowerCount: 3 });
+    expect(orderReady(s, o)).toBe(false);
+  });
+
   it("generic orders consume cheapest flowers first", () => {
     const s = createInitialState();
     addItem(s, "star-tulip", 1);
