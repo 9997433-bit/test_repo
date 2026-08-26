@@ -620,24 +620,10 @@ button { font-family: var(--font-body); }
 
 /* ---------- 访邻花笺 ----------
    邻家花园互访（ui/panels.ts renderVisit）：名录 ⇄ 园子两页共用一张
-   `.sheet.visit-sheet` 花笺。面板层只写结构性内联样式（横幅排布、圃画高度），
+   `.sheet.visit-sheet` 花笺，入口是 dock 的「邻」印章（.dock-btn 通用样式，
+   无需专属钩子）。面板层只写结构性内联样式（横幅排布、圃画高度），
    设色与状态钩子归本域，契约见 VISUAL.md §七。空态一律有形：
    剪影卡（未到阶）、虚线动作（今日无事可做）、素纸问候（只坐不动）。 */
-
-/* HUD 资源栏的临时串门入口（dock「访邻」印章落地前）：印字「邻」放大设色 */
-.pill-visit {
-  color: var(--text);
-  font-family: var(--font-display);
-  letter-spacing: 0.04em;
-  transition: box-shadow var(--dur-quick) var(--ease-out), transform var(--dur-quick) var(--ease-out);
-}
-.pill-visit::first-letter {
-  font-size: 1.25em;
-  color: color-mix(in srgb, var(--accent) 78%, var(--text));
-  margin-right: 2px;
-}
-.pill-visit:hover { box-shadow: 0 2px 0 var(--shadow), 0 0 0 2px color-mix(in srgb, var(--focus) 45%, transparent); }
-.pill-visit:active { transform: translateY(1px); }
 
 /* 邻居卡：交情心档（❤♡）换朱砂——双选择器不绑定落点，
    心档无论排在名号行（h4 small，须盖过泥金星规则）还是余量行都命中 */
