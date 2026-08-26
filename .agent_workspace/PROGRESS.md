@@ -29,8 +29,8 @@
 ## Round 状态
 
 - Round 1：已完成（10/10 已合入工作分支）
-- Round 2：进行中（靶向重构，云端仍限 3 VM）
-- Round 3：未开始
+- Round 2：已完成（10/10 已合入工作分支）
+- Round 3：进行中（SOTA 打磨，云端仍限 3 VM）
 
 ## Round 1 派发记录
 
@@ -87,7 +87,7 @@
 | 角色 | 状态 | cloud agent id |
 | --- | --- | --- |
 | Fable-1 架构复审 | 已完成 · 文档已合入 `625b272` | `bc-7dd1028d-4130-52f1-a06d-1804948dbc41` |
-| Fable-2 画布缺口 | 运行中 | `bc-07088209-00a2-538a-888d-20c514a00551` |
+| Fable-2 画布缺口 | 已完成 · 已合并 `cursor/cww-round2-art-css-0551` | `bc-07088209-00a2-538a-888d-20c514a00551` |
 | Fable-3 5v5 关卡 | 已完成 · 已合并 `cursor/fable3-5v5-stages-4f62` | `bc-60924e68-32b9-5437-b520-e99818644f62` |
 | Fable-4 SOTA 复验 | 已完成 · 已合并 `cursor/fable4-round2-acceptance-4cb8` | `bc-8ff2474a-e0aa-5f41-8de4-e757cdf04cb8` |
 | Opus-1 表驱动模拟 | 已完成 · 已合并 `cursor/opus1-table-driven-sim-862f` | `bc-74135006-1b0e-5e73-8dff-5bacf027862f` |
@@ -96,3 +96,45 @@
 | Opus-4 UX 债 | 已完成 · 已合并 `cursor/cww-r2-ui-wiring-abc7` | `bc-52499131-9ce7-5070-a82a-f4241f7babc7` |
 | GPT-sol-1 快照单测 | 已完成 · 已合并 `cursor/cww-battle-tests-ed44`（37 测） | `bc-c3910345-5529-5a59-be22-f9a0d63eed44` |
 | GPT-sol-2 委任密集 bench | 已完成 · 已合入 `557ca91` | `bc-56356545-4d0f-5f3c-9951-5b6d57030b07` |
+
+### Round 2 结论简报
+
+**演进对比**
+- P0 可玩线已过：节奏钓鱼、可见潜水、升星掉落、真实 bench、无障碍开关、存档水合。
+- 模拟表驱动，engine 与 UI 解耦；探索吃 `world.mods` 与 `DIVE_ZONES`。
+- 战斗读 growth/period，酒劲按表；关卡 5v5；UI 接 selectLineup/伤病/firstClear/battleSeed。
+- 契约升到 R2 落地版；HUD CSS 红绿格/氧条/节奏条/战报/双栏招募完成。
+- 测试 37 + 探针 7；委任密集 stepSim 预算内；3840 场 0 错配。
+
+**潜在边界风险**
+- `stepSim` 未挂 `tickInjuries` / `syncExploreWeather`：进行中的钓/潜遇海啸不会强制收杆。
+- `normalize` 丢图鉴/cast/diveRecord。
+- 钓鱼 UI 仍可能走模块变量而非 `beginCast`。
+- 事件/居民增员/coins 消费未上线；B30 被快照冻住偏弱。
+- 画布仍缺木纹/粒子；夜幕双源。
+
+**SOTA 验收差距**
+- 量子巡检闭环、存档字段收编、鱼屏迁到契约 API、事件社会、画布皮肤、e2e 进 npm test、终局再平衡。
+
+**Round 3 冲刺**
+1. Opus-1：stepSim 挂 tickInjuries+syncExploreWeather；normalize 收编探索字段；mods 盖章进 stepSim。
+2. Opus-2：海区选择数据出口收口；advanceDive 中途天气。
+3. Opus-4：beginCast/hookCast；海区 UI；图鉴屏。
+4. Opus-3：B30 可调则调，否则只保接口。
+5. Fable-3：事件/居民/coins 表可玩；Fable-4 终验；Fable-1 冻结；Fable-2 夜幕单源文档。
+6. GPT-sol：探索天气/伤病单测；e2e 或 probe 扩门禁。
+
+## Round 3 派发记录
+
+| 角色 | 状态 | cloud agent id |
+| --- | --- | --- |
+| Fable-1 最终冻结 | 排队 | — |
+| Fable-2 夜幕单源 | 排队 | — |
+| Fable-3 事件居民 | 排队 | — |
+| Fable-4 终验 | 补派中 | — |
+| Opus-1 量子巡检 | 补派中 | — |
+| Opus-2 海区收口 | 排队 | — |
+| Opus-3 终局接口 | 排队 | — |
+| Opus-4 契约鱼屏 | 排队 | — |
+| GPT-sol-1 天气伤病测 | 补派中 | — |
+| GPT-sol-2 终局门禁 | 排队 | — |
