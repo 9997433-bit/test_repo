@@ -1,0 +1,170 @@
+/* =============================================================
+   布局骨架（Fable-2）
+   main.js 只引 tokens.css + layout.css；
+   村景 / 面板 / 四季细节经由下面的 @import 打包进来
+   （Vite 构建时内联，运行时零额外请求）。
+   本文件只管几何：网格、定位尺寸、响应式断点。
+   ============================================================= */
+
+@import "./village.css";
+@import "./yard.css";
+@import "./panels.css";
+@import "./season.css";
+@import "./ui.css";
+
+#app {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--sky-lo);
+}
+
+/* ---------- 村景舞台 ---------- */
+
+.village {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  min-height: clamp(420px, 55vh, 620px);
+}
+
+/* ---------- 底部面板坞 ---------- */
+
+.dock {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 14px;
+  padding-block: 16px 24px;
+  padding-inline: max(16px, calc((100% - 1240px) / 2));
+}
+
+/* 工具架横跨两列，面板在它下面并肩。
+   min-width:0 斩断「横滑种子架 → 工具架 → 面板坞」的
+   min-content 连锁，不然窄屏上整页会被撑到一千多像素宽。 */
+.xw-toolbar {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.topbar {
+  padding-block: 10px;
+  padding-inline: max(16px, calc((100% - 1240px) / 2));
+}
+
+/* =============================================================
+   窄屏（~390px 手机）：单列面板、田在右、坊条横滑
+   ============================================================= */
+
+@media (max-width: 760px) {
+  .village {
+    min-height: 480px;
+  }
+
+  .mushroom {
+    left: 2%;
+    bottom: 30%;
+    transform: scale(0.82);
+    transform-origin: bottom left;
+  }
+
+  .fields {
+    right: 3%;
+    bottom: 21%;
+    grid-template-columns: repeat(3, 56px);
+    grid-auto-rows: 52px;
+    gap: 8px;
+  }
+
+  /* 工坊牌匾变成村口一条可横滑的木牌廊 */
+  .buildings {
+    left: 3%;
+    right: 3%;
+    bottom: 8px;
+    max-width: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    align-content: initial;
+    padding: 4px 2px 8px;
+    scrollbar-width: thin;
+  }
+
+  .bldg {
+    flex: none;
+  }
+
+  .dock {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding-block: 12px 18px;
+  }
+
+  .topbar {
+    gap: 8px;
+  }
+
+  .topbar .brand {
+    font-size: 1.02rem;
+  }
+
+  .meters {
+    font-size: 0.8rem;
+    gap: 6px;
+  }
+
+  .meters span {
+    padding: 4px 8px;
+  }
+}
+
+/* =============================================================
+   小手机（~390px）：顶梁收紧但热区不缩 —— 按钮仍 ≥ 44px
+   ============================================================= */
+
+@media (max-width: 420px) {
+  .topbar {
+    padding-block: 8px;
+  }
+
+  .meters {
+    gap: 5px;
+    font-size: 0.78rem;
+  }
+
+  .meters button {
+    min-height: var(--tap);
+    padding: 8px 10px;
+  }
+
+  .xw-bar-xp {
+    width: 44px;
+  }
+}
+
+/* =============================================================
+   宽屏（>=1180px 桌面）：更高的舞台、更大的蘑菇屋
+   ============================================================= */
+
+@media (min-width: 1180px) {
+  .village {
+    min-height: 580px;
+  }
+
+  .mushroom {
+    left: 7%;
+    transform: scale(1.12);
+    transform-origin: bottom left;
+  }
+
+  .buildings {
+    left: 26%;
+    max-width: 38%;
+    gap: 12px;
+  }
+
+  .fields {
+    grid-template-columns: repeat(5, 66px);
+    grid-auto-rows: 60px;
+    gap: 12px;
+  }
+}

@@ -1,0 +1,704 @@
+/* =============================================================
+   村景 · 纯 CSS/SVG 场景绘制（Fable-2）
+   层序（z）：天空1 → 远山2 → 田地3 → 蘑菇屋4 → 牌匾/田垄5
+              → 相位罩6 → 粒子7（罩与粒子不吃指针）
+   ============================================================= */
+
+/* ---------- 场景容器 ---------- */
+
+.village {
+  background: var(--sky-lo);
+}
+
+/* 相位光罩 + 夜晚灯火暖袋（tokens 里的 --wash） */
+.village::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: var(--wash);
+}
+
+/* 粒子画布：花瓣 / 萤火 / 落叶 / 雪，由 season.css 填充 */
+.village::after {
+  content: "";
+  position: absolute;
+  inset: -420px;
+  z-index: 7;
+  pointer-events: none;
+}
+
+/* ---------- 天空 ---------- */
+
+.sky {
+  position: absolute;
+  inset: 0 0 40% 0;
+  z-index: 1;
+  background:
+    radial-gradient(
+      58% 52% at var(--celestial-x) calc(var(--celestial-y) + 12%),
+      var(--celestial-glow),
+      transparent 72%
+    ),
+    linear-gradient(180deg, var(--sky-hi), var(--sky-lo) 68%, var(--horizon));
+}
+
+/* 日 / 月 */
+.sky::before {
+  content: "";
+  position: absolute;
+  left: var(--celestial-x);
+  top: var(--celestial-y);
+  width: var(--celestial-size);
+  height: var(--celestial-size);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 36% 34%,
+    #ffffff,
+    var(--celestial) 68%
+  );
+  box-shadow: 0 0 54px 16px var(--celestial-glow);
+}
+
+/* 云层（白日基础版；黄昏染色、夜晚换星空见 season.css） */
+.sky::after {
+  content: "";
+  position: absolute;
+  top: 4%;
+  bottom: 30%;
+  left: 0;
+  right: -520px;
+  background-image:
+    radial-gradient(90px 26px at 90px 58px, rgba(255, 255, 255, 0.65), transparent 70%),
+    radial-gradient(130px 32px at 300px 36px, rgba(255, 255, 255, 0.5), transparent 70%),
+    radial-gradient(70px 20px at 432px 88px, rgba(255, 255, 255, 0.45), transparent 70%);
+  background-size: 520px 140px;
+  background-repeat: repeat-x;
+  animation: drift-clouds 90s linear infinite;
+}
+
+/* ---------- 远山（两重山脊在伪元素上，各自 clip-path） ---------- */
+
+.mountain {
+  position: absolute;
+  left: -2%;
+  right: -2%;
+  bottom: 40%;
+  height: 30%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.mountain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(
+    0 78%, 8% 46%, 17% 62%, 27% 30%, 38% 58%, 47% 22%, 58% 52%,
+    68% 18%, 78% 48%, 88% 30%, 100% 52%, 100% 100%, 0 100%
+  );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--foliage-2) 42%, var(--sky-hi)),
+    color-mix(in srgb, var(--foliage-2) 62%, var(--sky-lo))
+  );
+}
+
+.mountain::after {
+  content: "";
+  position: absolute;
+  inset: 34% 0 -2% 0;
+  clip-path: polygon(
+    0 64%, 10% 34%, 22% 58%, 33% 26%, 45% 56%, 57% 32%, 70% 60%,
+    82% 28%, 92% 50%, 100% 40%, 100% 100%, 0 100%
+  );
+  background:
+    radial-gradient(26px 18px at 18% 74%, color-mix(in srgb, var(--foliage) 80%, black) 0 40%, transparent 60%),
+    radial-gradient(30px 20px at 52% 80%, color-mix(in srgb, var(--foliage) 78%, black) 0 40%, transparent 60%),
+    radial-gradient(24px 16px at 84% 70%, color-mix(in srgb, var(--foliage) 82%, black) 0 40%, transparent 60%),
+    linear-gradient(
+      180deg,
+      var(--foliage-2),
+      color-mix(in srgb, var(--foliage-2) 72%, #1c2a22)
+    );
+}
+
+/* ---------- 田地 / 地面 ---------- */
+
+.ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42%;
+  z-index: 3;
+  background:
+    /* 顶部受光边 */
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 7%),
+    /* 撒落的小花 / 草籽（颜色随季节令牌） */
+    radial-gradient(3px 3px at 12% 34%, var(--flower-1) 45%, transparent 60%),
+    radial-gradient(2.5px 2.5px at 34% 62%, var(--flower-2) 45%, transparent 60%),
+    radial-gradient(3px 3px at 57% 40%, var(--flower-1) 45%, transparent 60%),
+    radial-gradient(2.5px 2.5px at 71% 70%, var(--flower-2) 45%, transparent 60%),
+    radial-gradient(3px 3px at 88% 48%, var(--flower-1) 45%, transparent 60%),
+    /* 草皮长条纹理 */
+    repeating-linear-gradient(
+      92deg,
+      var(--ground-1) 0 30px,
+      var(--ground-2) 30px 60px
+    );
+  box-shadow: inset 0 8px 18px -10px rgba(20, 14, 8, 0.4);
+}
+
+/* 山脚薄雾：骑在地平线上 */
+.ground::before {
+  content: "";
+  position: absolute;
+  top: -30px;
+  left: 0;
+  right: 0;
+  height: 58px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--mist) 55%, transparent) 46%,
+    transparent
+  );
+}
+
+/* 从蘑菇屋门口蜿蜒出来的土路（窄带渐宽，颜色贴近耕土受光面） */
+.ground::after {
+  content: "";
+  position: absolute;
+  left: 9%;
+  bottom: 0;
+  width: 30%;
+  height: 86%;
+  clip-path: polygon(
+    12% 0, 25% 0, 38% 26%, 50% 52%, 72% 76%, 96% 100%, 42% 100%,
+    34% 72%, 22% 46%, 14% 22%
+  );
+  background:
+    radial-gradient(4px 3px at 30% 30%, rgba(60, 40, 22, 0.35) 50%, transparent 70%),
+    radial-gradient(5px 3px at 46% 58%, rgba(60, 40, 22, 0.3) 50%, transparent 70%),
+    radial-gradient(4px 3px at 64% 84%, rgba(60, 40, 22, 0.28) 50%, transparent 70%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--soil-1) 55%, var(--paper)),
+      color-mix(in srgb, var(--soil-2) 62%, var(--paper))
+    );
+  opacity: 0.7;
+}
+
+/* ---------- 蘑菇屋（button，全 CSS 拼贴） ---------- */
+
+.mushroom {
+  position: absolute;
+  left: 6%;
+  bottom: 25%;
+  width: 190px;
+  height: 185px;
+  z-index: 4;
+  border: 0;
+  padding: 0;
+  background: none;
+  appearance: none;
+}
+
+/* 接地阴影 */
+.mushroom::after {
+  content: "";
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: -9px;
+  height: 20px;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    50% 50% at 50% 50%,
+    rgba(20, 14, 8, 0.35),
+    transparent 72%
+  );
+}
+
+/* 烟囱 */
+.mushroom::before {
+  content: "";
+  position: absolute;
+  left: 63%;
+  top: -12px;
+  width: 21px;
+  height: 38px;
+  z-index: 3;
+  transform: rotate(2deg);
+  border-radius: 4px 4px 0 0;
+  border-top: 5px solid var(--wood-4);
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(30, 16, 8, 0.25) 0 2px,
+      transparent 2px 9px
+    ),
+    linear-gradient(90deg, #6b4426, #8a5a36 45%, #56351f);
+}
+
+.mushroom .cap {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 0;
+  height: 112px;
+  z-index: 2;
+  border-radius: 50% 50% 46% 46% / 88% 88% 30% 30%;
+  background:
+    radial-gradient(circle at 22% 40%, #ffe9c9 0 9px, transparent 10px),
+    radial-gradient(circle at 56% 16%, #ffe9c9 0 12px, transparent 13px),
+    radial-gradient(circle at 82% 46%, #ffe9c9 0 8px, transparent 9px),
+    radial-gradient(circle at 40% 64%, #ffe9c9 0 6px, transparent 7px),
+    radial-gradient(circle at 70% 68%, #ffe9c9 0 5px, transparent 6px),
+    radial-gradient(120% 115% at 32% 18%, #ff9d75, #e0603f 55%, #a8402c 100%);
+  box-shadow:
+    inset 0 -12px 14px -8px rgba(90, 30, 18, 0.55),
+    inset 0 6px 10px -4px rgba(255, 235, 210, 0.5);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+/* 菌盖高光 */
+.mushroom .cap::before {
+  content: "";
+  position: absolute;
+  left: 15%;
+  top: 10%;
+  width: 34%;
+  height: 30%;
+  border-radius: 50%;
+  transform: rotate(-16deg);
+  background: radial-gradient(
+    50% 50% at 50% 50%,
+    rgba(255, 255, 255, 0.5),
+    transparent 72%
+  );
+}
+
+/* 炊烟（一个元素，box-shadow 复制成三朵） */
+.mushroom .cap::after {
+  content: "";
+  position: absolute;
+  left: 68%;
+  top: -30px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(244, 240, 232, 0.55);
+  box-shadow:
+    -6px -12px 0 2px rgba(244, 240, 232, 0.4),
+    3px -24px 0 5px rgba(244, 240, 232, 0.28);
+  animation: rise-smoke 4.6s ease-out infinite;
+}
+
+.mushroom .stem {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 82px;
+  height: 88px;
+  z-index: 1;
+  border-radius: 14px 14px 12px 12px;
+  background: linear-gradient(
+    90deg,
+    #d9c19a,
+    #f2e3c4 30%,
+    #f6ead0 55%,
+    #cbb28c
+  );
+  box-shadow: inset 0 -8px 10px -6px rgba(90, 60, 30, 0.4);
+}
+
+/* 圆窗：白日映天色，黄昏 / 夜晚亮灯（--glass / --lamp-a 驱动） */
+.mushroom .stem::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid var(--wood-3);
+  background:
+    linear-gradient(var(--wood-3), var(--wood-3)) 50% 0 / 2px 100% no-repeat,
+    linear-gradient(var(--wood-3), var(--wood-3)) 0 50% / 100% 2px no-repeat,
+    radial-gradient(circle at 40% 35%, #ffffff5c, transparent 55%),
+    var(--glass);
+  box-shadow:
+    0 0 calc(26px * var(--lamp-a)) calc(7px * var(--lamp-a))
+      rgba(255, 205, 120, 0.55),
+    inset 0 0 6px rgba(30, 18, 8, 0.35);
+}
+
+/* 屋檐红灯笼 */
+.mushroom .stem::after {
+  content: "";
+  position: absolute;
+  left: -30px;
+  top: 30px;
+  width: 17px;
+  height: 21px;
+  border-radius: 50% / 46%;
+  transform-origin: 50% -8px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(120, 20, 5, 0.35) 0 1.5px,
+      transparent 1.5px 5px
+    ),
+    radial-gradient(circle at 40% 32%, #ff9a5c, #d84b2a 75%);
+  border-top: 4px solid var(--wood-4);
+  border-bottom: 3px solid #8c2f14;
+  box-shadow: 0 0 calc(20px * var(--lamp-a)) calc(4px * var(--lamp-a))
+    rgba(255, 130, 60, 0.6);
+  animation: lantern-sway 4.2s ease-in-out infinite alternate;
+}
+
+.mushroom .door {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 48px;
+  z-index: 3;
+  border: 3px solid var(--wood-4);
+  border-bottom-width: 2px;
+  border-radius: 16px 16px 3px 3px;
+  background:
+    radial-gradient(circle at 76% 55%, var(--gold-bright) 0 2px, transparent 3px),
+    repeating-linear-gradient(90deg, #6b4426 0 7px, #7a4f2c 7px 14px);
+}
+
+/* 门口石阶 */
+.mushroom .door::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  right: -12px;
+  bottom: -9px;
+  height: 10px;
+  z-index: -1;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #b9b2a4, #8f887a);
+}
+
+/* 门缝灯光洒在地上（夜晚/黄昏出现） */
+.mushroom .door::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 112px;
+  height: 36px;
+  background: radial-gradient(
+    50% 62% at 50% 0%,
+    rgba(255, 205, 110, 0.55),
+    transparent 76%
+  );
+  opacity: var(--lamp-a);
+}
+
+.mushroom:hover .cap {
+  transform: translateY(-3px);
+}
+
+.mushroom:active .cap {
+  transform: translateY(1px);
+}
+
+/* ---------- 工坊木牌匾 ---------- */
+
+.buildings {
+  position: absolute;
+  left: 25%;
+  bottom: 9%;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 42%;
+  align-content: flex-end;
+}
+
+.bldg {
+  --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill-rule='evenodd' d='M4.5 20.5V10L12 4l7.5 6v10.5Zm5.5 0v-6h4v6Z' fill='%23000'/></svg>");
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  min-height: var(--tap);
+  border: 1px solid var(--wood-4);
+  border-radius: var(--radius-s);
+  color: #f6ead0;
+  font-size: 13.5px;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 0 rgba(30, 15, 5, 0.55);
+  background:
+    radial-gradient(circle at 11px 9px, #e8c98a 0 2.2px, #7a5220 3px, transparent 4px),
+    radial-gradient(circle at calc(100% - 11px) 9px, #e8c98a 0 2.2px, #7a5220 3px, transparent 4px),
+    repeating-linear-gradient(94deg, rgba(60, 36, 21, 0.14) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, var(--plaque-hi), var(--plaque-lo));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.28),
+    inset 0 -3px 6px rgba(30, 15, 5, 0.35),
+    var(--shadow-soft);
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+
+.bldg:hover {
+  transform: translateY(-2px);
+}
+
+.bldg:active {
+  transform: translateY(1px);
+}
+
+.bldg.off {
+  filter: saturate(0.45) brightness(0.82);
+}
+
+/* 匾上刻字旁的小图记（mask 上色，夜晚自动随灯色） */
+.bldg::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background: #f6ead0;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+
+.bldg[data-id="wish"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 20.5S4.3 15.7 2.8 11C1.6 7.6 4 4.5 7.2 4.5c2.3 0 4 1.6 4.8 3 .8-1.4 2.5-3 4.8-3 3.2 0 5.6 3.1 4.4 6.5-1.5 4.7-9.2 9.5-9.2 9.5Z' fill='%23000'/></svg>"); }
+.bldg[data-id="mill"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><circle cx='12' cy='9' r='1.6' fill='%23000' stroke='none'/><path d='M12 9 6.5 3.5M12 9l5.5-5.5M12 9l-5.5 5.5M12 9l5.5 5.5'/><path d='M10 11 9 21h6l-1-10' fill='%23000' stroke='none'/></svg>"); }
+.bldg[data-id="feedmill"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><path d='M8 7.5h8l2.5 12.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1Z' fill='%23000' stroke='none'/><path d='M9.5 7.5C9.5 5 10.5 3 12 3s2.5 2 2.5 4.5'/></svg>"); }
+.bldg[data-id="coop"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><path d='M4 9l8-6 8 6'/><ellipse cx='12' cy='15.5' rx='4.5' ry='5.5' fill='%23000' stroke='none'/></svg>"); }
+.bldg[data-id="kitchen"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><rect x='5' y='11' width='14' height='8' rx='2' fill='%23000' stroke='none'/><path d='M3 12.5h2M19 12.5h2M9.5 8c0-1.8 1.5-1.8 1.5-3.5M14 8c0-1.8 1.5-1.8 1.5-3.5'/></svg>"); }
+.bldg[data-id="sheepfold"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><circle cx='8.5' cy='12' r='3.4' fill='%23000' stroke='none'/><circle cx='12.5' cy='10.5' r='3.8' fill='%23000' stroke='none'/><circle cx='16' cy='12.5' r='3.2' fill='%23000' stroke='none'/><path d='M9 15.5v4.5M15 15.5v4.5'/></svg>"); }
+.bldg[data-id="sugarhouse"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6.2' y='12.5' width='5.2' height='5.2' rx='1' fill='%23000'/><rect x='12.6' y='12.5' width='5.2' height='5.2' rx='1' fill='%23000'/><rect x='9.4' y='6.4' width='5.2' height='5.2' rx='1' fill='%23000'/></svg>"); }
+.bldg[data-id="community"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3.5 20.5v-7L8 10l4.5 3.5v7Z' fill='%23000'/><path d='M12.5 20.5V10L17 6.5 21.5 10v10.5Z' fill='%23000' opacity='.6'/></svg>"); }
+.bldg[data-id="barn"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill-rule='evenodd' d='M4 20.5V10l8-6 8 6v10.5Zm5.5 0v-5.5h5v5.5Z' fill='%23000'/></svg>"); }
+.bldg[data-id="saucehouse"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 8.5h8c1 2 1.5 3.5 1.5 6 0 3.5-1 6-2 6h-7c-1 0-2-2.5-2-6 0-2.5.5-4 1.5-6Z' fill='%23000'/><rect x='8.5' y='4' width='7' height='3' rx='1' fill='%23000'/></svg>"); }
+.bldg[data-id="house"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill-rule='evenodd' d='M4.5 20.5V10L12 4l7.5 6v10.5Zm5.5 0v-6h4v6Z' fill='%23000'/></svg>"); }
+.bldg[data-id="weavery"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill-rule='evenodd' d='M4 9h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H4Zm8 0h1.2v9H12Z' fill='%23000'/><circle cx='6' cy='13.5' r='3.6' fill='%23000'/></svg>"); }
+.bldg[data-id="petyard"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><ellipse cx='12' cy='15.5' rx='4.4' ry='3.6' fill='%23000'/><circle cx='6.8' cy='10.5' r='1.9' fill='%23000'/><circle cx='12' cy='8.8' r='1.9' fill='%23000'/><circle cx='17.2' cy='10.5' r='1.9' fill='%23000'/></svg>"); }
+.bldg[data-id="stall"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><path d='M3 4.5h18V8a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0Z' fill='%23000' stroke='none'/><path d='M5 11v9.5M19 11v9.5M5 16h14'/></svg>"); }
+.bldg[data-id="greenhouse"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill-rule='evenodd' d='M3.5 20.5v-6C3.5 9 7.2 5.5 12 5.5s8.5 3.5 8.5 9v6ZM9 9h1.3v11.5H9Zm4.7 0H15v11.5h-1.3Z' fill='%23000'/></svg>"); }
+.bldg[data-id="guestroom"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><path d='M3.5 20v-5.5c0-1 .8-1.8 1.8-1.8h13.4c1 0 1.8.8 1.8 1.8V20M3.5 18h17'/><rect x='5' y='9.5' width='6' height='3.2' rx='1.4' fill='%23000' stroke='none'/></svg>"); }
+.bldg[data-id="dock"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><circle cx='12' cy='5' r='2'/><path d='M12 7.2v12.6M8 10.5h8M4.8 13.5c.6 4.2 3.5 6.3 7.2 6.3s6.6-2.1 7.2-6.3'/></svg>"); }
+.bldg[data-id="plaza"] { --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><path d='M3 5h18'/><path d='M4.5 5l2.2 4.5L8.9 5Z M9.8 5l2.2 4.5L14.2 5Z M15.1 5l2.2 4.5L19.5 5Z' fill='%23000' stroke='none'/></svg>"); }
+
+/* ---------- 田垄地块 ---------- */
+
+.fields {
+  position: absolute;
+  right: 3%;
+  bottom: 8%;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(4, 64px);
+  grid-auto-rows: 58px;
+  gap: 10px;
+}
+
+.plot {
+  position: relative;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 4px 4px 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  border: 1px solid rgba(20, 12, 6, 0.35);
+  border-radius: var(--radius-s);
+  font-size: 12px;
+  line-height: 1.15;
+  color: #f6ead0;
+  text-shadow: 0 1px 2px rgba(20, 12, 6, 0.45);
+  background: linear-gradient(180deg, var(--soil-1), var(--soil-2));
+  box-shadow:
+    inset 0 2px 3px rgba(255, 240, 210, 0.14),
+    inset 0 -5px 0 rgba(20, 12, 6, 0.22);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+.plot:hover {
+  transform: translateY(-2px);
+}
+
+/* 作物小画布 */
+.plot::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 3px;
+  bottom: 21px;
+  background: center bottom / contain no-repeat;
+  transform-origin: 50% 100%;
+}
+
+/* 荒地：杂草与碎石 */
+.plot.untilled {
+  background:
+    radial-gradient(4px 3px at 74% 78%, rgba(120, 112, 100, 0.9) 50%, transparent 70%),
+    radial-gradient(3px 2.5px at 22% 68%, rgba(120, 112, 100, 0.7) 50%, transparent 70%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--soil-2) 78%, #2c2c24),
+      color-mix(in srgb, var(--soil-2) 62%, #22221c)
+    );
+}
+
+.plot.untilled::before {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234a5d3a' stroke-width='2' stroke-linecap='round'><path d='M6 22c-.5-3 .2-5.5 2-8M11 22c0-4 .8-6.5 2.6-9M17 22c.6-3-.2-6-2-8'/></svg>");
+}
+
+/* 空地：耙好的畦沟 */
+.plot.empty {
+  background:
+    repeating-linear-gradient(
+      180deg,
+      transparent 0 8px,
+      rgba(20, 12, 6, 0.16) 8px 10px
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--soil-1) 88%, var(--paper)),
+      var(--soil-2)
+    );
+}
+
+/* 生长中：幼苗轻摆 */
+.plot.growing {
+  background:
+    repeating-linear-gradient(
+      180deg,
+      transparent 0 9px,
+      rgba(20, 12, 6, 0.12) 9px 11px
+    ),
+    linear-gradient(180deg, var(--soil-1), var(--soil-2));
+}
+
+.plot.growing::before {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 22V11' stroke='%233c7a3e' stroke-width='2.4' stroke-linecap='round'/><path d='M12 13C12 8.5 8.8 6 4.5 6c.3 4.5 3.4 7 7.5 7Z' fill='%234e9a4a'/><path d='M12 13c0-4.5 3.2-7 7.5-7-.3 4.5-3.4 7-7.5 7Z' fill='%2372c162'/></svg>");
+  animation: sway 3.8s var(--ease-soft) infinite alternate;
+}
+
+/* 成熟：金穗 + 呼吸光晕 */
+.plot.ready {
+  color: #33261a;
+  text-shadow: 0 1px 0 rgba(255, 245, 220, 0.5);
+  background: linear-gradient(180deg, #f0d385, #d9a94f);
+  border-color: #8a6a24;
+  animation: bob 1.7s var(--ease-soft) infinite;
+}
+
+.plot.ready::before {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 22V7' stroke='%23a67c2e' stroke-width='2.2' stroke-linecap='round'/><path d='M12 8C12 4.5 10.4 2.6 7.6 2c0 3.4 1.8 5.4 4.4 6Z' fill='%23e8c05f'/><path d='M12 8c0-3.5 1.6-5.4 4.4-6 0 3.4-1.8 5.4-4.4 6Z' fill='%23f2d27e'/><path d='M12 14c0-3.2-1.5-5-4-5.6 0 3.1 1.6 5 4 5.6Z' fill='%23e8c05f'/><path d='M12 14c0-3.2 1.5-5 4-5.6 0 3.1-1.6 5-4 5.6Z' fill='%23f2d27e'/></svg>");
+}
+
+.plot.ready::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: glow-pulse 1.7s var(--ease-soft) infinite;
+}
+
+/* 枯萎：晒裂的灰土 + 垂头褪色的秆子，一眼看出"这块地该翻了" */
+.plot.wilted {
+  color: #ddd2bc;
+  border-color: rgba(128, 115, 94, 0.55);
+  background:
+    /* 两道短短的干裂缝（用 background-size 圈住，不横贯整块地） */
+    linear-gradient(115deg, transparent 44%, rgba(25, 20, 14, 0.32) 48%, transparent 52%)
+      16% 20% / 42% 56% no-repeat,
+    linear-gradient(58deg, transparent 44%, rgba(25, 20, 14, 0.26) 48%, transparent 52%)
+      86% 90% / 34% 44% no-repeat,
+    /* 散落的枯草屑 */
+    radial-gradient(4px 2.6px at 26% 84%, rgba(160, 146, 114, 0.6) 50%, transparent 72%),
+    radial-gradient(3px 2px at 76% 72%, rgba(160, 146, 114, 0.45) 50%, transparent 72%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--soil-1) 55%, #5a5148),
+      color-mix(in srgb, var(--soil-2) 55%, #453e36)
+    );
+  box-shadow:
+    inset 0 2px 3px rgba(255, 240, 210, 0.08),
+    inset 0 -5px 0 rgba(20, 12, 6, 0.28);
+}
+
+.plot.wilted::before {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 22V12' stroke='%23705238' stroke-width='2.2' stroke-linecap='round'/><path d='M12 13c-1-4-4-5.5-7-5 1.5 3.5 4 5 7 5Z' fill='%23907050'/><path d='M12 13c2.5-1 3.5-3.5 3-6-2.5 1-3.6 3-3 6Z' fill='%23a08058'/></svg>");
+  transform: rotate(-5deg);
+  filter: saturate(0.55) brightness(0.95);
+  opacity: 0.9;
+}
+
+/* 开垦按钮：虚线框待垦地（暗色垫底保证雪地里也读得清） */
+.plot[data-act="expand"] {
+  justify-content: center;
+  border: 2px dashed rgba(246, 234, 208, 0.6);
+  background:
+    linear-gradient(rgba(20, 12, 6, 0.3), rgba(20, 12, 6, 0.3)),
+    color-mix(in srgb, var(--soil-1) 40%, transparent);
+  font-size: 13px;
+}
+
+.plot[data-act="expand"]::before {
+  content: none;
+}
+
+/* ---------- 场景动效 ---------- */
+
+@keyframes drift-clouds {
+  from { transform: translateX(0); }
+  to { transform: translateX(-520px); }
+}
+
+@keyframes rise-smoke {
+  0% { transform: translateY(0) scale(0.8); opacity: 0.8; }
+  100% { transform: translateY(-26px) scale(1.5); opacity: 0; }
+}
+
+@keyframes lantern-sway {
+  from { transform: rotate(-4deg); }
+  to { transform: rotate(4deg); }
+}
+
+@keyframes sway {
+  from { transform: rotate(-3.5deg); }
+  to { transform: rotate(3.5deg); }
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2.5px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 6px 1px rgba(245, 207, 110, 0.35); }
+  50% { box-shadow: 0 0 16px 5px rgba(245, 207, 110, 0.65); }
+}
+
+/* 兼容旧类名的脉冲（其他角色代码可能引用） */
+@keyframes pulse {
+  50% { transform: translateY(-2px); }
+}
