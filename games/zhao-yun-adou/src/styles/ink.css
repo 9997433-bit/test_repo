@@ -1,0 +1,23 @@
+/* ============================================================
+   赵云与阿斗 · 水墨样式入口
+   级联顺序即依赖顺序，勿乱序：
+   tokens   设计令牌（唯一色彩/材质/动效常量源）
+   base     宣纸舞台、全局肌理、题字与印章
+   hud      牌匾计分条 + 朱批提示
+   board    半区 / 阿斗 / 行军道 / 阵图棋盘
+   cards    兵营手牌 + 按钮
+   pieces   棋子品阶着色（cell 与 card 共用，须在两者之后）
+   overlay  册页面板与覆层
+   motion   棋盘自身的关键帧（冻结容错设计，见文件头注释）
+   fx       战斗演出层：飘字 / 泼墨 / 技能震屏（接线契约见文件头）
+   ============================================================ */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./hud.css";
+@import "./board.css";
+@import "./cards.css";
+@import "./pieces.css";
+@import "./overlay.css";
+@import "./motion.css";
+@import "./fx.css";

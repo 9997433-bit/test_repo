@@ -14,10 +14,10 @@ MODEL_SLUG: claude-fable-5-thinking-xhigh
 
 ```bash
 cd games/sanguo-ice-age
-python3 -m http.server 4173 --bind 127.0.0.1   # 等价于 npm start
+python3 -m http.server 4176 --bind 127.0.0.1   # 等价于 npm start
 ```
 
-浏览器访问 `http://127.0.0.1:4173/`。
+浏览器访问 `http://127.0.0.1:4176/`。
 
 - 首次进入自动播放新手引导；任意时刻按 `H` 重看。
 - 控制台会打印一行装配信息，正常应包含 `systems 接管：climate → city → economy → population → quests`。

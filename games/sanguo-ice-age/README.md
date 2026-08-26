@@ -11,10 +11,10 @@
 
 ```bash
 cd games/sanguo-ice-age
-python3 -m http.server 4173 --bind 127.0.0.1   # 或 npm start
+python3 -m http.server 4176 --bind 127.0.0.1   # 或 npm start
 ```
 
-浏览器打开 `http://127.0.0.1:4173/`。首次进入会自动播放新手引导（可按 `H` 重看）。
+浏览器打开 `http://127.0.0.1:4176/`。首次进入会自动播放新手引导（可按 `H` 重看）。
 
 ## 测试
 

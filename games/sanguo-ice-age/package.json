@@ -8,6 +8,6 @@
     "test": "node tests/runner.mjs",
     "bench": "node tests/bench.mjs",
     "probe": "node tests/probes.mjs",
-    "start": "python3 -m http.server 4173 --bind 127.0.0.1"
+    "start": "python3 -m http.server 4176 --bind 127.0.0.1"
   }
 }

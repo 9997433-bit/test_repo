@@ -1,0 +1,110 @@
+/* ============================================================
+   棋子着色（.cell 与 .card 共用）
+   一枚棋子的品阶由三处同时表达：字色、描边、底部批条。
+   级联顺序：品阶 → 单字 → 武将（后者覆盖前者）。
+   ============================================================ */
+
+/* 批条：底部一道短横，颜色随字（currentColor），无品阶时隐藏 */
+.cell::after,
+.card::after {
+  content: "";
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  bottom: 7%;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* —— 品阶 1-5：白 / 石绿 / 青花 / 紫棠 / 赭火 —— */
+
+.cell.t1,
+.card.t1 {
+  color: var(--tier-1);
+  border-color: var(--tier-1-line);
+  background-image: linear-gradient(155deg, rgba(255, 253, 247, 0.6), var(--tier-1-wash));
+}
+
+.cell.t2,
+.card.t2 {
+  color: var(--tier-2);
+  border-color: var(--tier-2-line);
+  background-image: linear-gradient(155deg, rgba(255, 253, 247, 0.6), var(--tier-2-wash));
+}
+
+.cell.t3,
+.card.t3 {
+  color: var(--tier-3);
+  border-color: var(--tier-3-line);
+  background-image: linear-gradient(155deg, rgba(255, 253, 247, 0.6), var(--tier-3-wash));
+}
+
+.cell.t4,
+.card.t4 {
+  color: var(--tier-4);
+  border-color: var(--tier-4-line);
+  background-image: linear-gradient(155deg, rgba(255, 253, 247, 0.6), var(--tier-4-wash));
+}
+
+.cell.t5,
+.card.t5 {
+  color: var(--tier-5);
+  border-color: var(--tier-5-line);
+  background-image: linear-gradient(155deg, rgba(255, 253, 247, 0.6), var(--tier-5-wash));
+}
+
+.cell.t1::after, .card.t1::after,
+.cell.t2::after, .card.t2::after,
+.cell.t3::after, .card.t3::after,
+.cell.t4::after, .card.t4::after,
+.cell.t5::after, .card.t5::after,
+.cell.glyph::after, .card.glyph::after {
+  opacity: 0.5;
+}
+
+/* —— 武将单字：朱砂沉睡，虚线边等待配对 —— */
+
+.cell.glyph,
+.card.glyph {
+  color: var(--cinnabar);
+  border-color: rgba(var(--cinnabar-rgb), 0.4);
+  border-style: dashed;
+  background-image: linear-gradient(155deg, rgba(255, 253, 247, 0.6), var(--cinnabar-wash));
+}
+
+/* —— 武将：泥金字 + 常驻辉光（呼吸节律在 motion.css） —— */
+
+.cell.hero,
+.card.hero {
+  color: var(--gold-ink);
+  border-color: rgba(var(--gold-rgb), 0.6);
+  border-style: solid;
+  background-image:
+    radial-gradient(120% 120% at 50% 20%, rgba(var(--gold-rgb), 0.2), transparent 70%),
+    linear-gradient(155deg, rgba(255, 253, 247, 0.6), var(--gold-wash));
+  text-shadow:
+    0 0 1px currentColor,
+    0 0 10px rgba(var(--gold-rgb), 0.55),
+    0 0 22px rgba(var(--gold-rgb), 0.3);
+}
+
+.cell.hero::after,
+.card.hero::after {
+  opacity: 0.8;
+  background: linear-gradient(90deg, var(--gold), var(--gold-bright), var(--gold));
+}
+
+/* 光环结构：藏在字后（z-index 负 + isolation） */
+.cell.hero::before,
+.card.hero::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--gold-rgb), 0.32), transparent 75%);
+  pointer-events: none;
+}

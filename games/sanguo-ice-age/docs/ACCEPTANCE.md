@@ -38,7 +38,7 @@ cd games/sanguo-ice-age
 npm test        # e70b4cd 实测：24/24 全绿（含新增 bridge 套件 2 条）
 npm run probe   # e70b4cd 实测：9 过 / 1 败 ❌（bridge-project-view，见 §7 红线一）
 npm run bench   # e70b4cd 实测：2000 tick ≈ 506ms ≈ 0.25ms/tick，无 NaN/负数，同 seed 50 tick 差值 0
-npm start       # 127.0.0.1:4173 人工走查（index/main.js HTTP 200 已探测）
+npm start       # 127.0.0.1:4176 人工走查（index/main.js HTTP 200 已探测）
 ```
 
 ---

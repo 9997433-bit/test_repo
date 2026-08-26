@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1a120b" />
+    <title>墨戏目录 · test_repo</title>
+    <style>
+      :root { --ink: #1a120b; --paper: #efe3c8; --seal: #7a1818; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Noto Serif SC", "Songti SC", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(900px 600px at 8% -10%, rgba(201, 162, 39, 0.1), transparent 50%),
+          linear-gradient(180deg, #f6ecd4, #e8d7b4);
+        padding: 8vh 20px 48px;
+      }
+      main { max-width: 840px; margin: 0 auto; }
+      .sub { letter-spacing: 0.42em; opacity: 0.65; font-size: 0.85rem; }
+      h1 { font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 400; letter-spacing: 0.18em; }
+      .grid { display: grid; gap: 16px; }
+      @media (min-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+      a.card {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        background: rgba(255, 250, 240, 0.7);
+        border: 1px solid rgba(26, 18, 11, 0.16);
+        padding: 22px 20px 20px;
+        box-shadow: 0 16px 40px rgba(26, 18, 11, 0.12);
+      }
+      a.card:hover { border-color: var(--seal); }
+      a.card h2 { margin: 0 0 8px; font-size: 1.45rem; letter-spacing: 0.12em; }
+      a.card p { margin: 0; line-height: 1.7; opacity: 0.78; }
+      .path { margin-top: 12px; color: var(--seal); font-size: 0.86rem; }
+      footer { margin-top: 28px; opacity: 0.55; font-size: 0.85rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="sub">GitHub Pages · 一级目录隔离</p>
+      <h1>墨戏目录</h1>
+      <p>每款游戏独占一级路径，静态资源互不覆盖。</p>
+      <div class="grid">
+        <a class="card" href="./my-garden-world/">
+          <h2>我的花园世界</h2>
+          <p>国风花坊模拟经营。种花、插花、交单、装扮庭院、访邻借花。</p>
+          <div class="path">/test_repo/my-garden-world/</div>
+        </a>
+        <a class="card" href="./chao-neng-xia-dan-ya/">
+          <h2>超能下蛋鸭</h2>
+          <p>滑动瞄准、蓄力下蛋。重力弹球 · 卡牌肉鸽，独占一级目录。</p>
+          <div class="path">/test_repo/chao-neng-xia-dan-ya/</div>
+        </a>
+        <a class="card" href="./linghuashi/">
+          <h2>灵画师</h2>
+          <p>以笔绘符、水墨修仙。直线穿云，圆盾护体，折线破军。</p>
+          <div class="path">/test_repo/linghuashi/</div>
+        </a>
+        <a class="card" href="./zhao-yun-adou/">
+          <h2>赵云与阿斗</h2>
+          <p>汉字合成 · 水墨塔防。征兵合并，拼字觉醒，先破对岸者胜。</p>
+          <div class="path">/test_repo/zhao-yun-adou/</div>
+        </a>
+        <a class="card" href="./bingqi-wangzhe/">
+          <h2><img src="./bingqi-wangzhe/assets/brand/seal.svg" alt="" width="28" height="28" style="vertical-align:middle;margin-right:8px;border-radius:6px" />兵器王者·炉火</h2>
+          <p>寻器、造器、用器。与其他游戏并列一级目录。</p>
+          <div class="path">/test_repo/bingqi-wangzhe/</div>
+        </a>
+        <a class="card" href="./zaohua-xianfu/">
+          <h2>造化仙府</h2>
+          <p>已发布的同级目录，构建脚本只会覆盖本仓库正在构建的游戏。</p>
+          <div class="path">/test_repo/zaohua-xianfu/</div>
+        </a>
+        <a class="card" href="./warcraft3-td/">
+          <h2>边境要塞塔防</h2>
+          <p>魔兽争霸 III 风格塔防。四族防御塔、攻击护甲克制、英雄指挥官，独占一级目录。</p>
+          <div class="path">/test_repo/warcraft3-td/</div>
+        </a>
+      </div>
+      <footer>线上地址形如 https://9997433-bit.github.io/test_repo/&lt;游戏名&gt;/ ，不要把多款游戏打进 Pages 根目录。</footer>
+    </main>
+  </body>
+</html>

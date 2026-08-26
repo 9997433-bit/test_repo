@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>超能下蛋鸭 · 样式陈列室</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <link rel="stylesheet" href="./layout.css" />
+    <link rel="stylesheet" href="./fx.css" />
+    <style>
+      /* 陈列室自用脚手架（不属于游戏样式） */
+      .g-wrap { max-width: 900px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 28px; }
+      .g-section > h2 { color: var(--neon-teal); font-size: var(--fs-lg); letter-spacing: .14em; margin-bottom: 12px; border-left: 4px solid var(--yolk-500); padding-left: 10px; }
+      .g-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+      .g-col { display: flex; flex-direction: column; gap: 12px; }
+      .g-swatch { width: 92px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--night-line); }
+      .g-swatch i { display: block; height: 44px; }
+      .g-swatch small { display: block; padding: 4px 6px; font-size: 10px; background: var(--night-2); }
+      .g-note { color: var(--ink-faint); font-size: var(--fs-xs); margin-top: 6px; }
+      .g-stage-demo { width: min(400px, 100%); }
+    </style>
+  </head>
+  <body>
+    <div class="g-wrap">
+      <header class="topbar">
+        <h1>超能下蛋鸭</h1>
+        <p class="tagline">样式陈列室 · GALLERY</p>
+      </header>
+
+      <div class="g-row">
+        <button class="btn" id="toggle-rm">切换 reduce-motion（当前：关）</button>
+        <button class="btn btn--ghost" id="replay-flash">重播连击闪光</button>
+        <button class="btn btn--ghost" id="replay-bump">连击 +1</button>
+      </div>
+
+      <section class="g-section">
+        <h2>调色板 TOKENS</h2>
+        <div class="g-row" id="palette"></div>
+        <p class="g-note">夜市底色 night-0..4 · 蛋黄金 yolk-100..700 · 霓虹 teal/pink/blue/violet · 元素 fire/ice/thunder</p>
+      </section>
+
+      <section class="g-section">
+        <h2>按钮 .btn（全部命中区 ≥ 44px）</h2>
+        <div class="g-row">
+          <button class="btn btn--primary btn--lg">出 击</button>
+          <button class="btn btn--primary">领取奖励</button>
+          <button class="btn">图 鉴</button>
+          <button class="btn btn--ghost">返 回</button>
+          <button class="btn btn--danger">放弃本局</button>
+          <button class="btn btn--icon" aria-label="暂停">⏸</button>
+          <button class="btn btn--primary" disabled>未解锁</button>
+        </div>
+      </section>
+
+      <section class="g-section">
+        <h2>元素芯片 · 色盲三重编码（色相 + 纹样 + 字形）</h2>
+        <div class="g-row">
+          <span class="chip" data-element="fire">灼烧</span>
+          <span class="chip" data-element="ice">冻结</span>
+          <span class="chip" data-element="thunder">感电</span>
+          <span class="chip" data-school="combo">连击流</span>
+          <span class="chip" data-school="brute">直殴流</span>
+          <span class="chip" data-school="elemental">属性流</span>
+          <span class="chip" data-school="collide">碰撞流</span>
+          <span class="chip" data-school="support">辅助</span>
+          <span class="chip is-active" data-school="combo">连击羁绊 ×3</span>
+          <span class="chip chip--reward">🪙 ×240</span>
+        </div>
+      </section>
+
+      <section class="g-section">
+        <h2>进度条 .bar（--value 驱动）</h2>
+        <div class="g-col" style="max-width: 420px">
+          <div class="bar bar--hp" style="--value: 0.72"><div class="bar__fill"></div><span class="bar__label">72 / 100</span></div>
+          <div class="bar bar--hp is-low" style="--value: 0.18"><div class="bar__fill"></div><span class="bar__label">18 / 100</span></div>
+          <div class="bar bar--energy" style="--value: 0.55"><div class="bar__fill"></div><span class="bar__label">55%</span></div>
+          <div class="bar bar--xp" style="--value: 0.4"><div class="bar__fill"></div><span class="bar__label">LV.12</span></div>
+          <div class="bar bar--boss bar--hp" style="--value: 0.83"><div class="bar__fill"></div><span class="bar__label">魔王油锅</span></div>
+        </div>
+      </section>
+
+      <section class="g-section">
+        <h2>英雄卡 .hero-card（data-rarity 1–5 / 选中 / 锁定）</h2>
+        <div class="g-row">
+          <div class="hero-card" data-rarity="1"><span class="hero-card__lv">Lv.3</span><div class="hero-card__portrait">🐤</div><div class="hero-card__name">元气鸡</div><div class="hero-card__meta"><span class="school-dot" data-school="brute"></span><span class="stars"><span class="stars__star is-on">★</span><span class="stars__star">★</span><span class="stars__star">★</span></span></div></div>
+          <div class="hero-card" data-rarity="3"><span class="hero-card__lv">Lv.12</span><div class="hero-card__portrait">🦆</div><div class="hero-card__name">冲鸭</div><div class="hero-card__meta"><span class="school-dot" data-school="combo"></span><span class="stars"><span class="stars__star is-on">★</span><span class="stars__star is-on">★</span><span class="stars__star">★</span></span></div></div>
+          <div class="hero-card is-selected" data-rarity="4"><span class="hero-card__lv">Lv.20</span><div class="hero-card__portrait">🐔</div><div class="hero-card__name">雷神鸡</div><div class="hero-card__meta"><span class="school-dot" data-school="elemental"></span><span class="stars"><span class="stars__star is-on">★</span><span class="stars__star is-on">★</span><span class="stars__star is-on">★</span></span></div></div>
+          <div class="hero-card" data-rarity="5"><span class="hero-card__lv">Lv.31</span><div class="hero-card__portrait">🦢</div><div class="hero-card__name">冰凤</div><div class="hero-card__meta"><span class="school-dot" data-school="elemental"></span><span class="stars"><span class="stars__star is-on">★</span><span class="stars__star is-on">★</span><span class="stars__star is-on">★</span></span></div></div>
+          <div class="hero-card is-locked" data-rarity="4"><div class="hero-card__portrait">🦅</div><div class="hero-card__name">鲨齿雕</div></div>
+        </div>
+      </section>
+
+      <section class="g-section">
+        <h2>肉鸽三选一 .pick-card</h2>
+        <div class="pick-row">
+          <button class="pick-card fx-enter" style="--i:0" data-rarity="3"><span class="pick-card__icon">🥚</span><span class="pick-card__title">分裂蛋</span><span class="pick-card__desc">主蛋首次碰撞后分裂出 2 枚小蛋</span></button>
+          <button class="pick-card fx-enter" style="--i:1" data-rarity="4"><span class="pick-card__icon">⚡</span><span class="pick-card__title">感电之心</span><span class="pick-card__desc">雷伤 +25%，感电可扩散 1 次</span></button>
+          <button class="pick-card fx-enter" style="--i:2" data-rarity="5"><span class="pick-card__icon">👑</span><span class="pick-card__title">禽王光环</span><span class="pick-card__desc">全队攻击 +18%，连击不衰减 2s</span></button>
+        </div>
+      </section>
+
+      <section class="g-section" id="sec-hud">
+        <h2>战斗 HUD（.stage-frame 内绝对定位）</h2>
+        <div class="stage-frame g-stage-demo">
+          <canvas id="stage" width="480" height="800" aria-label="战场演示"></canvas>
+          <div class="fx-combo-flash" id="flash"></div>
+          <div class="hud-top">
+            <span class="wave-pill is-boss">☠ BOSS 波</span>
+            <div class="player-hp bar bar--hp" style="--value: 0.62"><div class="bar__fill"></div><span class="bar__label">62 / 100</span></div>
+            <span class="hud-score num">🪙 1,204</span>
+            <button class="btn btn--icon" aria-label="暂停">⏸</button>
+          </div>
+          <div class="combo is-fever" data-tier="3" id="combo">
+            <span class="combo__count num" id="combo-count">×23</span>
+            <span class="combo__label">爆蛋时刻</span>
+          </div>
+          <div class="aim-readout"><span>∠ 63°</span><span>力 82%</span></div>
+          <div class="boss-warning"><div class="boss-warning__text">⚠ 魔王油锅来袭 ⚠</div></div>
+          <span class="fx-float fx-float--crit" style="--fx-x: 30%; --fx-y: 58%; --fx-color: var(--yolk-hot); animation-iteration-count: infinite;">暴击 386!</span>
+          <span class="fx-float fx-float--heal" style="--fx-x: 72%; --fx-y: 66%; animation-iteration-count: infinite; animation-delay: .4s;">+24</span>
+          <div class="hud-hint">滑动瞄准 · 松开发射 · <span class="kbd">Q</span> 大招</div>
+        </div>
+        <div class="hero-dock g-stage-demo" style="margin-inline:auto">
+          <button class="hero-slot" data-school="combo" style="--energy:0.4"><span class="hero-slot__key">1</span>🦆<span class="hero-slot__name">冲鸭</span></button>
+          <button class="hero-slot is-active is-charged" data-school="elemental" style="--energy:1"><span class="hero-slot__key">2</span>🐔<span class="hero-slot__name">雷神鸡</span></button>
+          <button class="hero-slot" data-school="brute" style="--energy:0.7"><span class="hero-slot__key">3</span>🐦<span class="hero-slot__name">日轮鸟</span></button>
+          <button class="hero-slot is-dead" data-school="support" style="--energy:0"><span class="hero-slot__key">4</span>🦆<span class="hero-slot__name">治愈鸭</span></button>
+          <button class="ult-btn is-ready" style="--energy:1" aria-label="大招"><span>💥</span><span class="ult-btn__key">Q</span></button>
+        </div>
+      </section>
+
+      <section class="g-section" id="sec-result">
+        <h2>结算屏 .result</h2>
+        <div class="result result--win">
+          <div class="result__grade" data-grade="S">S</div>
+          <div class="result__title">胜 利</div>
+          <div class="result__stars stars"><span class="stars__star is-on">★</span><span class="stars__star is-on">★</span><span class="stars__star is-on">★</span></div>
+          <div class="result__rows">
+            <div class="list-row fx-enter" style="--i:0"><span class="list-row__label">连击峰值</span><span class="list-row__value">×23</span></div>
+            <div class="list-row fx-enter" style="--i:1"><span class="list-row__label">用时</span><span class="list-row__value">01:42</span></div>
+            <div class="list-row fx-enter" style="--i:2"><span class="list-row__label">砖块清扫率</span><span class="list-row__value">96%</span></div>
+          </div>
+          <div class="result__rewards">
+            <span class="chip chip--reward fx-pop-in" style="--i:3">🪙 ×240</span>
+            <span class="chip chip--reward fx-pop-in" style="--i:4">🧩 冲鸭碎片 ×5</span>
+            <span class="chip chip--reward fx-pop-in" style="--i:5">🥚 金蛋 ×1</span>
+          </div>
+          <div class="result__actions">
+            <button class="btn btn--ghost">回基地</button>
+            <button class="btn btn--primary">下一关 ▶</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="g-section">
+        <h2>弹窗 / Toast</h2>
+        <div class="g-row">
+          <div class="modal" style="position:static">
+            <div class="modal__title">暂 停</div>
+            <div class="pause-menu">
+              <button class="btn btn--primary">继续战斗</button>
+              <button class="btn">重新开始</button>
+              <button class="btn btn--ghost">减少动态：关</button>
+              <button class="btn btn--danger">退出关卡</button>
+            </div>
+          </div>
+          <div class="g-col">
+            <div class="toast" style="position:static;transform:none">🥚 图鉴收集 +1：冲鸭</div>
+            <div class="toast toast--ok" style="position:static;transform:none">存档已保存</div>
+            <div class="toast toast--danger" style="position:static;transform:none">能量不足</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      // ===== 陈列室交互（不属于游戏代码）=====
+      const rmBtn = document.getElementById("toggle-rm");
+      rmBtn.addEventListener("click", () => {
+        const html = document.documentElement;
+        const on = html.getAttribute("data-reduced-motion") === "on";
+        html.setAttribute("data-reduced-motion", on ? "off" : "on");
+        rmBtn.textContent = `切换 reduce-motion（当前：${on ? "关" : "开"}）`;
+      });
+      const flash = document.getElementById("flash");
+      document.getElementById("replay-flash").addEventListener("click", () => {
+        flash.classList.remove("is-on");
+        void flash.offsetWidth;
+        flash.classList.add("is-on");
+      });
+      let combo = 23;
+      const comboCount = document.getElementById("combo-count");
+      document.getElementById("replay-bump").addEventListener("click", () => {
+        comboCount.textContent = `×${++combo}`;
+        comboCount.classList.remove("is-bump");
+        void comboCount.offsetWidth;
+        comboCount.classList.add("is-bump");
+      });
+
+      // ===== 调色板 =====
+      const tokens = [
+        "night-0","night-1","night-2","night-3","night-4",
+        "yolk-100","yolk-300","yolk-500","yolk-700","yolk-hot",
+        "neon-teal","neon-pink","neon-blue","neon-violet",
+        "el-fire","el-ice","el-thunder","danger","ok",
+      ];
+      const pal = document.getElementById("palette");
+      for (const t of tokens) {
+        const d = document.createElement("div");
+        d.className = "g-swatch";
+        d.innerHTML = `<i style="background:var(--${t})"></i><small>--${t}</small>`;
+        pal.appendChild(d);
+      }
+
+      // ===== Canvas 战场演示：矢量搞怪鸭，零外部素材 =====
+      // 展示 ART_DIRECTION.md 的画风规范：粗描边 + 大眼睛 + 蛋形体
+      const cv = document.getElementById("stage");
+      const cx = cv.getContext("2d");
+      const W = 480, H = 800;
+      const OUTLINE = "#241535";
+
+      function egg(x, y, r, fill) {
+        cx.save();
+        cx.translate(x, y);
+        cx.scale(1, 1.18);
+        cx.beginPath();
+        cx.arc(0, 0, r, 0, Math.PI * 2);
+        cx.fillStyle = fill;
+        cx.fill();
+        cx.lineWidth = 3;
+        cx.strokeStyle = OUTLINE;
+        cx.stroke();
+        cx.restore();
+      }
+
+      function duck(x, y, s) {
+        cx.save();
+        cx.translate(x, y);
+        cx.scale(s, s);
+        cx.lineWidth = 3.4;
+        cx.strokeStyle = OUTLINE;
+        // 蛋形身体
+        cx.beginPath();
+        cx.ellipse(0, 8, 26, 30, 0, 0, Math.PI * 2);
+        cx.fillStyle = "#ffd447";
+        cx.fill(); cx.stroke();
+        // 肚皮
+        cx.beginPath();
+        cx.ellipse(0, 16, 15, 17, 0, 0, Math.PI * 2);
+        cx.fillStyle = "#fff6cf";
+        cx.fill();
+        // 翅膀
+        cx.beginPath();
+        cx.ellipse(-22, 10, 9, 15, -0.5, 0, Math.PI * 2);
+        cx.fillStyle = "#ffbe2e";
+        cx.fill(); cx.stroke();
+        // 大眼睛（搞怪：一大一小）
+        cx.beginPath(); cx.arc(-7, -12, 9, 0, Math.PI * 2);
+        cx.fillStyle = "#fff"; cx.fill(); cx.stroke();
+        cx.beginPath(); cx.arc(9, -12, 6.5, 0, Math.PI * 2);
+        cx.fillStyle = "#fff"; cx.fill(); cx.stroke();
+        cx.fillStyle = OUTLINE;
+        cx.beginPath(); cx.arc(-5, -11, 4, 0, Math.PI * 2); cx.fill();
+        cx.beginPath(); cx.arc(10, -11, 2.8, 0, Math.PI * 2); cx.fill();
+        // 扁嘴
+        cx.beginPath();
+        cx.ellipse(2, -1, 12, 6, 0.08, 0, Math.PI * 2);
+        cx.fillStyle = "#ff8a3d";
+        cx.fill(); cx.stroke();
+        // 呆毛
+        cx.beginPath();
+        cx.moveTo(0, -38); cx.quadraticCurveTo(8, -50, 14, -42);
+        cx.stroke();
+        cx.restore();
+      }
+
+      function peg(x, y) {
+        cx.beginPath(); cx.arc(x, y, 7, 0, Math.PI * 2);
+        cx.fillStyle = "#59c2ff"; cx.fill();
+        cx.lineWidth = 2.4; cx.strokeStyle = OUTLINE; cx.stroke();
+        cx.beginPath(); cx.arc(x - 2, y - 2, 2.4, 0, Math.PI * 2);
+        cx.fillStyle = "rgba(255,255,255,.8)"; cx.fill();
+      }
+
+      function brick(x, y, w, h, c) {
+        cx.fillStyle = c;
+        cx.beginPath();
+        cx.roundRect(x, y, w, h, 6);
+        cx.fill();
+        cx.lineWidth = 3; cx.strokeStyle = OUTLINE; cx.stroke();
+        cx.fillStyle = "rgba(255,255,255,.25)";
+        cx.beginPath(); cx.roundRect(x + 3, y + 3, w - 6, 5, 3); cx.fill();
+      }
+
+      function slime(x, y, c) {
+        cx.save(); cx.translate(x, y);
+        cx.lineWidth = 3; cx.strokeStyle = OUTLINE;
+        cx.beginPath();
+        cx.moveTo(-20, 12);
+        cx.quadraticCurveTo(-22, -16, 0, -16);
+        cx.quadraticCurveTo(22, -16, 20, 12);
+        cx.closePath();
+        cx.fillStyle = c; cx.fill(); cx.stroke();
+        cx.fillStyle = "#fff";
+        cx.beginPath(); cx.arc(-7, -4, 4.6, 0, Math.PI * 2); cx.fill();
+        cx.beginPath(); cx.arc(7, -4, 4.6, 0, Math.PI * 2); cx.fill();
+        cx.fillStyle = OUTLINE;
+        cx.beginPath(); cx.arc(-6, -3, 2.2, 0, Math.PI * 2); cx.fill();
+        cx.beginPath(); cx.arc(8, -3, 2.2, 0, Math.PI * 2); cx.fill();
+        cx.restore();
+      }
+
+      // 天幕已由 CSS 渐变承担，这里补远景灯串
+      for (let i = 0; i < 12; i++) {
+        const x = 20 + i * 40, y = 46 + Math.sin(i * 0.9) * 10;
+        cx.beginPath(); cx.arc(x, y, 4, 0, Math.PI * 2);
+        cx.fillStyle = ["#ffd447", "#ff6b9d", "#3ee0c5", "#b389ff"][i % 4];
+        cx.globalAlpha = 0.9; cx.fill(); cx.globalAlpha = 1;
+      }
+      // 发射台 + 鸭
+      cx.fillStyle = "rgba(255,255,255,.06)";
+      cx.beginPath(); cx.roundRect(170, 64, 140, 14, 7); cx.fill();
+      duck(240, 108, 1);
+      // 瞄准虚线（预测弹道）
+      cx.setLineDash([4, 10]);
+      cx.lineWidth = 3;
+      cx.strokeStyle = "rgba(255,212,71,.85)";
+      cx.beginPath();
+      cx.moveTo(240, 150);
+      cx.quadraticCurveTo(300, 320, 392, 430);
+      cx.stroke();
+      cx.setLineDash([]);
+      // 下落中的蛋 + 残影
+      cx.globalAlpha = 0.25; egg(268, 240, 12, "#fff6cf");
+      cx.globalAlpha = 0.5; egg(280, 272, 12, "#fff6cf");
+      cx.globalAlpha = 1; egg(292, 306, 13, "#fff6cf");
+      // 钉板
+      for (let r = 0; r < 3; r++)
+        for (let c = 0; c < 5 + (r % 2); c++)
+          peg(60 + c * 88 - (r % 2) * 44, 380 + r * 70);
+      // 砖块
+      brick(40, 600, 84, 34, "#b389ff");
+      brick(150, 620, 84, 34, "#3ee0c5");
+      brick(330, 596, 84, 34, "#ff6b9d");
+      // 敌人
+      slime(100, 706, "#63d68a");
+      slime(240, 716, "#ff8a3d");
+      slime(380, 706, "#59c2ff");
+      // 地面
+      cx.fillStyle = "rgba(255,159,28,.16)";
+      cx.fillRect(0, 744, W, 56);
+    </script>
+  </body>
+</html>

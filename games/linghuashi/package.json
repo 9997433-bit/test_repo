@@ -1,0 +1,21 @@
+{
+  "name": "linghuashi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "灵画师 · 以笔为刃，以画通灵 — 独立目录网页复刻",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 4173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bench": "node scripts/bench.mjs",
+    "probe": "node scripts/probe.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}
