@@ -496,6 +496,14 @@ li { margin: 3px 0; font-size: 0.86rem; color: var(--muted); }
 
 /* ——— 战斗 HUD ——— */
 .screen-battle { overflow: hidden; }
+/* 画布外层：只承载 fx.css 的 .fx-shake-*，HUD 留在外面不跟着抖，读数保持可读。
+   命中停顿的 .fx-hitstop 挂在画布本身——同元素挂两条 animation 会互相顶掉。 */
+.battle-shake {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.battle-shake > .battle-canvas { pointer-events: auto; }
 .battle-canvas {
   position: absolute;
   inset: 0;

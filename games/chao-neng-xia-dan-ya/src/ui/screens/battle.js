@@ -15,6 +15,19 @@ import { heroCanvas } from "../widgets.js";
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+/** fx.css 的一次性动画类：摘掉 → 强制回流 → 挂回去才会重播（ART_DIRECTION §5）。 */
+function replayClass(node, cls, siblings = []) {
+  for (const other of siblings) if (other !== cls) node.classList.remove(other);
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+}
+
+const HITSTOP_CLASSES = ["fx-hitstop", "fx-hitstop-lg"];
+const SHAKE_CLASSES = ["fx-shake-sm", "fx-shake-md", "fx-shake-lg"];
+/** 与 fx.css 的 animation-duration 对齐，用来判断「上一次还没播完」。 */
+const SHAKE_SECONDS = [0.32, 0.4, 0.52];
+
 function buildLevel(app, params) {
   switch (params.mode) {
     case "tower":
@@ -44,6 +57,13 @@ export const battleScreen = {
     app.audio.startMusic(level.boss || mode === "raid" ? "boss" : "battle");
 
     const canvas = el("canvas", { class: "battle-canvas", width: 480, height: 800 });
+    // 震屏与命中停顿分挂两层：同一元素上两条 animation 会互相顶掉，
+    // 爆蛋时刻同时给 hitstop + shake，挂一起就只剩一个能播。
+    const shakeLayer = el("div", { class: "battle-shake" }, [canvas]);
+    const comboFlash = el("div", { class: "fx-combo-flash" });
+    shakeLayer.addEventListener("animationend", () => shakeLayer.classList.remove(...SHAKE_CLASSES));
+    canvas.addEventListener("animationend", () => canvas.classList.remove(...HITSTOP_CLASSES));
+    comboFlash.addEventListener("animationend", () => comboFlash.classList.remove("is-on"));
     const renderer = createRenderer(canvas);
     const battle = createBattle({
       level,
@@ -79,7 +99,7 @@ export const battleScreen = {
     ]);
     const hint = el("div", { class: "aim-hint", text: "按住画面拖拽瞄准，松手发射（空格也可发射）" });
 
-    mount(root, canvas, hudTop, hint, dock, ultBtn);
+    mount(root, shakeLayer, comboFlash, hudTop, hint, dock, ultBtn);
 
     const heroButtons = battle.heroes.map((hero, i) => {
       const ring = el("i", { class: "energy-ring" });
@@ -102,7 +122,9 @@ export const battleScreen = {
     }
 
     // —— 输入 ——
-    let dragging = false;
+    // 多点触控：只认第一根按下的手指，后来的指针一律忽略，
+    // 否则第二根手指会抢走瞄准、抬起时还会替第一根手指发射。
+    let aimPointerId = null;
     function toWorld(e) {
       const rect = canvas.getBoundingClientRect();
       return {
@@ -117,29 +139,36 @@ export const battleScreen = {
       const dist = Math.hypot(dx, dy);
       battle.setAim(clamp(angle, -MAX_AIM_DEG, MAX_AIM_DEG), clamp(dist / 460, 0.12, 1));
     }
+    function dropPointer(e) {
+      aimPointerId = null;
+      try {
+        if (e && canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      } catch { /* pointer 已释放 */ }
+    }
     canvas.addEventListener("pointerdown", (e) => {
       app.audio.unlock();
+      if (aimPointerId !== null) return;
       if (!battle.canFire()) return;
-      dragging = true;
+      aimPointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       aimAt(toWorld(e));
       hint.classList.add("hidden");
     });
     canvas.addEventListener("pointermove", (e) => {
-      if (!dragging) return;
+      if (e.pointerId !== aimPointerId) return;
       aimAt(toWorld(e));
     });
-    const release = (e) => {
-      if (!dragging) return;
-      dragging = false;
-      try {
-        canvas.releasePointerCapture(e.pointerId);
-      } catch { /* pointer 已释放 */ }
+    canvas.addEventListener("pointerup", (e) => {
+      if (e.pointerId !== aimPointerId) return;
+      dropPointer(e);
       battle.fire();
       syncHud();
-    };
-    canvas.addEventListener("pointerup", release);
-    canvas.addEventListener("pointercancel", () => { dragging = false; });
+    });
+    // 取消（手指滑出、系统手势打断）只收指针，不当作发射
+    canvas.addEventListener("pointercancel", (e) => {
+      if (e.pointerId !== aimPointerId) return;
+      dropPointer(e);
+    });
 
     // —— 结算 / 弹窗 ——
     let ended = false;
@@ -151,17 +180,21 @@ export const battleScreen = {
       app.navigate("result", { mode, level, params, result: battle.result, battle }, { replace: true });
     }
 
+    // 暂停窗只能有一层：Esc 连按、点 HUD 按钮、Esc + 点击混按都只开这一个。
+    let pauseModal = null;
     function openPause() {
+      if (pauseModal) return;
+      if (battle.pendingDraft) return;
       if (battle.state === BATTLE_STATE.WON || battle.state === BATTLE_STATE.LOST) return;
       battle.paused = true;
       app.audio.play("ui");
-      app.modal((box, close) => {
-        const resume = () => { battle.paused = false; close(); };
+      // 无论「继续」、Esc 还是切屏关掉的，onClose 都会解除暂停
+      pauseModal = app.modal((box, close) => {
         mount(box, 
           el("h3", { text: "暂停" }),
           el("p", { class: "muted small", text: `${level.name} · 回合 ${battle.turn}` }),
           el("div", { class: "detail-actions" }, [
-            button("继续", resume, { variant: "primary" }),
+            button("继续", () => close(), { variant: "primary" }),
             button("重新开始", () => { close(); app.navigate("battle", params, { replace: true }); }),
             button("放弃并退出", () => {
               close();
@@ -171,6 +204,11 @@ export const battleScreen = {
             }, { variant: "ghost" }),
           ]),
         );
+      }, {
+        onClose() {
+          pauseModal = null;
+          battle.paused = false;
+        },
       });
     }
 
@@ -178,6 +216,7 @@ export const battleScreen = {
       battle.paused = true;
       const options = rollDraft(battle, app.save.owned, level.id);
       app.audio.play("charged");
+      // 三选一必须选：Esc 关不掉，否则会留下一个已暂停但没弹窗的战斗
       app.modal((box, close) => {
         mount(box, 
           el("h3", { text: `第 ${battle.wave} 波 · 三选一` }),
@@ -200,7 +239,7 @@ export const battleScreen = {
             ),
           ),
         );
-      });
+      }, { dismissible: false });
     }
 
     function rebuildDock() {
@@ -229,8 +268,11 @@ export const battleScreen = {
       turnText.textContent = battle.endless ? `第 ${battle.wave} 波` : `回合 ${battle.turn}`;
       timerText.textContent = battle.timeLimit ? `⏱ ${Math.max(0, battle.timeLimit - battle.elapsed).toFixed(1)}s` : `敌 ${battle.aliveEnemies().length}`;
       shieldText.textContent = battle.shields > 0 ? `🛡×${battle.shields}` : "";
+      // 只切状态类，别整块覆盖 className：那会把 fx.css 的 .is-bump / .is-fever 一起抹掉
       comboBadge.textContent = battle.combo > 1 ? `${battle.combo} COMBO` : "";
-      comboBadge.className = `combo-badge ${battle.combo > 1 ? "on" : ""} ${battle.combo >= 10 ? "hot" : ""}`;
+      comboBadge.classList.toggle("on", battle.combo > 1);
+      comboBadge.classList.toggle("hot", battle.combo >= 10);
+      comboBadge.classList.toggle("is-fever", battle.burstUntil > battle.elapsed || battle.combo >= battle.comboThreshold);
 
       const active = battle.activeHero();
       heroButtons.forEach(({ node, ring, hero }, i) => {
@@ -246,12 +288,60 @@ export const battleScreen = {
     }
 
     if (!root.contains(comboBadge)) root.appendChild(comboBadge);
+
+    // —— juice：把 battle.fx 指令翻译成 fx.css 的一次性动画类 ——
+    // 逻辑侧的冻结 / 震屏累积在 core/battle.js，这里只负责视觉重播。
+    let clock = 0;
+    let shakeTier = -1;
+    let shakeUntil = 0;
+    let hitstopUntil = 0;
+
+    function playHitstop(duration) {
+      const long = (duration ?? 0) >= 0.09;
+      const cls = long ? "fx-hitstop-lg" : "fx-hitstop";
+      // 别让密集的小停顿把爆蛋那记长脉冲截断
+      if (!long && clock < hitstopUntil) return;
+      hitstopUntil = clock + (long ? 0.3 : 0.16);
+      replayClass(canvas, cls, HITSTOP_CLASSES);
+    }
+
+    function playShake(intensity) {
+      const tier = intensity >= 1.2 ? 2 : intensity >= 0.8 ? 1 : 0;
+      // 上一档还没播完、且这一下不更狠，就别打断（连打时不会抖成糊）
+      if (clock < shakeUntil && tier <= shakeTier) return;
+      shakeTier = tier;
+      shakeUntil = clock + SHAKE_SECONDS[tier];
+      replayClass(shakeLayer, SHAKE_CLASSES[tier], SHAKE_CLASSES);
+    }
+
+    function drainFx() {
+      const queue = battle.takeFx();
+      if (!queue.length) return;
+      let combo = null;
+      let flash = false;
+      let hitstop = 0;
+      let shake = 0;
+      for (const entry of queue) {
+        if (entry.kind === "hitstop") hitstop = Math.max(hitstop, entry.duration ?? 0);
+        else if (entry.kind === "shake") shake = Math.max(shake, entry.intensity ?? 0);
+        else if (entry.kind === "combo-flash") flash = true;
+        else if (entry.kind === "combo") combo = entry;
+      }
+      // 同一帧内多条同类指令只播最狠的那条，避免同帧反复重挂类
+      if (hitstop > 0) playHitstop(hitstop);
+      if (shake > 0) playShake(shake);
+      if (flash) replayClass(comboFlash, "is-on");
+      if (combo?.value > 0) replayClass(comboBadge, "is-bump");
+    }
+
     syncHud();
 
     return {
       tick(dt) {
+        clock += dt;
         battle.update(dt);
         renderer.draw(battle);
+        drainFx();
         hudTimer += dt;
         if (hudTimer > 0.06) {
           hudTimer = 0;

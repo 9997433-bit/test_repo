@@ -38,6 +38,19 @@ function roundRect(ctx, x, y, w, h, r, fill) {
   ctx.fill();
 }
 
+/**
+ * 种族口径归一。
+ *
+ * `src/data/heroes.js` 的权威写法是 `chicken`，而 `combat/constants.js`
+ * 与 `core/catalog.js` 历史上用过 `chick` 别名。立绘两边都要认，
+ * 否则鸡族英雄会掉进 duck 分支——没有鸡冠、喙也画成鸭嘴。
+ */
+const RACE_ALIAS = { chicken: "chicken", chick: "chicken", chickens: "chicken", duck: "duck", ducks: "duck", goose: "goose", geese: "goose", bird: "bird", birds: "bird" };
+
+function raceOf(hero) {
+  return RACE_ALIAS[hero?.race] ?? "duck";
+}
+
 function eye(ctx, x, y, r, look = 0) {
   circle(ctx, x, y, r, "#ffffff");
   circle(ctx, x + look * r * 0.3, y + r * 0.1, r * 0.52, "#1a1526");
@@ -54,7 +67,7 @@ export function drawHero(ctx, hero, x, y, opts = {}) {
   const facing = opts.facing ?? 1;
   const bob = opts.bob ?? 0;
   const [main, accent, dark] = hero.palette ?? ["#ffd447", "#ff8a3d", "#2a2144"];
-  const race = hero.race ?? "duck";
+  const race = raceOf(hero);
   ctx.save();
   ctx.translate(x, y + bob);
   ctx.scale(facing, 1);
@@ -87,7 +100,7 @@ export function drawHero(ctx, hero, x, y, opts = {}) {
   ellipse(ctx, -size * 0.02, size * 0.02, size * 0.22, size * 0.16, accent, -0.25);
 
   // 颈 / 头
-  const neck = race === "goose" ? size * 0.5 : race === "chick" ? size * 0.34 : size * 0.42;
+  const neck = race === "goose" ? size * 0.5 : race === "chicken" ? size * 0.34 : size * 0.42;
   if (race === "goose") {
     ctx.beginPath();
     ctx.moveTo(-size * 0.06, -size * 0.2);
@@ -99,11 +112,11 @@ export function drawHero(ctx, hero, x, y, opts = {}) {
   }
   const headX = race === "goose" ? size * 0.1 : size * 0.04;
   const headY = -neck - size * 0.06;
-  const headR = race === "chick" ? size * 0.3 : size * 0.28;
+  const headR = race === "chicken" ? size * 0.3 : size * 0.28;
   circle(ctx, headX, headY, headR, main);
 
   // 冠 / 头饰
-  if (race === "chick") {
+  if (race === "chicken") {
     poly(
       ctx,
       [
@@ -164,8 +177,8 @@ export function drawHeroPortrait(ctx, hero, x, y, size) {
   ctx.save();
   circle(ctx, x, y + size * 0.06, r * 1.18, "rgba(0,0,0,0.25)");
   circle(ctx, x, y, r, main);
-  const race = hero.race ?? "duck";
-  if (race === "chick") poly(ctx, [[x - r * 0.3, y - r * 0.85], [x - r * 0.04, y - r * 1.5], [x + r * 0.2, y - r * 0.88]], "#ff4d6d");
+  const race = raceOf(hero);
+  if (race === "chicken") poly(ctx, [[x - r * 0.3, y - r * 0.85], [x - r * 0.04, y - r * 1.5], [x + r * 0.2, y - r * 0.88]], "#ff4d6d");
   if (race === "bird") poly(ctx, [[x - r * 0.5, y - r * 0.66], [x - r * 0.08, y - r * 1.6], [x + r * 0.26, y - r * 0.8]], accent);
   if (race === "duck" || race === "goose") roundRect(ctx, x + r * 0.42, y - r * 0.1, r * 0.9, r * 0.4, r * 0.2, "#ff9f3d");
   else poly(ctx, [[x + r * 0.42, y - r * 0.14], [x + r * 1.24, y + r * 0.06], [x + r * 0.42, y + r * 0.26]], "#ff9f3d");

@@ -16,6 +16,8 @@ export function createShell(root, app) {
   let activeParams = {};
   let container = null;
   const history = [];
+  /** 打开中的弹窗栈（后进先出）。Esc 只关最上面一层，绝不叠一层新的。 */
+  const modals = [];
 
   function resize() {
     const vw = window.innerWidth;
@@ -47,6 +49,8 @@ export function createShell(root, app) {
       return;
     }
     if (!opts.replace && activeId) history.push({ id: activeId, params: activeParams });
+    // 弹窗挂在常驻的 overlay 上，不随屏幕卸载；切屏时必须自己收干净
+    closeAllModals();
     destroyActive();
     activeId = id;
     activeParams = params;
@@ -71,15 +75,49 @@ export function createShell(root, app) {
     setTimeout(() => node.remove(), 2300);
   }
 
-  function modal(render) {
+  /**
+   * 打开一个弹窗。
+   *
+   * @param {(box: HTMLElement, close: () => void) => void} render
+   * @param {{ dismissible?: boolean, onClose?: () => void }} [opts]
+   *   `dismissible` 为 false 时 Esc 关不掉（三选一这类必须做出选择的弹窗）。
+   *   `onClose` 无论由谁触发关闭都只会跑一次，调用方靠它复位自己的状态（例如解除暂停）。
+   * @returns {() => void} 关闭函数，重复调用安全
+   */
+  function modal(render, opts = {}) {
     const back$ = el("div", { class: "modal-backdrop" });
     const box = el("div", { class: "modal" });
     back$.appendChild(box);
     overlay.appendChild(back$);
-    const close = () => back$.remove();
-    render(box, close);
+
+    let closed = false;
+    const entry = {
+      dismissible: opts.dismissible !== false,
+      close() {
+        if (closed) return;
+        closed = true;
+        const i = modals.indexOf(entry);
+        if (i >= 0) modals.splice(i, 1);
+        back$.remove();
+        opts.onClose?.();
+      },
+    };
+    modals.push(entry);
+    render(box, entry.close);
     requestAnimationFrame(() => back$.classList.add("show"));
-    return close;
+    return entry.close;
+  }
+
+  function closeAllModals() {
+    while (modals.length) modals[modals.length - 1].close();
+  }
+
+  /** Esc 交给最上层弹窗；关掉一层就算处理完，事件不再往屏幕转发。 */
+  function dismissTopModal() {
+    const top = modals[modals.length - 1];
+    if (!top?.dismissible) return modals.length > 0;
+    top.close();
+    return true;
   }
 
   let last = performance.now();
@@ -97,6 +135,13 @@ export function createShell(root, app) {
 
   window.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLInputElement) return;
+    // 弹窗开着时先吃掉 Esc：否则战斗屏会再开一层暂停窗
+    if (e.key === "Escape" && modals.length) {
+      e.preventDefault();
+      dismissTopModal();
+      return;
+    }
+    if (modals.length) return;
     active?.onKey?.(e);
   });
 
@@ -104,5 +149,13 @@ export function createShell(root, app) {
   window.addEventListener("pointerdown", unlock, { once: true });
   window.addEventListener("keydown", unlock, { once: true });
 
-  return { navigate, back, toast, modal, get activeId() { return activeId; } };
+  return {
+    navigate,
+    back,
+    toast,
+    modal,
+    closeAllModals,
+    modalCount: () => modals.length,
+    get activeId() { return activeId; },
+  };
 }

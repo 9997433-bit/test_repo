@@ -307,18 +307,9 @@ export function createRenderer(canvas) {
       ctx.clearRect(0, 0, 480, 800);
       background(battle.level.theme ?? "farm");
 
-      // 震屏用「高频振荡 + 少量抖动」而不是纯随机：纯随机在小幅度时只是糊，
-      // 带方向的振荡才读得出是一记敲击。
-      const shake = battle.shakeAmt;
-      if (shake > 0.2) {
-        const osc = Math.sin(t * 92);
-        ctx.translate(240, 400);
-        ctx.rotate(osc * shake * 0.0004);
-        ctx.translate(
-          -240 + osc * shake * 0.8 + (Math.random() - 0.5) * shake * 0.4,
-          -400 + Math.cos(t * 77) * shake * 0.5 + (Math.random() - 0.5) * shake * 0.4,
-        );
-      }
+      // 震屏不在这里画：镜头位移由 fx.css 的 .fx-shake-sm/md/lg 挂在画布外层实现
+      // （ART_DIRECTION §5.1「二选一，勿叠加」），这样「屏幕震动」设置开关
+      // 通过 <html data-screen-shake="off"> 就能一刀切干净。battle.shakeAmt 只留作强度累积量。
 
       for (const p of world.ice) {
         ctx.save();

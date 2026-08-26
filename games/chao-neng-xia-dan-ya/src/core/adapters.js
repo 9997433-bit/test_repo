@@ -8,7 +8,7 @@
  * 这里的 `CAPS.physics` / `CAPS.trajectory` 只用于在菜单上如实报告链路状态。
  */
 import * as upstreamPhysics from "../physics/index.js";
-import { resolveHit as upstreamResolveHit } from "../combat/index.js";
+import { ELEMENT, feedbackEffect, resolveHit as upstreamResolveHit } from "../combat/index.js";
 
 function probePhysics() {
   try {
@@ -61,21 +61,54 @@ export const WORLD_H = Number.isFinite(upstreamPhysics.WORLD_H) ? upstreamPhysic
 export const GRAVITY = Number.isFinite(upstreamPhysics.GRAVITY) ? upstreamPhysics.GRAVITY : 1680;
 export const FIXED_DT = Number.isFinite(upstreamPhysics.FIXED_DT) ? upstreamPhysics.FIXED_DT : 1 / 120;
 
-/** 基础伤害标量：优先走 combat 契约的纯函数，失败时退回等价内置公式。 */
-export function baseHit(egg, target, ctx) {
+/**
+ * 内置兜底命中结果。
+ *
+ * 形状与上游 `resolveHit` 一致（含 `effects` / `comboDelta`），
+ * 这样调用方永远只有一条消费路径，不需要为降级再写一套分支。
+ */
+function fallbackStrike(egg = {}, target = {}, ctx = {}) {
+  const power = Number.isFinite(egg.power) ? egg.power : 10;
+  const combo = Number.isFinite(ctx.combo) ? Math.max(0, Math.floor(ctx.combo)) : 0;
+  const element = egg.element ?? ELEMENT.PHYSICAL;
+  const amount = power > 0 ? Math.max(1, Math.round(power * (1 + combo * 0.06) * (egg.damageMult ?? 1))) : 0;
+  const at = ctx.hitPoint ?? { x: target.x ?? 0, y: target.y ?? 0 };
+  const hp = typeof target.hp === "number" ? target.hp : Infinity;
+  return {
+    damage: amount,
+    effects: [feedbackEffect({ kind: "floater", text: String(amount), tone: element, intensity: 0.7, at })],
+    comboDelta: egg.noCombo || ctx.comboGain === 0 ? 0 : 1,
+    events: [],
+    crit: false,
+    element,
+    reaction: null,
+    saturated: null,
+    combo: combo + 1,
+    comboBefore: combo,
+    burst: false,
+    killed: Number.isFinite(hp) && hp - amount <= 0,
+    hpAfter: hp - amount,
+    absorbed: 0,
+    overkill: 0,
+    breakdown: null,
+  };
+}
+
+/**
+ * 完整命中结算：直接把 combat 契约的 `{ damage, effects, comboDelta, … }` 交给调用方。
+ * 战斗控制器消费 `effects`（爆炸 / 状态 / 附着 / 增益 / 表现）与 `comboDelta`，
+ * 自己不再另算一份，所以爆蛋时刻全局只有这一套实现。
+ */
+export function resolveStrike(egg, target, ctx = {}) {
   if (CAPS.combat) {
     try {
       const r = upstreamResolveHit(egg, target, ctx);
-      if (r && Number.isFinite(r.damage)) {
-        return { damage: r.damage, effects: r.effects ?? [], comboDelta: r.comboDelta ?? 1 };
-      }
+      if (r && Number.isFinite(r.damage) && Array.isArray(r.effects)) return r;
     } catch {
       /* 上游异常时静默降级，不能让战斗崩掉 */
     }
   }
-  const power = egg?.power ?? 10;
-  const combo = ctx?.combo ?? 0;
-  return { damage: Math.max(1, Math.round(power * (1 + combo * 0.06))), effects: [], comboDelta: 1 };
+  return fallbackStrike(egg, target, ctx);
 }
 
 /**
