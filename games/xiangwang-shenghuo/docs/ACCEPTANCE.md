@@ -12,7 +12,7 @@
 ```bash
 cd games/xiangwang-shenghuo
 npm install          # 首次
-npm run dev          # 打开 http://localhost:4174
+npm run dev          # 打开 http://localhost:4175
 ```
 
 - 浏览器：Chrome 或 Edge 最新版；准备秒表（手机即可）。

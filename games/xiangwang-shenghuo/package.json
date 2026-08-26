@@ -5,9 +5,9 @@
   "type": "module",
   "description": "向往的生活 · 蘑菇屋慢生活 — 独立目录网页复刻",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 4174",
+    "dev": "vite --host 0.0.0.0 --port 4175",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 4174",
+    "preview": "vite preview --host 0.0.0.0 --port 4175",
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "node scripts/bench.mjs",
