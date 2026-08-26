@@ -37,17 +37,21 @@ export function arrangementTier(score: number): ArrangementTier {
   return ARRANGEMENT_TIERS.find((t) => score >= t.min) ?? COMMON_TIER;
 }
 
-// 各项均设上限，且上限按「大束」标定：2~4 枝的瓶花只能吃到其中一部分，
-// 想上神品必须同时满足高稀有度 + 同季和鸣 + 配色不重 + 四枝满瓶。
+// 各项均设上限，且上限按「大束」标定：2~4 枝的瓶花只能吃到其中一部分。
+// Round 3 深化：配色按色系（hue）而非十六进制，双色相映为最佳；满瓶分改为章法分
+// （恰一枝主花为正，配花撑体、衬花点睛），同种花材堆叠另有折价。
+// 全组合仿真基线（见 GDD「Round 3 接线清单」）：上限 92，神品占比 0.004%。
 const BASE_SCORE = 4;
 const RARITY_PER_POINT = 2.6;
 const RARITY_CAP = 34;
-const PALETTE_PER_COLOR = 3.5;
-const PALETTE_CAP = 24;
+/** 双色相映 12 > 一色素雅 8 > 三色 6 > 四色斑杂 2。 */
+const PALETTE_BY_HUE_COUNT: Record<number, number> = { 1: 8, 2: 12, 3: 6, 4: 2 };
 const SEASON_PER_STEM = 5;
 const SEASON_CAP = 28;
-const FULLNESS_PER_STEM = 3;
-const FULLNESS_CAP = 6;
+/** 章法：恰一枝主花 +4（双主花喧宾夺主记 0），有配花 +1，有衬花 +1。 */
+const FOCAL_BONUS = 4;
+/** 同种花材第 2 枝起每枝 −4。 */
+const DUP_PENALTY = 4;
 /** 依花材横跨的季数给和鸣分：一季独芳 > 两季相济 > 杂季无韵。 */
 const HARMONY_BY_SEASON_SPAN: Record<number, number> = { 1: 10, 2: 7 };
 
@@ -56,31 +60,38 @@ export interface ScoreBreakdown {
   palette: number;
   season: number;
   harmony: number;
-  fullness: number;
+  /** 章法 − 重样折价，可为负。 */
+  composition: number;
   vase: number;
   total: number;
 }
 
 /** 与 scoreArrangement 同源的分项明细，便于 UI 解释「为何只是雅品」。 */
 export function scoreBreakdown(flowerIds: string[], vase: string, season: string): ScoreBreakdown {
-  const empty: ScoreBreakdown = { rarity: 0, palette: 0, season: 0, harmony: 0, fullness: 0, vase: 0, total: 0 };
+  const empty: ScoreBreakdown = { rarity: 0, palette: 0, season: 0, harmony: 0, composition: 0, vase: 0, total: 0 };
   if (flowerIds.length < 2) return empty;
   const defs = flowerIds.map((id) => FLOWER_MAP[id]).filter((d): d is NonNullable<typeof d> => Boolean(d));
   if (defs.length !== flowerIds.length) return empty;
 
   const stems = defs.length;
   const rarity = Math.min(RARITY_CAP, defs.reduce((s, d) => s + d.rarity, 0) * RARITY_PER_POINT);
-  const palette = Math.min(PALETTE_CAP, new Set(defs.map((d) => d.color)).size * PALETTE_PER_COLOR);
+  const palette = PALETTE_BY_HUE_COUNT[Math.min(4, new Set(defs.map((d) => d.hue)).size)] ?? 2;
   const seasonScore = Math.min(SEASON_CAP, defs.filter((d) => d.season === season).length * SEASON_PER_STEM);
   const span = new Set(defs.map((d) => d.season)).size;
   const harmony = stems >= 3 ? HARMONY_BY_SEASON_SPAN[span] ?? 0 : 0;
-  const fullness = Math.min(FULLNESS_CAP, Math.max(0, stems - 2) * FULLNESS_PER_STEM);
+  const focal = defs.filter((d) => d.role === "focal").length;
+  const arrangementCraft =
+    (focal === 1 ? FOCAL_BONUS : 0) +
+    (defs.some((d) => d.role === "filler") ? 1 : 0) +
+    (defs.some((d) => d.role === "accent") ? 1 : 0);
+  const dupPenalty = (defs.length - new Set(flowerIds).size) * DUP_PENALTY;
+  const composition = arrangementCraft - dupPenalty;
   const vaseBonus = VASES.find((v) => v.id === vase)?.bonus ?? 0;
   const total = Math.max(
     0,
-    Math.min(100, Math.round(BASE_SCORE + rarity + palette + seasonScore + harmony + fullness + vaseBonus)),
+    Math.min(100, Math.round(BASE_SCORE + rarity + palette + seasonScore + harmony + composition + vaseBonus)),
   );
-  return { rarity, palette, season: seasonScore, harmony, fullness, vase: vaseBonus, total };
+  return { rarity, palette, season: seasonScore, harmony, composition, vase: vaseBonus, total };
 }
 
 export function scoreArrangement(flowerIds: string[], vase: string, season: string): number {

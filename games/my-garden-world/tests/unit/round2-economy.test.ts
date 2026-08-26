@@ -96,12 +96,13 @@ describe("arrangement quality tiers", () => {
     expect(scoreArrangement(springQuad, "bronze", "spring")).toBeGreaterThan(
       scoreArrangement(legendaryMixed, "bronze", "spring"),
     );
-    expect(arrangementTier(scoreArrangement(springQuad, "bronze", "spring")).id).toBe("divine");
+    // Round 3 色系/章法口径：玉兰与牡丹色系相邻且无衬花，春四重奏是精品而非神品
+    expect(arrangementTier(scoreArrangement(springQuad, "bronze", "spring")).id).toBe("fine");
   });
 
   it("keeps the breakdown consistent with the published score", () => {
     const parts = scoreBreakdown(["peach", "orchid", "magnolia", "peony"], "bronze", "spring");
-    const sum = parts.rarity + parts.palette + parts.season + parts.harmony + parts.fullness + parts.vase;
+    const sum = parts.rarity + parts.palette + parts.season + parts.harmony + parts.composition + parts.vase;
 
     expect(parts.total).toBe(scoreArrangement(["peach", "orchid", "magnolia", "peony"], "bronze", "spring"));
     // total 只比分项之和多一个固定底分，不存在藏在别处的隐形加成

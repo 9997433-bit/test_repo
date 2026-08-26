@@ -234,7 +234,8 @@ describe("arrangement scoring", () => {
       }
     }
 
-    expect(scoreArrangement(FLOWERS.map((flower) => flower.id), "bronze", "spring")).toBe(100);
+    // Round 3 色系口径：七系俱全反被判斑杂——「花海溢出瓶口」不再是满分捷径
+    expect(scoreArrangement(FLOWERS.map((flower) => flower.id), "bronze", "spring")).toBeLessThan(92);
   });
 });
 

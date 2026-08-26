@@ -1,5 +1,5 @@
 import { FLOWER_MAP } from "../data/flowers";
-import { ORDER_TEMPLATES, type OrderTemplate } from "../data/orders";
+import { ORDER_TEMPLATES, pickWeighted, type OrderTemplate } from "../data/orders";
 import { currentBeat } from "../data/story";
 import { emit } from "../engine/events";
 import { WATER_CAP, type ActiveOrder, type Arrangement, type GameState } from "../engine/state";
@@ -30,6 +30,7 @@ function instantiate(state: GameState, t: OrderTemplate, timeMul = 1): ActiveOrd
 /**
  * 补满订单栏。同一模板不会在列表里撞车；`avoidTemplateId` 用于挡住刚刚离场的那张，
  * 免得交付/超时之后原样又贴回来。模板数不够铺满时才退让允许重复。
+ * 抽取按模板 weight 加权：居民常客多见，组团大单稀客。
  */
 export function spawnOrders(state: GameState, avoidTemplateId?: string): void {
   const cap = 3 + Math.min(2, Math.floor(state.level / 4));
@@ -41,7 +42,7 @@ export function spawnOrders(state: GameState, avoidTemplateId?: string): void {
     let pool = eligible.filter((t) => !taken.has(t.id));
     if (pool.length === 0) pool = eligible.filter((t) => t.id !== avoidTemplateId);
     if (pool.length === 0) pool = eligible;
-    const t = pool[Math.floor(Math.random() * pool.length)];
+    const t = pickWeighted(pool, Math.random());
     if (!t) break;
     taken.add(t.id);
     state.orders.push(instantiate(state, t));

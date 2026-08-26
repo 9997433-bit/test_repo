@@ -1,4 +1,4 @@
-import { FLOWERS, FLOWER_MAP } from "../data/flowers";
+import { FLOWERS, FLOWER_MAP, HUE_NAMES, ROLE_NAMES, type FlowerDef } from "../data/flowers";
 import { DECORATIONS, THEMES } from "../data/decorations";
 import { SPIRITS } from "../data/spirits";
 import type { GameState, ActiveOrder } from "../engine/state";
@@ -37,6 +37,11 @@ const KIND_ZH: Record<ActiveOrder["kind"], string> = {
   group: "盛会",
 };
 
+/** 「粉 · 配花」：配色与章法标签，让评分决策在挑花时就可见。 */
+function craftTag(f: FlowerDef): string {
+  return `${HUE_NAMES[f.hue]} · ${ROLE_NAMES[f.role]}`;
+}
+
 function head(title: string, onClose: () => void): HTMLElement {
   const h = document.createElement("header");
   h.className = "sheet-head";
@@ -68,12 +73,14 @@ function renderSeed(sheet: HTMLElement, state: GameState, sel: PanelSelection, h
     card.setAttribute("aria-pressed", String(sel.pendingSeed === f.id));
     card.setAttribute(
       "aria-label",
-      locked ? `${f.name}，${f.unlockLevel} 阶解锁` : `选择花种${f.name}，种子 ${f.seedCost} 金，${seasonLabel(f.season)}季花`,
+      locked
+        ? `${f.name}，${f.unlockLevel} 阶解锁`
+        : `选择花种${f.name}，种子 ${f.seedCost} 金，${seasonLabel(f.season)}季花，${craftTag(f)}`,
     );
     card.innerHTML = `<span class="seed-dot" style="--c:${f.color};--a:${f.accent}" aria-hidden="true"></span>
       <h4>${f.name} <small>${"★".repeat(f.rarity)}</small></h4>
       <div class="muted">${f.lore}</div>
-      <div class="muted">${locked ? `${f.unlockLevel} 阶解锁` : `${f.seedCost}金 · ${seasonLabel(f.season)}季 · 收 ${f.harvestCoin}金`}</div>`;
+      <div class="muted">${locked ? `${f.unlockLevel} 阶解锁` : `${f.seedCost}金 · ${seasonLabel(f.season)}季 · ${craftTag(f)} · 收 ${f.harvestCoin}金`}</div>`;
     card.addEventListener("click", () => h.selectSeed(sel.pendingSeed === f.id ? null : f.id));
     grid.append(card);
   }
@@ -153,7 +160,7 @@ function renderOrder(sheet: HTMLElement, state: GameState, sel: PanelSelection, 
 function renderWorkshop(sheet: HTMLElement, state: GameState, sel: PanelSelection, h: PanelHandlers): void {
   const tip = document.createElement("p");
   tip.className = "muted";
-  tip.textContent = "从库存点选 2-4 枝花材入瓶，同季花更和谐，花器亦有加成。";
+  tip.textContent = "点选 2-4 枝花材入瓶：一枝主花为正、配花撑体、衬花点睛；双色相映、同季相和，花器亦有加成，重样折价。";
   sheet.append(tip);
 
   const bag = document.createElement("div");
@@ -169,12 +176,13 @@ function renderWorkshop(sheet: HTMLElement, state: GameState, sel: PanelSelectio
   }
   for (const [fid, n] of entries) {
     const used = picked.get(fid) ?? 0;
+    const def = FLOWER_MAP[fid];
     const b = document.createElement("button");
     b.type = "button";
     b.className = `chip${used > 0 ? " is-on" : ""}`;
     b.disabled = used >= n || sel.workshopPick.length >= 4;
-    b.setAttribute("aria-label", `选入${FLOWER_MAP[fid]?.name ?? fid}，剩余 ${n - used} 枝`);
-    b.innerHTML = `<span class="seed-dot" style="--c:${FLOWER_MAP[fid]?.color ?? "#ddd"};--a:${FLOWER_MAP[fid]?.accent ?? "#aaa"}" aria-hidden="true"></span>${FLOWER_MAP[fid]?.name ?? fid} ×${n - used}`;
+    b.setAttribute("aria-label", `选入${def?.name ?? fid}，${def ? `${craftTag(def)}，` : ""}剩余 ${n - used} 枝`);
+    b.innerHTML = `<span class="seed-dot" style="--c:${def?.color ?? "#ddd"};--a:${def?.accent ?? "#aaa"}" aria-hidden="true"></span>${def?.name ?? fid} ×${n - used}${def ? ` <small class="craft-tag">${craftTag(def)}</small>` : ""}`;
     b.addEventListener("click", () => h.addPick(fid));
     bag.append(b);
   }

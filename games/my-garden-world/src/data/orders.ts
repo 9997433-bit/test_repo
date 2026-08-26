@@ -60,8 +60,8 @@ export const ORDER_TEMPLATES: OrderTemplate[] = [
 
 /**
  * 按 weight 从候选池中抽一张模板（roll ∈ [0,1)，由调用方注入随机数，保持纯函数可测）。
- * 接线（systems/orders.ts spawnOrders）：把 `pool[Math.floor(Math.random() * pool.length)]`
- * 换成 `pickWeighted(pool, Math.random())` 即可，去重与兜底逻辑不变。
+ * 已接线：systems/orders.ts spawnOrders 以 `pickWeighted(pool, Math.random())` 抽取，
+ * 去重与兜底逻辑不变。
  */
 export function pickWeighted<T extends { weight: number }>(pool: T[], roll: number): T | undefined {
   if (pool.length === 0) return undefined;
