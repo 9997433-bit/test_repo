@@ -94,6 +94,9 @@ const CLOUD_FRAG = /* glsl */ `
   uniform float uDensity;
   uniform float uScale;
   uniform float uOpacity;
+  uniform vec3 uHaze;
+  uniform float uFadeNear;
+  uniform float uFadeFar;
   varying vec2 vUv;
   varying vec3 vWorld;
 
@@ -108,12 +111,19 @@ const CLOUD_FRAG = /* glsl */ `
     // 边缘化开，避免看见平面的直边
     float radial = 1.0 - smoothstep(0.30, 0.5, length(vUv - 0.5));
     float alpha = mask * radial * uOpacity;
+
+    // 距离雾。水平的云板被平视时会在地平线上叠成一堵发白的墙，把暮蓝全洗掉；
+    // 让远端的云溶进大气色并把不透明度收掉，云海才是「散开的」而不是「一块板」。
+    float dist = length(vWorld - cameraPosition);
+    float fade = 1.0 - smoothstep(uFadeNear, uFadeFar, dist);
+    alpha *= fade;
     if (alpha < 0.004) discard;
 
     // 朝太阳一侧的云被打亮，背光侧留冷蓝，云才有体积
     vec3 toSun = normalize(vec3(uSunDir.x, 0.0, uSunDir.z));
     float facing = dot(normalize(vec3(vWorld.x, 0.0, vWorld.z) + 0.0001), toSun) * 0.5 + 0.5;
     vec3 col = mix(uShadow, uLit, facing * 0.75 + d * 0.25);
+    col = mix(col, uHaze, smoothstep(uFadeNear * 0.35, uFadeFar, dist) * 0.9);
     gl_FragColor = vec4(col, alpha);
   }
 `;
@@ -158,9 +168,9 @@ export function createSky({ scene, renderer, quality, textures, sunDir }) {
   // 云海：岛下方的水平层，慢速漂移，给悬浮感与后景
   const clouds = [];
   const layerDefs = [
-    { y: -34, size: 900, density: 0.46, scale: 2.6, opacity: 0.85 },
-    { y: -70, size: 1500, density: 0.52, scale: 1.7, opacity: 0.7 },
-    { y: -120, size: 2400, density: 0.6, scale: 1.15, opacity: 0.5 },
+    { y: -34, size: 900, density: 0.46, scale: 2.6, opacity: 0.72, fadeNear: 320, fadeFar: 1500 },
+    { y: -70, size: 1500, density: 0.52, scale: 1.7, opacity: 0.55, fadeNear: 520, fadeFar: 2200 },
+    { y: -120, size: 2400, density: 0.6, scale: 1.15, opacity: 0.4, fadeNear: 780, fadeFar: 3000 },
   ].slice(0, quality.cloudLayers);
 
   for (const def of layerDefs) {
@@ -180,6 +190,9 @@ export function createSky({ scene, renderer, quality, textures, sunDir }) {
         uDensity: { value: def.density },
         uScale: { value: def.scale },
         uOpacity: { value: def.opacity },
+        uHaze: { value: new Color(PALETTE.fog).lerp(new Color(PALETTE.skyHorizon), 0.5) },
+        uFadeNear: { value: def.fadeNear },
+        uFadeFar: { value: def.fadeFar },
       },
     });
     const mesh = new Mesh(new PlaneGeometry(def.size, def.size, 1, 1), mat);

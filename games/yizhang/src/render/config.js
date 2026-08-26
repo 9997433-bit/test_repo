@@ -48,7 +48,7 @@ export const PALETTE = {
 
 /** 8 只手套的识别色。渲染层不 import src/data，避免反向依赖，视图里带 color 时优先用视图的。 */
 export const GLOVE_TINT = {
-  cotton: 0xbfa478,
+  cotton: 0xa8875c,
   granite: 0x8a8578,
   gale: 0x7fc4b4,
   frost: 0x9fc6e8,

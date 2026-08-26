@@ -158,12 +158,17 @@ export function createCharacters({ scene, quality, textures }) {
       envMapIntensity: 1.0,
     });
 
+    // 识别色是「染过的粗布」，不是「喷了漆的塑料板」。给它布的织纹与法线、
+    // 把粗糙度推到接近全漫反射，否则背板会在跟随镜头里烧成一张白纸。
     const paint = new MeshStandardMaterial({
       color: ident,
-      roughness: 0.55,
-      metalness: 0.05,
-      roughnessMap: textures.leather.rough,
-      envMapIntensity: 0.5,
+      map: textures.cloth.albedo,
+      roughnessMap: textures.cloth.rough,
+      normalMap: quality.normalMaps ? textures.cloth.normal : null,
+      normalScale: new Vector2(0.4, 0.4),
+      roughness: 0.86,
+      metalness: 0,
+      envMapIntensity: 0.28,
     });
 
     const skin = new MeshStandardMaterial({

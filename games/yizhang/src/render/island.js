@@ -112,7 +112,7 @@ const CORE_FRAG = /* glsl */ `
     float fall = smoothstep(1.15, 0.05, r);
     float pulse = 0.82 + 0.18 * sin(uTime * 0.9 + heat * 6.0);
     vec3 col = mix(uDeep, uCore, clamp(fall * (0.35 + heat * 0.8), 0.0, 1.0));
-    gl_FragColor = vec4(col * fall * pulse * 0.7, 1.0);
+    gl_FragColor = vec4(col * fall * pulse * 1.5, 1.0);
   }
 `;
 
@@ -139,6 +139,20 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   const rand = mulberry32(seed + 99);
   const R = arenaRadius;
 
+  /**
+   * 岛口的共用半径调制。
+   *
+   * 从上方看，整座岛的剪影是由「石唇 + 台面板块外弧 + 崖体顶圈」三样东西共同画出来的。
+   * 只要其中任何一样保持正圆，读起来就还是个车床车出来的盘子 —— 也就是需求里点名不要的
+   * 「光滑灰圆柱」。所以三者共用同一条角向曲线：既能让边缘真的崩得高低不平，
+   * 又保证它们始终对齐，不会互相错出缝来。
+   */
+  function rimLobe(angle) {
+    const big = fbm(noise, Math.cos(angle) * 1.15 + 41, Math.sin(angle) * 1.15 + 41, 3) - 0.5;
+    const chip = fbm(noise, Math.cos(angle) * 6.5 + 13, Math.sin(angle) * 6.5 + 13, 3) - 0.5;
+    return 1 + big * 0.17 + chip * 0.035;
+  }
+
   const cloneTex = (tex, rx, ry) => {
     if (!tex) return null;
     const t = tex.clone();
@@ -158,23 +172,69 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       roughness: 1,
       metalness: 0,
       vertexColors: true,
-      envMapIntensity: 0.16,
+      // 崖面整天背着落日，只能靠天空反射把暗部撑起来。给太低就是一片死黑的蓝糊，
+      // 给太高又会让粗糙岩面泛出塑料光，0.34 是能读出岩层又不反光的位置。
+      envMapIntensity: 0.34,
       fog: true,
     })
   );
 
   const crustMat = track(
     new MeshStandardMaterial({
-      map: cloneTex(textures.crust.albedo, 0.14, 0.14),
-      normalMap: cloneTex(textures.crust.normal, 0.14, 0.14),
-      roughnessMap: cloneTex(textures.crust.rough, 0.14, 0.14),
-      normalScale: new Vector2(0.7, 0.7),
+      // 平铺周期从 ~7 米放大到 ~13 米。周期太小的话，岩壳的纹理在对战距离上
+      // 每个特征都不到一个像素，滤波之后就抹成一片均匀的土色。
+      map: cloneTex(textures.crust.albedo, 0.075, 0.075),
+      normalMap: cloneTex(textures.crust.normal, 0.075, 0.075),
+      roughnessMap: cloneTex(textures.crust.rough, 0.075, 0.075),
+      normalScale: new Vector2(1.05, 1.05),
       roughness: 1,
       metalness: 0,
       vertexColors: true,
       envMapIntensity: 0.5,
     })
   );
+
+  // 按世界 XZ 采样的宏观磨损，叠在平铺的岩壳贴图上。
+  // 它同时干掉两个问题：贴图的重复感，以及顶点色被 Extrude 的粗三角化摊平。
+  crustMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uMacro = { value: textures.arenaMacro };
+    shader.uniforms.uMacroScale = { value: 1 / (R * 2.15) };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\n varying vec3 vMacroPos;')
+      .replace(
+        '#include <worldpos_vertex>',
+        '#include <worldpos_vertex>\n vMacroPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\n uniform sampler2D uMacro;\n uniform float uMacroScale;\n varying vec3 vMacroPos;'
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+         vec2 macroUv = vMacroPos.xz * uMacroScale + 0.5;
+         float macro = texture2D(uMacro, macroUv).r;
+         diffuseColor.rgb *= 0.55 + macro * 1.25;`
+      )
+      // 台面在几何上是一个完全的平面，平铺的法线贴图又细到亚像素，两者相加就是「一张砂纸」。
+      // 用宏观图自身的梯度推一个大尺度的法线扰动出来：起伏有好几米宽，
+      // 在游戏距离上真的能被主光扫出明暗，台面这才像被压过的岩壳而不是一块板。
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+         {
+           float e = 2.0 / 512.0;
+           float hL = texture2D(uMacro, macroUv - vec2(e, 0.0)).r;
+           float hR = texture2D(uMacro, macroUv + vec2(e, 0.0)).r;
+           float hD = texture2D(uMacro, macroUv - vec2(0.0, e)).r;
+           float hU = texture2D(uMacro, macroUv + vec2(0.0, e)).r;
+           vec3 swell = normalize(vec3((hL - hR) * 1.6, 1.0, (hD - hU) * 1.6));
+           normal = normalize(normal + vec3(swell.x, 0.0, swell.z) * 1.5);
+         }`
+      );
+  };
+  crustMat.customProgramCacheKey = () => 'crust-macro';
 
   const plateSideMat = track(
     new MeshStandardMaterial({
@@ -197,28 +257,31 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       normalMap: cloneTex(textures.crust.normal, 1.4, 1.4),
       roughness: 1,
       metalness: 0,
-      color: new Color(0xbdb4a6),
-      envMapIntensity: 0.6,
+      // 石桩不该比台面还白：亮过头就变成插在边上的一圈纸板牌
+      color: new Color(0x93897b),
+      envMapIntensity: 0.45,
     })
   );
 
   // ---------- 崖体（层理剖面 + 噪声破对称） ----------
   // 剖面里刻意留了几处「先收进去再挑出来」的台阶：这才是沉积岩被风化出的岩檐，
   // 单调递减的剖面只会得到一个圆锥。
+  // 台阶必须按「世界尺度」而不是「比例」来读：R=20 时 0.06 的收放只有 1.2 米，
+  // 在整岛剪影里等于没有。所以每一级岩檐都做到 2~3 米的进退，远看才有层。
   const profile = [
-    [1.0, -0.3],
-    [1.062, -1.5],
-    [0.9, -2.5],
-    [0.965, -3.8],
-    [0.775, -5.5],
-    [0.85, -6.7],
-    [0.615, -8.9],
-    [0.675, -10.1],
-    [0.43, -12.5],
-    [0.475, -13.7],
-    [0.25, -16.1],
-    [0.11, -18.3],
-    [0.012, -19.6],
+    [1.0, -0.35],
+    [1.055, -1.7],
+    [0.845, -2.9],
+    [0.93, -4.4],
+    [0.7, -6.3],
+    [0.795, -7.7],
+    [0.545, -10.0],
+    [0.635, -11.4],
+    [0.375, -13.9],
+    [0.44, -15.2],
+    [0.215, -17.2],
+    [0.095, -18.9],
+    [0.012, -19.8],
   ];
   const profilePts = [];
   const steps = Math.max(2, Math.floor(quality.islandProfileSegments / profile.length) + 1);
@@ -249,10 +312,14 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       const depth = clamp01(-y / 20);
 
       // 大尺度凸起：让剖面不再是回转体，侧面有真正的岩块凸出
-      const lobe = (fbm(noise, Math.cos(ang) * 1.6 + 5, Math.sin(ang) * 1.6 + 5, 3) - 0.5) * 0.3;
+      const lobe = (fbm(noise, Math.cos(ang) * 1.6 + 5, Math.sin(ang) * 1.6 + 5, 3) - 0.5) * 0.44;
       const detail =
-        (fbm(noise, Math.cos(ang) * 5 + 1, Math.sin(ang) * 5 - y * 0.3, 3) - 0.5) * 0.09;
-      const scale = 1 + lobe * (0.3 + depth * 1.1) + detail;
+        (fbm(noise, Math.cos(ang) * 5 + 1, Math.sin(ang) * 5 - y * 0.3, 3) - 0.5) * 0.11;
+      // 顶圈跟着石唇一起崩，往下才逐渐换成自己的岩块起伏，
+      // 于是剪影从「机加工的圆盘」变成「崩过的岩体」，而两者之间不会错开。
+      const blend = smoothstep(0.0, 0.22, depth);
+      const scale =
+        (1 - blend) * rimLobe(ang) + blend * (1 + lobe * (0.5 + depth * 1.6)) + detail;
       pos.setX(i, x * scale);
       pos.setZ(i, z * scale);
       if (rad > 0.001) pos.setY(i, y + detail * 2.4);
@@ -266,7 +333,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       m *= 1 + ridge * 0.34;
       m *= 1 - drip * 0.28 * smoothstep(0.0, 0.45, depth);
       c.setRGB(1, 1, 1)
-        .lerp(TINT_COOL, smoothstep(0.1, 0.9, depth) * 0.7)
+        .lerp(TINT_COOL, smoothstep(0.1, 0.9, depth) * 0.5)
         .lerp(TINT_WARM, ridge * 0.45)
         .multiplyScalar(m);
       colors[i * 3] = c.r;
@@ -341,29 +408,55 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       },
     })
   );
-  // 缝底下是一口竖井，不是一块贴在下面的灯板：先看到被烤暖的暗壁，
-  // 再往深处才是那点光。半径必须小于台面板块外缘，否则从岛外能直接看见。
-  const shaftGeo = track(new CylinderGeometry(R * 0.87, R * 0.7, 2.9, 40, 1, true));
+  // 缝底下是一口深井，不是一块贴在台面下的灯板。
+  //
+  // 这里是整个场景最容易翻车的地方：如果在台面下面铺一张大发光盘，板块一塌就会露出
+  // 一整片橙色 —— 那正是手册 §10 的「平涂加色光球」，也直接违背「emissive 只在裂缝里」。
+  // 所以改成一口向下强烈收口的井：眼睛先吃到十几米的暗岩壁，光点小、在很深的地方，
+  // 亮度靠距离衰减自然压住。塌一块板露出的是「深渊」，不是「灯箱」。
+  const shaftGeo = track(new CylinderGeometry(R * 0.86, R * 0.16, 15.5, 44, 6, true));
+  {
+    // 井壁不是光滑漏斗：用噪声搓出内凹的岩层与竖向的流痕。
+    // 井口跟着 rimLobe 一起收，保证它永远躲在台面板块底下，从岛外看不见。
+    const pos = shaftGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const a = Math.atan2(z, x);
+      const rough =
+        1 + (fbm(noise, Math.cos(a) * 3.2 + 11, Math.sin(a) * 3.2 - y * 0.22, 3) - 0.5) * 0.22;
+      // 只有靠近井口的几圈需要跟着岛缘收，深处不受影响
+      const nearMouth = smoothstep(-2.5, 5.0, y);
+      const tuck = 1 - nearMouth * (1 - Math.min(1, rimLobe(a)));
+      pos.setXYZ(i, x * rough * tuck, y, z * rough * tuck);
+    }
+    shaftGeo.computeVertexNormals();
+  }
   const shaftMat = track(
     new MeshStandardMaterial({
-      map: cloneTex(textures.cliff.albedo, 3, 0.7),
-      roughnessMap: cloneTex(textures.cliff.rough, 3, 0.7),
-      color: new Color(0x6b6157),
+      map: cloneTex(textures.cliff.albedo, 4, 1.2),
+      roughnessMap: cloneTex(textures.cliff.rough, 4, 1.2),
+      normalMap: quality.normalMaps ? cloneTex(textures.cliff.normal, 4, 1.2) : null,
+      // 井壁本身很暗，被底下的暖光「烤」出来的那点亮度交给 crackLight 点光源，
+      // 这样光衰减是真的，越往上越暗，而不是刷一层橙色上去
+      color: new Color(0x2b2521),
       roughness: 1,
       metalness: 0,
       side: DoubleSide,
-      envMapIntensity: 0.1,
+      envMapIntensity: 0.04,
     })
   );
   const shaft = new Mesh(shaftGeo, shaftMat);
-  shaft.position.y = -2.0;
+  shaft.position.y = -8.1;
   shaft.name = 'crack-shaft';
   group.add(shaft);
 
-  const coreGeo = track(new CircleGeometry(R * 0.72, 48));
+  // 光核缩到井底的一小口，从台面看下去只是深处的一点暖光
+  const coreGeo = track(new CircleGeometry(R * 0.22, 32));
   const core = new Mesh(coreGeo, coreMat);
   core.rotation.x = -Math.PI / 2;
-  core.position.y = -3.35;
+  core.position.y = -15.6;
   core.name = 'crack-core';
   core.layers.enable(BLOOM_LAYER);
   core.userData.bloomSelf = true;
@@ -390,8 +483,8 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     const pts = [];
     for (let i = 0; i <= segs; i++) {
       const a = s0 + ((s1 - s0) * i) / segs;
-      // 外缘不是完美圆：有小的崩口起伏
-      const wob = 1 + (fbm(noise, Math.cos(a) * 4 + 9, Math.sin(a) * 4 + 9, 3) - 0.5) * 0.035;
+      // 外缘跟着石唇一起崩，板块边界和岛缘才是同一条线
+      const wob = rimLobe(a);
       pts.push([Math.cos(a) * rOut * wob, -Math.sin(a) * rOut * wob]);
     }
     // 内端（靠近中缝）
@@ -531,11 +624,10 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     );
     const s = 1.7 + rand() * 1.9;
     mesh.scale.set(s, s, s);
-    mesh.layers.enable(BLOOM_LAYER);
-    mesh.userData.bloomSelf = true;
     mesh.renderOrder = 2;
+    // 与 vfx 的冲击贴花同理：平铺的分叉纹路一旦吃辉光就会炸成四芒星
     group.add(mesh);
-    plate.decals.push({ mesh, mat, target: 0.55 + strength * 0.45, t: 0 });
+    plate.decals.push({ mesh, mat, target: 0.34 + strength * 0.28, t: 0 });
   }
 
   // ---------- 边缘护栏：石桩 + 矮台阶 ----------
@@ -568,7 +660,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     posts.instanceMatrix.setUsage(DynamicDrawUsage);
     const dummy = new Object3D();
     alive.forEach((a, i) => {
-      const rr = R * 0.945;
+      const rr = R * 0.945 * rimLobe(a);
       dummy.position.set(Math.cos(a) * rr, -0.06, Math.sin(a) * rr);
       // 每根桩都被打歪过一点，倾角不一致
       dummy.rotation.set((rand() - 0.5) * 0.3, a + (rand() - 0.5) * 0.7, (rand() - 0.5) * 0.34);
@@ -602,8 +694,9 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
         const z = pos.getZ(i);
         const a = Math.atan2(z, x);
         const chip = fbm(noise, Math.cos(a) * 7 + 2, Math.sin(a) * 7 + 2, 3);
-        pos.setX(i, x * (1 + (chip - 0.5) * 0.02));
-        pos.setZ(i, z * (1 + (chip - 0.5) * 0.02));
+        const wob = rimLobe(a);
+        pos.setX(i, x * wob);
+        pos.setZ(i, z * wob);
         c.setRGB(1, 1, 1)
           .lerp(TINT_COOL, y < -0.05 ? 0.5 : 0.1)
           .multiplyScalar((0.78 + chip * 0.45) * (y < -0.05 ? 0.66 : 1));

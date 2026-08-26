@@ -471,6 +471,55 @@ function buildCrackDecal(size, seed) {
   return tex;
 }
 
+/**
+ * 全场唯一一张「不平铺」的宏观磨损图，按世界 XZ 覆盖整个台面。
+ *
+ * 台面板块是 ExtrudeGeometry 挤出来的：顶面只按外轮廓做了一次粗三角化，内部几乎没有顶点。
+ * 于是任何写在顶点色里的大尺度变化都会被摊平成一道线性渐变，台面就读成一块砂纸打过的胶合板。
+ * 把大尺度信息挪到这张图里、在着色器里按世界坐标采样，就跟网格疏密彻底脱钩了。
+ *
+ * 内容是三件事叠起来：风化的斑块、顺着重力方向的水渍、以及中央被踩出来的亮区。
+ */
+function buildArenaMacro(size, seed) {
+  const n = makeValueNoise2D(seed + 3301);
+  const n2 = makeValueNoise2D(seed + 5507);
+  return imageDataTexture(
+    size,
+    (data, s) => {
+      for (let y = 0; y < s; y++) {
+        for (let x = 0; x < s; x++) {
+          const u = x / s;
+          const v = y / s;
+          const dx = u - 0.5;
+          const dy = v - 0.5;
+          const r = Math.hypot(dx, dy) * 2;
+
+          // 大块风化斑：这是把「一整块干净圆盘」打散的主力
+          const blotch = fbm(n, u * 3.1, v * 3.1, 4, 0.55);
+          // 细一档的岩层脏迹
+          const grain = fbm(n2, u * 9.5, v * 9.5, 3, 0.5);
+          // 靠外缘常年风吹雨打，比中间脏
+          const edge = smoothstep(0.45, 1.0, r);
+          // 中央是走动最多的地方，被磨得亮一点、干净一点
+          const polish = smoothstep(0.62, 0.08, r);
+
+          let m = 0.62 + blotch * 0.62 + grain * 0.16;
+          m *= 1 - edge * 0.3;
+          m *= 1 + polish * 0.2;
+
+          const c = Math.max(0, Math.min(255, m * 200));
+          const i = (y * s + x) * 4;
+          data[i] = c;
+          data[i + 1] = c;
+          data[i + 2] = c;
+          data[i + 3] = 255;
+        }
+      }
+    },
+    { wrap: ClampToEdgeWrapping }
+  );
+}
+
 /** 冲击波用的湍流噪声：让激波壳有絮状边缘而不是完美圆环。 */
 function buildTurbulence(size, seed) {
   const n = makeValueNoise2D(seed + 1777);
@@ -510,6 +559,7 @@ export function createTextureLib(quality, seed = 20240501) {
     ember: buildEmberSprite(64),
     crack: buildCrackDecal(Math.max(128, detail * 2), seed),
     turbulence: buildTurbulence(Math.max(64, detail), seed),
+    arenaMacro: buildArenaMacro(Math.max(128, rockSize), seed),
     dispose() {
       const seen = new Set();
       const kill = (t) => {
@@ -528,6 +578,7 @@ export function createTextureLib(quality, seed = 20240501) {
       kill(lib.ember);
       kill(lib.crack);
       kill(lib.turbulence);
+      kill(lib.arenaMacro);
     },
   };
   return lib;

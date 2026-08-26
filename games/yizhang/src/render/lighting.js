@@ -44,12 +44,23 @@ export function createLighting({ scene, quality, sunDir }) {
   scene.add(rim);
   scene.add(rim.target);
 
-  // 中缝里透出的暖光。只够照亮缝口附近的石棱，不能把整座岛烤成橙色。
+  // 裂缝的暖光分两盏，因为它要解释两件不同的事。
+  //  deep —— 沉在井底，把十几米高的井壁从下往上烤出一层暖色。用真实的平方衰减，
+  //          越往井口越暗，所以塌一块板露出来的是「有深度的洞」而不是「亮橙色的底」。
+  //  seam —— 贴在板缝正下方，只够舔亮缝口的石棱，让暖黄真的只出现在缝里。
   let crack = null;
+  let seam = null;
   if (quality.crackFillLight) {
-    crack = new PointLight(PALETTE.crackLight, 7, 13, 2);
-    crack.position.set(0, -0.55, 0);
+    crack = new PointLight(PALETTE.crackLight, 26, 20, 2);
+    crack.position.set(0, -13.2, 0);
     scene.add(crack);
+
+    // 井太深，底下那盏光衰减完就到不了缝口了。缝里的暖黄要能读出来，
+    // 得有一盏贴在板缝正下方的光去舔缝壁与板沿 —— 只有朝内的面吃得到，
+    // 台面朝上的面几乎不受影响，暖色因此仍然只出现在缝里。
+    seam = new PointLight(PALETTE.crackLight, 11, 15, 2);
+    seam.position.set(0, -1.7, 0);
+    scene.add(seam);
   }
 
   const tmp = new Vector3();
@@ -59,6 +70,7 @@ export function createLighting({ scene, quality, sunDir }) {
     ambient,
     rim,
     crack,
+    seam,
     /** 阴影相机跟着焦点走，2048 的贴图才能全部花在打斗区域上。 */
     update(time, focus) {
       tmp.copy(focus);
@@ -70,7 +82,8 @@ export function createLighting({ scene, quality, sunDir }) {
       rim.target.updateMatrixWorld();
       if (crack) {
         const flicker = 0.86 + Math.sin(time * 1.7) * 0.06 + Math.sin(time * 4.3 + 1.1) * 0.04;
-        crack.intensity = 7 * flicker;
+        crack.intensity = 26 * flicker;
+        seam.intensity = 11 * flicker;
       }
     },
     setShadowsEnabled(on) {
@@ -83,10 +96,12 @@ export function createLighting({ scene, quality, sunDir }) {
       scene.remove(rim);
       scene.remove(rim.target);
       if (crack) scene.remove(crack);
+      if (seam) scene.remove(seam);
       key.dispose?.();
       ambient.dispose?.();
       rim.dispose?.();
       crack?.dispose?.();
+      seam?.dispose?.();
     },
   };
 }
