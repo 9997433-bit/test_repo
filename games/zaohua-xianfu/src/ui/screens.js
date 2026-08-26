@@ -1,5 +1,5 @@
 import { FACTIONS, HEROES, heroById } from "../data/heroes.js";
-import { ARTIFACTS, artifactById } from "../data/artifacts.js";
+import { ARTIFACTS } from "../data/artifacts.js";
 import { REALMS } from "../data/realms.js";
 import { breakthroughChance } from "../progression/realm.js";
 import { postKind, recommendKind, yieldBreakdown } from "../disciples/assign.js";
@@ -7,6 +7,7 @@ import { canTrain, discipleFlavor, professionTitle, trainCost, trainShortfall } 
 import { scriptureRate, xpNeeded } from "../disciples/train.js";
 import { fmt } from "./hud.js";
 import * as mansion from "./adapters.js";
+import { SLOTS, artifactSource, dropProgress, equipPreview, scriptureRule, slotBoard } from "./rules.js";
 import {
   RARITY_LABEL,
   RES_LABEL,
@@ -213,11 +214,13 @@ function xpLine(state, d, rate) {
   const xp = Math.min(need, d.xp ?? 0);
   const assigned = Boolean(d.buildingId);
   const eta = assigned && rate > 0 ? etaText((need - xp) / rate) : "";
+  const auto = scriptureRule().autoPromote;
+  const full = auto ? `约 ${eta}后自动晋阶，不耗丹药` : `约 ${eta}修业积满，晋阶仍需传功`;
   const note = !rate
     ? "府中无藏经楼，修业不长（洞府 Lv.3 解锁）"
     : !assigned
       ? "闲云弟子不积修业，派驻任一建筑即可"
-      : `藏经楼 +${rate.toFixed(2)}/秒 · 约 ${eta}晋阶`;
+      : `藏经楼 +${rate.toFixed(2)}/秒 · ${full}`;
   return `<div class="d-xp">${bar(xp / need, "thin")}
     <span class="muted">修业 ${fmt(xp)} / ${need} · ${esc(note)}</span></div>`;
 }
@@ -253,6 +256,9 @@ function discipleCard(state, d, ui, rate, rowById) {
   const inParty = state.party.includes(d.heroId);
   const open = ui.selDisciple === d.id;
   const fac = FACTIONS[h?.faction];
+  const profHint = scriptureRule().autoPromote
+    ? "所有岗位通吃：传功即刻加一级，驻守藏经楼熬满修业也能免费晋阶"
+    : "所有岗位通吃：由传功提升";
 
   return `<div class="hero-card disciple-card ${open ? "in" : ""}">
     <div class="d-main">
@@ -266,7 +272,7 @@ function discipleCard(state, d, ui, rate, rowById) {
       <div class="d-stats">
         <span title="灵田/木坊/石坊产量看勤勉">勤勉 <b>${d.diligent}</b></span>
         <span title="丹房/锻造房/聚灵阵产量看武力">武力 <b>${d.force}</b></span>
-        <span title="所有岗位通吃，可由传功或藏经楼提升">专业 <b>${d.profession}</b></span>
+        <span title="${esc(profHint)}">专业 <b>${d.profession}</b></span>
         ${h ? `<span title="上阵时的战斗属性">攻 <b>${h.atk}</b> 生 <b>${h.hp}</b> 防 <b>${h.def}</b></span>` : ""}
       </div>
       ${h?.skillDesc ? `<div class="muted d-skill">${esc(h.skill)}：${esc(h.skillDesc)}</div>` : ""}
@@ -275,7 +281,9 @@ function discipleCard(state, d, ui, rate, rowById) {
     </div>
     <div class="d-acts">
       <button class="gold" data-act="train" data-did="${d.id}" ${can ? "" : "disabled"}
-        title="专业每级提升所有岗位产量">传功 <span class="cost">丹${cost.pills} 草${cost.herb}</span></button>
+        title="${esc(`即刻 +1 专业，专业每级提升所有岗位产量。${
+          scriptureRule().autoPromote ? "不急则可让他驻守吃藏经楼修业，慢些但不花钱。" : ""
+        }`)}">传功 <span class="cost">丹${cost.pills} 草${cost.herb}</span></button>
       ${can ? "" : `<span class="muted lack">缺 ${esc(lackText)}</span>`}
       <button data-act="sel-disciple" data-did="${d.id}" aria-expanded="${open}">${open ? "收起派遣" : "派遣"}</button>
       ${d.buildingId ? `<button data-act="assign" data-did="${d.id}" data-bid="">撤回</button>` : ""}
@@ -331,7 +339,14 @@ export function disciplesView(state, ui = {}) {
           <li><b>${esc(postKind("field").name)}</b>（灵田/木坊/石坊）吃 <b>勤勉</b>：每点 +1.8%。</li>
           <li><b>${esc(postKind("alchemy").name)}</b>（丹房/锻造房/聚灵阵）吃 <b>武力</b>：每点 +1%。</li>
           <li><b>${esc(postKind("scripture").name)}</b>（藏经楼）吃 <b>专业</b>：每级 +8%。</li>
-          <li><b>专业</b>可由传功（丹药+灵草）立刻提升，或由藏经楼慢慢熬出来。</li>
+          <li><b>传功</b>：花丹药与灵草，点一下立刻 +1 专业，闲云弟子也能受。</li>
+          ${
+            scriptureRule().autoPromote
+              ? `<li><b>藏经楼</b>：府中建起后（洞府 Lv.3），已驻守的弟子${
+                  rate > 0 ? `按 ${rate.toFixed(2)}/秒` : "自行"
+                }积修业，满则自行晋阶，一文不花——赶进度才用传功。</li>`
+              : `<li><b>藏经楼</b>：已驻守的弟子会积修业，但晋阶仍要传功点化。</li>`
+          }
           <li>一座建筑只容一名弟子；顶替时原驻守自动变回闲云。</li>
         </ul>
       </div>
@@ -429,36 +444,104 @@ export function waveView(state) {
 }
 
 function artifactCard(state, a) {
-  const own = state.ownedArtifacts.includes(a.id);
-  const eq = state.equipped.includes(a.id);
+  const preview = equipPreview(state, a);
+  const eq = preview.kind === "equipped";
+  const own = preview.kind !== "locked";
+  const src = artifactSource(a);
+  const label =
+    preview.kind === "equipped" ? "卸下" : preview.kind === "swap" ? "换上" : preview.kind === "free" ? "佩戴" : "未获";
+  const hint = !own
+    ? `<div class="muted art-src">${src.ready ? `出自 ${esc(src.text)}` : esc(src.text)}</div>`
+    : preview.kind === "swap"
+      ? `<div class="muted art-src">槽位已满：换上将顶下 <b>${esc(preview.dropped.join("、"))}</b></div>`
+      : "";
   return `<div class="art-card ${eq ? "in" : ""}">
     <div class="d-main">
       <div class="d-head"><b>${esc(a.name)}</b>${chip(esc(SLOT_LABEL[a.slot] ?? a.slot))}${chip(
         esc(RARITY_LABEL[a.rarity] ?? a.rarity),
         a.rarity === "red" ? "cin" : "gold",
-      )}${own ? "" : chip("未获")}</div>
+      )}${eq ? chip("已入槽", "cin") : own ? "" : chip("未获")}</div>
       <div class="muted d-skill">${esc(a.desc)}</div>
+      ${hint}
     </div>
     <div class="d-acts">
-      <button ${own ? "" : "disabled"} data-act="equip" data-aid="${a.id}">${eq ? "已佩" : own ? "佩戴" : "未获"}</button>
+      <button class="${own && !eq ? "gold" : ""}" ${own ? "" : "disabled"} data-act="equip" data-aid="${a.id}"
+        title="${esc(preview.kind === "swap" ? `槽位已满，会顶下 ${preview.dropped.join("、")}` : a.desc)}">${esc(label)}</button>
     </div></div>`;
 }
 
-export function artifactsView(state) {
-  const groups = Object.entries(SLOT_LABEL)
-    .map(([slot, label]) => {
-      const list = ARTIFACTS.filter((a) => a.slot === slot);
-      if (!list.length) return "";
-      const owned = list.filter((a) => state.ownedArtifacts.includes(a.id)).length;
-      return `<h4 class="sub">${label} <span class="muted">已得 ${owned}/${list.length}</span></h4>
-        ${list.map((a) => artifactCard(state, a)).join("")}`;
-    })
+function slotCells(group, shared) {
+  const filled = group.items
+    .map(
+      (a) => `<span class="slot-cell filled" title="${esc(`${a.name} · ${a.desc}`)}">${esc(a.name)}</span>`,
+    )
     .join("");
-  const rest = ARTIFACTS.filter((a) => !SLOT_LABEL[a.slot]).map((a) => artifactCard(state, a)).join("");
-  const names = state.equipped.map((id) => artifactById(id)?.name).filter(Boolean).join("、");
-  return `<div class="card"><h3>法器四槽 <span class="muted">${state.equipped.length}/4</span></h3>
-    <p>当前：${esc(names) || "无"}</p>
-    <p class="muted">佩满四件后再佩戴，会顶掉最早佩上的一件。</p>${groups}${rest}</div>`;
+  if (shared) return filled || `<span class="slot-cell none">未佩</span>`;
+  const free = Array.from({ length: group.free }, () => `<span class="slot-cell">空</span>`).join("");
+  return `${filled}${free}` || `<span class="slot-cell none">无槽</span>`;
+}
+
+function slotBoardHtml(board) {
+  const shared = board.rule.shared;
+  const rows = board.groups
+    .map(
+      (g) => `<div class="slot-row">
+        <span class="slot-name">${g.label} <b>${g.items.length}</b>${shared ? "" : `/${g.cap}`}</span>
+        <div class="slot-cells">${slotCells(g, shared)}</div>
+      </div>`,
+    )
+    .join("");
+  const spare = shared
+    ? `<div class="slot-row">
+        <span class="slot-name">空槽 <b>${board.free}</b></span>
+        <div class="slot-cells">${
+          board.free
+            ? Array.from({ length: board.free }, () => `<span class="slot-cell">空</span>`).join("")
+            : `<span class="slot-cell none">已满</span>`
+        }</div>
+      </div>`
+    : "";
+  return `<div class="slot-board">${rows}${spare}</div>`;
+}
+
+function slotRuleNote(rule) {
+  if (!rule.shared) return "攻击／防御／通用各有独立槽位，佩满同类后需先卸下一件。";
+  const evict =
+    rule.evicted === "oldest"
+      ? "会顶掉最早佩上的一件"
+      : rule.evicted === "newest"
+        ? "会顶掉最近佩上的一件"
+        : "会顶掉其中一件";
+  return `${rule.total} 格通槽由攻击／防御／通用共用：佩满后再佩戴，${evict}（按钮上会写明顶下谁）。`;
+}
+
+export function artifactsView(state) {
+  const board = slotBoard(state);
+  const groups = SLOTS.map((slot) => {
+    const list = ARTIFACTS.filter((a) => a.slot === slot);
+    if (!list.length) return "";
+    const owned = list.filter((a) => state.ownedArtifacts.includes(a.id)).length;
+    const on = board.groups.find((g) => g.slot === slot);
+    return `<h4 class="sub">${SLOT_LABEL[slot]} <span class="muted">已得 ${owned}/${list.length} · 入槽 ${
+      on?.items.length ?? 0
+    }</span></h4>
+      ${list.map((a) => artifactCard(state, a)).join("")}`;
+  }).join("");
+  const rest = ARTIFACTS.filter((a) => !SLOT_LABEL[a.slot])
+    .map((a) => artifactCard(state, a))
+    .join("");
+  const drops = dropProgress(state);
+  const next = drops.find((d) => !d.done);
+  const dropLine = next
+    ? `<p class="muted">下一件到手：<b>${esc(next.name)}</b> — ${
+        next.via === "tower" ? `登天塔第 ${next.at} 层` : `兽潮第 ${next.at} 波`
+      }（现最高 ${next.best}）。</p>`
+    : `<p class="muted">已实装的掉落节点均已通关。</p>`;
+
+  return `<div class="card"><h3>法器槽 <span class="muted">${board.used}/${board.total}</span></h3>
+    ${slotBoardHtml(board)}
+    <p class="muted">${esc(slotRuleNote(board.rule))}</p>
+    ${dropLine}${groups}${rest}</div>`;
 }
 
 export function screen(tab, state, ui) {

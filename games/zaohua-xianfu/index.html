@@ -83,6 +83,42 @@
 
       .gate-hint { font-size: 0.76rem; color: var(--wash); margin: 0.5rem auto 0; }
 
+      /* —— 法器槽位盘 —— */
+      .slot-board { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.5rem 0 0.6rem; }
+      .slot-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+      .slot-name {
+        flex: 0 0 5.2rem;
+        font-size: 0.8rem;
+        letter-spacing: 0.06em;
+        color: var(--paper-dim);
+      }
+      .slot-name b { color: var(--gold); font-weight: 600; }
+      .slot-cells { display: flex; flex-wrap: wrap; gap: 0.3rem; min-width: 0; flex: 1 1 auto; }
+      .slot-cell {
+        padding: 0.12rem 0.5rem;
+        border: 1px dashed var(--line-strong);
+        border-radius: var(--r-sm, 4px);
+        font-size: 0.76rem;
+        color: var(--wash);
+        white-space: nowrap;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .slot-cell.filled {
+        border-style: solid;
+        border-color: rgba(212, 160, 23, 0.45);
+        background: rgba(212, 160, 23, 0.09);
+        color: var(--paper);
+      }
+      .slot-cell.none { border-style: solid; border-color: var(--line); }
+      .art-card.in {
+        border-color: rgba(212, 160, 23, 0.5);
+        background: linear-gradient(90deg, rgba(212, 160, 23, 0.1), transparent 55%);
+        box-shadow: inset 3px 0 0 var(--gold);
+      }
+      .art-src { font-size: 0.74rem; margin-top: 0.15rem; color: var(--wash); }
+
       /* —— 窄屏补充：src/styles 已处理顶栏/导航/沙盘，这里只补新组件 —— */
       @media (max-width: 700px) {
         body .res-bar .rate { display: none; }
@@ -96,6 +132,8 @@
       @media (max-width: 420px) {
         body .d-stats { font-size: 0.76rem; gap: 0.1rem 0.55rem; }
         body .build-list button { flex: 1 1 100%; text-align: left; }
+        body .slot-row { flex-wrap: wrap; gap: 0.2rem 0.5rem; }
+        body .slot-name { flex: 1 1 100%; }
       }
     </style>
   </head>
