@@ -11,6 +11,7 @@ on:
       - "games/chao-neng-xia-dan-ya/**"
       - "games/linghuashi/**"
       - "games/my-garden-world/**"
+      - "games/sanguo-ice-age/**"
       - "pages/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -75,6 +76,11 @@ jobs:
             mkdir -p "site/$game"
             cp -a "src/games/$game/dist/." "site/$game/"
           done
+          # 三国：冰河时代是纯静态 ESM，没有 dist；只覆盖本目录，不删其他游戏
+          rm -rf site/sanguo-ice-age
+          mkdir -p site/sanguo-ice-age
+          cp src/games/sanguo-ice-age/index.html site/sanguo-ice-age/
+          cp -a src/games/sanguo-ice-age/css src/games/sanguo-ice-age/js site/sanguo-ice-age/
           cp src/pages/index.html site/index.html
           touch site/.nojekyll
 

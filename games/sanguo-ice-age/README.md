@@ -16,6 +16,8 @@ python3 -m http.server 4176 --bind 127.0.0.1   # 或 npm start
 
 浏览器打开 `http://127.0.0.1:4176/`。首次进入会自动播放新手引导（可按 `H` 重看）。
 
+线上 Pages（项目站再加一级，避免和同仓库其他游戏抢根）：https://9997433-bit.github.io/test_repo/sanguo-ice-age/
+
 ## 测试
 
 需要 Node.js（仅测试用，游戏本体不依赖 Node）：
