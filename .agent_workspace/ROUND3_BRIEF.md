@@ -10,7 +10,7 @@
 | P0-2 core 播报 | 部分关 | `hydrate` / `advanceGoal` 接 `OFFLINE` / `GOALS`；坏档句仍硬编码 |
 | P0-3 重绘焦点 | 关 | `mallView` / `roster` 原地 diff，动作后焦点留在原按钮 |
 
-未关：P0-4 取证、P0-6 升级庆祝/locked shake、P0-7 1280 双栏与 legacy token。P0-5 已关（`tests/simulation.test.js`：五店全解锁 + 目标续期 ≥10）。
+未关：P0-4 取证、P0-7 1280 双栏与 legacy token。P0-5 / P0-6 已关。
 
 ## 有意不做
 

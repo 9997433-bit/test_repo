@@ -119,6 +119,20 @@ button {
   box-shadow: var(--hud-pill-shadow);
 }
 
+/* 主角升级庆祝（§9.7）：类名由 app.js 在等级上升时挂、动画期满摘 */
+.pill.levelup {
+  background: var(--grad-gold);
+  color: var(--ink-900);
+  box-shadow: var(--shadow-gold);
+  animation: var(--anim-pop-in);
+}
+.pill.levelup::after {
+  content: "✨";
+  display: inline-block;
+  margin-left: var(--space-1);
+  animation: var(--anim-sparkle);
+}
+
 /* --------------------------------------------------------------------------
    3. Toast
    -------------------------------------------------------------------------- */
@@ -202,6 +216,9 @@ button {
   font-size: var(--text-sm);
 }
 
+/* locked 卡被点：摇一摇（§9.2）。特异性要压过 .shop-card 的入场动画 */
+.shop-card.shake { animation: var(--anim-shake); }
+
 .shop-card .emoji { font-size: 28px; }
 .shop-card h3 { margin: var(--space-1) 0 2px; font-size: var(--text-md); }
 .shop-card small { color: var(--text-soft); font-size: var(--text-sm); }
@@ -224,6 +241,22 @@ button {
   justify-content: space-between;
   gap: var(--space-2);
   align-items: center;
+}
+
+/* 升级 / 招聘飘字：宿主是店铺升级行，飘字绝对定位，不进 flex 排布也就不挤动按钮 */
+.row[data-shop-row] { position: relative; }
+.mall-float {
+  position: absolute;
+  right: var(--space-2);
+  top: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-gold);
+  text-shadow: 0 1px 2px var(--surface-solid);
+  z-index: var(--z-fx);
+  animation: var(--anim-coin);
 }
 
 /* --------------------------------------------------------------------------
@@ -572,12 +605,17 @@ button {
   .hero,
   .panel,
   .shop-card,
+  .shop-card.shake,
+  .pill.levelup,
+  .pill.levelup::after,
   .toast,
   .modal,
   .modal .sheet,
   .chip.done {
     animation: none;
   }
+  /* 飘字靠计时器摘节点，关动画后直接藏起来，不留一坨静止文字 */
+  .mall-float { animation: none; opacity: 0; }
   .shop-card:hover,
   .shop-card:active,
   .btn:hover,

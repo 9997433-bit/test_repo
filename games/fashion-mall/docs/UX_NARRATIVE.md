@@ -149,13 +149,14 @@
 - **豪宅旧价下线（Round 3 批次 A+B，量规 P0-1 关）**：`mansion.js` 私有 `200/bonus` 价目已删，展示价与扣款全走 `actions.buyFurniture` / `furnitureCost`；`buy` 失败走 `FAIL[res.reason] ?? res.toast`，钱不够时追加已 `formatGold` 的「还差 N 金」。
 - **交互重绘保焦点（Round 3 批次 A+B，量规 P0-3 关，C2/D2）**：`mallView` / `roster` 改为骨架只建一次 + 原地 diff，动作后焦点留在原按钮；变灰/换卡时的候选序与 `keepFocus` / `restoreFocus` 两处兜底见 §5.1。
 - **推进模拟入测（Round 3 批次 C，量规 P0-5 关，E3）**：`tests/simulation.test.js` 对 60 分钟半活跃/纯挂机断言五店全解锁，且限时目标续期 ≥10 轮；`npm test` 现为 94 项。
+- **升级庆祝与组件态（Round 3 批次 C，量规 P0-6 关，A8）**：主角升级给 `#pill-level` 挂 `levelup`（`--anim-pop-in` + 星光）；商场升级/招聘在行上飘 `--anim-coin`；未解锁店卡点击 `--anim-shake`。`prefers-reduced-motion` 下动画全关。
 - **系统文案（更多页）**：`renderMore` 的静音/导出/导入/清空确认全走 `SYSTEM.*`；坏档备注用 `loadCorruptBackup().at` 拿到备份时间戳后走 `SYSTEM.corruptKept`。连同「HUD 与全局 ARIA」条的挂标，原 7.3 renderMore 项**已关**。
 
 ### 7.2 仍开放 —— P0
 
 - 离线回执**面板化**（A7）：toast 文案已接 `OFFLINE` 键（见 §6.1 与 7.1），但回执面板形态仍未落地——`OFFLINE.title/rateNote/sourcesLabel/cta` 四键零消费，`applySettle` 与 `hydrate` 仍以 toast 呈现。对应量规 P0-2 的剩余半项。
 - 失败反馈补全（A6/A10）：`FAIL[res.reason] ?? res.toast` 已在 `mallView.js#runner`（升级/招聘）、`mansion.js#buy`、`app.js` 存档导入三处接通；`roster.js#commit`、`labs.js` 与盲盒/占卜的入场扣费（`payFee`）仍直用 `res.toast`。每处一行改动即可接通；`FAIL` 未覆盖的新码（`bad-balance`、`shop-crowded`…）由 `?? res.toast` 兜底，无需先补全码表。
-- 量规侧仍开的 P0（非文案席位，此处只记账不认领）：**P0-4 取证三件**（C5/C6/D4：内存快照、帧率录制、对比度审计留档）、**P0-6 升级庆祝与 locked 店卡 shake**（A8）、**P0-7 1280 双栏工作台与 legacy token 退役**——清单与验收口径见 `docs/SOTA_RUBRIC.md`。
+- 量规侧仍开的 P0（非文案席位，此处只记账不认领）：**P0-4 取证三件**（C5/C6/D4：内存快照、帧率录制、对比度审计留档）、**P0-7 1280 双栏工作台与 legacy token 退役**——清单与验收口径见 `docs/SOTA_RUBRIC.md`。
 
 ### 7.3 仍开放 —— P1（双源漂移，需收敛）
 
