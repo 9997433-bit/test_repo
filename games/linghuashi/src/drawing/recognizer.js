@@ -1,7 +1,9 @@
 import {
   angles,
   boundsOf,
+  centroid,
   circleFit,
+  dist,
   meanSpeed,
   polylineLength,
   r2Line,
@@ -20,11 +22,12 @@ export function classifyStroke(rawPoints) {
     return pack("scribble", 0.15, pressure, length, bounds, rawPoints);
   }
 
+  const radial = radialProfile(points);
   const lineScore = scoreLine(points, length, bounds);
-  const circleScore = scoreCircle(points);
+  const circleScore = scoreCircle(points, radial);
   const zigzagScore = scoreZigzag(points);
   const spiralScore = scoreSpiral(points, bounds);
-  const cloudScore = scoreCloud(points, bounds);
+  const cloudScore = scoreCloud(points, bounds, radial);
   const curveScore = scoreCurve(points, lineScore, circleScore);
 
   const ranked = [
@@ -65,10 +68,12 @@ function scoreLine(points, length, bounds) {
   return clamp01(r2 * 0.75 + Math.min(1, aspect / 4) * 0.15 + Math.min(1, length / (span + 1)) * 0.1);
 }
 
-function scoreCircle(points) {
+function scoreCircle(points, radial) {
   const fit = circleFit(points);
   const turn = Math.abs(Math.abs(turningNumber(points)) - 1);
-  return clamp01(fit.circularity * 0.5 + fit.closure * 0.35 + (1 - Math.min(1, turn)) * 0.15);
+  // 多瓣半径振荡（云朵状鼓包）不是圆
+  const lobePenalty = radial.lobes >= 3 && radial.relStd > 0.07 ? 0.25 : 0;
+  return clamp01(fit.circularity * 0.5 + fit.closure * 0.35 + (1 - Math.min(1, turn)) * 0.15 - lobePenalty);
 }
 
 function scoreZigzag(points) {
@@ -84,22 +89,50 @@ function scoreSpiral(points, bounds) {
   const fit = circleFit(points);
   const growth = radialGrowth(points);
   const size = Math.max(bounds.w, bounds.h);
-  return clamp01((Math.min(turn, 3) / 3) * 0.45 + growth * 0.35 + (1 - fit.circularity) * 0.1 + Math.min(1, size / 160) * 0.1);
+  // 半径增长仅在确有多圈旋转时计分，避免普通弧线冒充螺旋
+  const gate = Math.min(1, turn / 1.5);
+  return clamp01((Math.min(turn, 3) / 3) * 0.45 + growth * gate * 0.35 + (1 - fit.circularity) * 0.1 + Math.min(1, size / 160) * 0.1);
 }
 
-function scoreCloud(points, bounds) {
-  const angs = angles(points);
-  const wobble = angs.filter((a) => a > 0.35 && a < 1.4).length / (angs.length || 1);
+function scoreCloud(points, bounds, radial) {
   const fit = circleFit(points);
   const blob = Math.min(bounds.w, bounds.h) / (Math.max(bounds.w, bounds.h) + 1);
-  return clamp01(wobble * 0.4 + fit.closure * 0.2 + blob * 0.25 + (1 - r2Line(points)) * 0.15);
+  // 云形 = 闭合团块 + 至少三瓣半径鼓包
+  const lobeScore =
+    radial.lobes >= 3 ? Math.min(1, (radial.lobes - 2) / 4) * Math.min(1, radial.relStd / 0.12) : 0;
+  return clamp01(lobeScore * 0.4 + fit.closure * 0.25 + blob * 0.2 + (1 - r2Line(points)) * 0.15);
 }
 
 function scoreCurve(points, lineScore, circleScore) {
   const angs = angles(points);
-  const mean = angs.reduce((a, b) => a + b, 0) / (angs.length || 1);
   const smooth = 1 - Math.min(1, variance(angs) / 0.8);
-  return clamp01(smooth * 0.5 + Math.min(1, mean * 2) * 0.3 + (1 - lineScore) * 0.1 + (1 - circleScore) * 0.1);
+  const totalTurn = angs.reduce((a, b) => a + b, 0);
+  // 一条好曲线的总转角在 ~0.6–2.6 rad 之间：直线太小，圆/螺旋太大
+  const turnScore = clamp01(totalTurn / 1.2) * clamp01((2.6 - totalTurn) / 1.2);
+  return clamp01(smooth * 0.4 + turnScore * 0.3 + (1 - lineScore) * 0.15 + (1 - circleScore) * 0.15);
+}
+
+// 半径剖面：以带迟滞的过零计数统计“鼓包瓣数”，抗手抖噪声
+function radialProfile(points) {
+  const c = centroid(points);
+  const rs = points.map((p) => dist(p, c));
+  const mean = rs.reduce((a, b) => a + b, 0) / (rs.length || 1);
+  if (mean <= 1e-6) return { lobes: 0, relStd: 0 };
+  const std = Math.sqrt(rs.reduce((a, r) => a + (r - mean) ** 2, 0) / rs.length);
+  const gate = mean * 0.06;
+  let stateSign = 0;
+  let flips = 0;
+  for (const r of rs) {
+    const d = r - mean;
+    if (d > gate && stateSign !== 1) {
+      if (stateSign === -1) flips += 1;
+      stateSign = 1;
+    } else if (d < -gate && stateSign !== -1) {
+      if (stateSign === 1) flips += 1;
+      stateSign = -1;
+    }
+  }
+  return { lobes: Math.floor((flips + 1) / 2), relStd: std / mean };
 }
 
 function countReversals(points) {

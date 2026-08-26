@@ -27,10 +27,26 @@
 
 ## Round 状态
 
-- Round 1：进行中
-- Round 2：未开始
+- Round 1：完成（垂直切片脚手架）
+- Round 2：完成（SOTA 打磨，本轮由 fable 单代理完成，覆盖原全部所有权路径）
 - Round 3：未开始
 
 ## 结论简报
 
-（各轮结束后由主调度器回写）
+### Round 2（claude-fable-5-thinking-xhigh）
+
+补齐硬缺口并全部测试跑绿（70 tests / probe / bench / build）：
+
+- 教程：`ui/tutorial.js` 状态机 + 画布引导虚线（`setGuide`），键盘可走完（UI 冒烟测试覆盖）
+- 键盘施法：`drawing/templates.js` 六式模板 → 同一识别管线；legend 按钮 + 1–6 热键 + Esc
+- 天赋/灵兽接战斗：`combat/mods.js`（伤害/护盾/治疗/控制/暴击/闪避/回灵/开盾）
+- tick 可靠：`core/loop.js` 固定步长累加器；battle.tick 用 while-gauge，出手次数对任意 dt 守恒
+- 画阁回放：`drawing/replay.js` 归一化 32 点存档 + 画布回放动画
+- 墨客解锁：`progression/unlock.js` 六式精度 ≥60%（strokeStats 历史最佳），择业第七席 + 洞府感召
+- 无障碍：progressbar/log(aria-live)/radiogroup、焦点管理、focus-visible、减少动效双通道
+- 关卡：10 关顺序解锁 + 敌特性（swift/armored/enrage/regen/spiky）+ 意图电报 + Boss
+- 视觉：远山墨影、enso、印章敌影、飘字/连击、教程条、胜败印章、分色日志
+- 存档 v2 迁移（v1 画阁反推六式精度），焚卷重修
+
+剩余缺口（Round 3 候选）：真实移动端触感调优、音频层扩展（锣鼓/环境）、
+灵兽合成洗练、更多五行反应组合、战斗回放（整场）、云存档。
