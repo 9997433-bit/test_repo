@@ -1,77 +1,590 @@
+/* ==========================================================================
+   时尚百货城 · main.css（Round 2 / Opus-3）
+   --------------------------------------------------------------------------
+   取值一律来自 tokens.css / motion.css，规范见 docs/DESIGN_SYSTEM.md。
+   加载顺序：tokens.css → motion.css → main.css。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   0. 组件 token 缺口补丁
+   tokens.css 尚未覆盖、但 DESIGN_SYSTEM 已给出取值的量都集中在此，便于后续并入 token 层
+   -------------------------------------------------------------------------- */
+:root {
+  --btn-primary-shadow-press: var(--shadow-btn-press); /* §9.1 要求但 tokens.css 未定义 */
+  --btn-gold-bg-press: linear-gradient(160deg, var(--gold-400) 0%, var(--gold-600) 100%);
+  --btn-ghost-bg-hover: var(--cream-100);
+  --btn-ghost-bg-press: var(--cream-200);
+  --choice-selected-ring: var(--rose-500);
+  --shop-card-min-h: 118px;   /* §10.1 店卡最小高 */
+  --line-key-height: 56px;    /* §10.1 流水线键拇指热区 */
+  --doll-hair: var(--ink-900);
+  --doll-skin: #ffd8c4;
+  --room-stripe-a: var(--surface-solid);
+  --room-stripe-b: var(--rose-50);
+  /* 掉落时长与 fresh.js 的 2400ms 回收计时绑定，不能随 reduced-motion 压缩 */
+  --catch-fall-dur: 2400ms;
+  --catch-fall-dist: 160px;
+}
+
+/* --------------------------------------------------------------------------
+   1. 基础
+   -------------------------------------------------------------------------- */
 * { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; background: linear-gradient(180deg, #fff3ec 0%, #f7d7e4 48%, #e8d4ff 100%); font-family: var(--font); color: var(--ink); }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  color-scheme: light;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--grad-page);
+  background-attachment: fixed;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--text-body);
+}
+
 body { overflow-x: hidden; }
-button, input { font: inherit; }
-button { cursor: pointer; border: 0; }
 
-.app { max-width: 430px; margin: 0 auto; min-height: 100dvh; position: relative; padding: 12px 12px 88px; }
+h1, h2, h3 {
+  color: var(--text-strong);
+  line-height: var(--leading-tight);
+}
+h1 { font-size: var(--text-xl); }
+h2 { font-size: var(--text-lg); }
+h3 { font-size: var(--text-md); }
 
-.topbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--card); border-radius: 999px; box-shadow: var(--shadow); backdrop-filter: blur(12px); }
-.brand { font-weight: 700; letter-spacing: 0.04em; }
-.pills { display: flex; gap: 6px; flex-wrap: wrap; }
-.pill { background: #fff; border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--ink-soft); box-shadow: 0 4px 12px rgba(58,36,51,0.06); }
+button, input, textarea, select { font: inherit; }
+button {
+  cursor: pointer;
+  border: 0;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
 
-.toast { position: sticky; top: 8px; z-index: 5; margin: 10px 0; padding: 10px 14px; border-radius: 14px; background: #3a2433; color: #fff7f2; font-size: 13px; animation: pop 0.35s var(--ease); }
+/* 键盘焦点统一环；组件若自带阴影，在各自规则里把环叠加在阴影之后 */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid transparent; /* 高对比度模式下的可见兜底 */
+  outline-offset: 2px;
+  box-shadow: var(--ring-focus);
+}
 
-.hero { margin: 14px 0; padding: 18px; border-radius: var(--radius); background: linear-gradient(135deg, #ffd6e5, #ffe7c7 55%, #d9fff3); box-shadow: var(--shadow); }
-.hero h1 { margin: 0 0 6px; font-size: 22px; }
-.hero p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.55; }
+.app {
+  max-width: 430px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  position: relative;
+  padding: var(--space-3) var(--space-3) calc(var(--safe-bottom) + env(safe-area-inset-bottom, 0px));
+}
 
-.mall-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.shop-card { border: 0; text-align: left; padding: 14px; border-radius: 18px; min-height: 118px; background: var(--card); box-shadow: var(--shadow); position: relative; overflow: hidden; transition: transform 0.24s var(--ease); }
-.shop-card:hover { transform: translateY(-3px) scale(1.02); }
-.shop-card.locked { filter: grayscale(0.7); opacity: 0.7; }
+/* --------------------------------------------------------------------------
+   2. 顶栏与 HUD pill
+   -------------------------------------------------------------------------- */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-glass-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-3), var(--glass-highlight);
+  backdrop-filter: blur(var(--blur-glass));
+}
+
+.brand {
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-strong);
+}
+
+.pills {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.pill {
+  background: var(--hud-pill-bg);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+  box-shadow: var(--hud-pill-shadow);
+}
+
+/* --------------------------------------------------------------------------
+   3. Toast
+   -------------------------------------------------------------------------- */
+.toast {
+  position: sticky;
+  top: var(--space-2);
+  z-index: var(--z-toast);
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  box-shadow: var(--shadow-3);
+  animation: var(--anim-pop-in);
+}
+
+/* --------------------------------------------------------------------------
+   4. Hero
+   -------------------------------------------------------------------------- */
+.hero {
+  margin: var(--space-4) 0;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--grad-hero);
+  box-shadow: var(--shadow-3), var(--glass-highlight);
+  animation: var(--anim-pop-in);
+}
+.hero h1 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xl);
+}
+.hero p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  line-height: var(--leading-loose);
+}
+
+/* --------------------------------------------------------------------------
+   5. 商场网格与店卡
+   -------------------------------------------------------------------------- */
+.mall-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.shop-card {
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+  padding: var(--space-4);
+  min-height: var(--shop-card-min-h);
+  border: 0;
+  border-radius: var(--card-radius);
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  color: var(--text-body);
+  transition: var(--transition-hover);
+  animation: var(--anim-pop-in);
+}
+.mall-grid > :nth-child(2) { animation-delay: calc(1 * var(--stagger-step)); }
+.mall-grid > :nth-child(3) { animation-delay: calc(2 * var(--stagger-step)); }
+.mall-grid > :nth-child(4) { animation-delay: calc(3 * var(--stagger-step)); }
+.mall-grid > :nth-child(5) { animation-delay: calc(4 * var(--stagger-step)); }
+
+@media (hover: hover) and (pointer: fine) {
+  .shop-card:not(.locked):hover { transform: translateY(-3px) scale(1.02); box-shadow: var(--shadow-3), var(--glass-highlight); }
+}
+.shop-card:not(.locked):active { transform: scale(0.98); }
+.shop-card:focus-visible { box-shadow: var(--card-shadow), var(--ring-focus); }
+
+.shop-card.locked { filter: grayscale(0.7) opacity(0.7); }
+.shop-card.locked::after {
+  content: "🔒";
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  font-size: var(--text-sm);
+}
+
 .shop-card .emoji { font-size: 28px; }
-.shop-card h3 { margin: 6px 0 2px; font-size: 15px; }
-.shop-card small { color: var(--ink-soft); }
+.shop-card h3 { margin: var(--space-1) 0 2px; font-size: var(--text-md); }
+.shop-card small { color: var(--text-soft); font-size: var(--text-sm); }
 
-.nav { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); width: min(406px, calc(100% - 24px)); display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; background: rgba(255,255,255,0.92); padding: 8px; border-radius: 20px; box-shadow: var(--shadow); }
-.nav button { background: transparent; border-radius: 14px; padding: 8px 0; font-size: 11px; color: var(--ink-soft); }
-.nav button.active { background: linear-gradient(180deg, #ffe1ec, #ffd0b5); color: var(--ink); font-weight: 700; }
+/* --------------------------------------------------------------------------
+   6. 面板
+   -------------------------------------------------------------------------- */
+.panel {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  background: var(--card-bg);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(var(--blur-glass));
+  animation: var(--anim-pop-in);
+}
 
-.panel { margin-top: 12px; background: var(--card); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
-.row { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-.btn { background: linear-gradient(180deg, var(--rose), var(--rose-deep)); color: white; border-radius: 14px; padding: 10px 14px; font-weight: 600; box-shadow: 0 8px 16px rgba(199,59,111,0.25); }
-.btn.ghost { background: #fff; color: var(--ink); box-shadow: none; border: 1px solid #f0d4de; }
-.btn.gold { background: linear-gradient(180deg, var(--gold), var(--gold-deep)); color: #3a2433; }
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-items: center;
+}
 
-.order { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
-.chip { padding: 6px 10px; border-radius: 999px; background: #fff; border: 1px dashed #e4b8c6; font-size: 13px; }
-.chip.done { background: #d9fff3; border-style: solid; }
+/* --------------------------------------------------------------------------
+   7. 底部导航
+   -------------------------------------------------------------------------- */
+.nav {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(406px, calc(100% - var(--space-6)));
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--nav-bg);
+  border-radius: var(--nav-radius);
+  box-shadow: var(--shadow-3), var(--glass-highlight);
+  backdrop-filter: blur(var(--blur-glass));
+  z-index: var(--z-nav);
+}
 
-.line { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.line button { padding: 16px 6px; border-radius: 16px; background: #fff; box-shadow: 0 6px 16px rgba(58,36,51,0.08); }
+.nav button {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap-target);
+  padding: var(--space-2) var(--space-1);
+  background: transparent;
+  border-radius: var(--nav-item-radius);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--nav-text);
+  transition: color var(--dur-base) var(--ease-out), transform var(--dur-instant) var(--ease-out);
+}
+/* 渐变底无法直接过渡，用同尺寸底层的透明度切换 */
+.nav button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--nav-active-bg);
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+.nav button.active { color: var(--nav-active-text); font-weight: var(--weight-bold); }
+.nav button.active::before { opacity: 1; }
+.nav button:active { transform: scale(0.96); }
 
-.doll { width: 140px; height: 220px; margin: 8px auto; position: relative; }
+/* --------------------------------------------------------------------------
+   8. 按钮
+   -------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  padding: var(--btn-pad-y) var(--btn-pad-x);
+  border-radius: var(--btn-radius);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  text-shadow: var(--btn-primary-text-shadow);
+  box-shadow: var(--btn-primary-shadow);
+  transition: var(--transition-press), var(--transition-color);
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover:not([disabled]) { transform: translateY(-1px); box-shadow: var(--shadow-3); }
+}
+.btn:active:not([disabled]) {
+  background: var(--btn-primary-bg-press);
+  box-shadow: var(--btn-primary-shadow-press);
+  transform: translateY(1px) scale(0.97);
+}
+.btn:focus-visible { box-shadow: var(--btn-primary-shadow), var(--ring-focus); }
+
+.btn.ghost {
+  background: var(--btn-ghost-bg);
+  color: var(--btn-ghost-text);
+  border: var(--btn-ghost-border);
+  text-shadow: none;
+  box-shadow: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn.ghost:hover:not([disabled]) { background: var(--btn-ghost-bg-hover); border-color: var(--line-strong); box-shadow: none; }
+}
+.btn.ghost:active:not([disabled]) { background: var(--btn-ghost-bg-press); box-shadow: none; }
+.btn.ghost:focus-visible { box-shadow: var(--ring-focus); }
+
+.btn.gold {
+  background: var(--btn-gold-bg);
+  color: var(--btn-gold-text);
+  text-shadow: none;
+  box-shadow: var(--btn-gold-shadow);
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn.gold:hover:not([disabled]) { box-shadow: var(--btn-gold-shadow); }
+}
+/* 金按钮不能落到主按钮的玫瑰按压底上，按压走金渐变深端 */
+.btn.gold:active:not([disabled]) { background: var(--btn-gold-bg-press); box-shadow: var(--shadow-gold); }
+.btn.gold:focus-visible { box-shadow: var(--btn-gold-shadow), var(--ring-focus); }
+
+.btn[disabled], .btn:disabled {
+  background: var(--btn-disabled-bg);
+  color: var(--btn-disabled-text);
+  border-color: transparent;
+  text-shadow: none;
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
+/* 伙伴 / 产线面板的注入样式晚于本文件生效，用更高特异性把按钮拉回最小触控尺寸 */
+.panel .fm-p-actions .btn,
+.panel .fm-node-buy .btn { min-height: var(--tap-target); }
+
+/* --------------------------------------------------------------------------
+   9. 订单 chip
+   -------------------------------------------------------------------------- */
+.order {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin: var(--space-3) 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--chip-bg);
+  border: var(--chip-border);
+  font-size: var(--text-sm);
+  color: var(--text-body);
+  box-shadow: var(--shadow-1);
+  transition: var(--transition-color);
+}
+.chip.done {
+  background: var(--chip-done-bg);
+  border: var(--chip-done-border);
+  color: var(--text-success);
+  animation: fm-chip-check var(--dur-instant) var(--ease-pop);
+}
+
+/* --------------------------------------------------------------------------
+   10. 快餐流水线
+   -------------------------------------------------------------------------- */
+.line {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+.line button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--line-key-height);
+  padding: var(--space-3) var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--surface-solid);
+  color: var(--text-body);
+  font-size: var(--text-lg);
+  box-shadow: var(--shadow-2);
+  transition: var(--transition-press);
+}
+.line button > div {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-soft);
+}
+.line button:active { transform: scale(0.96); box-shadow: var(--shadow-1); }
+.line button:focus-visible { box-shadow: var(--shadow-2), var(--ring-focus); }
+
+/* --------------------------------------------------------------------------
+   11. 标签选择
+   -------------------------------------------------------------------------- */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.choices button {
+  min-height: var(--tap-target);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  color: var(--text-body);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-1);
+  transition: var(--transition-color), var(--transition-press);
+}
+.choices button:active { transform: scale(0.97); }
+.choices button.on {
+  color: var(--text-brand);
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 0 0 0 2px var(--choice-selected-ring), var(--shadow-1);
+}
+.choices button:focus-visible { box-shadow: var(--shadow-1), var(--ring-focus); }
+.choices button.on:focus-visible { box-shadow: inset 0 0 0 2px var(--choice-selected-ring), var(--ring-focus); }
+
+/* --------------------------------------------------------------------------
+   12. 纸娃娃与房间（早期占位视图）
+   -------------------------------------------------------------------------- */
+.doll { width: 140px; height: 220px; margin: var(--space-2) auto; position: relative; }
 .doll .part { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 40px; }
-.doll .hair { top: 8px; width: 78px; height: 70px; background: #3a2433; }
-.doll .face { top: 28px; width: 56px; height: 56px; background: #ffd8c4; }
+.doll .hair { top: 8px; width: 78px; height: 70px; background: var(--doll-hair); }
+.doll .face { top: 28px; width: 56px; height: 56px; background: var(--doll-skin); }
 .doll .top { top: 82px; width: 72px; height: 54px; }
 .doll .bottom { top: 132px; width: 64px; height: 50px; }
-.doll .shoes { top: 180px; width: 70px; height: 18px; border-radius: 8px; }
+.doll .shoes { top: 180px; width: 70px; height: 18px; border-radius: var(--radius-xs); }
 
-.choices { display: flex; flex-wrap: wrap; gap: 8px; }
-.choices button { padding: 8px 10px; border-radius: 12px; background: #fff; }
-.choices button.on { outline: 2px solid var(--rose); }
+.room {
+  min-height: 160px;
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+  border-radius: var(--card-radius);
+  background: repeating-linear-gradient(45deg, var(--room-stripe-a), var(--room-stripe-a) 12px, var(--room-stripe-b) 12px, var(--room-stripe-b) 24px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.furn {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-1);
+}
 
-.room { min-height: 160px; border-radius: 18px; margin: 8px 0; padding: 10px; background: repeating-linear-gradient(45deg, #fff, #fff 12px, #fff4f8 12px, #fff4f8 24px); display: flex; flex-wrap: wrap; gap: 8px; }
-.furn { padding: 8px 10px; border-radius: 12px; background: white; box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
+/* --------------------------------------------------------------------------
+   13. 进度条
+   -------------------------------------------------------------------------- */
+.progress {
+  height: var(--progress-height);
+  background: var(--progress-track);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.progress > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--progress-fill);
+  transition: width var(--dur-slow) var(--ease-out);
+}
 
-.progress { height: 8px; background: #f0d8e2; border-radius: 99px; overflow: hidden; }
-.progress > i { display: block; height: 100%; background: linear-gradient(90deg, var(--rose), var(--gold)); }
+/* --------------------------------------------------------------------------
+   14. 弹窗
+   -------------------------------------------------------------------------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: var(--modal-scrim);
+  z-index: var(--z-modal);
+  animation: fm-scrim-in var(--dur-fast) var(--ease-out) both;
+}
+.modal .sheet {
+  width: min(380px, 100%);
+  padding: var(--space-5);
+  border-radius: var(--modal-sheet-radius);
+  background: var(--modal-sheet-bg);
+  box-shadow: var(--modal-sheet-shadow);
+  animation: var(--anim-slide-up);
+}
 
-.modal { position: fixed; inset: 0; background: rgba(58,36,51,0.45); display: grid; place-items: center; z-index: 20; padding: 20px; }
-.modal .sheet { width: min(380px, 100%); background: var(--cream); border-radius: 24px; padding: 20px; box-shadow: var(--shadow); }
+/* --------------------------------------------------------------------------
+   15. 生鲜接货小游戏
+   -------------------------------------------------------------------------- */
+.catch {
+  height: 180px;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--success-bg);
+}
+.item {
+  position: absolute;
+  top: 0;
+  width: 36px;
+  text-align: center;
+  font-size: 26px;
+  animation: fm-item-fall var(--catch-fall-dur) linear;
+}
+.basket {
+  position: absolute;
+  bottom: var(--space-2);
+  width: 72px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  background: var(--grad-brand);
+  box-shadow: var(--shadow-2);
+}
 
-.catch { height: 180px; position: relative; overflow: hidden; border-radius: 16px; background: #e8fff6; }
-.item { position: absolute; top: 0; width: 36px; text-align: center; font-size: 26px; animation: fall 2.4s linear; }
-.basket { position: absolute; bottom: 8px; width: 72px; height: 28px; border-radius: 10px; background: var(--rose); }
+/* --------------------------------------------------------------------------
+   16. 本文件私有关键帧（共享关键帧在 motion.css）
+   -------------------------------------------------------------------------- */
+@keyframes fm-item-fall { to { transform: translateY(var(--catch-fall-dist)); } }
+@keyframes fm-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fm-chip-check { from { transform: scale(0.92); } to { transform: none; } }
 
-@keyframes fall { to { transform: translateY(160px); } }
-@keyframes pop { from { transform: translateY(-8px); opacity: 0; } }
-
+/* --------------------------------------------------------------------------
+   17. 断点
+   -------------------------------------------------------------------------- */
 @media (min-width: 960px) {
-  .app { max-width: 980px; padding-bottom: 24px; }
+  .app { max-width: 980px; padding-bottom: var(--space-6); }
   .mall-grid { grid-template-columns: repeat(3, 1fr); }
-  .nav { position: static; transform: none; width: auto; margin-top: 16px; }
+  .nav {
+    position: static;
+    transform: none;
+    width: auto;
+    margin-top: var(--space-4);
+  }
+}
+
+@media (min-width: 1280px) {
+  .app { max-width: 1200px; }
+  .mall-grid { grid-template-columns: repeat(4, 1fr); }
+  .hero h1 { font-size: var(--text-2xl); }
+  .nav {
+    width: min(560px, 100%);
+    margin-left: auto;
+    margin-right: 0;
+  }
+  .nav button { font-size: var(--text-xs); }
+  .modal .sheet { width: min(440px, 100%); }
+}
+
+/* --------------------------------------------------------------------------
+   18. 无障碍：偏好减弱动效
+   motion.css 已把时长压到 1ms，这里再关掉入场动画与位移形变
+   （生鲜掉落是玩法必需的位置信息，保留）
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .hero,
+  .panel,
+  .shop-card,
+  .toast,
+  .modal,
+  .modal .sheet,
+  .chip.done {
+    animation: none;
+  }
+  .shop-card:hover,
+  .shop-card:active,
+  .btn:hover,
+  .btn:active,
+  .nav button:active,
+  .line button:active,
+  .choices button:active {
+    transform: none;
+  }
 }
