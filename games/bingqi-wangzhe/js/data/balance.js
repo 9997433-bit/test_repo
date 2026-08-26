@@ -345,7 +345,14 @@ export const STAMINA_RULES = Object.freeze({
   costElite: 6,
 });
 
-export const STARTER_KIT = Object.freeze({ coin: 300, iron: 60 });
+/**
+ * 开局礼包 = 3 锤精铁炉的量。文档写的是 300 铜钱，但精铁炉一锤 120 铜钱，
+ * 300 只够 2 锤，与它自己的注释矛盾；这里按「3 锤」这个设计意图取 360。
+ */
+export const STARTER_KIT = Object.freeze({
+  coin: FORGE_COST.iron.coin * 3,
+  iron: FORGE_COST.iron.iron * 3,
+});
 
 export const SWEEP_RULES = Object.freeze({
   unlock: 'firstClear',

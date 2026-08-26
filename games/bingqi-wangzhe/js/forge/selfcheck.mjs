@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 
 import { createRng } from '../core/rng.js';
-import { createInitialState } from '../core/state.js';
+import { createInitialState, hydrate, serialize } from '../core/state.js';
 import {
   FORGE_PITY,
   FORGE_STAGES,
@@ -21,6 +21,7 @@ import {
   QUALITIES,
   QUALITY_RANK,
   STAGE_BALANCE,
+  STARTER_KIT,
 } from '../data/balance.js';
 import { STAGES } from '../data/stages.js';
 import {
@@ -198,6 +199,20 @@ check('精铁炉不设保底（也不假装有）', () => {
   return { maxMissStreak: Math.max(worst, streak) };
 });
 
+check('保底计数扛得住存档往返', () => {
+  const state = fundedState();
+  const rng = createRng(0x51ab);
+  forgeLoop(state, { stage: 'silver' }, rng, 5);
+  const before = JSON.parse(JSON.stringify(state.forge.pity));
+  assert.ok(before.silver.epic > 0 || before.silver.legendary > 0, '样本里应已累计保底计数');
+
+  const reloaded = hydrate(serialize(state));
+  const preview = previewForge(reloaded, { stage: 'silver' });
+  assert.deepEqual(reloaded.forge.pity, before, '重载后保底计数必须与存盘时一致');
+  assert.equal(preview.pity.isFirstForge, false, '重载后不该再判为首锻');
+  return { pity: reloaded.forge.pity.silver };
+});
+
 /* ------------------------------------------------------------------ *
  * 3. 品质概率对齐 fable-3 §1.1 验收表
  * ------------------------------------------------------------------ */
@@ -304,6 +319,24 @@ check('挂机速率与文档公式一致', () => {
   assert.ok(rows[10].silverOre > 0 && rows[5].silverOre === undefined, '秘银应在 10 关解锁');
   assert.ok(rows[22].goldOre > 0 && rows[20].goldOre === undefined, '赤金应在 22 关解锁');
   return rows;
+});
+
+check('开局礼包正好够 3 锤精铁炉', () => {
+  const state = createInitialState();
+  Object.assign(state.resources, STARTER_KIT);
+  const rng = createRng(0x0301);
+  let forged = 0;
+  while (true) {
+    const res = forgeWeapon(state, { stage: 'iron' }, rng);
+    if (!res.ok) {
+      assert.equal(res.reason, 'insufficient_resources', `第 ${forged + 1} 锤意外失败：${res.reason}`);
+      break;
+    }
+    forged += 1;
+    assert.ok(forged <= 4, '开局礼包锤数超出预期');
+  }
+  assert.equal(forged, 3, `开局礼包只够 ${forged} 锤，文档要求 3 锤`);
+  return { forges: forged, kit: STARTER_KIT };
 });
 
 check('关卡表与 fable-3 §3 掉落表一致', () => {

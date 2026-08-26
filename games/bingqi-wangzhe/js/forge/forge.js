@@ -71,8 +71,12 @@ function ensureForgeState(state) {
     state.codex.discovered = {};
   }
 
-  if (!state.forge || typeof state.forge !== 'object') state.forge = {};
+  const hadForge = Boolean(state.forge) && typeof state.forge === 'object';
+  if (!hadForge) state.forge = {};
   const f = state.forge;
+  // core/state.js 的 serialize() 白名单里还没有 forge 段，重新载入存档时它是空的。
+  // 保底计数一旦每次开局清零，8 锤保底就形同虚设，所以这里从 flags 里的镜像还原。
+  if (!hadForge) restoreForgeSnapshot(state, f);
   if (!f.pity || typeof f.pity !== 'object') f.pity = {};
   for (const stage of FORGE_STAGES) {
     if (!f.pity[stage] || typeof f.pity[stage] !== 'object') f.pity[stage] = { epic: 0, legendary: 0 };
@@ -92,6 +96,34 @@ function ensureForgeState(state) {
     );
   }
   return state;
+}
+
+/**
+ * 把锻造存档段镜像进 `state.flags`（core 的 serialize 会原样克隆 flags），
+ * 等 core 把 `forge` 加进白名单后，这层镜像可以直接删掉。
+ */
+const FORGE_SNAPSHOT_KEY = 'forgeSnapshot';
+
+function writeForgeSnapshot(state) {
+  if (!state.flags || typeof state.flags !== 'object') return;
+  const f = state.forge;
+  state.flags[FORGE_SNAPSHOT_KEY] = {
+    pity: JSON.parse(JSON.stringify(f.pity)),
+    masterForge: { ...f.masterForge },
+    totalForged: f.totalForged,
+    serial: f.serial,
+    firstForgeDone: f.firstForgeDone,
+  };
+}
+
+function restoreForgeSnapshot(state, target) {
+  const snap = state.flags?.[FORGE_SNAPSHOT_KEY];
+  if (!snap || typeof snap !== 'object') return;
+  if (snap.pity && typeof snap.pity === 'object') target.pity = JSON.parse(JSON.stringify(snap.pity));
+  if (snap.masterForge && typeof snap.masterForge === 'object') target.masterForge = { ...snap.masterForge };
+  if (typeof snap.totalForged === 'number') target.totalForged = snap.totalForged;
+  if (typeof snap.serial === 'number') target.serial = snap.serial;
+  if (typeof snap.firstForgeDone === 'boolean') target.firstForgeDone = snap.firstForgeDone;
 }
 
 function deriveSerial(state) {
@@ -535,6 +567,7 @@ export function forgeWeapon(state, opts, rng) {
   const qRank = QUALITY_RANK[quality] ?? 0;
   pity.epic = qRank >= EPIC_RANK ? 0 : pity.epic + 1;
   pity.legendary = qRank >= LEGENDARY_RANK ? 0 : pity.legendary + 1;
+  writeForgeSnapshot(s);
 
   const line = `${FORGE_STAGE_NAME[o.stage]}开炉，得【${QUALITY_NAME[quality]}·${proto.name}】。`;
   pushLog(s, line);
