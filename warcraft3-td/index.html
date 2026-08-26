@@ -10,20 +10,25 @@
   <div id="app">
     <header class="topbar">
       <div class="res">
-        <span><i class="coin"></i><span id="res-gold">0</span></span>
-        <span class="lumber"><i class="wood"></i><span id="res-lumber">0</span></span>
-        <span class="food"><i class="helm"></i><span id="res-lives">20</span></span>
-        <span>WAVE <b id="res-wave">1 / 30</b></span>
-        <span id="res-time">0:00</span>
+        <span class="res-item r-gold" title="黄金 Gold"><i class="ricon coin"></i><span id="res-gold">0</span></span>
+        <span class="res-item r-lumber" title="木材 Lumber"><i class="ricon wood"></i><span id="res-lumber">0</span></span>
+        <span class="res-item r-lives" title="生命 Lives"><i class="ricon helm"></i><span id="res-lives">20</span></span>
+        <span class="res-item r-wave" title="波次 Wave"><i class="ricon banner"></i><span class="res-label">WAVE</span><b id="res-wave">1 / 30</b></span>
+        <span class="res-item r-time" title="时间 Time"><i class="ricon hourglass"></i><span id="res-time">0:00</span></span>
       </div>
       <div class="top-actions">
-        <button id="btn-next" type="button">下一波 N</button>
-        <button id="btn-pause" type="button">暂停 Space</button>
-        <button id="btn-speed" type="button">×1</button>
-        <button id="btn-menu" type="button">菜单</button>
-        <button id="btn-allies" type="button">盟友</button>
-        <button id="btn-log" type="button">日志</button>
-        <button id="btn-settings" type="button">设置</button>
+        <div class="ta-group">
+          <button id="btn-next" type="button">下一波 N</button>
+          <button id="btn-pause" type="button">暂停 Space</button>
+          <button id="btn-speed" type="button">×1</button>
+        </div>
+        <span class="ta-sep" aria-hidden="true"></span>
+        <div class="ta-group">
+          <button id="btn-menu" type="button">菜单</button>
+          <button id="btn-allies" type="button">盟友</button>
+          <button id="btn-log" type="button">日志</button>
+          <button id="btn-settings" type="button">设置</button>
+        </div>
       </div>
     </header>
 
@@ -33,6 +38,8 @@
 
       <div id="start-overlay" class="overlay">
         <div class="panel">
+          <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+          <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
           <h1 id="menu-title">艾泽拉斯要塞塔防</h1>
           <div class="sub" id="menu-sub">魔兽争霸 III · 自定义塔防致敬作</div>
           <div class="howto">在道路旁建造四族防御塔，利用攻击/护甲克制，守住 30 波从黑暗之门涌出的敌军。漏怪扣除生命。每 5 波 +1 木材，黄金每 15 秒产生利息。命令卡与小地图致敬冰封王座 HUD。</div>
@@ -55,11 +62,14 @@
             </div>
           </div>
           <button class="menu-btn primary" id="btn-start" type="button">开始战役</button>
+          <div class="hint">Q–V 建塔 · U 升级 · S 出售 · N 下一波 · 空格 暂停</div>
         </div>
       </div>
 
       <div id="settings-overlay" class="overlay hidden">
         <div class="panel">
+          <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+          <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
           <h1>设置</h1>
           <div class="row">
             <label>语言 Language</label>
@@ -80,6 +90,8 @@
 
       <div id="end-overlay" class="overlay hidden">
         <div class="panel">
+          <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+          <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
           <h1 id="end-title">结束</h1>
           <p id="end-detail"></p>
           <button class="menu-btn primary" id="btn-restart" type="button">再来一局</button>
@@ -89,6 +101,8 @@
 
     <footer class="bottom">
       <div class="portrait-wrap">
+        <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+        <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
         <canvas id="portrait" width="200" height="200"></canvas>
         <div class="portrait-name" id="sel-name">艾泽拉斯要塞</div>
       </div>
@@ -120,6 +134,8 @@
         <button class="cmd-btn" type="button"></button>
       </div>
       <div class="minimap-wrap">
+        <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+        <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
         <canvas id="minimap" width="196" height="176"></canvas>
       </div>
     </footer>
