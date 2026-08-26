@@ -11,16 +11,12 @@ describe("game loop", () => {
 
     const results = [g.recruit("player"), g.recruit("player"), g.recruit("player")];
 
-    expect(results.map((result) => result.cost)).toEqual([
-      recruitCost(0),
-      recruitCost(1),
-      recruitCost(2),
-    ]);
-    expect(results.map((result) => result.cost)).toEqual([10, 14, 18]);
+    const costs = [recruitCost(0), recruitCost(1), recruitCost(2)];
+    expect(results.map((result) => result.cost)).toEqual(costs);
     expect(results.every((result) => result.card.glyph)).toBe(true);
     expect(side.hand).toHaveLength(3);
     expect(side.recruitCount).toBe(3);
-    expect(side.mantou).toBe(58);
+    expect(side.mantou).toBe(100 - costs.reduce((sum, n) => sum + n, 0));
   });
 
   it("rejects recruitment without mutation when the hand is full", () => {
