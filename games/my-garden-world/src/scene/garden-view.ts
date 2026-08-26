@@ -1,6 +1,6 @@
 import { FLOWER_MAP, type GrowthStage } from "../data/flowers";
 import type { GameState, Plot } from "../engine/state";
-import { resolvePlacedDecor } from "../systems/decorate";
+import { placeAt, resolvePlacedDecor, stowDecor, type AnchorId } from "../systems/decorate";
 import { plotProgress } from "../systems/garden";
 import { createDecorLayer } from "./decor-layer";
 import { plotArt } from "./flower-art";
@@ -32,6 +32,9 @@ interface Cell {
 export interface GardenView {
   update(state: GameState, selected: number | null, pendingSeed: string | null): void;
   plotCenter(plotId: number): { x: number; y: number } | null;
+  /** 摆放模式：八锚位浮现，点挂牌拿起、点锚位安置或对调 */
+  setPlaceMode(on: boolean): void;
+  isPlaceMode(): boolean;
 }
 
 function needsWater(plot: Plot): boolean {
@@ -43,7 +46,24 @@ function needsWater(plot: Plot): boolean {
 /** 增量花园视图：节点常驻，每帧只写有变化的属性；SVG 仅在阶段切换时重建。 */
 export function createGardenView(root: HTMLElement, onPick: (id: number) => void): GardenView {
   root.replaceChildren();
-  const decor = createDecorLayer();
+  // 摆放模式改的是「落位」而非「拥有」：state 由 update 交来，改完就地重绘，
+  // 主循环每帧都会 scheduleSave，无需外层接线即可入档。
+  let last: GameState | null = null;
+  const repaint = (): void => {
+    if (last) decor.update(resolvePlacedDecor(last));
+  };
+  const decor = createDecorLayer({
+    onPlace: (id: string, anchor: AnchorId) => {
+      if (!last || !placeAt(last, id, anchor)) return false;
+      repaint();
+      return true;
+    },
+    onStow: (id: string) => {
+      if (!last || !stowDecor(last, id)) return false;
+      repaint();
+      return true;
+    },
+  });
   const grid = document.createElement("div");
   grid.className = "garden";
   grid.setAttribute("role", "group");
@@ -83,7 +103,11 @@ export function createGardenView(root: HTMLElement, onPick: (id: number) => void
   };
 
   const update = (state: GameState, selected: number | null, pendingSeed: string | null): void => {
-    const dk = state.placedDecor.join(",");
+    last = state;
+    // 落位表也计入指纹：外层只换了锚位（id 未变）时同样要重绘
+    const anchors = state.decorAnchors;
+    let dk = state.placedDecor.join(",");
+    if (anchors) for (const id of Object.keys(anchors)) dk += `|${id}@${anchors[id]}`;
     if (dk !== decorKey) {
       decorKey = dk;
       decor.update(resolvePlacedDecor(state));
@@ -166,5 +190,10 @@ export function createGardenView(root: HTMLElement, onPick: (id: number) => void
     return { x: r.left + r.width / 2, y: r.top + r.height * 0.45 };
   };
 
-  return { update, plotCenter };
+  return {
+    update,
+    plotCenter,
+    setPlaceMode: (on: boolean) => decor.setPlaceMode(on),
+    isPlaceMode: () => decor.isPlaceMode(),
+  };
 }

@@ -1,15 +1,23 @@
 import type { Season } from "../data/flowers";
+import { loadPrefs, setMutedPref } from "../engine/prefs";
 
 let ctx: AudioContext | null = null;
-let muted = false;
+/** 静音选择跟着 prefs 走（独立于花园存档：重整山河不该顺手抹掉耳朵的偏好）。 */
+let muted = loadPrefs().muted;
 /** 自动播放策略：首个用户手势之前不建 AudioContext，也就不会有控制台告警。 */
 let gestured = false;
 
-export function toggleMute(): boolean {
-  muted = !muted;
+export function setMuted(next: boolean): boolean {
+  if (next === muted) return muted;
+  muted = next;
+  setMutedPref(muted);
   if (muted) stopAmbient();
   else startAmbient();
   return muted;
+}
+
+export function toggleMute(): boolean {
+  return setMuted(!muted);
 }
 
 export function isMuted(): boolean {

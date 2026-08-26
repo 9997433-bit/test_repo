@@ -115,6 +115,9 @@ const latest = (): FakeCtx => FakeCtx.created[FakeCtx.created.length - 1]!;
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  // 静音选择现在会落进 prefs（engine/prefs.ts），逐例清一次存储，
+  // 免得上一例按下的静音被下一例的 load() 读回来
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -217,6 +220,30 @@ describe("底噪生命周期", () => {
     s.toggleMute();
     expect(s.ambientSnapshot().running).toBe(true);
     expect(latest().oscs.filter((o) => o.stoppedAt === null).length).toBe(4);
+  });
+});
+
+describe("静音选择跨会话记得住", () => {
+  it("按过静音后重新载入音景仍是静音，取消后亦然", async () => {
+    const first = await load(false);
+    expect(first.isMuted()).toBe(false);
+    expect(first.toggleMute()).toBe(true);
+
+    const reloaded = await load(false);
+    expect(reloaded.isMuted()).toBe(true);
+    expect(reloaded.toggleMute()).toBe(false);
+
+    expect((await load(false)).isMuted()).toBe(false);
+  });
+
+  it("清空花园进度不会顺手抹掉耳朵的偏好", async () => {
+    const sound = await load(false);
+    sound.setMuted(true);
+    const { clearSave } = await import("../../src/engine/save");
+
+    clearSave();
+
+    expect((await load(false)).isMuted()).toBe(true);
   });
 });
 

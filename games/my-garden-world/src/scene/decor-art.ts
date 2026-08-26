@@ -1,5 +1,7 @@
 /** 庭院陈设：程序化 SVG 图形 + 舞台摆位（纯函数，无 DOM，可单测）。 */
 
+import type { AnchorId } from "../systems/decorate";
+
 export type DecorDepth = "far" | "near";
 
 export interface DecorSlot {
@@ -55,6 +57,30 @@ const FALLBACK_SLOTS: DecorSlot[] = [
   { x: 50, y: 30, w: 9, depth: "far" },
   { x: 34, y: 92, w: 9, depth: "near" },
 ];
+
+/**
+ * 八个锚位在舞台上的落点：全部贴着庭院四缘，绕开中央花圃网格与园心上空的驻园灵玉。
+ * 锚位只定「在哪儿」与「远近」，每件陈设占多宽仍由自己的 `decorSlot(id).w` 决定。
+ */
+const ANCHOR_SLOTS: Record<AnchorId, Omit<DecorSlot, "w">> = {
+  eave: { x: 8, y: 20, depth: "near" },
+  gate: { x: 88, y: 30, depth: "far" },
+  "path-west": { x: 9, y: 60, depth: "near" },
+  "path-east": { x: 84, y: 74, depth: "near" },
+  pondside: { x: 18, y: 87, depth: "near" },
+  "corner-north": { x: 30, y: 20, depth: "far" },
+  "corner-south": { x: 93, y: 55, depth: "near" },
+  heart: { x: 50, y: 91, depth: "near" },
+};
+
+export function anchorSlot(anchor: AnchorId): Omit<DecorSlot, "w"> {
+  return ANCHOR_SLOTS[anchor];
+}
+
+/** 某件陈设落在某锚位时的完整摆位：位置来自锚位，尺寸来自陈设本身。 */
+export function placedSlot(id: string, anchor: AnchorId): DecorSlot {
+  return { ...ANCHOR_SLOTS[anchor], w: decorSlot(id).w };
+}
 
 function hash(id: string): number {
   let h = 0;

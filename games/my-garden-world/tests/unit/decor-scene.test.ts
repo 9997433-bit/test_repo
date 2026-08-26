@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DECORATIONS } from "../../src/data/decorations";
 import { createInitialState } from "../../src/engine/state";
-import { decorSlot } from "../../src/scene/decor-art";
+import { anchorSlot, decorSlot } from "../../src/scene/decor-art";
 import { createGardenView } from "../../src/scene/garden-view";
-import { resolvePlacedDecor } from "../../src/systems/decorate";
+import { anchorOf, preferredAnchor, resolvePlacedDecor } from "../../src/systems/decorate";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -28,7 +28,7 @@ const item = (root: HTMLElement, id: string): HTMLElement | null =>
 
 describe("decor scene layer", () => {
   it("draws one positioned scene object per placement, behind the plots", () => {
-    const { root } = mount(["pavilion", "pond"]);
+    const { root, state } = mount(["pavilion", "pond"]);
 
     const scene = root.querySelector<HTMLElement>(".decor-scene");
     expect(scene).not.toBeNull();
@@ -39,10 +39,14 @@ describe("decor scene layer", () => {
       "pointer-events: none",
     );
 
+    // 位置来自锚位（未挪过者落在偏好锚位），宽度仍来自陈设自身
+    const anchor = anchorOf(state, "pavilion");
+    expect(anchor).toBe(preferredAnchor("pavilion"));
+    const slot = anchorSlot(anchor!);
     const pavilion = item(root, "pavilion");
     expect(pavilion?.querySelector("svg")).not.toBeNull();
-    expect(pavilion?.style.left).toBe(`${decorSlot("pavilion").x}%`);
-    expect(pavilion?.style.top).toBe(`${decorSlot("pavilion").y}%`);
+    expect(pavilion?.style.left).toBe(`${slot.x}%`);
+    expect(pavilion?.style.top).toBe(`${slot.y}%`);
     expect(pavilion?.style.getPropertyValue("--dw")).toBe(`${decorSlot("pavilion").w}%`);
     expect(pavilion?.querySelector(".decor-tag")?.textContent).toBe("半亭");
   });
@@ -152,8 +156,15 @@ describe("resolvePlacedDecor", () => {
     state.placedDecor = ["pond", "legacy-statue"];
 
     expect(resolvePlacedDecor(state)).toEqual([
-      { id: "pond", name: "锦鲤池", glyph: "池", label: "池 锦鲤池", known: true },
-      { id: "legacy-statue", name: "legacy-statue", glyph: "l", label: "legacy-statue", known: false },
+      { id: "pond", anchor: "pondside", name: "锦鲤池", glyph: "池", label: "池 锦鲤池", known: true },
+      {
+        id: "legacy-statue",
+        anchor: preferredAnchor("legacy-statue"),
+        name: "legacy-statue",
+        glyph: "l",
+        label: "legacy-statue",
+        known: false,
+      },
     ]);
   });
 });
