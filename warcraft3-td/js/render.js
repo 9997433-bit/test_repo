@@ -1,5 +1,5 @@
 /**
- * Painterly canvas renderer for Azeroth Keep TD.
+ * Painterly canvas renderer for Frontier Keep TD.
  *
  * Public contract used by main.js / hud.js (do not change):
  *   new Renderer(canvas), .resize(), .draw(game, alpha),
@@ -2786,6 +2786,7 @@
     ctx.translate(x, y);
     ctx.scale(h._face || 1, 1);
     this._heroBody(ctx, h, t, moving);
+    if (h._hitFlash > 0) this._hitWash(ctx, h._hitFlash);
     ctx.restore();
     if (h.shield > 0) {
       const sa = 0.5 + 0.2 * Math.sin(t * 8);
