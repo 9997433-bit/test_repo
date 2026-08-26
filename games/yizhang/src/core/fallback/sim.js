@@ -125,7 +125,8 @@ export function createMatch(opts = {}) {
   const spawnR = CORE_RADIUS + 4;
   const total = botCount + 1;
   state.players.push(
-    makePlayer(state, "p1", {
+    // 人类 id 与 src/sim 保持一致，都是 p0；换成别的输入就打到不存在的玩家上。
+    makePlayer(state, "p0", {
       name: opts.playerName || "你",
       kind: "human",
       gloveId: opts.gloveId || "cotton",
@@ -140,7 +141,7 @@ export function createMatch(opts = {}) {
     const pool = GLOVES[(i * 3 + 1) % GLOVES.length];
     const pool2 = GLOVES[(i * 5 + 2) % GLOVES.length];
     state.players.push(
-      makePlayer(state, `bot${i + 1}`, {
+      makePlayer(state, `b${i}`, {
         name: BOT_NAMES[i % BOT_NAMES.length],
         kind: "bot",
         persona,

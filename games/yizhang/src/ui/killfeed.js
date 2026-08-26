@@ -1,5 +1,5 @@
-// 击杀播报。最多 5 条，4 秒淡出。事件优先取 sim 的 events，
-// sim 不给事件时由 shell 通过 deaths 计数差分补上。
+// 击杀播报。Fable-2 合同：.yz-feed > .yz-feed-item，与本机玩家相关的挂 .is-me，
+// 名字用 <strong> 提亮。最多 5 条，4 秒后移除。
 
 import { h } from "./dom.js";
 
@@ -10,26 +10,23 @@ export function createKillFeed() {
   const el = h("div", { class: "yz-feed" });
   const rows = [];
 
-  function drop(row) {
-    row.node.dataset.fading = "1";
-    setTimeout(() => {
-      row.node.remove();
+  function push({ killer, victim, method = "扇 出 岛", mine = false }) {
+    const item = h("div", { class: "yz-plate yz-feed-item" }, [
+      killer ? h("strong", { text: killer }) : h("span", { text: "失足" }),
+      h("span", { text: ` ${method} ` }),
+      h("strong", { text: victim }),
+    ]);
+    if (mine) item.classList.add("is-me");
+    el.appendChild(item);
+
+    const row = { node: item, timer: 0 };
+    row.timer = setTimeout(() => {
+      item.remove();
       const i = rows.indexOf(row);
       if (i >= 0) rows.splice(i, 1);
-    }, 440);
-  }
-
-  function push({ killer, victim, method = "扇出岛", color }) {
-    const node = h("div", { class: "yz-feed-row" }, [
-      killer ? h("em", { text: killer }) : h("s", { text: "失足" }),
-      h("i", { text: method }),
-      h("s", { text: victim }),
-    ]);
-    node.style.setProperty("--feed-color", color || "#7f8c9e");
-    el.appendChild(node);
-    const row = { node, timer: 0 };
-    row.timer = setTimeout(() => drop(row), LIFE_MS);
+    }, LIFE_MS);
     rows.push(row);
+
     while (rows.length > MAX_ROWS) {
       const old = rows.shift();
       clearTimeout(old.timer);
