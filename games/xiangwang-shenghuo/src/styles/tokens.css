@@ -1,0 +1,44 @@
+:root {
+  --soil: #6b4b32;
+  --wood: #8a5a36;
+  --wood-dark: #4a2f1c;
+  --paper: #f4e6c8;
+  --ink: #2c2118;
+  --gold: #e6c36b;
+  --leaf: #7dae5a;
+  --sky: #b7d6ee;
+  --dusk: #e7a66b;
+  --night: #1b2433;
+  --fire: #c45c3e;
+  --panel: color-mix(in srgb, var(--paper) 88%, white);
+  --shadow: 0 10px 30px rgba(44, 33, 24, 0.18);
+  --radius: 16px;
+  --font: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+}
+
+[data-season="spring"] { --leaf: #7dae5a; --sky: #c9e4c5; --accent: #f3c1b6; }
+[data-season="summer"] { --leaf: #2f6b4f; --sky: #8ec5e6; --accent: #e6c36b; }
+[data-season="autumn"] { --leaf: #d97b3f; --sky: #f0c48a; --accent: #c4a574; }
+[data-season="winter"] { --leaf: #8aa4b8; --sky: #dfe7ef; --accent: #c45c3e; }
+
+[data-phase="night"] {
+  --sky: #1b2433;
+  --paper: #2a241c;
+  --ink: #f4e6c8;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--sky);
+}
+button, select {
+  font: inherit;
+  cursor: pointer;
+}
+button:focus-visible, .plot:focus-visible, .bldg:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
