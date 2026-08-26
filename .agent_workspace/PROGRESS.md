@@ -21,7 +21,7 @@
 |---|---|---|
 | 1 初始构建与基线探索 | 完成 | `.agent_workspace/ROUND1_BRIEF.md` |
 | 2 靶向重构与深度优化 | 完成 | `.agent_workspace/ROUND2_BRIEF.md` |
-| 3 SOTA 打磨与最终验收 | 进行中（VM 上限 3，分批） | — |
+| 3 SOTA 打磨与最终验收 | 完成 | `.agent_workspace/ROUND3_BRIEF.md` |
 
 ## Round 1 文件所有权（防冲突）
 
@@ -99,7 +99,7 @@
 | C | R3-O4 升级庆祝 | opus-fast | 已完成，levelup/shake/飘字已合入 | `bc-a3042ee9-eff2-5c1b-baf4-22d0d114a7d2` |
 | C | R3-G2 推进模拟入测 | gpt-sol | 已完成，五店解锁与目标续期断言已合入 | `bc-a52b9afe-113b-576c-aead-1a3d22d58b9f` |
 | C | R3-F4 UX 文档冻结 | fable | 已完成，UX_NARRATIVE 接线表已合入 | `bc-211ebb49-e9ec-54df-b845-c0b8705d31c9` |
-| D | R3-F2 取证文档 | fable | 运行中 | `bc-a0edb5b1-078c-5e1b-b6d4-ccb5f94c3a5d` |
+| D | R3-F2 取证文档 | fable | 已完成，EVIDENCE.md 已合入 | `bc-a0edb5b1-078c-5e1b-b6d4-ccb5f94c3a5d` |
 | D | R3-F3 经济文档冻结 | fable | 已完成，ECONOMY.md 接线表已合入 | `bc-30a59553-e12d-533f-9c2b-b13a8dc96114` |
 
 ## 已实现基线（Parent 预置）

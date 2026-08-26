@@ -140,6 +140,7 @@ games/fashion-mall/
 | `docs/ARCHITECTURE.md` | 模块分层、tick 泵与结算管线、零构建约束 |
 | `docs/ECONOMY.md` | 产出 / 成本 / 赏金曲线、回本窗口、节奏基准（`npm run simulate` 的对照源） |
 | `docs/DESIGN_SYSTEM.md` | 设计 token、配色、动效规范 |
+| `docs/EVIDENCE.md` | 内存 / 帧率 / 对比度实测取证（C5 / C6 / D4） |
 | `docs/UX_NARRATIVE.md` | 叙事结构、文案口吻、无障碍要求 |
 | `docs/MODULE_CONTRACT.md` | 各模块对外接口契约 |
 | `docs/SOTA_RUBRIC.md` | 可打分的 SOTA 验收量规与逐轮记分 |

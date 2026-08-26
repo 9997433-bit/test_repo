@@ -156,7 +156,7 @@
 
 - 离线回执**面板化**（A7）：toast 文案已接 `OFFLINE` 键（见 §6.1 与 7.1），但回执面板形态仍未落地——`OFFLINE.title/rateNote/sourcesLabel/cta` 四键零消费，`applySettle` 与 `hydrate` 仍以 toast 呈现。对应量规 P0-2 的剩余半项。
 - 失败反馈补全（A6/A10）：`FAIL[res.reason] ?? res.toast` 已在 `mallView.js#runner`（升级/招聘）、`mansion.js#buy`、`app.js` 存档导入三处接通；`roster.js#commit`、`labs.js` 与盲盒/占卜的入场扣费（`payFee`）仍直用 `res.toast`。每处一行改动即可接通；`FAIL` 未覆盖的新码（`bad-balance`、`shop-crowded`…）由 `?? res.toast` 兜底，无需先补全码表。
-- 量规侧仍开的 P0（非文案席位，此处只记账不认领）：**P0-4 取证三件**（C5/C6/D4：内存快照、帧率录制、对比度审计留档）、**P0-7 1280 双栏工作台与 legacy token 退役**——清单与验收口径见 `docs/SOTA_RUBRIC.md`。
+- 量规侧仍开的 P0（非文案席位，此处只记账不认领）：**P0-7 1280 双栏工作台与 legacy token 退役**。P0-4 取证已留档 `docs/EVIDENCE.md`（内存无累积泄漏、主界面/生鲜 60fps、对比度揪出 success 字色与豪宅徽标不达标）。
 
 ### 7.3 仍开放 —— P1（双源漂移，需收敛）
 
