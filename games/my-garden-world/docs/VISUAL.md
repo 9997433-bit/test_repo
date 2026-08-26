@@ -17,7 +17,8 @@
 - 教程弹窗是**卷轴告示**（`.modal-card::before/::after` 檀木轴头 + 令牌化暗幕）；
 - 提示是**墨签**（墨底金边胶囊）；
 - 摆件是**廊下挂牌**（朱绳系结 + 纸木牌面 + 印字放大）；
-- 花灵是**驻园灵玉**（玉牌灵字 + 灵光雾晕，见 §六）。
+- 花灵是**驻园灵玉**（玉牌灵字 + 灵光雾晕，见 §六）；
+- 邻家园圃是**串门花笺**（印章头像邻居卡、办完事盖「谢」印回执，见 §七）。
 
 ## 二、令牌分层
 
@@ -43,8 +44,10 @@
 - `[data-season="spring|summer|autumn|winter"]`：覆写天空、远山、雾带，秋冬另调土色（已接线）；
 - `[data-night="1"]`：整套换磁青纸令牌，同时点亮挂牌夜灯 `--decor-glow`
   （声明在季节之后，同特异度后者取胜，**勿调换顺序**；已接线）；
-- `[data-theme="spring|summer|autumn|winter|ink"]`：装扮主题层，见 §五（待接线）；
-- `[data-spirit="juyue|chiguang|rainbow|xueyi|suideng"]`：花灵驻园层，见 §六（待接线）。
+- `[data-theme="spring|summer|autumn|winter|ink"]`：装扮主题层，见 §五（引擎接线待补；
+  tokens 已备 `:has()` 兜底，接线前从成对签名摆件推断全局主题）；
+- `[data-spirit="juyue|chiguang|rainbow|xueyi|suideng"]`：花灵驻园层，见 §六
+  （已接线：`ui/hud.ts` 每帧写入）。
 
 `[data-theme]` 与 `[data-spirit]` 声明在夜色块**之后**，但**只覆写主题/灵专属变量**，
 不碰语义层与场景层；组件消费这些变量时一律 `color-mix(…, var(--text))` 掺墨，
@@ -56,7 +59,7 @@
 .app（isolation:isolate，自身画天空渐变+暗角）
 ├─ ::before   --z-scene(0)   雾带/三重远山（纯 radial-gradient 剪影，零图片）
 ├─ .sky       --z-scene(0)   晨昏暖色、星、日月（层内微序 z:1 不设令牌）
-├─ .stage     --z-stage(1)   挂牌行 + 陈设景物层(.decor-scene) + 花园 + 灵玉（::before/::after）
+├─ .stage     --z-stage(1)   挂牌行 + 陈设景物层(.decor-scene，内含摆放锚位层) + 花园 + 灵玉（::before/::after）
 ├─ .hud/.dock --z-chrome(2)
 ├─ .petals    --z-petals(3)  花瓣飘过全景（pointer-events:none）
 ├─ .sheet     --z-sheet(5)   花笺面板
@@ -67,11 +70,12 @@
 ```
 
 `.stage` 内部：`.decor-scene`（陈设 SVG，`scene/decor-layer.ts` 所有，自带注入式
-样式与聚焦态）铺在花圃之下、`pointer-events:none`；灵玉伪元素 z:1 浮在花圃之上、
-花瓣与花笺之下。
+样式、聚焦态与摆放模式——`.is-placing` 时锚位层浮出且只有锚位按钮吃指针事件）
+铺在花圃之下、`pointer-events:none`；灵玉伪元素 z:1 浮在花圃之上、花瓣与花笺之下。
 
 层级一律取 `--z-*` 令牌，禁止手写数字（收获/水花迸发粒子由 TS 内联 `z-index:20`
-铺在最顶，属例外）。花瓣层与噪纹层必须保持 `pointer-events: none`。
+铺在最顶、陈设层注入样式的层内微序（锚位层 z:3 等）归陈设层所有，属例外）。
+花瓣层与噪纹层必须保持 `pointer-events: none`。
 
 ## 四、地块状态钩子（与 TS 的契约）
 
@@ -101,12 +105,28 @@
    `THEMES` 归属映射同一套色，**per-摆件着色已生效，无需接线**；元素自身命中的
    别名优先于从 `#app` 继承的全局主题。
 
-仍差一处接线（owner: 引擎，CSS 无需再动）：
+全局主题的引擎接线仍差一行（owner: 引擎）。state 侧已备好——`state.decorTheme`
+随「一键主题」记录、入存档 schema v3——只欠 app.ts frame() 里：
 
 ```ts
-// app.ts frame()，一行：全局主题（需要先在 state 里记住玩家最后套用的主题）
 root.dataset.theme = state.decorTheme ?? "";
 ```
+
+### 兜底：成对签名摆件推断（tokens.css，接线后可删）
+
+接线到位前，tokens.css 末段的**主题兜底块**让全局主题先行生效：`[data-theme]`
+缺失或为空时，`.app:where(…):has(.decor-item[data-decor="…"])` 按园中摆件推断
+主题、只点亮 `--theme-wash`（花笺晕染）。规则：
+
+1. **成对才染**：需凑齐**恰好只属于一套 THEMES 归属的两件组合**（签名对）；
+   跨套歧义对（如 青石径+屏风 既合秋宴也合墨雅）不作数，单件孤品不染——
+   宁缺毋滥，凑不成对保持素纸；
+2. **只认入园**：以 `.decor-item`（陈设层只为落座锚位的摆件建景物节点）为准，
+   收在匣中的挂牌不作数；
+3. **并存有序**：多套签名对并存时按声明序后者胜（春<夏<秋<冬<墨）；
+4. **让位即删**：引擎写入任何非空 `[data-theme]` 后 `:where()` 守卫不再命中，
+   兜底整体让位；接线合入后该块可原样删除。兜底内的晕染值与主题块**必须一致**，
+   改一处同步两处。
 
 主题色一览：春晓桃夭（胭脂）、盛夏石青荷风、秋宴赭金、冬雪青瓷、墨雅焦墨泥金。
 
@@ -130,6 +150,24 @@ root.dataset.theme = state.decorTheme ?? "";
 `.garden { height: calc(100% - 52px) }`（≤640px 46px），改其一必须同步另一处；
 陈设层注入样式把行锁成单行横滑，正是为了不破坏这个恒等式。
 
+### 摆件 · 摆放模式（八锚位 tap-tap，陈设层实现）
+
+Round 2 设计稿（UX.md 七）已由陈设层落地，视觉全部在 `decor-layer.ts` 的
+注入式样式内（本样式域**不重复定义**，避免双处维护）：
+
+- 入口 `.decor-place` 挂在挂牌行末尾（「摆放」⇄「完成」）；
+- 八锚位 `.decor-anchor`（`data-anchor` 取 `eave/gate/path-west/path-east/
+  pondside/corner-north/corner-south/heart`，坐标见 `decor-art.ts`
+  ANCHOR_SLOTS）浮在 `.anchor-layer`，仅 `.decor-scene.is-placing` 时显示、
+  只有锚位按钮吃指针事件；
+- 状态钩子：空位绿呼吸虚线圈（`anchor-breath`）、占位 `[data-filled="1"]`
+  琥珀实线 + 印字缩样、可替换 `.is-target` 朱描边、误点 `.is-nudge` 轻晃；
+  手持挂牌 `.decor-chip.is-held` 藤黄圈、收匣挂牌 `[data-boxed="1"]` 虚线弱化；
+- `prefers-reduced-motion` 的静态替身（常亮绿描边）注入层已自带。
+
+样式域只补一处：挂牌行空态 `.decor-empty`（「庭中尚空…」）做成纸底虚线
+邀请纸签，空态有形而非一行裸文字。注入层的裸色值与手写 z 清退列在 §十一。
+
 ### 花灵 · 驻园灵玉（已全链路生效）
 
 出战花灵以「灵玉」悬于园心上空（两侧檐角与月洞门都是陈设槽位，中央上空常空）：
@@ -145,7 +183,36 @@ root.dataset.theme = state.decorTheme ?? "";
 花灵面板的请灵卡（带 `aria-pressed` 的 `.card`）：首字放大作灵字、出战卡罩
 灵光；`panels.ts` 已写入 `b.dataset.spirit = s.id`，per-灵配色**已生效**。
 
-## 七、动效规范
+## 七、访邻花笺（邻家花园互访）
+
+邻访（UX.md 六的设计稿）已由面板层落地为**花笺双页**：`ui/panels.ts` 的
+`renderVisit` 在一张 `.sheet.visit-sheet` 里切换「邻居名录 ⇄ 某家园子」，
+入口暂为 HUD 资源栏的 `.pill-visit`（dock「访邻」印章落地前的过渡，开园解锁）。
+面板层只写结构性内联样式（横幅排布、圃画高度、印章头像底色）；**设色与状态
+视觉归本样式域**，钩子契约如下：
+
+| 钩子 | 含义 | 视觉表现 |
+|------|------|----------|
+| `.pill-visit` | HUD 临时串门入口 | 题字体 + 首字「邻」朱砂掺墨放大，悬停藤黄圈 |
+| `.neighbor-card` | 名录里的邻居卡 | 交情心档（`h4 small`）换朱砂 |
+| `.neighbor-card.owned` | 未到阶 · 剪影卡空态 | 整卡灰化 + 虚线框（「隔篱只见花影」，不隐藏留期待） |
+| `.visit-banner` | 访客横幅 | 纸带 + 左上玉晕，名号题字体，心档朱砂 |
+| `.visit-tool[data-tool]` | 访客动作 chip（浇/摘） | 选中沿用 `.chip.is-on` 朱砂；`:disabled` 转虚线（今日无事可做的可视注脚） |
+| `.visit-plot` | 邻家花圃卡 | 圃画与铭牌居中 |
+| `.visit-plot.is-on` | 可作业圃 | 邀请环 + `invite` 呼吸；**随当前动作换色**——帮浇水石青掺墨（水色）、摘一枝泥金掺墨 + 盛放光晕。动作态由 `.visit-sheet:has(.visit-tool[data-tool="pick"].is-on)` 读取，零 TS 接线 |
+| `.visit-plot.owned` | 已谢过（已浇/已摘） | 盖「谢」印回执（`::after`，同印章语系）+ 整圃退饱和让位 |
+
+掺墨（`color-mix(…, var(--text))`）保证邀请环昼夜自动适配。空态一览
+（对应 UX.md 6.5，全部有形）：
+
+| 空态 | 承载 |
+|------|------|
+| 邻居未到结识等级 | `.neighbor-card.owned` 剪影卡 |
+| 今日已叨扰 / 余量用尽 | 卡片余量行文案（`.muted`），卡仍可入园只看 |
+| 无缺水圃 / 无盛放花 | `.visit-tool:disabled` 虚线 + 注脚一行 |
+| 进园后无事可做 | 横幅问候语换「坐坐就好…」，素纸不加饰 |
+
+## 八、动效规范
 
 ### 刻度
 
@@ -169,7 +236,11 @@ root.dataset.theme = state.decorTheme ?? "";
   `.plot.is-ready`（breathe）、`.is-plantable`（invite）、`.is-thirsty .drop`（thirst）、
   `.coach`（coachfloat）、`.coach-target .seal`（coachring）、`.stars i`（twinkle）、
   `.decor-chip`（plaque-sway，摆件行仅在装扮变化时重建）、
-  `.stage::before/::after`（spirit-halo/bob，挂载一次不重建）。
+  `.stage::before/::after`（spirit-halo/bob，挂载一次不重建）、
+  `.visit-plot.is-on`（invite 复用——第 0 帧即静止态，访邻页逐次作业整页重绘
+  也不跳变）。
+- 陈设层注入动效（decor-sway/settle、anchor-breath/nudge 等）连同其
+  reduced-motion 替身归 `decor-layer.ts` 自管，不入本清单。
 
 ### 花瓣（`scene/particles.ts` 契约）
 
@@ -187,7 +258,7 @@ root.dataset.theme = state.decorTheme ?? "";
 3. **静态替身**：靠动画传达的状态提示换成常亮样式——盛放地块给金环+光晕，
    教程目标给藤黄描边。星空保留（静态星点无动效负担）。
 
-## 八、组件要点
+## 九、组件要点
 
 - **dock**：≤1020px 切成单行横滑（隐藏滚动条 + 两端渐隐 mask + 首尾 `margin:auto`
   保证不满一屏时仍居中），≤640px 再放大圆签；底部叠加 `env(safe-area-inset-bottom)`。
@@ -200,21 +271,28 @@ root.dataset.theme = state.decorTheme ?? "";
 - **摆件行高**：`.decor-row` 高度与 `.garden { height: calc(100% - 52px) }` 联动
   （≤640px 为 46px），改其一必须同步另一处。
 
-## 九、可达性
+## 十、可达性
 
 - 全部可点元素 `:focus-visible` 藤黄描边（地块 offset 3px）；
 - 按钮最小高度 40px（触屏行 36px 圆签除外）；
 - 昼：浓墨 `#2d251a` on 纸 `#f7efdb` ≈ 12:1；夜：米金 `#efe5c9` on 磁青 `#2c3547` ≈ 9:1；
   土面铭牌加墨底渐变垫底后 ≥ 4.5:1；
 - 灵玉/挂牌均 `aria-hidden` 语境内（装饰层），不产生读屏噪音；
+- 邻家花圃与摆放锚位均为 `<button>` 带中文 `aria-label`；进出摆放模式经
+  `aria-live` 播报（归陈设层/面板层）；「谢」印是 `::after` 装饰，
+  状态语义由圃卡 `aria-label` 与铭牌文字承担；
 - `color-scheme` 随昼夜切换（滚动条/表单原生件同步翻色）。
 
-## 十、已知缺口（下一轮）
+## 十一、已知缺口（下一轮）
 
-1. 剩一处一行接线（owner: 引擎）：`root.dataset.theme`（§五，需 state 先记录
-   玩家最后套用的主题）。
+1. `root.dataset.theme` 一行接线（owner: 引擎）：state 侧 `decorTheme` 已入
+   存档 v3，tokens 兜底已让主题先行生效（§五）；接上后**删除 tokens.css
+   末段的主题兜底块**。
 2. 花瓣颜色由 TS 内联写死，建议改读季节令牌（春桃粉/夏荷白/秋枫赤/冬雪白）。
 3. `index.html` 的 `theme-color` 仍是旧棕色 `#3d2a1c`，建议随昼夜切换（owner: 引擎）。
-4. `decor-layer.ts` 的注入式 `<style>` 里仍有裸色值与手写 z（属陈设层所有）；
-   长期应并回样式域、改读令牌。
-5. `main.css` 存量裸色值（土面高光、进度条渐变、星点等）继续向令牌收敛。
+4. `decor-layer.ts` 的注入式 `<style>` 里仍有裸色值与手写 z（属陈设层所有），
+   摆放模式落地后体量更大（锚位/手持/收匣一整段），并回样式域、改读令牌的
+   优先级上调。
+5. 访邻面板的结构性内联样式（横幅排布、圃画高度、印章头像）宜迁到样式域
+   （owner: 面板层；`.pill-visit` 入口在 dock「访邻」印章落地后一并撤除）。
+6. `main.css` 存量裸色值（土面高光、进度条渐变、星点等）继续向令牌收敛。

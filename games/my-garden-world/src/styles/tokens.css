@@ -347,6 +347,58 @@
 }
 
 /* ============================================================
+   主题兜底 · dataset.theme 接线前，从成对签名摆件推断全局主题
+   引擎侧 state.decorTheme 已入存档（schema v3），但 app.ts 还没把它写到
+   根节点 [data-theme]（owner: 引擎，见 VISUAL.md §缺口）。该属性缺失或
+   为空时，本块按「园中凑齐某主题的成对签名摆件」点亮 --theme-wash：
+   1) 签名对 = 恰好只属于一套 THEMES 归属的两件组合；跨套的歧义对
+      （如 青石径+屏风 既合秋宴也合墨雅）不作数，宁缺毋滥；
+   2) 只认已入园的 .decor-item（陈设层只为落座锚位的摆件建景物节点，
+      收在匣中的不入景，天然不作数）；
+   3) 单件孤品不染，保持素纸；多套并存按声明序后者胜（春<夏<秋<冬<墨）；
+   4) 只兜 --theme-wash：cord/glyph/rim 每块挂牌自有 [data-decor] 身份色。
+   引擎接上任何非空 [data-theme] 后，:where() 守卫不再命中，本块整体让位；
+   届时可原样删除。晕染值须与上方主题块一致，改一处必须同步两处。
+   ============================================================ */
+
+/* 春晓：花架秋千 + 纱灯/青石径（纱灯兼属冬雪套、青石径兼属三套，
+   但与秋千成对时只合春晓） */
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="swing"]):has(.decor-item[data-decor="lantern"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="swing"]):has(.decor-item[data-decor="path"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="lantern"]):has(.decor-item[data-decor="path"]) {
+  --theme-wash: rgba(206, 110, 140, 0.09);
+}
+
+/* 盛夏：锦鲤池/风铃/小桥三件皆签名，任两件即成对 */
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="pond"]):has(.decor-item[data-decor="chimes"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="pond"]):has(.decor-item[data-decor="bridge"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="chimes"]):has(.decor-item[data-decor="bridge"]) {
+  --theme-wash: rgba(51, 88, 126, 0.08);
+}
+
+/* 秋宴：稻草翁是独有签名，配屏风或青石径成对（屏风+青石径是歧义对，不列） */
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="scarecrow"]):has(.decor-item[data-decor="screen"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="scarecrow"]):has(.decor-item[data-decor="path"]) {
+  --theme-wash: rgba(138, 90, 43, 0.1);
+}
+
+/* 冬雪：雪狮/铜炉独有，纱灯与其一成对亦只合冬雪 */
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="snowlion"]):has(.decor-item[data-decor="brazier"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="snowlion"]):has(.decor-item[data-decor="lantern"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="brazier"]):has(.decor-item[data-decor="lantern"]) {
+  --theme-wash: rgba(125, 160, 180, 0.12);
+}
+
+/* 墨雅：半亭/月洞门独有，配青石径或屏风亦成对（青石径+屏风歧义，不列） */
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="pavilion"]):has(.decor-item[data-decor="moongate"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="pavilion"]):has(.decor-item[data-decor="path"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="pavilion"]):has(.decor-item[data-decor="screen"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="moongate"]):has(.decor-item[data-decor="path"]),
+.app:where(:not([data-theme]), [data-theme=""]):has(.decor-item[data-decor="moongate"]):has(.decor-item[data-decor="screen"]) {
+  --theme-wash: rgba(45, 37, 26, 0.06);
+}
+
+/* ============================================================
    花灵 [data-spirit]（菊月/池光/虹蝶/雪衣/岁灯）
    同一选择器双重职责：
    1) 挂在 #app 上 → 点亮 .stage 驻园灵玉（--spirit-display: grid）；

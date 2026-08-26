@@ -216,6 +216,15 @@ button { font-family: var(--font-body); }
 .decor-chip:nth-child(3n) { animation-duration: 8.8s; animation-delay: -4.1s; }
 /* 陈设层（decor-layer.ts）聚焦反白时，印字跟随反白，避免主题色压在朱砂底上 */
 .decor-chip.is-focus::first-letter { color: inherit; }
+/* 摆件空态：庭中尚空时的邀请纸签（字号/透明度/对齐由陈设层注入样式定，
+   本域补纸底虚线框，让空态有形而非一行裸文字） */
+.decor-empty {
+  color: var(--text-soft);
+  padding: 3px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+}
 @keyframes plaque-sway {
   0%, 100% { transform: rotate(0deg); }
   30% { transform: rotate(1.7deg); }
@@ -608,6 +617,92 @@ button { font-family: var(--font-body); }
 .vase-btn small { color: var(--ink-soft); font-size: 11px; }
 .art-list { margin-top: 10px; }
 .themes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+/* ---------- 访邻花笺 ----------
+   邻家花园互访（ui/panels.ts renderVisit）：名录 ⇄ 园子两页共用一张
+   `.sheet.visit-sheet` 花笺。面板层只写结构性内联样式（横幅排布、圃画高度），
+   设色与状态钩子归本域，契约见 VISUAL.md §七。空态一律有形：
+   剪影卡（未到阶）、虚线动作（今日无事可做）、素纸问候（只坐不动）。 */
+
+/* HUD 资源栏的临时串门入口（dock「访邻」印章落地前）：印字「邻」放大设色 */
+.pill-visit {
+  color: var(--text);
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  transition: box-shadow var(--dur-quick) var(--ease-out), transform var(--dur-quick) var(--ease-out);
+}
+.pill-visit::first-letter {
+  font-size: 1.25em;
+  color: color-mix(in srgb, var(--accent) 78%, var(--text));
+  margin-right: 2px;
+}
+.pill-visit:hover { box-shadow: 0 2px 0 var(--shadow), 0 0 0 2px color-mix(in srgb, var(--focus) 45%, transparent); }
+.pill-visit:active { transform: translateY(1px); }
+
+/* 邻居卡：交情心档换朱砂（盖过 .card h4 small 的泥金星规则） */
+.neighbor-card h4 small { color: var(--accent); letter-spacing: 0.08em; }
+/* 剪影卡空态：未到阶的邻居「隔篱只见花影」——整卡褪色成剪影，虚线留期待 */
+.neighbor-card.owned {
+  border-style: dashed;
+  filter: grayscale(0.9);
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
+}
+
+/* 访客横幅：纸带 + 左上玉晕，名号用题字体，心档朱砂 */
+.visit-banner {
+  padding: 8px 12px;
+  background:
+    radial-gradient(120% 130% at 0% 0%, var(--wash-cool), transparent 58%),
+    color-mix(in srgb, var(--surface-2) 66%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  box-shadow: inset 0 1px 0 var(--edge-hi);
+}
+.visit-banner strong { font-family: var(--font-display); font-weight: 400; font-size: 17px; letter-spacing: 0.05em; }
+.visit-banner small { color: var(--accent); font-size: 11px; letter-spacing: 0.08em; }
+
+/* 访客动作：置灰即虚线（「园里今日水足」「花还没开」的可视注脚） */
+.visit-tool:disabled { border-style: dashed; }
+
+/* 邻家花圃卡：圃画居中、铭牌居中 */
+.visit-plot {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+.visit-plot h4 { justify-content: center; margin: 0; }
+/* 可作业圃：邀请环随当前动作换色——帮浇水为石青掺墨（水色），
+   摘一枝为泥金掺墨 + 盛放光晕；由 :has() 读动作 chip 的选中态，零 TS 接线 */
+.visit-plot.is-on {
+  outline-color: color-mix(in srgb, var(--c-azure) 62%, var(--text));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--water-drop-hi) 30%, transparent);
+  animation: invite 1.8s ease-in-out infinite;
+}
+.visit-sheet:has(.visit-tool[data-tool="pick"].is-on) .visit-plot.is-on {
+  outline-color: color-mix(in srgb, var(--c-gold-hi) 72%, var(--text));
+  box-shadow: 0 0 16px var(--bloom-halo);
+}
+/* 已谢过（已浇/已摘）：盖一枚「谢」印作回执，整圃退色让位 */
+.visit-plot.owned { filter: saturate(0.55); }
+.visit-plot.owned::after {
+  content: "谢";
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  color: var(--on-accent);
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 4px;
+  transform: rotate(5deg);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 214, 0.4), 0 2px 4px var(--shadow-soft);
+  pointer-events: none;
+}
 
 /* ---------- 教程 ---------- */
 .modal {
