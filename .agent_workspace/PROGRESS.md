@@ -4,6 +4,7 @@
 
 | 游戏 | 目录 | 端口 | 本轮状态 |
 | --- | --- | --- | --- |
+| 我的花园世界 | `games/my-garden-world/` | 5173 | Round 1–3 完成，217 测全绿，见 `PROGRESS.my-garden-world.md` |
 | 超能下蛋鸭 | `games/chao-neng-xia-dan-ya/` | 4174 | Round 1–3 完成，L1，待合入 main |
 | 灵画师 | `games/linghuashi/` | 4173 | Round 1–3 完成（见下文归档） |
 | 赵云与阿斗 | `games/zhao-yun-adou/` | 4180 | 见 `round1/BRIEF.md` / `round2/BRIEF.md` 附录 |

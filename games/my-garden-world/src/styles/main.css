@@ -1,0 +1,864 @@
+@import "./tokens.css";
+
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; height: 100%; }
+body {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: #1c1410;
+  overflow: hidden;
+}
+
+button { font-family: var(--font-body); }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+/* ---------- 舞台布局（天色由 tokens 的四季/昼夜变量驱动） ---------- */
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(140% 100% at 50% 28%, transparent 55%, var(--vignette) 100%),
+    radial-gradient(120% 58% at 50% -12%, var(--sky-glow), transparent 56%),
+    linear-gradient(180deg, var(--sky-hi) 0%, var(--sky-mid) 46%, var(--sky-lo) 100%);
+}
+
+/* 远山三层 + 山腰云雾（纸本设色） */
+.app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-scene);
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 44%, var(--mist) 57%, transparent 72%),
+    radial-gradient(46% 30% at 12% 56%, var(--mtn-far) 0 61%, transparent 62%),
+    radial-gradient(54% 26% at 86% 58%, var(--mtn-far) 0 61%, transparent 62%),
+    radial-gradient(38% 24% at 46% 61%, var(--mtn-mid) 0 61%, transparent 62%),
+    radial-gradient(58% 20% at 108% 68%, var(--mtn-near) 0 61%, transparent 62%),
+    radial-gradient(52% 19% at -8% 70%, var(--mtn-near) 0 61%, transparent 62%);
+}
+
+/* 宣纸纸纹 */
+.app::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-grain);
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: var(--grain-blend);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+.hud, .dock { position: relative; z-index: var(--z-chrome); }
+.stage { position: relative; z-index: var(--z-stage); }
+
+/* ---------- 天空：晨昏过渡层（夜色底色已由 tokens 的 data-night 变量承担） ---------- */
+.sky { position: absolute; inset: 0; z-index: var(--z-scene); pointer-events: none; overflow: hidden; }
+.sky::before {
+  /* 晨昏暖色 */
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(255, 158, 110, 0.5), rgba(255, 214, 160, 0.22) 45%, transparent 72%);
+  opacity: 0;
+  transition: opacity 2.4s ease;
+}
+[data-phase="dawn"] .sky::before { opacity: 0.85; }
+[data-phase="dusk"] .sky::before { opacity: 1; }
+
+.stars { position: absolute; inset: 0; opacity: 0; transition: opacity 2.4s ease; z-index: 1; }
+[data-phase="night"] .stars { opacity: 1; }
+.stars i {
+  position: absolute; width: 2px; height: 2px; border-radius: 50%;
+  background: #f3ead0;
+  animation: twinkle 3.2s ease-in-out infinite alternate;
+}
+@keyframes twinkle { from { opacity: 0.25; } to { opacity: 1; } }
+
+.celestial {
+  position: absolute; z-index: 1;
+  transform: translate(-50%, -50%);
+  transition: opacity 2.4s ease;
+  border-radius: 50%;
+}
+.sun {
+  width: 52px; height: 52px;
+  background: radial-gradient(circle at 42% 40%, #fff4d0, #ffd98a 58%, rgba(255, 200, 110, 0));
+  box-shadow: 0 0 60px 24px rgba(255, 214, 140, 0.5);
+  opacity: 1;
+}
+[data-phase="night"] .sun { opacity: 0; }
+.moon {
+  width: 40px; height: 40px;
+  background: radial-gradient(circle at 62% 38%, #fdf8e7, #d9d4bd 60%, rgba(210, 205, 180, 0));
+  box-shadow: 0 0 42px 14px rgba(228, 226, 200, 0.35);
+  opacity: 0;
+}
+[data-phase="night"] .moon { opacity: 1; }
+
+/* ---------- HUD ---------- */
+.hud {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: calc(8px + var(--safe-t)) 14px 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-display);
+  font-size: clamp(21px, 3.2vw, 28px);
+  letter-spacing: 0.08em;
+  color: var(--text);
+  text-shadow: 0 1px 0 var(--edge-hi);
+}
+/* 落款印章 */
+.brand::after {
+  content: "園";
+  display: grid;
+  place-items: center;
+  width: 1.05em;
+  height: 1.05em;
+  font-size: 0.62em;
+  letter-spacing: 0;
+  color: #f8ead2;
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 4px;
+  transform: rotate(-4deg) translateY(-0.08em);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 214, 0.4), 0 2px 5px var(--shadow-soft);
+  text-shadow: none;
+}
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill {
+  background: color-mix(in srgb, var(--paper) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--ink) 10%);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 0 var(--shadow);
+  white-space: nowrap;
+}
+
+/* ---------- 花园 ---------- */
+.stage {
+  position: relative;
+  overflow: hidden;
+  padding: 4px 16px 0;
+  touch-action: none;
+}
+.app[data-tool="water"] .stage { cursor: crosshair; }
+
+/* ---------- 庭院摆件层：廊下挂牌 ----------
+   摆件安置后以「檐下挂牌」入景：朱绳系结、纸木牌面、印字放大、随风轻曳。
+   牌面首字（glyph）用 ::first-letter 放大设色——无需渲染层配合；
+   per-摆件主题色靠 chip 上的 [data-theme]（见 VISUAL.md 接线契约）。 */
+.decor-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 48px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.decor-chip {
+  position: relative;
+  display: inline-block;
+  margin-top: 13px; /* 给挂绳留行程 */
+  padding: 4px 9px 5px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+  background:
+    radial-gradient(120% 100% at 100% 100%, var(--theme-wash), transparent 62%),
+    linear-gradient(174deg, var(--surface-hi), var(--surface-2));
+  border: 1px solid var(--line-strong);
+  border-radius: 4px 4px 8px 8px;
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    inset 0 0 0 2px color-mix(in srgb, var(--decor-rim) 45%, transparent),
+    0 3px 6px var(--shadow-soft),
+    0 0 16px var(--decor-glow);
+  transform-origin: 50% -14px; /* 以绳结为轴摆动 */
+  animation: plaque-sway 6.4s ease-in-out infinite;
+}
+/* 挂绳 + 绳结 */
+.decor-chip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -13px;
+  width: 8px;
+  height: 14px;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(circle 3px at 50% 76%, var(--decor-cord) 0 96%, transparent 100%),
+    linear-gradient(var(--decor-cord), var(--decor-cord)) 50% 0 / 2px 100% no-repeat;
+}
+/* 牌面印字：文本首字即 glyph（「灯 纱灯」→「灯」） */
+.decor-chip::first-letter {
+  font-size: 1.55em;
+  color: color-mix(in srgb, var(--decor-glyph) 72%, var(--text));
+  margin-right: 3px;
+}
+.decor-chip:nth-child(2n) { animation-duration: 7.6s; animation-delay: -2.4s; }
+.decor-chip:nth-child(3n) { animation-duration: 8.8s; animation-delay: -4.1s; }
+/* 陈设层（decor-layer.ts）聚焦反白时，印字跟随反白，避免主题色压在朱砂底上 */
+.decor-chip.is-focus::first-letter { color: inherit; }
+/* 摆件空态：庭中尚空时的邀请纸签（字号/透明度/对齐由陈设层注入样式定，
+   本域补纸底虚线框，让空态有形而非一行裸文字） */
+.decor-empty {
+  color: var(--text-soft);
+  padding: 3px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+}
+@keyframes plaque-sway {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(1.7deg); }
+  70% { transform: rotate(-1.3deg); }
+}
+
+.garden {
+  height: calc(100% - 52px);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 14px;
+  align-content: center;
+  max-width: 980px;
+  margin: 0 auto;
+}
+.plot {
+  aspect-ratio: 1.02;
+  border: none;
+  border-radius: 22px 22px 16px 16px;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 235, 200, 0.14) 0 18%, transparent 40%),
+    radial-gradient(2.5px 2.5px at 24% 62%, rgba(30, 18, 8, 0.5) 45%, transparent 55%),
+    radial-gradient(2px 2px at 66% 44%, rgba(30, 18, 8, 0.4) 45%, transparent 55%),
+    radial-gradient(2px 2px at 48% 76%, rgba(30, 18, 8, 0.42) 45%, transparent 55%),
+    radial-gradient(circle at 50% 68%, var(--soil-dry-hi) 0%, var(--soil-dry-lo) 66%, var(--soil-edge) 100%);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--soil-rim), inset 0 -8px 14px rgba(0, 0, 0, 0.22);
+  position: relative;
+  cursor: pointer;
+  transform: perspective(420px) rotateX(10deg);
+  transition: transform 0.18s ease, filter 0.4s ease, box-shadow 0.3s ease;
+}
+.plot:hover { transform: perspective(420px) rotateX(7deg) translateY(-4px); }
+.plot.is-selected { box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--gold), inset 0 -8px 14px rgba(0, 0, 0, 0.22); }
+/* 选中盖「选」印（左上，避开右上水滴徽标） */
+.plot.is-selected::before {
+  content: "选";
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  color: var(--on-accent);
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 4px;
+  transform: rotate(-6deg);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 214, 0.4), 0 2px 4px var(--shadow-soft);
+  pointer-events: none;
+}
+.plot.is-wet {
+  --soil-dry-hi: var(--soil-wet-hi);
+  --soil-dry-lo: var(--soil-wet-lo);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--soil-rim), inset 0 -8px 14px var(--soil-sheen);
+}
+.plot.is-wet.is-selected { box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px var(--gold), inset 0 -8px 14px var(--soil-sheen); }
+.plot.is-wilt { filter: grayscale(0.45) brightness(0.92); }
+.plot.is-ready { animation: breathe 2.2s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), 0 0 0 0 rgba(244, 211, 94, 0), inset 0 0 0 3px rgba(201, 162, 39, 0.6); }
+  50% { box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), 0 0 22px 4px rgba(244, 211, 94, 0.55), inset 0 0 0 3px rgba(244, 211, 94, 0.9); }
+}
+.plot.is-plantable {
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 3px rgba(126, 200, 163, 0.9);
+  animation: invite 1.6s ease-in-out infinite;
+}
+@keyframes invite {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.14); }
+}
+
+.plot-art {
+  position: absolute; inset: 4% 8% 20%;
+  display: block;
+  pointer-events: none;
+  filter: drop-shadow(0 5px 2px rgba(0, 0, 0, 0.18));
+}
+.plot-art svg { width: 100%; height: 100%; }
+.plot-art.pop { animation: pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes pop {
+  from { transform: scale(0.55); }
+  to { transform: scale(1); }
+}
+.plot-art svg .sway {
+  transform-box: view-box;
+  transform-origin: 50% 86%;
+  animation: sway 3.8s ease-in-out infinite alternate;
+}
+.plot:nth-child(odd) .plot-art svg .sway { animation-duration: 4.6s; animation-delay: -1.2s; }
+@keyframes sway {
+  from { transform: rotate(-2.6deg); }
+  to { transform: rotate(2.6deg); }
+}
+.plot-art svg .glow { animation: glowpulse 2.6s ease-in-out infinite alternate; }
+@keyframes glowpulse { from { opacity: 0.1; } to { opacity: 0.3; } }
+
+.plot-badges {
+  position: absolute; top: 7px; right: 9px;
+  display: flex; gap: 3px; align-items: center;
+  pointer-events: none;
+}
+.plot-badges .drop {
+  width: 9px; height: 11px;
+  border-radius: 50% 50% 60% 60%;
+  border: 1.5px solid rgba(214, 236, 248, 0.85);
+  background: transparent;
+}
+.plot-badges .drop.full { background: var(--water-drop-lo); border-color: var(--water-drop-hi); }
+.plot.is-thirsty .drop:not(.full) { animation: thirst 1.2s ease-in-out infinite alternate; }
+@keyframes thirst { from { opacity: 0.4; } to { opacity: 1; } }
+.plot-badges .fert-star { color: #f4d35e; font-size: 12px; font-style: normal; text-shadow: 0 0 6px rgba(244, 211, 94, 0.8); }
+
+.plot-meta {
+  position: absolute; left: 8px; right: 8px; bottom: 7px;
+  display: block; text-align: center; pointer-events: none;
+}
+.plot-name { display: block; font-size: 11px; color: var(--soil-text); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+.plot-bar { display: block; height: 4px; background: rgba(20, 12, 5, 0.7); border-radius: 4px; margin-top: 4px; overflow: hidden; }
+.plot-bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7ec8a3, #e7c56b); transition: width 0.3s linear; }
+
+/* ---------- 花灵驻园层 ----------
+   出战花灵以「灵玉」驻在花园右上：玉牌里一枚灵字，外罩灵光徐徐起伏。
+   零 DOM：全部画在 .stage 伪元素上；#app 挂 [data-spirit="…"] 即点亮
+   （--spirit-display/--spirit-glyph/--spirit-a·b 由 tokens 的灵块提供，
+   未接线或未知 id 时 display 回退 none）。 */
+.stage::before,
+.stage::after {
+  display: var(--spirit-display, none);
+  position: absolute;
+}
+.stage::after {
+  /* 灵玉本体：悬于园心上空（两侧檐角与月洞门都是陈设槽位，见 decor-art SLOTS） */
+  content: var(--spirit-glyph, "灵");
+  top: 62px; /* 挂牌行（48+4px）之下，花圃上沿之上 */
+  left: calc(50% - 28px);
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 25px;
+  color: var(--on-accent);
+  text-shadow: 0 1px 3px rgba(32, 24, 13, 0.35);
+  background:
+    radial-gradient(circle at 30% 26%, rgba(255, 253, 244, 0.55), transparent 44%),
+    radial-gradient(circle at 50% 58%, var(--spirit-a), var(--spirit-b) 82%);
+  border: 2px solid color-mix(in srgb, var(--c-gold-pale) 75%, transparent);
+  border-radius: 50%;
+  box-shadow:
+    0 5px 12px var(--shadow-soft),
+    0 0 20px color-mix(in srgb, var(--spirit-a) 45%, transparent);
+  animation: spirit-bob 4.6s ease-in-out infinite;
+  z-index: 1;
+}
+.stage::before {
+  /* 灵光雾晕 */
+  content: "";
+  top: 44px;
+  left: calc(50% - 44px);
+  width: 88px;
+  height: 100px;
+  background:
+    radial-gradient(46% 38% at 50% 34%, color-mix(in srgb, var(--spirit-a) 30%, transparent), transparent 72%),
+    radial-gradient(26% 20% at 44% 78%, color-mix(in srgb, var(--spirit-b) 22%, transparent), transparent 74%);
+  filter: blur(3px);
+  animation: spirit-halo 5.8s ease-in-out infinite;
+}
+[data-night="1"] .stage::after {
+  box-shadow:
+    0 5px 12px var(--shadow-deep),
+    0 0 30px color-mix(in srgb, var(--spirit-a) 60%, transparent);
+}
+@keyframes spirit-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes spirit-halo {
+  0%, 100% { opacity: 0.65; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-6px); }
+}
+
+/* ---------- Dock ---------- */
+.dock {
+  display: flex; gap: 14px; justify-content: center; align-items: stretch;
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+}
+.dock-group { display: flex; gap: 6px; align-items: stretch; }
+.dock-group + .dock-group { border-left: 1px dashed color-mix(in srgb, var(--ink) 30%, transparent); padding-left: 14px; }
+.dock-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  min-width: 52px;
+  padding: 4px 4px 2px;
+  border: none; background: none; cursor: pointer;
+  color: var(--ink);
+  border-radius: 12px;
+}
+.is-night .dock-btn { color: #f0e6d2; }
+.dock-btn .seal {
+  display: grid; place-items: center;
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 20px;
+  background: var(--paper);
+  border: 1.5px solid color-mix(in srgb, var(--gold) 55%, var(--ink) 20%);
+  box-shadow: 0 3px 0 var(--shadow);
+  transition: transform 0.15s ease, background 0.2s, color 0.2s;
+}
+.dock-btn .lbl { font-size: 11px; letter-spacing: 0.04em; }
+.dock-btn:active .seal { transform: translateY(2px); box-shadow: 0 1px 0 var(--shadow); }
+.dock-btn.is-on .seal { background: var(--vermilion); color: #fff8e8; border-color: var(--vermilion); }
+.dock-btn:disabled { opacity: 0.35; cursor: not-allowed; filter: grayscale(0.6); }
+.dock-btn.coach-target .seal { animation: coachring 1.4s ease-in-out infinite; }
+@keyframes coachring {
+  0%, 100% { box-shadow: 0 3px 0 var(--shadow), 0 0 0 0 rgba(244, 211, 94, 0.9); }
+  55% { box-shadow: 0 3px 0 var(--shadow), 0 0 0 9px rgba(244, 211, 94, 0); }
+}
+
+/* 窄屏 dock 单行横滑：两端渐隐遮罩；不满一屏时 margin:auto 仍居中 */
+@media (max-width: 1020px) {
+  .dock {
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  }
+  .dock::-webkit-scrollbar { display: none; }
+  .dock-group:first-child { margin-left: auto; }
+  .dock-group:last-child { margin-right: auto; }
+  .dock-btn { scroll-snap-align: start; }
+}
+
+/* ---------- 面板 ---------- */
+/* 花笺：纸底 + 描金双框（border + 内缩 outline）+ 左上玉晕/右下朱晕 + 主题晕染 */
+.sheet, .modal-card {
+  background:
+    radial-gradient(130% 110% at 0% 0%, var(--wash-cool), transparent 55%),
+    radial-gradient(130% 110% at 100% 100%, var(--wash-warm), transparent 55%),
+    radial-gradient(120% 100% at 50% 0%, var(--theme-wash), transparent 58%),
+    color-mix(in srgb, var(--paper) 94%, transparent);
+  border: 1px solid var(--gold);
+  outline: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  outline-offset: -5px;
+  border-radius: var(--radius);
+  box-shadow: 0 16px 40px var(--shadow), inset 0 1px 0 var(--edge-hi);
+  backdrop-filter: blur(8px);
+}
+.sheet {
+  position: absolute;
+  left: 12px; right: 12px;
+  bottom: calc(var(--dock-clear) + var(--safe-b));
+  max-width: 720px;
+  margin-inline: auto;
+  max-height: 52%;
+  overflow: auto;
+  padding: 0 14px 14px;
+  z-index: var(--z-sheet);
+  animation: sheetup 0.24s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes sheetup {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.sheet-head {
+  position: sticky; top: 0;
+  display: flex; justify-content: space-between; align-items: center;
+  background: inherit;
+  padding: 12px 0 8px;
+  margin: 0 0 6px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--ink) 25%, transparent);
+  z-index: 1;
+  backdrop-filter: blur(8px);
+}
+.sheet-head h3 { position: relative; margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 400; }
+/* 标题朱砂扫尾 */
+.sheet-head h3::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  bottom: -4px;
+  width: 2.3em;
+  height: 4px;
+  border-radius: 999px 3px 3px 999px;
+  background: linear-gradient(90deg, var(--accent) 30%, transparent);
+  opacity: 0.75;
+}
+.sheet button, .modal-card button, .themes button {
+  border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--ink));
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 var(--shadow);
+  min-height: 36px;
+}
+.sheet button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+.sheet button.primary { background: var(--vermilion); color: #fff8e8; border-color: var(--vermilion); }
+.sheet-close { font-size: 12px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.grid.orders { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.card {
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, var(--gold));
+  border-radius: 12px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--paper-deep) 70%, white);
+  text-align: left;
+}
+.card h4 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.card h4 small { color: var(--gold); letter-spacing: -1px; }
+.card.is-on { outline: 2.5px solid var(--vermilion); }
+.card.owned { opacity: 0.55; }
+.muted { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+
+/* 花灵面板灵牌：请灵卡（带 aria-pressed 的 .card）首字放大作灵字，
+   出战卡罩一圈灵光。卡片挂 [data-spirit] 后（接线契约见 VISUAL.md），
+   灵字与灵光即按该灵的 --spirit-* 着色，未挂时回退玉色。 */
+.card[aria-pressed] h4 { display: block; }
+.card[aria-pressed] h4::first-letter {
+  font-family: var(--font-display);
+  font-size: 1.9em;
+  color: color-mix(in srgb, var(--spirit-ink, var(--c-jade)) 74%, var(--text));
+  margin-right: 4px;
+}
+.card[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--spirit-a) 60%, transparent),
+    0 0 18px color-mix(in srgb, var(--spirit-a) 28%, transparent);
+}
+
+.seed-dot {
+  display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 32%, var(--c, #ddd), var(--a, #aaa));
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+.seed-card { display: block; }
+.seed-card .seed-dot { float: right; width: 18px; height: 18px; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 2px;
+  border-radius: 999px !important;
+  padding: 5px 11px !important;
+  font-size: 13px;
+  margin: 2px;
+}
+.chip.is-on { background: var(--vermilion) !important; color: #fff8e8 !important; }
+.chip.is-on .seed-dot { border-color: #fff8e8; }
+.art-chip.rare { border-color: var(--plum); color: var(--plum); }
+.bag-row { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+
+.order-card .order-row { display: flex; justify-content: space-between; align-items: center; margin: 6px 0 2px; gap: 6px; }
+.countdown {
+  font-size: 12px; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--jade) 18%, transparent);
+  color: var(--jade);
+  white-space: nowrap;
+}
+.is-night .countdown { color: #a8d8c4; }
+.countdown.urgent { background: color-mix(in srgb, var(--vermilion) 22%, transparent); color: var(--vermilion); animation: thirst 0.8s ease-in-out infinite alternate; }
+.is-night .countdown.urgent { color: #f0a294; }
+.reward { font-size: 12px; color: var(--ink-soft); }
+.order-card .status { margin-bottom: 6px; }
+.order-actions { display: flex; gap: 6px; }
+.kind {
+  font-size: 11px; padding: 1px 7px; border-radius: 999px; color: #fff8e8; font-weight: 400;
+}
+.kind-resident { background: var(--jade); }
+.kind-custom { background: var(--plum); }
+.kind-silk { background: var(--gold); }
+.kind-group { background: var(--vermilion); }
+.art-pick { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 8px; }
+
+.tray { display: flex; gap: 6px; margin: 10px 0; }
+.tray-slot {
+  flex: 1;
+  min-height: 42px;
+  border-style: dashed !important;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.tray-slot.filled { border-style: solid !important; color: var(--ink); background: color-mix(in srgb, var(--paper-deep) 55%, white); }
+.vases { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; }
+.vase-btn { display: flex; flex-direction: column; gap: 2px; align-items: center; }
+.vase-btn small { color: var(--ink-soft); font-size: 11px; }
+.art-list { margin-top: 10px; }
+.themes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+/* ---------- 访邻花笺 ----------
+   邻家花园互访（ui/panels.ts renderVisit）：名录 ⇄ 园子两页共用一张
+   `.sheet.visit-sheet` 花笺，入口是 dock 的「邻」印章（.dock-btn 通用样式，
+   无需专属钩子）。面板层只写结构性内联样式（横幅排布、圃画高度），
+   设色与状态钩子归本域，契约见 VISUAL.md §七。空态一律有形：
+   剪影卡（未到阶）、虚线动作（今日无事可做）、素纸问候（只坐不动）。 */
+
+/* 邻居卡：交情心档（❤♡）换朱砂——双选择器不绑定落点，
+   心档无论排在名号行（h4 small，须盖过泥金星规则）还是余量行都命中 */
+.neighbor-card h4 small,
+.neighbor-card small { color: var(--accent); letter-spacing: 0.08em; }
+/* 剪影卡空态：未到阶的邻居「隔篱只见花影」——整卡褪色成剪影，虚线留期待 */
+.neighbor-card.owned {
+  border-style: dashed;
+  filter: grayscale(0.9);
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
+}
+
+/* 访客横幅：纸带 + 左上玉晕，名号用题字体，心档朱砂 */
+.visit-banner {
+  padding: 8px 12px;
+  background:
+    radial-gradient(120% 130% at 0% 0%, var(--wash-cool), transparent 58%),
+    color-mix(in srgb, var(--surface-2) 66%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  box-shadow: inset 0 1px 0 var(--edge-hi);
+}
+.visit-banner strong { font-family: var(--font-display); font-weight: 400; font-size: 17px; letter-spacing: 0.05em; }
+.visit-banner small { color: var(--accent); font-size: 11px; letter-spacing: 0.08em; }
+
+/* 访客动作：置灰即虚线（「园里今日水足」「花还没开」的可视注脚） */
+.visit-tool:disabled { border-style: dashed; }
+
+/* 邻家花圃卡：圃画居中、铭牌居中 */
+.visit-plot {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+.visit-plot h4 { justify-content: center; margin: 0; }
+/* 可作业圃：邀请环随当前动作换色——帮浇水为石青掺墨（水色），
+   摘一枝为泥金掺墨 + 盛放光晕；由 :has() 读动作 chip 的选中态，零 TS 接线 */
+.visit-plot.is-on {
+  outline-color: color-mix(in srgb, var(--c-azure) 62%, var(--text));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--water-drop-hi) 30%, transparent);
+  animation: invite 1.8s ease-in-out infinite;
+}
+.visit-sheet:has(.visit-tool[data-tool="pick"].is-on) .visit-plot.is-on {
+  outline-color: color-mix(in srgb, var(--c-gold-hi) 72%, var(--text));
+  box-shadow: 0 0 16px var(--bloom-halo);
+}
+/* 已谢过（已浇/已摘）：盖一枚「谢」印作回执，整圃退色让位 */
+.visit-plot.owned { filter: saturate(0.55); }
+.visit-plot.owned::after {
+  content: "谢";
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  color: var(--on-accent);
+  background: linear-gradient(155deg, var(--accent-hi), var(--seal-red));
+  border-radius: 4px;
+  transform: rotate(5deg);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 214, 0.4), 0 2px 4px var(--shadow-soft);
+  pointer-events: none;
+}
+
+/* ---------- 教程 ---------- */
+.modal {
+  position: absolute; inset: 0; z-index: var(--z-modal);
+  display: grid; place-items: center;
+  padding: 24px;
+  background: var(--backdrop-dim);
+  backdrop-filter: blur(3px);
+  animation: fadein 0.3s ease;
+}
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+.modal-card {
+  position: relative;
+  max-width: 460px;
+  padding: 22px 24px;
+  display: grid; gap: 12px;
+  animation: sheetup 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+/* 卷轴告示：上下檀木轴头 */
+.modal-card::before, .modal-card::after {
+  content: "";
+  position: absolute;
+  left: -12px;
+  right: -12px;
+  height: 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--c-wood) 78%, white) 0%,
+    var(--c-wood) 45%,
+    color-mix(in srgb, var(--c-wood) 55%, black) 100%
+  );
+  border-radius: 999px;
+  box-shadow: 0 2px 5px var(--shadow-deep);
+}
+.modal-card::before { top: -7px; }
+.modal-card::after { bottom: -7px; }
+.modal-card h2 { font-family: var(--font-display); margin: 0; font-weight: 400; font-size: 30px; }
+.modal-card p { margin: 0; line-height: 1.8; }
+.modal-card .step-label { font-size: 12px; letter-spacing: 0.14em; }
+.modal-card .objective { font-weight: 700; color: var(--jade); }
+.modal-card .cta { justify-self: end; background: var(--vermilion); color: #fff8e8; border: none; font-size: 15px; padding: 9px 22px; }
+
+.coach {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--dock-clear) + 10px + var(--safe-b));
+  z-index: var(--z-coach);
+  display: flex; align-items: center; gap: 8px;
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: 7px 16px 7px 8px;
+  box-shadow: 0 8px 22px var(--shadow);
+  pointer-events: none;
+  animation: coachfloat 2.4s ease-in-out infinite alternate;
+  max-width: min(92vw, 460px);
+}
+@keyframes coachfloat { from { transform: translate(-50%, 0); } to { transform: translate(-50%, -6px); } }
+.coach-seal {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--vermilion); color: #fff8e8;
+  font-family: var(--font-display);
+  flex: none;
+}
+.coach-text { font-size: 13px; }
+
+/* ---------- Toast ---------- */
+.toast-wrap {
+  position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+  display: grid; gap: 6px; z-index: var(--z-toast); pointer-events: none;
+  justify-items: center;
+}
+/* 墨签：墨底金边胶囊 */
+.toast {
+  background: var(--c-ink-nong); color: var(--c-paper); padding: 6px 14px; border-radius: 999px;
+  font-size: 13px; opacity: 0.96;
+  border: 1px solid color-mix(in srgb, var(--c-gold) 55%, transparent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  animation: toastin 0.25s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes toastin { from { transform: translateY(-8px); opacity: 0; } to { transform: translateY(0); opacity: 0.96; } }
+.toast.rare { background: var(--plum); }
+.toast.warn { background: #6b3a1f; }
+
+/* ---------- 环境粒子 ---------- */
+.petals { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: var(--z-petals); }
+.particle { position: absolute; top: -4%; display: block; }
+.p-petal { width: 10px; height: 14px; border-radius: 12px 2px; opacity: 0.78; animation: fall linear infinite; }
+.p-leaf { width: 13px; height: 9px; border-radius: 2px 10px; opacity: 0.85; animation: fall-tumble linear infinite; }
+.p-snow { width: 6px; height: 6px; border-radius: 50%; opacity: 0.9; animation: fall-drift linear infinite; }
+.p-mote { width: 5px; height: 5px; border-radius: 50%; opacity: 0.7; filter: blur(0.5px); top: auto; bottom: -3%; animation: rise ease-in-out infinite; }
+.p-fly {
+  width: 5px; height: 5px; border-radius: 50%;
+  box-shadow: 0 0 8px 3px rgba(255, 229, 138, 0.65);
+  animation: firefly ease-in-out infinite;
+}
+@keyframes fall {
+  to { transform: translate(6vw, 112vh) rotate(240deg); }
+}
+@keyframes fall-tumble {
+  0% { transform: translate(0, 0) rotate(0); }
+  50% { transform: translate(-5vw, 55vh) rotate(200deg); }
+  100% { transform: translate(3vw, 112vh) rotate(420deg); }
+}
+@keyframes fall-drift {
+  0% { transform: translate(0, 0); }
+  50% { transform: translate(3vw, 55vh); }
+  100% { transform: translate(-2vw, 112vh); }
+}
+@keyframes rise {
+  0% { transform: translate(0, 0); opacity: 0; }
+  20% { opacity: 0.7; }
+  100% { transform: translate(2vw, -75vh); opacity: 0; }
+}
+@keyframes firefly {
+  0%, 100% { opacity: 0; transform: translate(0, 0); }
+  30% { opacity: 1; }
+  60% { opacity: 0.25; transform: translate(3vw, -3vh); }
+  80% { opacity: 0.9; }
+}
+
+/* ---------- 移动端 ---------- */
+@media (max-width: 640px) {
+  :root { --dock-clear: 96px; }
+  .brand { font-size: 20px; }
+  .pill { font-size: 11px; padding: 3px 8px; }
+  .decor-row { gap: 8px; min-height: 42px; }
+  .decor-chip { font-size: 12px; margin-top: 11px; }
+  .garden { height: calc(100% - 46px); gap: 9px; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); }
+  .plot-name { font-size: 10px; }
+  .stage::after { top: 54px; left: calc(50% - 23px); width: 46px; height: 46px; font-size: 21px; }
+  .stage::before { top: 38px; left: calc(50% - 35px); width: 70px; height: 80px; }
+  .dock { gap: 10px; }
+  .dock-btn { min-width: 56px; }
+  .dock-btn .seal { width: 42px; height: 42px; font-size: 22px; }
+  .sheet { left: 8px; right: 8px; max-height: 56%; }
+  .modal { padding: 14px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+  .grid.orders { grid-template-columns: 1fr; }
+}
+
+/* ---------- 减少动态 ----------
+   三段策略：全局钳制到 0.01ms；装饰性循环层直接关停或隐藏
+   （负延迟循环被钳短会闪帧）；靠动画传达的状态提示换成静态替身。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 花瓣层双保险：particles.ts 不再挂粒子，这里同时隐藏整层 */
+  .petals { display: none; }
+  /* 循环装饰关停：挂牌摆动、灵玉起伏、教程气泡浮动、花枝摇曳 */
+  .decor-chip,
+  .stage::before,
+  .stage::after,
+  .coach,
+  .plot-art svg .sway,
+  .plot-art svg .glow { animation: none !important; }
+  /* 静态替身：盛放提示（breathe）→ 常亮金环 + 光晕 */
+  .plot.is-ready {
+    box-shadow: 0 10px 0 rgba(0, 0, 0, 0.2), 0 0 18px 4px var(--bloom-halo), inset 0 0 0 3px var(--focus);
+  }
+  /* 静态替身：教程目标脉冲（coachring）→ 常亮藤黄描边 */
+  .dock-btn.coach-target .seal {
+    box-shadow: 0 3px 0 var(--shadow), 0 0 0 4px color-mix(in srgb, var(--focus) 55%, transparent);
+  }
+}
