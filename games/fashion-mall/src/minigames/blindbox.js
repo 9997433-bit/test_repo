@@ -1,6 +1,6 @@
 import { setText } from "../ui/dom.js";
 import { sfx } from "../core/audio.js";
-import { payouts, pickWeighted, poolExpectation, chanceOf } from "./payouts.js";
+import { payouts, pickWeighted, poolExpectation, chanceOf, pityFloor } from "./payouts.js";
 import { createDisposer, chargeFee, grantReward, viewCtx } from "./runtime.js";
 import { ensureStyles, panelShell, statBlock, setStat, floatText, setBar } from "./ui.js";
 
@@ -11,10 +11,13 @@ function isRare(item) {
   return (Number(item?.shard) || 0) > 0;
 }
 
+/** 档位样式优先认赏金表给的 tier，其次认 id，最后按碎片数兜底。 */
 export function tierClass(item) {
   if (!item) return "";
-  const id = String(item.id || "").toLowerCase();
-  if (KNOWN_TIERS.has(id)) return `tier-${id}`;
+  for (const key of [item.tier, item.id]) {
+    const name = String(key || "").toLowerCase();
+    if (KNOWN_TIERS.has(name)) return `tier-${name}`;
+  }
   const shard = Number(item.shard) || 0;
   if (shard >= 5) return "tier-ur";
   if (shard >= 2) return "tier-ssr";
@@ -28,7 +31,7 @@ export function drawBox(pity = 0, rand = Math.random, table = payouts("blindbox"
   let item = pickWeighted(pool, rand);
   let forced = false;
   if (!isRare(item) && pity + 1 >= table.pity) {
-    const floor = pool.find(isRare);
+    const floor = pityFloor(pool);
     if (floor) {
       item = floor;
       forced = true;
@@ -57,7 +60,7 @@ export function renderBlindbox(root, state, back, ctx) {
   const table = payouts("blindbox");
   const view = viewCtx(state, back, ctx);
   const d = createDisposer();
-  const ev = poolExpectation(table.pool);
+  const ev = poolExpectation(table.pool, table.pity);
 
   let pity = 0;
   let opened = 0;
@@ -115,7 +118,7 @@ export function renderBlindbox(root, state, back, ctx) {
 
   setText(
     root.querySelector("[data-ev]"),
-    `期望回本：每盒平均回收 ${ev.gold.toFixed(1)} 金（低于 ${table.cost} 金票价）+ ${ev.shard.toFixed(2)} 碎片。盲盒不是提款机，碎片才是本体——招募一位伙伴要 3 片。`,
+    `期望回本：每盒平均回收 ${ev.gold.toFixed(1)} 金（含保底摊算，低于 ${table.cost} 金票价）+ ${ev.shard.toFixed(2)} 碎片。盲盒不是提款机，碎片才是本体——招募一位伙伴要 3 片。`,
   );
 
   function paintHud() {

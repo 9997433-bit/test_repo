@@ -8,4 +8,21 @@ export { renderFresh, freshPayout } from "./fresh.js";
 export { renderBoutique, boutiqueScore, buildBoard } from "./boutique.js";
 export { renderBlindbox, drawBox, drawRun, tierClass } from "./blindbox.js";
 export { renderFortune, fortuneResult, spinOmens, expectedSpin, OMENS } from "./fortune.js";
-export { payouts, poolExpectation, pickWeighted, chanceOf } from "./payouts.js";
+export {
+  payouts,
+  resolvePayouts,
+  resetPayouts,
+  auditPayouts,
+  poolExpectation,
+  spinExpectation,
+  normalizePool,
+  pityFloor,
+  fortuneOmens,
+  pickWeighted,
+  poolWeight,
+  chanceOf,
+  RTP_LIMIT,
+  PAYOUT_FALLBACK,
+  F3_ALIASES,
+  PAID_GAMES,
+} from "./payouts.js";
