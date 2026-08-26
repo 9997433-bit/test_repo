@@ -35,15 +35,19 @@ export const ROGUE_ARTIFACTS = {
 
 /**
  * 新开一局肉鸽。`heroPool` 默认取全部英雄 id，不含任何账号进度。
+ * `starterCount` 保证开局至少有人上场——第一波之前还没有三选一。
  */
-export function createRogueRun({ seed = Date.now(), heroPool, artifactPool } = {}) {
+export function createRogueRun({ seed = Date.now(), heroPool, artifactPool, starterCount = 1 } = {}) {
   const pool = (heroPool ?? heroList().map((h) => h.id)).filter(Boolean);
-  return {
+  const rng = createRng(seed);
+  const starters = sampleWithout(pool, Math.min(starterCount, ROGUE_FIELD_SIZE, pool.length), rng);
+
+  const run = {
     kind: "rogue",
     seed,
-    rngState: createRng(seed).getState(),
+    rngState: rng.getState(),
     wave: 0,
-    squad: [],
+    squad: starters,
     artifacts: [],
     tempLevels: {},
     heroPool: pool,
@@ -52,6 +56,8 @@ export function createRogueRun({ seed = Date.now(), heroPool, artifactPool } = {
     finished: false,
     log: [],
   };
+  for (const id of starters) run.tempLevels[id] = ROGUE_BASE_LEVEL;
+  return run;
 }
 
 function runRng(run) {
