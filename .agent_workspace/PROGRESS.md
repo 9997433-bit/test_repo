@@ -67,3 +67,35 @@
 3. 补测：解 skip/todo、离线 8h、心愿等级过滤、畜牧余数分桶。
 4. 体验：枯萎中文、飘字、嘉宾/动物剪影、静音与教程残留。
 5. Fable-4 按现树重打 ACCEPTANCE，标出与 SOTA 的真实差距。
+
+## 《Round 2 结论简报》
+
+### 演进对比
+
+| 项 | Round 1 | Round 2 |
+| --- | --- | --- |
+| 离线 | catchUpPlots 未接线 | `meta/offline` 已接线；生长 8h 封顶仍无效（只护枯萎） |
+| 心愿 | 无等级过滤 | minLevel 落地；Lv1 板=白菜/泡豆子/麦子 |
+| 作物 | 可种茶棉 | unlockLevel 生效 |
+| 温室 | 建成即全场 | 按地块改造 |
+| 畜牧 | 全局余数 | 分物种 + 冬饲 +20% |
+| 厨房/摊位/家具 | 几乎不可用 | 面板已接线 |
+| 美术 | 12 套皮肤，夜景按钮看不见 | 夜间对比度、枯地、toast、390 热区 |
+| 测试 | 48 pass / 3 todo | 54 pass / 5 skip；offline-smoke 仍红 |
+
+### 潜在边界风险
+
+- 8h 离线按日历推进约 200 游戏日：嘉宾退房、温馨清零，长休惩罚过重。
+- 工具掉率常量 25%+保底已写入 data，village 仍可能按 35%；开局仍赠斧锯。
+- 家具双实现（core vs village），契约指定 core 为唯一，village 写入端待删。
+- deliverWish 仍立即补满 3 格，与 2 游戏时补 1 位冲突。
+- 枯萎无日志；投喂按钮不读 `feedCost`；温室改造无 UI。
+
+### SOTA 验收差距（Round 3 必收）
+
+1. farm：离线生长封顶与 overflow 顺延；枯萎写日志；`OFFLINE_CAP_MS` 与 engine 去重。
+2. village：接线 `WISH_TOOL_DROP`/保底；开局工具 1/0/0；停止交付即补满；删家具写入死代码。
+3. production：import `WINTER_FEED_SURCHARGE`；weavery 嘉宾 buff；解 skip 测试。
+4. UI：温室改造入口、种子等级置灰、`feedCost`、收获飘字 `.xw-fx`、`meta/settings` 时速、NPC 剪影钩子。
+5. 测试：解封 minLevel 首板、冬饲、分品种结转、8h 生长封顶；offline-smoke 转绿。
+6. Fable-4 终验：T0–T11 按现树重写通过条件；Fable-1 把 R2 工单标 DONE/DEAD。
