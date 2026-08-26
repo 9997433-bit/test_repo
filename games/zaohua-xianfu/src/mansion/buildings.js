@@ -15,7 +15,7 @@ const COST_SCALE = {
 };
 
 function fallbackUpgradeCost(type, level) {
-  const lv = Math.max(1, level ?? 1);
+  const lv = normalizeLevel(level);
   const scale = COST_SCALE[type] ?? 1;
   return {
     wood: Math.ceil(8 * scale * lv ** 1.45),
@@ -34,12 +34,19 @@ export const mansionCap =
   typeof table.mansionCap === "function"
     ? table.mansionCap
     : (level) => ({
-        maxBuildingLevel: Math.max(1, level ?? 1),
-        plots: Math.min(GRID_SIZE * GRID_SIZE, 4 + Math.max(1, level ?? 1) * 2),
+        maxBuildingLevel: normalizeLevel(level),
+        plots: Math.min(GRID_SIZE * GRID_SIZE, 4 + normalizeLevel(level) * 2),
       });
 
 /** 洞府仙居自身的等级天花板，与 store 的升级上限一致。 */
 export const MANSION_MAX_LEVEL = 12;
+
+/**
+ * 全府等级硬顶。洞府自身 ≤ 12，其余建筑又不得越过洞府（`mansionCap`），
+ * 故任何建筑的合法等级都落在 [1, 12]。归一化就地夹住，
+ * 篡改档里的 `level: 999` 便无法沿着产量/邻接/修业三条链把数值放大。
+ */
+export const LEVEL_MAX = MANSION_MAX_LEVEL;
 
 /** 产量等级曲线：Lv.1 恰为 1.0，升一级 +0.15。 */
 export const LEVEL_BASE = 0.85;
@@ -49,12 +56,26 @@ export const LEVEL_STEP = 0.15;
 export const DEFAULT_XP_PER_SEC = 0.35;
 
 /**
- * 等级归一：坏档里的 null / NaN / 0 / 负数一律收敛到 1 级。
- * 产量、修业与离线效率都走这里取级，避免一处脏数据把整张账算成 NaN。
+ * 等级归一：坏档里的 null / NaN / 字符串 / 0 / 负数一律收敛到 1 级，
+ * 小数向下取整（等级是整数量纲），超过 `LEVEL_MAX` 的一律压回硬顶。
+ * 产量、修业、邻接与离线效率都走这里取级，
+ * 保证仙府层任何一笔账都只可能按 [1, LEVEL_MAX] 的整数等级结算。
  */
 export function normalizeLevel(level) {
-  const n = Number(level);
-  return Number.isFinite(n) && n > 1 ? n : 1;
+  const n = Math.floor(Number(level));
+  if (!Number.isFinite(n) || n <= 1) return 1;
+  return n > LEVEL_MAX ? LEVEL_MAX : n;
+}
+
+/**
+ * 结算用等级：先归一，再压到「该类型在当前洞府等级下的上限」（架构不变式 2）。
+ * 省略 `mansionLevel` 时只做归一——府级未知就别猜，
+ * 免得默认值把一座合法的 Lv.5 灵田误压成 Lv.1。
+ */
+export function effectiveLevel(building, mansionLevel) {
+  const level = normalizeLevel(building?.level);
+  if (mansionLevel === undefined || mansionLevel === null) return level;
+  return Math.min(level, maxLevelFor(building?.type, mansionLevel));
 }
 
 /**
@@ -180,10 +201,12 @@ export function isUnlocked(type, mansionLevel = 1) {
   return unlockLevel(type) <= normalizeLevel(mansionLevel);
 }
 
-/** 该建筑当前可升到的最高等级：洞府自身走硬上限，其余跟随洞府。 */
+/** 该建筑当前可升到的最高等级：洞府自身走硬上限，其余跟随洞府，且都不超过 `LEVEL_MAX`。 */
 export function maxLevelFor(type, mansionLevel = 1) {
   if (type === "mansion") return MANSION_MAX_LEVEL;
-  return mansionCap(normalizeLevel(mansionLevel)).maxBuildingLevel;
+  const cap = Math.floor(Number(mansionCap(normalizeLevel(mansionLevel))?.maxBuildingLevel));
+  if (!Number.isFinite(cap)) return 1;
+  return Math.min(LEVEL_MAX, Math.max(1, cap));
 }
 
 export function canUpgrade(building, mansionLevel = 1) {
@@ -191,13 +214,20 @@ export function canUpgrade(building, mansionLevel = 1) {
   return normalizeLevel(building.level) < maxLevelFor(building.type, mansionLevel);
 }
 
-/** 从 fromLevel 升到 toLevel 的累计消耗，用于「一口气升到顶」的预算提示。 */
+/**
+ * 从 fromLevel 升到 toLevel 的累计消耗，用于「一口气升到顶」的预算提示。
+ * 两端都走 `normalizeLevel`：既挡住 NaN 起点，也保证循环最多跑 `LEVEL_MAX - 1` 轮，
+ * 篡改档给个 `toLevel: 1e9` 不会把界面卡死。
+ */
 export function cumulativeUpgradeCost(type, fromLevel, toLevel) {
   const total = { wood: 0, ore: 0, stone: 0 };
-  const from = Math.max(1, fromLevel ?? 1);
-  const to = Math.max(from, toLevel ?? from);
+  const from = normalizeLevel(fromLevel);
+  const to = Math.max(from, normalizeLevel(toLevel));
   for (let lv = from + 1; lv <= to; lv++) {
-    for (const [k, v] of Object.entries(upgradeCost(type, lv))) total[k] = (total[k] ?? 0) + v;
+    for (const [k, v] of Object.entries(upgradeCost(type, lv))) {
+      const n = Number(v);
+      if (Number.isFinite(n)) total[k] = (total[k] ?? 0) + n;
+    }
   }
   return total;
 }
@@ -221,15 +251,14 @@ export function canAfford(resources, cost) {
 export function catalog(mansionLevel = 1, ctx = {}) {
   const level = normalizeLevel(mansionLevel);
   const { resources, buildings, plotsFree } = ctx;
+  const list = Array.isArray(buildings) ? buildings.filter(Boolean) : [];
   const cap = mansionCap(level);
-  const free = Number.isFinite(plotsFree)
-    ? plotsFree
-    : cap.plots - (Array.isArray(buildings) ? buildings.length : 0);
+  const free = Number.isFinite(plotsFree) ? Math.max(0, plotsFree) : Math.max(0, cap.plots - list.length);
   return buildingList()
     .map((def) => {
       const cost = buildCost(def.id);
       const unlocked = isUnlocked(def.id, level);
-      const built = Array.isArray(buildings) ? buildings.filter((b) => b.type === def.id).length : 0;
+      const built = list.filter((b) => b.type === def.id).length;
       const lack = resources ? costShortfall(resources, cost) : {};
       const affordable = Object.keys(lack).length === 0;
       let reason = null;

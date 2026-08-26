@@ -2,6 +2,7 @@ import {
   GRID_SIZE,
   buildingDef,
   buildingName,
+  effectiveLevel,
   mansionCap,
   normalizeLevel,
   producesResources,
@@ -49,7 +50,7 @@ export function occupancy(buildings) {
 }
 
 export function buildingAt(buildings, x, y) {
-  return (buildings ?? []).find((b) => b.x === x && b.y === y) ?? null;
+  return (buildings ?? []).find((b) => b?.x === x && b?.y === y) ?? null;
 }
 
 export function canPlace(buildings, x, y) {
@@ -58,7 +59,7 @@ export function canPlace(buildings, x, y) {
 }
 
 export function countType(buildings, type) {
-  return (buildings ?? []).filter((b) => b.type === type).length;
+  return (buildings ?? []).filter((b) => b?.type === type).length;
 }
 
 export function mansionLevel(buildings) {
@@ -89,6 +90,8 @@ function ruleFor(fromType, toType) {
 /**
  * 邻接明细：返回乘区与每条邻接的来源，供 UI 逐条解释「为什么这块地产得多」。
  * `grid` 由调用方复用，产量循环里不必为每座建筑重建一次占位表。
+ * 邻居等级过 `normalizeLevel`（硬顶 LEVEL_MAX），
+ * 篡改档的 Lv.999 灵脉最多按 Lv.12 给邻接，乘区上下界因此都是有限的。
  */
 export function adjacencyDetailOnGrid(grid, x, y, typeHint) {
   const self = grid[y]?.[x] ?? null;
@@ -144,7 +147,7 @@ export function emptyPlots(buildings) {
 }
 
 export function plotUsage(buildings) {
-  const list = buildings ?? [];
+  const list = (buildings ?? []).filter(Boolean);
   const cap = mansionCap(mansionLevel(list));
   return {
     used: list.length,
@@ -156,7 +159,7 @@ export function plotUsage(buildings) {
 
 /** 给定建筑类型，挑邻接乘区最高的空地；同分时取离洞府近的一块。 */
 export function bestPlotFor(buildings, type) {
-  const list = buildings ?? [];
+  const list = (buildings ?? []).filter(Boolean);
   const grid = occupancy(list);
   const home = list.find((b) => b.type === "mansion");
   let best = null;
@@ -177,23 +180,30 @@ export const HARMONY_SPAN = 0.35;
 /**
  * 布局体检：逐座建筑的邻接乘区，外加 0-100 风水评分。
  * 评分只看吃邻接的产出建筑；灵脉是喂人的地脉节点，自身不参与打分。
+ * `level` 是结算用等级，`rawLevel` 是档里写的等级；两者不等即档面越过了洞府上限，
+ * 这类建筑一并列进 `overleveled`，让读档侧的收敛缺口看得见（不在本层修档）。
  */
 export function layoutReport(buildings) {
-  const list = buildings ?? [];
+  const list = (buildings ?? []).filter(Boolean);
   const grid = occupancy(list);
-  const rows = list.filter(Boolean).map((b) => {
+  const home = mansionLevel(list);
+  const rows = list.map((b) => {
     const def = buildingDef(b.type);
     const detail = adjacencyDetailOnGrid(grid, b.x, b.y, b.type);
+    const level = effectiveLevel(b, home);
+    const rawLevel = normalizeLevel(b.level);
     return {
       id: b.id,
       type: b.type,
       name: buildingName(b.type),
       role: def?.role ?? "support",
-      level: normalizeLevel(b.level),
+      level,
+      rawLevel,
+      levelCapped: level < rawLevel,
       x: b.x,
       y: b.y,
       produces: producesResources(b.type),
-      xpPerSec: xpAt(b.type, b.level),
+      xpPerSec: xpAt(b.type, level),
       multiplier: detail.multiplier,
       sources: detail.sources,
     };
@@ -201,5 +211,5 @@ export function layoutReport(buildings) {
   const scored = rows.filter((r) => r.produces && r.role !== "vein");
   const average = scored.length ? scored.reduce((sum, r) => sum + r.multiplier, 0) / scored.length : 1;
   const score = Math.round(Math.min(1, Math.max(0, (average - 1) / HARMONY_SPAN)) * 100);
-  return { score, average, rows };
+  return { score, average, rows, overleveled: rows.filter((r) => r.levelCapped).map((r) => r.id) };
 }

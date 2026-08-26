@@ -11,7 +11,7 @@
  * 谁领修业也在本层写死：只有驻在该藏经楼的那名弟子领（`def.staff = 1`），
  * 闲云与他岗弟子一律为 0，见 `scriptureXpFor`。
  */
-import { buildingDef, levelScale, normalizeLevel, xpAt, yieldAt } from "./buildings.js";
+import { buildingDef, effectiveLevel, levelScale, normalizeLevel, xpAt, yieldAt } from "./buildings.js";
 import { adjacencyOnGrid, adjacencyDetailOnGrid, mansionLevel, occupancy } from "./layout.js";
 import { yieldMultiplier } from "../disciples/assign.js";
 
@@ -41,16 +41,31 @@ function buildingsOf(input) {
   return Array.isArray(list) ? list.filter(Boolean) : [];
 }
 
-/** 时长归一：NaN 与时钟回拨（负数）都收敛到 0，不让 BOOT 结算出负资源。 */
+/**
+ * 时长归一：NaN、Infinity 与时钟回拨（负数）都收敛到 0。
+ * 全层只有这一个 dt 入口，`produce` / `produceBreakdown` / `scriptureXpAward` /
+ * `offlineReport` 都先过它，故仙府层永不会结算出负产出或 NaN 产出。
+ */
 function seconds(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** 结算效率：缺省即在线满效率 1；给了就取值，负数收敛到 0。 */
+/** 结算效率：缺省即在线满效率 1；给了就取值，负数与 NaN 收敛到 0。 */
 function efficiencyOf(opts) {
   const n = Number(opts?.efficiency);
   return Number.isFinite(n) ? Math.max(0, n) : 1;
+}
+
+/** 当前府级：产量、修业、邻接三条链共用同一个府级快照，免得同一 tick 内取到两个值。 */
+function homeLevel(buildings) {
+  return mansionLevel(buildingsOf(buildings));
+}
+
+/** 乘区与产出的兜底：坏档弟子（profession: NaN）不该把整张账污染成 NaN。 */
+function positive(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
 export function mansionAura(buildings) {
@@ -66,29 +81,33 @@ export function ambientQi(state) {
 /**
  * 逐座建筑算产量：弟子 × 等级 × 邻接 × 府邸光环。
  * 占位表只建一次，邻接查询在同一张表上完成。
+ * 等级一律取 `effectiveLevel`：超出洞府上限的建筑（篡改档）按上限结算而不是按档里的数，
+ * 读档侧的收敛另有其人，仙府层先保证自己这张账干净。
  */
 function productionRows(state) {
   const buildings = buildingsOf(state);
   const disciples = Array.isArray(state?.disciples) ? state.disciples : [];
   const grid = occupancy(buildings);
   const aura = mansionAura(buildings);
+  const home = homeLevel(buildings);
   const rows = [];
   for (const b of buildings) {
     const def = buildingDef(b.type);
     if (!def || !Object.keys(def.baseYield).length) continue;
-    const level = normalizeLevel(b.level);
+    const level = effectiveLevel(b, home);
     const worker = disciples.find((d) => d?.buildingId === b.id) ?? null;
-    const workerMul = yieldMultiplier(worker, b);
+    const workerMul = positive(yieldMultiplier(worker, b), 1);
     const levelMul = levelScale(level);
-    const adjacency = adjacencyOnGrid(grid, b.x, b.y, b.type);
+    const adjacency = positive(adjacencyOnGrid(grid, b.x, b.y, b.type), 1);
     const bonus = workerMul * adjacency * aura;
     const perSec = {};
-    for (const [k, v] of Object.entries(yieldAt(b.type, level))) perSec[k] = v * bonus;
+    for (const [k, v] of Object.entries(yieldAt(b.type, level))) perSec[k] = positive(v * bonus, 0);
     rows.push({
       id: b.id,
       type: b.type,
       name: def.name,
       level,
+      levelCapped: level < normalizeLevel(b.level),
       x: b.x,
       y: b.y,
       worker: worker?.name ?? null,
@@ -172,21 +191,23 @@ export function xpBuildings(state) {
  */
 export function scriptureXpRows(state) {
   const disciples = Array.isArray(state?.disciples) ? state.disciples : [];
+  const home = homeLevel(state);
   return xpBuildings(state).map((b) => {
-    const level = normalizeLevel(b.level);
-    const base = xpAt(b.type, level);
+    const level = effectiveLevel(b, home);
+    const base = positive(xpAt(b.type, level), 0);
     const worker = disciples.find((d) => d?.buildingId === b.id) ?? null;
-    const workerMul = yieldMultiplier(worker, b);
+    const workerMul = positive(yieldMultiplier(worker, b), 1);
     return {
       id: b.id,
       type: b.type,
       name: buildingDef(b.type)?.name ?? b.type,
       level,
+      levelCapped: level < normalizeLevel(b.level),
       base,
-      workerId: worker?.id ?? null,
+      workerId: typeof worker?.id === "string" && worker.id ? worker.id : null,
       worker: worker?.name ?? null,
       workerMul,
-      perSec: worker ? base * workerMul : base,
+      perSec: positive(worker ? base * workerMul : base, 0),
     };
   });
 }
@@ -205,12 +226,19 @@ export function scriptureXpFor(state, disciple) {
   if (!buildingId) return 0;
   const hall = xpBuildings(state).find((b) => b.id === buildingId);
   if (!hall) return 0;
-  return xpAt(hall.type, normalizeLevel(hall.level)) * yieldMultiplier(disciple, hall);
+  const level = effectiveLevel(hall, homeLevel(state));
+  return positive(xpAt(hall.type, level) * positive(yieldMultiplier(disciple, hall), 1), 0);
 }
 
 /**
  * dt 秒内应发的修业，键为弟子 id；`disciples` 层照单发放即可。
  * 只出「修业」这一种数值，晋阶与其代价不在本层。
+ *
+ * 调用方契约（TICK / 离线补发都按这份签名接线，本函数不再变形）：
+ * - 入参 `dtSec` 为秒。NaN、Infinity、负数（时钟回拨）一律当 0 处理，返回 `{}`；
+ * - 返回值是新建的普通对象，键为弟子 id、值恒为有限正数，永不含 0 与负数；
+ * - 空府、坏档、无人驻楼都返回 `{}`，不抛错；
+ * - 只发修业。修业条满仅代表「可晋阶」，免费晋阶不在此发生（AD-17）。
  */
 export function scriptureXpAward(state, dtSec) {
   const dt = seconds(dtSec);
@@ -218,7 +246,9 @@ export function scriptureXpAward(state, dtSec) {
   if (dt <= 0) return out;
   for (const row of scriptureXpRows(state)) {
     if (!row.workerId) continue;
-    out[row.workerId] = (out[row.workerId] ?? 0) + row.perSec * dt;
+    const gain = positive(row.perSec * dt, 0);
+    if (gain <= 0) continue;
+    out[row.workerId] = (out[row.workerId] ?? 0) + gain;
   }
   return out;
 }
@@ -227,8 +257,12 @@ export function scriptureXpAward(state, dtSec) {
 
 /**
  * 离线效率的唯一出处：BOOT / RESUME / 挂机匣都读这里，别在别处复算百分比。
- * 入参可以是 state，也可以直接是建筑数组；坏档、空府、缺字段都返回底 50%，
- * 返回值恒为 [OFFLINE_BASE, OFFLINE_CAP] 内的有限数。
+ *
+ * 调用方契约（`core/offline.js` 的能力探测按这份签名接线，本函数不再变形）：
+ * - 入参可以是 state，也可以直接是建筑数组，还可以是 null / undefined / 坏档；
+ * - 返回值恒为 [OFFLINE_BASE, OFFLINE_CAP] 内的有限数，空府与缺字段都是底 50%；
+ * - 聚灵阵等级按 `effectiveLevel` 取，篡改档堆不出超过 90% 的效率；
+ * - 永不抛错，故上游的「契约缺席退满效率」分支只会在真的没有本导出时触发。
  */
 export function offlineEfficiency(input) {
   return offlineEfficiencyDetail(input).efficiency;
@@ -236,11 +270,13 @@ export function offlineEfficiency(input) {
 
 /** 效率拆解：挂机匣要展示「聚灵阵 N 级 → 结算 74%」时用这份。 */
 export function offlineEfficiencyDetail(input) {
-  const arrays = buildingsOf(input).filter((b) => b.type === OFFLINE_ARRAY_TYPE);
-  const levels = arrays.reduce((sum, b) => sum + normalizeLevel(b.level), 0);
+  const buildings = buildingsOf(input);
+  const home = mansionLevel(buildings);
+  const arrays = buildings.filter((b) => b.type === OFFLINE_ARRAY_TYPE);
+  const levels = arrays.reduce((sum, b) => sum + effectiveLevel(b, home), 0);
   const raw = OFFLINE_BASE + OFFLINE_PER_ARRAY_LEVEL * levels;
   const efficiency = Math.min(OFFLINE_CAP, Math.max(OFFLINE_BASE, raw));
-  const next = Math.min(OFFLINE_CAP, raw + OFFLINE_PER_ARRAY_LEVEL);
+  const next = Math.min(OFFLINE_CAP, Math.max(OFFLINE_BASE, raw + OFFLINE_PER_ARRAY_LEVEL));
   return {
     efficiency,
     percent: Math.round(efficiency * 100),
@@ -250,13 +286,17 @@ export function offlineEfficiencyDetail(input) {
     arrays: arrays.length,
     levels,
     capped: raw >= OFFLINE_CAP,
-    nextLevelGain: next - efficiency,
+    nextLevelGain: Math.max(0, next - efficiency),
   };
 }
 
-/** 离线这段时间的实收产出：等于在线产出 × `offlineEfficiency`。 */
+/**
+ * 离线这段时间的实收产出：等于在线产出 × `offlineEfficiency`。
+ * 显式传入的 `opts.efficiency` 会被夹到 [0, 1]：挂机再肥也不该超过在线满效率。
+ */
 export function offlineProduce(state, elapsedSec, opts = {}) {
-  const efficiency = opts.efficiency === undefined ? offlineEfficiency(state) : efficiencyOf(opts);
+  const efficiency =
+    opts.efficiency === undefined ? offlineEfficiency(state) : Math.min(1, efficiencyOf(opts));
   return produce(state, elapsedSec, { efficiency });
 }
 
@@ -288,25 +328,29 @@ export function applyYield(resources, add) {
  * 建筑给全队的战力加成：丹房 +4 攻/级，锻造房 +3 攻/级，取自建筑定义。
  */
 export function combatBuildingBonus(buildings) {
+  const list = buildingsOf(buildings);
+  const home = mansionLevel(list);
   const total = { atk: 0 };
-  for (const b of buildingsOf(buildings)) {
+  for (const b of list) {
     const bonus = buildingDef(b.type)?.combatBonus;
     if (!bonus) continue;
-    const level = normalizeLevel(b.level);
-    for (const [k, v] of Object.entries(bonus)) total[k] = (total[k] ?? 0) + v * level;
+    const level = effectiveLevel(b, home);
+    for (const [k, v] of Object.entries(bonus)) total[k] = (total[k] ?? 0) + positive(v * level, 0);
   }
   return total;
 }
 
 /** 战力加成的来源清单，战报与仙府面板可逐条列出。 */
 export function combatBonusSources(buildings) {
+  const list = buildingsOf(buildings);
+  const home = mansionLevel(list);
   const rows = [];
-  for (const b of buildingsOf(buildings)) {
+  for (const b of list) {
     const def = buildingDef(b.type);
     if (!def?.combatBonus) continue;
-    const level = normalizeLevel(b.level);
+    const level = effectiveLevel(b, home);
     const gain = {};
-    for (const [k, v] of Object.entries(def.combatBonus)) gain[k] = v * level;
+    for (const [k, v] of Object.entries(def.combatBonus)) gain[k] = positive(v * level, 0);
     rows.push({ id: b.id, type: b.type, name: def.name, level, gain });
   }
   return rows;
