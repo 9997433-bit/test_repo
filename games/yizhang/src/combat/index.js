@@ -60,8 +60,9 @@ import {
   simDrivenPlayer,
   yawTo,
 } from "./util.js";
-// sim 的接线适配器。sim 已经静态接好真实 combat 时它什么都不做，只把 SIM_ADAPTER 备着。
-import { SIM_ADAPTER, installIntoSim } from "./sim-bridge.js";
+// sim 的接线适配器。sim 已经静态接好真实 combat 时它什么都不做，只把 SIM_ADAPTER 备着；
+// needsSimYawShim / inSimYawFrame 是宿主直接注入裸命名空间时的朝向保险丝。
+import { SIM_ADAPTER, inSimYawFrame, installIntoSim, needsSimYawShim } from "./sim-bridge.js";
 
 // ---------------------------------------------------------------- 手套数据源
 
@@ -240,6 +241,14 @@ function hitList(hits) {
   return hits;
 }
 
+/**
+ * 宿主把本模块的裸命名空间塞进 `sim.installCombat` 时没人做朝向换算，
+ * 这里补上（判据与撤除条件见 ./sim-bridge.js 的「过渡期保险丝」）。
+ */
+function hostFrame(state, fn) {
+  return needsSimYawShim(state, resolveSlap) ? inSimYawFrame(state, fn) : fn();
+}
+
 function doSlap(state, attacker, g, now, chargeCooldown) {
   const hits = [];
   attacker.lastSlapAt = now;
@@ -301,15 +310,17 @@ function doSlap(state, attacker, g, now, chargeCooldown) {
  */
 export function resolveSlap(state, attacker, glove, now = clockOf(state)) {
   if (!state || !attacker) return hitList([]);
-  if (!actorReady(attacker)) return hitList([]);
-  const g = applyAwaken(attacker, resolveGlove(state, attacker, glove));
+  return hostFrame(state, () => {
+    if (!actorReady(attacker)) return hitList([]);
+    const g = applyAwaken(attacker, resolveGlove(state, attacker, glove));
 
-  // sim 自己跑前后摇：它只在 strike 那一帧调过来，这里再闸一次冷却只会吃掉命中。
-  if (simDrivenPlayer(attacker)) return hitList(doSlap(state, attacker, g, now, false));
+    // sim 自己跑前后摇：它只在 strike 那一帧调过来，这里再闸一次冷却只会吃掉命中。
+    if (simDrivenPlayer(attacker)) return hitList(doSlap(state, attacker, g, now, false));
 
-  const cd = cooldownsOf(attacker);
-  if (now < cd.slapAt || now < num(attacker.busyUntil)) return hitList([]);
-  return hitList(doSlap(state, attacker, g, now, true));
+    const cd = cooldownsOf(attacker);
+    if (now < cd.slapAt || now < num(attacker.busyUntil)) return hitList([]);
+    return hitList(doSlap(state, attacker, g, now, true));
+  });
 }
 
 /**
@@ -318,6 +329,10 @@ export function resolveSlap(state, attacker, glove, now = clockOf(state)) {
  */
 export function beginSlap(state, attacker, glove, now = clockOf(state)) {
   if (!state || !attacker || !actorReady(attacker)) return { ok: false, reason: "cannot-act" };
+  return hostFrame(state, () => beginSlapNow(state, attacker, glove, now));
+}
+
+function beginSlapNow(state, attacker, glove, now) {
   const g = applyAwaken(attacker, resolveGlove(state, attacker, glove));
   const cd = cooldownsOf(attacker);
   if (now < cd.slapAt || now < num(attacker.busyUntil)) return { ok: false, reason: "cooldown" };
@@ -339,8 +354,12 @@ export function beginSlap(state, attacker, glove, now = clockOf(state)) {
  * @returns {{ok:boolean, skillId:string, hits:Array, tiles:Array, reason?:string}}
  */
 export function resolveSkill(state, attacker, glove, now = clockOf(state)) {
+  if (!state || !attacker) return { ok: false, skillId: "none", reason: "no-actor", hits: [], tiles: [] };
+  return hostFrame(state, () => resolveSkillNow(state, attacker, glove, now));
+}
+
+function resolveSkillNow(state, attacker, glove, now) {
   const empty = (reason, skillId = "none") => ({ ok: false, skillId, reason, hits: [], tiles: [] });
-  if (!state || !attacker) return empty("no-actor");
   if (!actorReady(attacker)) return empty("cannot-act");
 
   const g = applyAwaken(attacker, resolveGlove(state, attacker, glove));
@@ -454,9 +473,12 @@ function tickGhosts(state, dt) {
  * @returns {{t:number, hits:Array, tiles:Array}}
  */
 export function tickStatuses(state, dt) {
-  const sink = { hits: [], tiles: [] };
-  if (!state || !(dt > 0)) return { t: clockOf(state), ...sink };
+  if (!state || !(dt > 0)) return { t: clockOf(state), hits: [], tiles: [] };
+  return hostFrame(state, () => tickStatusesNow(state, dt));
+}
 
+function tickStatusesNow(state, dt) {
+  const sink = { hits: [], tiles: [] };
   const c = combatOf(state);
   // 宿主的钟优先（testkit 用 state.t，src/sim 用 state.time），没有就自己累加。
   const hostClock = num(state.t, num(state.time, NaN));

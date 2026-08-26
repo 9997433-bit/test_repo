@@ -378,6 +378,37 @@ describe("显式注入路径", () => {
     const viaAdapter = run();
     expect(viaAdapter).toEqual(viaStatic);
   });
+
+  it("宿主把裸命名空间塞进 installCombat 时，朝向保险丝兜住（不许整体反 180°）", async () => {
+    const bare = await import("./index.js");
+    installCombat(bare);
+
+    const { state, attacker, target } = duel({ seed: 607, gloveId: "magnet", offhandId: "cotton" });
+    equip(attacker, "magnet", "cotton");
+    place(attacker, target, 4);
+    const before = gap(attacker, target);
+
+    step(state, { [attacker.id]: input({ skill: true }) }, DT);
+    expect(target.vz).toBeGreaterThan(5); // 目标在 -Z，被拽回 +Z
+    advance(state, 0.5);
+    expect(gap(attacker, target)).toBeLessThan(before - 0.1);
+
+    // 扇击也一样：正前方（-Z）的人打得到，身后的人打不到
+    const cotton = GLOVE_BY_ID.cotton;
+    equip(attacker, "cotton", "magnet");
+    place(attacker, target, cotton.slapRange * 0.7);
+    step(state, { [attacker.id]: input({ slap: true }) }, DT);
+    advance(state, cotton.windup + cotton.recovery + 0.1);
+    expect(target.hitsTaken).toBeGreaterThan(0);
+    expect(target.vz).toBeLessThan(-0.1);
+
+    attacker.hitsDealt = 0;
+    target.hitsTaken = 0;
+    place(attacker, target, cotton.slapRange * 0.7, Math.PI); // 挪到背后
+    step(state, { [attacker.id]: input({ slap: true }) }, DT);
+    advance(state, cotton.windup + cotton.recovery + 0.1);
+    expect(target.hitsTaken).toBe(0);
+  });
 });
 
 describe("整局稳定性", () => {
