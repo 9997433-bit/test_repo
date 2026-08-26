@@ -1,8 +1,15 @@
 // 异掌 · 入口。职责：装配（模块探测 → 依赖注入 → 降级）、主循环、事件转音效/播报、存档。
 // 这里不写玩法规则，也不碰 Three.js；规则在 src/sim + src/combat，画面在 src/render。
 
-import { loadSiblingModules, loadSiblingStyles, bindRenderer, wireSimDeps } from "./core/modules.js";
+import {
+  loadSiblingModules,
+  loadSiblingStyles,
+  bindRenderer,
+  wireSimDeps,
+  wiringStatus,
+} from "./core/modules.js";
 import { createLoop } from "./core/loop.js";
+import { hitStopForEvents } from "./core/juice.js";
 import { lerpView } from "./core/interp.js";
 import { createQualityProbe } from "./core/quality.js";
 import { loadSave, updateSave, recordMatch, unlockGlove, SAVE_KEY } from "./core/storage.js";
@@ -72,6 +79,9 @@ async function boot() {
 
   // Round 1 的头号缺陷：sim 从来没拿到真实 data / combat，运行时一直跑内置兜底棉掌。
   const wired = wireSimDeps(sim, dataModule, combatModule);
+  // sim 现在静态 import 真实 data/combat；deps 的 usingReal* 只表示「没装替身」，
+  // 别拿它当降级信号。真值统一走 wiringStatus（见 core/modules.js）。
+  const realWiring = wiringStatus(sim, wired);
 
   const gloves =
     dataModule && Array.isArray(dataModule.GLOVES) && dataModule.GLOVES.length
@@ -93,8 +103,8 @@ async function boot() {
   if (!mods.render.ok) degraded.push({ text: `src/render 未接入（${mods.render.reason}）· 正在跑 Canvas2D 调试视图`, tone: "warn" });
   if (!mods.ai.ok) degraded.push({ text: `src/ai 未接入（${mods.ai.reason}）· 正在跑占位 Bot`, tone: "warn" });
   if (!mods.data.ok) degraded.push({ text: `src/data 未接入（${mods.data.reason}）· 正在用占位掌表`, tone: "warn" });
-  if (mods.data.ok && !wired.data) degraded.push({ text: "sim 不支持 installData · 8 掌数值可能未进局", tone: "warn" });
-  if (mods.combat.ok && !wired.combat) degraded.push({ text: "sim 不支持 installCombat · 技能可能未进局", tone: "warn" });
+  if (mods.data.ok && !realWiring.usingRealData) degraded.push({ text: "sim 没吃到真实掌表 · 8 掌数值可能未进局", tone: "warn" });
+  if (mods.combat.ok && !realWiring.usingRealCombat) degraded.push({ text: "sim 没吃到真实 combat · 技能可能未进局", tone: "warn" });
   if (styleCount === 0) degraded.push({ text: "src/styles 未接入 · 使用 shell 兜底暮蓝主题", tone: "warn" });
 
   let save = loadSave();
@@ -317,6 +327,11 @@ async function boot() {
           break;
       }
     }
+
+    // 手感：本人参与的扇击命中给一记极短定格。同帧多段只停一次，
+    // 连段之间还有冷却兜着；画面反馈仍是 HUD 那层去饱和，不加红晕。
+    const stop = hitStopForEvents(view.events, SELF_ID);
+    if (stop > 0) loop.hold(stop);
   }
 
   function evaluateUnlocks(won) {
@@ -529,7 +544,15 @@ async function boot() {
       return mods;
     },
     get wiring() {
-      return { ...wired, unlockSource: isUnlocked.source, styleCount, renderer: rendererIsFallback ? "fallback" : "three" };
+      // usingReal* 报的是「进局的是不是真模块」，不是「有没有调过 install」：
+      // sim 静态 import 的 data/combat 同样算真（core/modules.js wiringStatus）。
+      return {
+        ...wired,
+        ...wiringStatus(sim, wired),
+        unlockSource: isUnlocked.source,
+        styleCount,
+        renderer: rendererIsFallback ? "fallback" : "three",
+      };
     },
     get progress() {
       return tracker.progress;

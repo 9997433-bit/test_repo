@@ -1,5 +1,9 @@
 // 固定步长主循环。模拟永远走 1/60，渲染按帧插值。
 // 后台标签页（document.hidden）立即挂起，回前台时丢弃堆积时间而不是快进补帧。
+// 命中定格（hold）只掐掉这几十毫秒里的 step，draw 照旧按同一个 alpha 出画：
+// 画面定住而不是跳帧，堆积时间也不补，解冻后不会暴走。
+
+import { createHitStop } from "./juice.js";
 
 const DEFAULT_DT = 1 / 60;
 
@@ -24,6 +28,7 @@ export function createLoop(opts) {
   const stats = { fps: 0, dropped: 0, steps: 0, alpha: 0 };
   let fpsWindowStart = 0;
   let fpsWindowFrames = 0;
+  const hitStop = createHitStop(opts.hitStop || {});
 
   function paused() {
     return userPaused || hidden;
@@ -52,6 +57,13 @@ export function createLoop(opts) {
       return;
     }
 
+    if (hitStop.held(seconds)) {
+      // 定格期间不 step、不攒时间；alpha 保持上一帧，画面完全定住。
+      acc = 0;
+      draw(stats.alpha, { paused: false, held: true, simTime, stats, stepped: 0 });
+      return;
+    }
+
     if (delta > maxFrame) {
       stats.dropped += Math.round((delta - maxFrame) / dt);
       delta = maxFrame;
@@ -64,6 +76,11 @@ export function createLoop(opts) {
       simTime += dt;
       acc -= dt;
       n += 1;
+      // step 里刚打出命中定格：这一帧剩下的补步立刻停手，定格从当前帧就生效。
+      if (hitStop.held(performance.now() / 1000)) {
+        acc = 0;
+        break;
+      }
     }
     stats.steps += n;
     stats.alpha = acc / dt;
@@ -78,6 +95,7 @@ export function createLoop(opts) {
       // 回前台：把时间基准拉到当前帧，堆积的隐藏时长直接丢掉。
       last = performance.now() / 1000;
       acc = 0;
+      hitStop.reset();
       fpsWindowStart = last;
       fpsWindowFrames = 0;
     }
@@ -92,6 +110,7 @@ export function createLoop(opts) {
       fpsWindowStart = last;
       fpsWindowFrames = 0;
       acc = 0;
+      hitStop.reset();
       document.addEventListener("visibilitychange", onVisibility);
       window.addEventListener("blur", onBlur);
       raf = requestAnimationFrame(frame);
@@ -105,11 +124,24 @@ export function createLoop(opts) {
     setPaused(next) {
       if (userPaused === next) return;
       userPaused = next;
+      hitStop.reset();
       if (!userPaused) {
         last = performance.now() / 1000;
         acc = 0;
       }
       if (onPauseChange) onPauseChange(paused(), "user");
+    },
+    /**
+     * 请求一次命中定格。冷却内的重复请求被吞掉（连段不会剁成幻灯片）。
+     * @returns {boolean} 是否真的定格
+     */
+    hold(seconds, now) {
+      if (paused()) return false;
+      const at = Number.isFinite(now) ? now : performance.now() / 1000;
+      return hitStop.request(seconds, at);
+    },
+    isHeld(now) {
+      return hitStop.held(Number.isFinite(now) ? now : performance.now() / 1000);
     },
     isPaused: paused,
     isHidden: () => hidden,

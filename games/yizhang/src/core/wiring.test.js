@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as combat from "../combat/index.js";
 import * as data from "../data/index.js";
 import * as sim from "../sim/index.js";
-import { alignSkillIds, wireSimDeps } from "./modules.js";
+import { alignSkillIds, wireSimDeps, wiringStatus } from "./modules.js";
 import { SELF_ID, adaptView, cameraYawToSimYaw } from "./view.js";
 
 afterEach(() => {
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("wireSimDeps", () => {
-  it("把真实 data 装进 sim：生效掌表变成 8 掌真实数值", () => {
+  it("把真实 data 装进 sim：生效掌表就是 8 掌真实数值", () => {
     sim.resetDeps();
     const before = sim.getGloves().find((g) => g.id === "granite");
     const out = wireSimDeps(sim, data, combat);
@@ -23,14 +23,40 @@ describe("wireSimDeps", () => {
     expect(out.remappedSkills.length).toBeGreaterThan(0);
     const after = sim.getGloves().find((g) => g.id === "granite");
     expect(after.slapCooldown).toBe(1.15); // src/data/gloves.js 的磐石
-    expect(after.slapCooldown).not.toBe(before.slapCooldown);
+    // sim 静态 import 的就是这张表，装配前后都得是真数值（Round 2 起不再有兜底棉掌）。
+    expect(before.slapCooldown).toBe(1.15);
     expect(sim.getGloves()).toHaveLength(data.GLOVES.length);
+    // 装配的额外收益是技能别名落地：data 的 quake_slam 进局变成 combat 认得的 groundPound。
+    expect(sim.getGloves().find((g) => g.id === "granite").skillId).toBe("groundPound");
   });
 
-  it("把真实 combat 装进 sim：resolveSlap 走 combat 而不是兜底", () => {
-    wireSimDeps(sim, data, combat);
-    expect(sim.getDeps().usingRealCombat).toBe(true);
-    expect(sim.getDeps().usingRealData).toBe(true);
+  it("接线真值：静态 deps 也算真 combat，装了真模块不该被报成降级", () => {
+    // sim 静态 import 真实 combat，此时没有任何替身。
+    sim.resetDeps();
+    expect(wiringStatus(sim, {})).toMatchObject({
+      usingRealData: true,
+      usingRealCombat: true,
+      source: "static",
+    });
+
+    // 装配层把真实模块装进去后，deps 的 usingReal* 只表示「装了东西」而翻假，
+    // 但进局的仍是真 combat —— wiringStatus 必须报真，否则 main 会亮假降级横幅。
+    const out = wireSimDeps(sim, data, combat);
+    expect(sim.getDeps().usingRealCombat).toBe(false);
+    expect(wiringStatus(sim, out)).toMatchObject({
+      usingRealData: true,
+      usingRealCombat: true,
+      source: "install+static",
+    });
+    expect(typeof sim.getDeps().combat.resolveSlap).toBe("function");
+  });
+
+  it("没有 getDeps 的模拟只能靠 install 结果表态", () => {
+    expect(wiringStatus({}, { data: true, combat: false })).toEqual({
+      usingRealData: true,
+      usingRealCombat: false,
+      source: "install",
+    });
   });
 
   it("sim 没有 install* 钩子时安静返回，不抛错", () => {
@@ -76,7 +102,8 @@ describe("alignSkillIds", () => {
     expect(byId.granite.skillId).toBe("groundPound");
     expect(byId.magnet.skillId).toBe("magnetPull");
     expect(byId.meteor.skillId).toBe("meteorSlam");
-    expect(byId.cotton.skillId).toBeFalsy();
+    // 木棉没有主动技，data 侧正式写法就是字符串 "none"：原样保留，不许被翻译。
+    expect(byId.cotton.skillId).toBe("none");
     expect(remapped).toHaveLength(7);
     // 原模块不能被就地改写
     expect(data.GLOVE_BY_ID.granite.skillId).toBe("quake_slam");
@@ -86,6 +113,14 @@ describe("alignSkillIds", () => {
     const already = { GLOVES: [{ id: "granite", skillId: "groundPound" }] };
     const { module, remapped } = alignSkillIds(already, combat);
     expect(module).toBe(already);
+    expect(remapped).toEqual([]);
+  });
+
+  it('"none" 是无主动技的正式写法，不进别名表也不被改写', () => {
+    const noSkill = { GLOVES: [{ id: "cotton", skillId: "none" }] };
+    const { module, remapped } = alignSkillIds(noSkill, combat);
+    expect(module).toBe(noSkill);
+    expect(module.GLOVES[0].skillId).toBe("none");
     expect(remapped).toEqual([]);
   });
 });
