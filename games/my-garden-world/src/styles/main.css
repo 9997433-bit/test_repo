@@ -639,8 +639,10 @@ button { font-family: var(--font-body); }
 .pill-visit:hover { box-shadow: 0 2px 0 var(--shadow), 0 0 0 2px color-mix(in srgb, var(--focus) 45%, transparent); }
 .pill-visit:active { transform: translateY(1px); }
 
-/* 邻居卡：交情心档换朱砂（盖过 .card h4 small 的泥金星规则） */
-.neighbor-card h4 small { color: var(--accent); letter-spacing: 0.08em; }
+/* 邻居卡：交情心档（❤♡）换朱砂——双选择器不绑定落点，
+   心档无论排在名号行（h4 small，须盖过泥金星规则）还是余量行都命中 */
+.neighbor-card h4 small,
+.neighbor-card small { color: var(--accent); letter-spacing: 0.08em; }
 /* 剪影卡空态：未到阶的邻居「隔篱只见花影」——整卡褪色成剪影，虚线留期待 */
 .neighbor-card.owned {
   border-style: dashed;
