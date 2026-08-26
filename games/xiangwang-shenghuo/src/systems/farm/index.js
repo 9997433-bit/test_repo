@@ -1,13 +1,14 @@
 import { cropById } from "../../data/crops.js";
 import { guestById } from "../../data/guests.js";
 import { addInv } from "../../core/store.js";
+import { OFFLINE_CAP_MS } from "../../core/engine.js";
 
 /** 错季生长速度倍率：0.55 倍速，即耗时 1/0.55。 */
 export const OFF_SEASON_FACTOR = 0.55;
 /** 错季作物成熟后不收，撑过这段时间就枯萎。 */
 export const WILT_GRACE_MS = 45_000;
-/** 离线折算上限：回来时最多按 8 小时结算。 */
-export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
+/** 离线折算上限：回来时最多按 8 小时结算（单一来源在 core/engine，farm 再导出保持导出面不变）。 */
+export { OFFLINE_CAP_MS };
 /** 温室最多罩住这么多块地，盖了温室不等于全村免疫错季。 */
 export const GREENHOUSE_PLOT_CAP = 3;
 /** 把一块露天地改进温室的花费。 */
@@ -263,6 +264,7 @@ export function expandGreenhousePlot(state, { plotId } = {}) {
 export function tickPlots(state, _dtMs, now = Date.now()) {
   const season = state.meta.season;
   let changed = false;
+  const wilted = [];
   const plots = plotsOf(state).map((p) => {
     if (!GROWABLE.has(p.status)) return p;
     const crop = cropById(p.cropId);
@@ -279,6 +281,7 @@ export function tickPlots(state, _dtMs, now = Date.now()) {
       if (deadline !== next.wiltAt) next = { ...next, wiltAt: deadline };
       if (now >= deadline) {
         next = { ...next, status: "wilted", cropId: null, plantedAt: 0, doneAt: 0, wiltAt: 0 };
+        wilted.push(crop.name);
       }
     }
 
@@ -286,19 +289,36 @@ export function tickPlots(state, _dtMs, now = Date.now()) {
     return next;
   });
   if (!changed) return state;
-  return { ...state, plots };
+  let next = { ...state, plots };
+  for (const name of wilted) next = pushLog(next, `${name}没扛住这个季节，蔫了。`);
+  return next;
 }
 
 /**
- * 读档后结算地块：作物照常成熟，但人不在家的时候不判枯萎，
- * 到期的倒计时按回来的时刻重新起算。折算时长上限 8 小时。
+ * 读档后结算地块：离线最多白得 8 小时生长进度，超出封顶窗口才熟的作物把时间戳
+ * 顺延 overflow，回来接着长；人不在家的时候不判枯萎，到期的倒计时按回来的时刻重新起算。
  */
 export function catchUpPlots(state, savedAt, now = Date.now()) {
   const from = Number.isFinite(savedAt) ? savedAt : now;
   const away = Math.min(Math.max(0, now - from), OFFLINE_CAP_MS);
   if (!away) return tickPlots(state, 0, now);
-  const plots = plotsOf(state).map((p) =>
-    p.wiltAt && p.wiltAt > from ? { ...p, wiltAt: Math.max(p.wiltAt, now + WILT_GRACE_MS) } : p,
-  );
+  // 生长只按封顶后的时刻结算；多出来的那段真实时间原样推给未熟的地块。
+  const effectiveNow = from + away;
+  const overflow = Math.max(0, now - effectiveNow);
+  const plots = plotsOf(state).map((p) => {
+    let next = p;
+    if (overflow && next.status === "growing" && next.doneAt > effectiveNow) {
+      next = {
+        ...next,
+        plantedAt: next.plantedAt ? next.plantedAt + overflow : next.plantedAt,
+        doneAt: next.doneAt + overflow,
+        wiltAt: next.wiltAt ? next.wiltAt + overflow : 0,
+      };
+    }
+    if (next.wiltAt && next.wiltAt > from) {
+      next = { ...next, wiltAt: Math.max(next.wiltAt, now + WILT_GRACE_MS) };
+    }
+    return next;
+  });
   return tickPlots({ ...state, plots }, away, now);
 }
