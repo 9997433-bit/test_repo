@@ -162,7 +162,7 @@
     this._tip = null;
     this._panelTab = "log";
     this._panelOpen = false;
-    this._panelSig = "";
+    this._panelHtml = "";
     this._chromeSig = "";
     this._ensureStyles();
     this._ensurePanel();
@@ -258,7 +258,7 @@
     this._panelTab = tab === "allies" ? "allies" : "log";
     this._panelOpen = true;
     this.panel.classList.remove("hidden");
-    this._panelSig = "";
+    this._panelHtml = "";
     this._syncPanelTabs();
     this.renderPanel(this.app ? this.app.game : null);
   };
@@ -290,9 +290,8 @@
   HUD.prototype.renderPanel = function (game) {
     if (!this._panelOpen || !this.panelBody) return;
     const html = this._panelTab === "allies" ? this._alliesHtml(game) : this._logHtml(game);
-    const sig = this._panelTab + "|" + this.lang() + "|" + html.length + "|" + html.charCodeAt(0);
-    if (sig === this._panelSig && this.panelBody.innerHTML === html) return;
-    this._panelSig = sig;
+    if (html === this._panelHtml) return;
+    this._panelHtml = html;
     this.panelBody.innerHTML = html;
   };
 
@@ -455,7 +454,7 @@
     }
     this.refreshChrome();
     if (this._panelOpen) {
-      this._panelSig = "";
+      this._panelHtml = "";
       this.renderPanel(game);
     }
   };
