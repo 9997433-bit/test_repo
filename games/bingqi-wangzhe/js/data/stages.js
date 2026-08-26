@@ -9,7 +9,13 @@
  * 等 opus-3 的实战引擎重跑天级投影后再统一（fable-3 §11-1）。
  */
 
-import { ELEMENT_CRYSTAL, SHARD_RESOURCE, SLOT_UNLOCK_STAGES, STAGE_BALANCE } from './balance.js';
+import {
+  ELEMENT_CRYSTAL,
+  SHARD_RESOURCE,
+  SLOT_UNLOCK_STAGES,
+  STAGE_BALANCE,
+  SWEEP_RULES,
+} from './balance.js';
 
 /** 关卡数值锚点：第 1 关 120 战力，第 40 关 30000 战力，指数插值。 */
 const POWER_START = 120;
@@ -323,6 +329,9 @@ function buildStages() {
         unlockLineupSlot: LINEUP_UNLOCK_AT[i] ?? null,
         /** 精英关需要战力门槛，普通关不设限 */
         powerGate: isElite ? round(power * 0.72) : 0,
+        /** 扫荡门槛：打到三星才开放，每次固定 1 点体力（balance.SWEEP_RULES）。 */
+        sweepStars: SWEEP_RULES.minStars,
+        sweepStaminaCost: SWEEP_RULES.staminaCost,
         sweepUnlockClears: 1,
       }),
     );
