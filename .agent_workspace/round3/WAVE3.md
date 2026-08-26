@@ -11,4 +11,4 @@
 | O3 | `claude-opus-5-thinking-high-fast` | `bc-8cc0069b-ab42-5562-b2a6-d4b83980eae7` | 隔离 worktree |
 | O4 | `claude-opus-5-thinking-high-fast` | `bc-20a970e5-499a-5fab-9275-8c03da138bb9` | 云端 VM |
 | G1 | `gpt-5.6-sol-xhigh-fast` | `bc-0d5e1b7e-2b70-5d05-9dc1-c5653812d7c7` | 云端 VM · 已完成并合入 `c37272e` |
-| G2 | `gpt-5.6-sol-xhigh-fast` | `bc-f67fa428-4a7d-5342-83b0-eac62931e014` | 隔离 worktree |
+| G2 | `gpt-5.6-sol-xhigh-fast` | `bc-f67fa428-4a7d-5342-83b0-eac62931e014` | 隔离 worktree · 已完成并合入 `4eb391d` |
