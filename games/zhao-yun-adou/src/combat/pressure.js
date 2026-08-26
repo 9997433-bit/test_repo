@@ -1,4 +1,7 @@
-import { waveSpec } from "../data/waves.js";
+import * as waveTable from "../data/waves.js";
+import { createTuning, tableFrom } from "./tuning.js";
+
+const { waveSpec } = waveTable;
 
 /**
  * 「对攻压力」：一侧斩杀积累到阈值，就往对岸塞一个弱化的援兵，
@@ -16,7 +19,7 @@ import { waveSpec } from "../data/waves.js";
  * Round 2 若要手动施压（例如道具、剧情事件），直接调 sendPressure(side, otherSide)。
  */
 
-const CONFIG = {
+const DEFAULTS = {
   enabled: true,
   killsPerPressure: 5, // 普通兵每斩 5 个送一波
   bossCharge: 3, // 斩将折算 3 个
@@ -25,16 +28,42 @@ const CONFIG = {
   hpMul: 0.55,
   speedMul: 1.1,
   rewardMul: 0.5,
+  interval: 0.5, // 一批压力兵之间的出兵间隔（秒）
   glyph: "援",
 };
 
+/**
+ * 波次表若导出 `PRESSURE`（或 `PRESSURE_TUNING`），这里整表覆盖默认值。
+ * 现在 data/waves.js 没有这个导出，于是照常用上面的默认值 —— 加导出即可调参，
+ * 不必再改战斗层。
+ */
+const TUNING = createTuning({
+  defaults: DEFAULTS,
+  table: tableFrom(waveTable, ["PRESSURE", "PRESSURE_TUNING"]),
+  coerce: {
+    killsPerPressure: (v) => Math.max(1, v),
+    bossCharge: (v) => Math.max(0, v),
+    count: (v) => Math.max(1, Math.round(v)),
+    hpMul: (v) => Math.max(0.01, v),
+    speedMul: (v) => Math.max(0.01, v),
+    rewardMul: (v) => Math.max(0, v),
+    interval: (v) => Math.max(0.05, v),
+  },
+});
+
+const CONFIG = TUNING.live;
+
 export function pressureConfig() {
-  return { ...CONFIG };
+  return TUNING.read();
 }
 
 export function configurePressure(patch = {}) {
-  Object.assign(CONFIG, patch);
-  return pressureConfig();
+  return TUNING.patch(patch);
+}
+
+/** 回到「默认值 + data 表覆盖」的状态，丢弃运行时改动。 */
+export function resetPressure() {
+  return TUNING.reset();
 }
 
 const opponents = new WeakMap();
@@ -72,7 +101,7 @@ export function pressureSpec(wave, opts = {}) {
     speed: base.speed,
     reward: Math.max(1, Math.floor(base.reward * (opts.rewardMul ?? CONFIG.rewardMul))),
     boss: null,
-    interval: 0.5,
+    interval: opts.interval ?? CONFIG.interval,
   };
 }
 
