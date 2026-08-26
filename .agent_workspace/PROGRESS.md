@@ -55,7 +55,7 @@
 | C | O2 小游戏 | opus-fast | 运行中 | `bc-7ceaa17b-4d09-5c3e-9a3f-def313d419d6` |
 | C | O4 伙伴事件 | opus-fast | 运行中 | `bc-6dcadcdd-e4ab-550f-a2f1-dfffcedb3679` |
 | C | G1 测试 | gpt-sol | 已完成，47 项单测已合入 | `bc-9174c37f-cbb9-5717-be48-a835c39f9752` |
-| D | G2 性能边界 | gpt-sol | 续发中 | 待回填 |
+| D | G2 性能边界 | gpt-sol | 已完成，bench/boundary 已合入 | `bc-48357c9e-60db-5e13-a07f-7a723f8c31dd` |
 
 ## 已实现基线（Parent 预置）
 
