@@ -1,0 +1,117 @@
+import { describe, expect, it, vi } from "vitest";
+import { FLOWERS } from "../../src/data/flowers";
+import { loadState, saveState } from "../../src/engine/save";
+import { MAX_PLOTS, createInitialState, emptyPlot, xpToLevel } from "../../src/engine/state";
+import { addExp, takeItem } from "../../src/systems/economy";
+import { spawnOrders, tickOrders } from "../../src/systems/orders";
+
+const ORDER_TIMEOUT_WAVES = 250;
+const ORDER_STORM_BUDGET_MS = 250;
+const SAVE_SIZE_BUDGET_BYTES = 64 * 1024;
+
+describe("order timeout storm probe", () => {
+  it("expires and replenishes repeated full-capacity order waves", () => {
+    let randomSeed = 17;
+    const random = vi.spyOn(Math, "random").mockImplementation(() => {
+      randomSeed = (randomSeed * 48271) % 0x7fffffff;
+      return randomSeed / 0x7fffffff;
+    });
+
+    try {
+      const state = createInitialState(0);
+      state.level = 12;
+      spawnOrders(state);
+      const orderCap = 5;
+      expect(state.orders).toHaveLength(orderCap);
+
+      const startedAt = performance.now();
+      for (let wave = 0; wave < ORDER_TIMEOUT_WAVES; wave += 1) {
+        state.now = Math.max(...state.orders.map((order) => order.dueAt));
+        tickOrders(state);
+        expect(state.orders).toHaveLength(orderCap);
+        expect(state.orders.every((order) => order.dueAt > state.now)).toBe(true);
+      }
+      const elapsedMs = performance.now() - startedAt;
+
+      console.info(
+        `[probe] ${ORDER_TIMEOUT_WAVES}-wave order timeout storm: ${elapsedMs.toFixed(2)} ms`,
+      );
+      expect(elapsedMs).toBeLessThanOrEqual(ORDER_STORM_BUDGET_MS);
+      expect(state.stats.cancelled).toBe(ORDER_TIMEOUT_WAVES * orderCap);
+      expect(state.reputation).toBe(30);
+    } finally {
+      random.mockRestore();
+    }
+  });
+});
+
+describe("save/load roundtrip probe", () => {
+  it(`roundtrips a busy garden below ${SAVE_SIZE_BUDGET_BYTES / 1024} KiB`, () => {
+    localStorage.clear();
+    try {
+      const state = createInitialState(1_800_000);
+      state.level = 12;
+      state.plots = Array.from({ length: MAX_PLOTS }, (_, id) => emptyPlot(id));
+      state.inventory = Object.fromEntries(FLOWERS.map((flower, index) => [flower.id, index + 1]));
+      state.unlockedFlowers = FLOWERS.map((flower) => flower.id);
+      state.arrangements = Array.from({ length: 100 }, (_, index) => ({
+        id: `arrangement-${index}`,
+        vase: "celadon",
+        flowerIds: FLOWERS.slice(index % 8, (index % 8) + 4).map((flower) => flower.id),
+        score: 70 + (index % 31),
+        name: `陈列作品 ${index}`,
+        createdAt: state.now - index * 1_000,
+      }));
+      state.placedDecor = Array.from({ length: 100 }, (_, index) => `decor-${index}`);
+      spawnOrders(state);
+
+      const serialized = JSON.stringify(state);
+      const sizeBytes = new TextEncoder().encode(serialized).byteLength;
+      saveState(state);
+      const restored = loadState();
+
+      console.info(`[probe] busy save payload: ${sizeBytes} bytes`);
+      expect(sizeBytes).toBeLessThanOrEqual(SAVE_SIZE_BUDGET_BYTES);
+      expect(restored).toEqual(JSON.parse(serialized));
+    } finally {
+      localStorage.clear();
+    }
+  });
+});
+
+describe("inventory underflow probe", () => {
+  it("never makes stock negative when withdrawals exceed available inventory", () => {
+    const state = createInitialState(0);
+    state.inventory.daisy = 3;
+
+    expect(takeItem(state, "daisy", 1)).toBe(true);
+    expect(state.inventory.daisy).toBe(2);
+    expect(takeItem(state, "daisy", 3)).toBe(false);
+    expect(state.inventory.daisy).toBe(2);
+    expect(takeItem(state, "daisy", 2)).toBe(true);
+    expect(takeItem(state, "daisy", 1)).toBe(false);
+    expect(state.inventory.daisy).toBeUndefined();
+    expect(Object.values(state.inventory).every((count) => count >= 0)).toBe(true);
+  });
+});
+
+describe("level-up unlock monotonicity probe", () => {
+  it("only adds flower unlocks while crossing every configured level", () => {
+    const state = createInitialState(0);
+    const highestUnlockLevel = Math.max(...FLOWERS.map((flower) => flower.unlockLevel));
+
+    while (state.level < highestUnlockLevel) {
+      const unlockedBefore = new Set(state.unlockedFlowers);
+      addExp(state, xpToLevel(state.level));
+      const unlockedAfter = new Set(state.unlockedFlowers);
+
+      expect([...unlockedBefore].every((flowerId) => unlockedAfter.has(flowerId))).toBe(true);
+      expect(state.unlockedFlowers).toHaveLength(unlockedAfter.size);
+      for (const flower of FLOWERS.filter((candidate) => candidate.unlockLevel <= state.level)) {
+        expect(unlockedAfter.has(flower.id)).toBe(true);
+      }
+    }
+
+    expect(new Set(state.unlockedFlowers)).toEqual(new Set(FLOWERS.map((flower) => flower.id)));
+  });
+});
