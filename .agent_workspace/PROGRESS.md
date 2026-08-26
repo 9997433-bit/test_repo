@@ -86,12 +86,12 @@
 
 | 角色 | 状态 | cloud agent id |
 | --- | --- | --- |
-| Fable-1 架构复审 | 排队 | — |
+| Fable-1 架构复审 | 运行中 | `bc-7dd1028d-4130-52f1-a06d-1804948dbc41` |
 | Fable-2 画布缺口 | 排队 | — |
 | Fable-3 5v5 关卡 | 运行中 | `bc-60924e68-32b9-5437-b520-e99818644f62` |
 | Fable-4 SOTA 复验 | 已完成 · 已合并 `cursor/fable4-round2-acceptance-4cb8` | `bc-8ff2474a-e0aa-5f41-8de4-e757cdf04cb8` |
 | Opus-1 表驱动模拟 | 已完成 · 已合并 `cursor/opus1-table-driven-sim-862f` | `bc-74135006-1b0e-5e73-8dff-5bacf027862f` |
-| Opus-2 探索接线 | 运行中 | `bc-f781c0f7-3a19-56c0-a877-d90e65e1f9a3` |
+| Opus-2 探索接线 | 已完成 · 已合入 `9730a5a` | `bc-f781c0f7-3a19-56c0-a877-d90e65e1f9a3` |
 | Opus-3 战斗闭环 | 已完成 · 已合入 `dda1072`，Boss 快照已重录 | `bc-6b096125-40ce-53b2-97e3-ee1d083a40a4` |
 | Opus-4 UX 债 | 运行中 | `bc-52499131-9ce7-5070-a82a-f4241f7babc7` |
 | GPT-sol-1 快照单测 | 已完成 · 已合并 `cursor/cww-battle-tests-ed44`（37 测） | `bc-c3910345-5529-5a59-be22-f9a0d63eed44` |
