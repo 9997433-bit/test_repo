@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * No-dependency gameplay edge checks for Azeroth Keep TD.
+ * No-dependency gameplay edge checks for Frontier Keep TD.
  */
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
@@ -76,7 +76,7 @@ function advanceUntil(game, predicate, maxSteps, dt) {
   throw new Error("condition not reached after " + maxSteps + " updates");
 }
 
-console.log("Azeroth Keep TD — edge tests");
+console.log("Frontier Keep TD — edge tests");
 
 test("pause freezes an active wave", function () {
   const game = newGame(101);

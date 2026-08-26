@@ -131,12 +131,13 @@
       maxHp: def.hp,
       mana: def.mana,
       maxMana: def.mana,
-      cd: { q: 0, w: 0, e: 0 },
+      cd: { q: 0, w: 0, e: 0, r: 0 },
       shield: 0,
       critUntil: 0,
       cleaveUntil: 0,
       imagesUntil: 0,
       metaUntil: 0,
+      cycloneUntil: 0,
       frenzyUntil: 0,
       invulnUntil: 0,
       auraBoostUntil: 0,
@@ -400,7 +401,7 @@
       spellImmune: !!wave.spellImmune,
       abilities: wave.abilities || [],
       abilityText: D.abilityText(wave.abilities, this.lang),
-      hp: S.waveHp(wave.hp, this.difficulty),
+      hp: S.waveHp(wave.hp, this.difficulty, wave.index),
     };
   };
 
@@ -430,7 +431,7 @@
     if (w.boss) {
       this.banner(this.msg("bossWave", {
         name: this.waveLabel(w),
-        hp: S.waveHp(w.hp, this.difficulty),
+        hp: S.waveHp(w.hp, this.difficulty, w.index),
         armor: D.armorLabel(w.armorType, this.lang),
         ability: D.abilityText(w.abilities, this.lang),
       }), "#ff8a65");
@@ -442,7 +443,7 @@
 
   Game.prototype._spawnCreep = function (wave) {
     const start = this.path[0];
-    const hp = S.waveHp(wave.hp, this.difficulty);
+    const hp = S.waveHp(wave.hp, this.difficulty, wave.index);
     const bounty = S.waveBounty(wave.bounty, this.difficulty);
     const creep = {
       id: nid(),
@@ -462,12 +463,15 @@
       armorType: wave.armorType,
       flying: wave.flying,
       spellImmune: !!wave.spellImmune,
-      speed: wave.speed * (wave.flying ? 1.05 : 1),
+      speed: S.creepSpeed(wave.speed, this.difficulty) * (wave.flying ? 1.05 : 1),
       color: wave.color,
       boss: wave.boss,
       slow: 0,
+      slowPow: 0,
       root: 0,
       poison: 0,
+      poisonDps: 0,
+      incoming: 0,
       shred: 0,
       shredAmt: 0,
       abilities: wave.abilities || [],
@@ -522,9 +526,17 @@
       r: res.multiplier >= 1.4 ? 6 : 4,
       life: 0.25,
     });
+    // Status magnitudes come from the tower data so the knobs actually work:
+    // slow: fraction of move speed removed; poison: dps per tier; root: seconds.
     if (source) {
-      if (source.slow) creep.slow = Math.max(creep.slow, 1.6);
-      if (source.poison) creep.poison = Math.max(creep.poison, 2.4);
+      if (source.slow) {
+        creep.slow = Math.max(creep.slow, 1.6);
+        creep.slowPow = Math.max(creep.slowPow || 0, source.slow);
+      }
+      if (source.poison) {
+        creep.poison = Math.max(creep.poison, 2.4);
+        creep.poisonDps = Math.max(creep.poisonDps || 0, source.poison * (source.tier || 1));
+      }
       if (source.root) creep.root = Math.max(creep.root, source.root);
     }
     if (creep.hp <= 0) this._killCreep(creep);
@@ -561,7 +573,8 @@
     creep._dead = true;
     creep.hp = 0;
     const livesBefore = this.lives;
-    this.lives = S.livesAfterLeak(this.lives, 1, creep.boss ? 2 : 1);
+    // A leaked boss is a whole wave lost: 3 lives instead of 1.
+    this.lives = S.livesAfterLeak(this.lives, 1, creep.boss ? 3 : 1);
     this.fxEmit("leak", "ring", creep.x, creep.y, { color: "#ff5252", life: 0.75, r: creep.boss ? 40 : 26 });
     this.fxEmit("leak", "spark", creep.x, creep.y - 8, { color: "#ff8a80", life: 0.35, r: 6 });
     this.float(creep.x, creep.y - 26,
@@ -580,7 +593,7 @@
       else this.audio.lose();
     }
     try {
-      const key = "azeroth-keep-td-scores";
+      const key = "frontier-keep-td-scores";
       const prev = JSON.parse(localStorage.getItem(key) || "[]");
       prev.push({
         at: Date.now(),
@@ -621,6 +634,7 @@
     else if (slot === "q") this._castQ(h, def);
     else if (slot === "w") this._castW(h, def);
     else if (slot === "e") this._castE(h, def);
+    else if (slot === "r") this._castR(h, def);
     this.announce(this.msg("heroCast", {
       hero: h.def.name[this.lang] || h.def.name.zh,
       spell: def[this.lang] || def.zh,
@@ -697,6 +711,42 @@
         this.goldEarned += def.gold;
         this.float(h.x, h.y, "+" + def.gold, "#90caf9");
       }
+    }
+  };
+
+  /** R ultimates: one big, telegraphed answer per commander. */
+  Game.prototype._castR = function (h, def) {
+    const id = h.def.id;
+    if (id === "paladin") {
+      // Holy Wrath: spell nova around the hero + full self heal.
+      const near = this.hash.queryRadius(h.x, h.y, def.radius || 220);
+      for (let i = 0; i < near.length; i++) {
+        this._hitCreep(near[i], def.dmg || 240, "spells", { canHitFlying: true });
+      }
+      if (def.fullHeal) this._healHero(h, h.maxHp);
+      this.ring(h.x, h.y, "#ffe082", 0.9, def.radius || 220);
+    } else if (id === "blademaster") {
+      // Steel Cyclone: immune spin that replaces normal attacks with AoE dps.
+      h.cycloneUntil = this.time + (def.dur || 6);
+      h.invulnUntil = Math.max(h.invulnUntil, h.cycloneUntil);
+      this.ring(h.x, h.y, "#ff7043", 0.8, def.radius || 96);
+    } else if (id === "demonhunter") {
+      // Chaos Rift: chaos-type burst — ignores armor type and spell immunity.
+      const near = this.hash.queryRadius(h.x, h.y, def.radius || 180);
+      for (let i = 0; i < near.length; i++) {
+        const c = near[i];
+        this._hitCreep(c, def.dmg || 200, "chaos", { canHitFlying: true });
+        if (c.hp > 0 && def.shred) {
+          c.shred = Math.max(c.shred || 0, def.shredDur || 8);
+          c.shredAmt = Math.max(c.shredAmt || 0, def.shred);
+        }
+      }
+      this.ring(h.x, h.y, "#7e57c2", 0.9, def.radius || 180);
+    } else if (id === "deathknight") {
+      // Legion of the Dead: a bigger, longer Animate Dead.
+      const n = def.count || 6;
+      for (let i = 0; i < n; i++) this._summonSkeleton(h, i, n, def);
+      this.ring(h.x, h.y, "#90caf9", 0.9, 60);
     }
   };
 
@@ -863,11 +913,13 @@
       }
       if (c.poison > 0) {
         c.poison -= dt;
-        c.hp -= 6 * dt;
+        c.hp -= (c.poisonDps || 6) * dt;
         if (c.hp <= 0) { this._killCreep(c); continue; }
       }
-      if (c.root > 0) { c.root -= dt; continue; }
-      const slowMul = c.slow > 0 ? 0.65 : 1;
+      if (c.root > 0 && !c.boss) { c.root -= dt; continue; }
+      // Bosses shrug off half of any slow and cannot be rooted.
+      const slowPow = c.slow > 0 ? (c.slowPow || 0.35) * (c.boss ? 0.5 : 1) : 0;
+      const slowMul = 1 - slowPow;
       if (c.slow > 0) c.slow -= dt;
       c.dist += c.speed * slowMul * dt;
       const pos = S.pointOnPolyline(path, c.dist);
@@ -955,13 +1007,22 @@
       if (t.cd > 0) continue;
       const range = t.range * this.towerRangeMul;
       const targets = this.hash.queryRadius(t.x, t.y, range);
+      // Prefer the furthest creep that is not already doomed by in-flight
+      // damage; only overcommit when every target in range is doomed.
       let pick = null;
       let best = -1;
+      let pickDoomed = null;
+      let bestDoomed = -1;
       for (let k = 0; k < targets.length; k++) {
         const c = targets[k];
         if (!S.canTowerHit(t, c)) continue;
-        if (c.dist > best) { best = c.dist; pick = c; }
+        if ((c.incoming || 0) < c.hp) {
+          if (c.dist > best) { best = c.dist; pick = c; }
+        } else if (c.dist > bestDoomed) {
+          bestDoomed = c.dist; pickDoomed = c;
+        }
       }
+      if (!pick) pick = pickDoomed;
       if (!pick) continue;
       let rate = t.rate;
       let dmg = t.dmg * this.towerDamageMul;
@@ -996,13 +1057,23 @@
     const dy = target.y - tower.y;
     const len = Math.hypot(dx, dy) || 1;
     const spd = 340;
+    const base = dmg == null ? tower.dmg : dmg;
+    // Book the expected post-mitigation damage on the target so other towers
+    // can see it is already doomed (released when the projectile resolves).
+    const expected = S.applyHit(base, tower.attackType, target.armorType, this._effectiveArmor(target), {
+      flying: target.flying,
+      canHitFlying: tower.canHitFlying !== false,
+      spellImmune: target.spellImmune,
+    }).damage;
+    target.incoming = (target.incoming || 0) + expected;
     this.projectiles.push({
       x: tower.x,
       y: tower.y - 16,
       vx: (dx / len) * spd,
       vy: (dy / len) * spd,
       targetId: target.id,
-      dmg: dmg == null ? tower.dmg : dmg,
+      dmg: base,
+      expected: expected,
       attackType: tower.attackType,
       splash: tower.splash,
       chain: tower.chain,
@@ -1039,6 +1110,7 @@
       if (target && S.dist2(p.x, p.y, target.x, target.y) < 14 * 14) hit = true;
       if (p.life <= 0) hit = true;
       if (!hit) continue;
+      if (target) target.incoming = Math.max(0, (target.incoming || 0) - (p.expected || 0));
       if (target && target.hp > 0) {
         this._hitCreep(target, p.dmg, p.attackType, p.source);
         if (p.splash) {
@@ -1050,18 +1122,23 @@
           }
         }
         if (p.chain) {
+          // Bounce to the nearest un-hit creep; never revisit a bounced target.
+          const struck = [target];
           let from = target;
           for (let b = 0; b < p.chain; b++) {
             const cand = this.hash.queryRadius(from.x, from.y, 90);
             let next = null;
+            let bestD = Infinity;
             for (let c = 0; c < cand.length; c++) {
-              if (cand[c].hp <= 0 || cand[c] === from) continue;
-              if (!S.canTowerHit(p.source, cand[c])) continue;
-              next = cand[c];
-              break;
+              const cc = cand[c];
+              if (cc.hp <= 0 || struck.indexOf(cc) >= 0) continue;
+              if (!S.canTowerHit(p.source, cc)) continue;
+              const d = S.dist2(from.x, from.y, cc.x, cc.y);
+              if (d < bestD) { bestD = d; next = cc; }
             }
             if (!next) break;
             this._hitCreep(next, p.dmg * (0.7 - b * 0.15), p.attackType, p.source);
+            struck.push(next);
             from = next;
           }
         }
@@ -1079,6 +1156,7 @@
     h.cd.q = Math.max(0, h.cd.q - dt);
     h.cd.w = Math.max(0, h.cd.w - dt);
     h.cd.e = Math.max(0, h.cd.e - dt);
+    h.cd.r = Math.max(0, (h.cd.r || 0) - dt);
     if (h.dead) {
       h.respawn -= dt;
       h.mana = Math.min(h.maxMana, h.mana + HERO_MANA_REGEN * 0.5 * dt);
@@ -1101,9 +1179,19 @@
     }
 
     h.attackCd -= dt;
-    if (h.attackCd <= 0) this._heroAttack(h);
+    if (h.cycloneUntil > this.time) this._heroCyclone(h, dt);
+    else if (h.attackCd <= 0) this._heroAttack(h);
     this._heroImmolation(h, dt);
     this._heroTakeDamage(h, dt);
+  };
+
+  /** Steel Cyclone: continuous hero-type AoE while spinning. */
+  Game.prototype._heroCyclone = function (h, dt) {
+    const def = h.def.r || {};
+    const near = this.hash.queryRadius(h.x, h.y, def.radius || 96);
+    for (let i = 0; i < near.length; i++) {
+      this._hitCreep(near[i], (def.dps || 90) * dt, "hero", HERO_SOURCE);
+    }
   };
 
   Game.prototype._heroAttack = function (h) {
@@ -1204,6 +1292,7 @@
     h.cleaveUntil = 0;
     h.imagesUntil = 0;
     h.metaUntil = 0;
+    h.cycloneUntil = 0;
     h.frenzyUntil = 0;
     h.auraBoostUntil = 0;
     h.shield = 0;

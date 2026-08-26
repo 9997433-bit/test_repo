@@ -7,7 +7,7 @@
 
   const STR = {
     zh: {
-      title: "艾泽拉斯要塞塔防",
+      title: "边境要塞塔防",
       subtitle: "魔兽争霸 III · 自定义塔防致敬作",
       start: "开始战役",
       resume: "继续",
@@ -30,7 +30,7 @@
       sell: "出售",
       upgrade: "升级",
       build: "建造",
-      victory: "胜利！天灾被击退了。",
+      victory: "胜利！入侵被击退了。",
       defeat: "失败……要塞陷落。",
       restart: "再来一局",
       lang: "语言",
@@ -54,7 +54,7 @@
       counter: "建议",
     },
     en: {
-      title: "Azeroth Keep TD",
+      title: "Frontier Keep TD",
       subtitle: "A Warcraft III custom-TD tribute",
       start: "Begin Campaign",
       resume: "Resume",
@@ -282,7 +282,7 @@
       attackType: "pierce", canHitFlying: true, splash: 0, cost: [75, 120, 190],
       dmg: [10, 18, 30], rate: [0.65, 0.58, 0.5], range: [135, 150, 165], armor: 5,
       color: "#80deea", desc: { zh: "幽魂穿刺，克制轻甲。", en: "Ghost pierce. Strong vs light." } },
-    { id: "u_zig", race: "undead", line: 1, name: { zh: "蛛网通灵塔", en: "Nerubian Ziggurat" },
+    { id: "u_zig", race: "undead", line: 1, name: { zh: "蛛网通灵塔", en: "Spider Ziggurat" },
       attackType: "magic", canHitFlying: true, slow: 0.35, cost: [105, 165, 250],
       dmg: [9, 16, 27], rate: [0.9, 0.8, 0.7], range: [130, 145, 160], armor: 6,
       color: "#4dd0e1", desc: { zh: "蛛网减速，魔法伤害。", en: "Web slow + magic." } },
@@ -293,46 +293,57 @@
   ];
 
   /**
-   * Hero kits. Every ability carries the numbers the sim reads, so each
-   * commander plays differently:
+   * Hero kits (original names — the classes are the WC3 homage, the people are
+   * ours). Every ability carries the numbers the sim reads, so each commander
+   * plays differently:
    *  - Paladin  : tower damage aura + burst heal-nova, survives melee
    *  - Blademaster: single-target burst, cleave and multi-strike windows
-   *  - Demon Hunter: sustained AoE, armor shred, ranged Metamorphosis
+   *  - Demon Hunter: sustained AoE, armor shred, ranged demon form
    *  - Death Knight: tower attack-speed aura, drain, raises skeletons
+   * R ultimates cost 100+ mana on 40–50s cooldowns: roughly one cast every
+   * wave or two — a decision, not a rotation.
    */
   const HEROES = [
-    { id: "paladin", name: { zh: "乌瑟尔", en: "Uther" }, title: { zh: "圣骑士", en: "Paladin" },
+    { id: "paladin", name: { zh: "奥德里克", en: "Aldric" }, title: { zh: "圣骑士", en: "Paladin" },
       color: "#f5e6a8", attackType: "hero", dmg: 22, rate: 0.85, range: 90, hp: 460, mana: 180,
       q: { zh: "圣光术", en: "Holy Light", mana: 40, cd: 8, dmg: 95, nova: 0.5, novaRadius: 70, heal: 150, cast: 260,
         desc: { zh: "对目标造成 95 法术伤害，周围敌人受到一半，并治疗自身。", en: "95 spell damage to a target, half to nearby foes, heals the Paladin." } },
       w: { zh: "虔诚光环", en: "Devotion Aura", mana: 30, cd: 20, affects: "towers", stat: "dmg", aura: 0.15, boost: 0.4, dur: 8, radius: 200,
         desc: { zh: "被动：范围内防御塔 +15% 伤害；激活后 8 秒内提升到 +40%。", en: "Passive: +15% damage to towers in range. Active: +40% for 8s." } },
       e: { zh: "神圣护盾", en: "Divine Shield", mana: 50, cd: 20, dur: 5, hasteMul: 0.5, invuln: true,
-        desc: { zh: "5 秒内免疫伤害且攻速翻倍。", en: "5s of damage immunity and double attack speed." } } },
-    { id: "blademaster", name: { zh: "格罗玛什", en: "Grom" }, title: { zh: "剑圣", en: "Blademaster" },
+        desc: { zh: "5 秒内免疫伤害且攻速翻倍。", en: "5s of damage immunity and double attack speed." } },
+      r: { zh: "天罚圣光", en: "Holy Wrath", mana: 110, cd: 50, dmg: 240, radius: 220, fullHeal: true,
+        desc: { zh: "对周围 220 码内所有敌人造成 240 法术伤害，并完全治愈自身。", en: "240 spell damage to every foe within 220, and fully heals the Paladin." } } },
+    { id: "blademaster", name: { zh: "卡尔加", en: "Karghal" }, title: { zh: "剑圣", en: "Blademaster" },
       color: "#e07030", attackType: "hero", dmg: 28, rate: 0.7, range: 70, hp: 380, mana: 140,
       q: { zh: "致命一击", en: "Crit Stance", mana: 25, cd: 6, crit: 2.2, dur: 5, cleave: 0.35, cleaveRadius: 52,
         desc: { zh: "5 秒内攻击暴击 2.2 倍并顺劈 35%。", en: "5s of 2.2x crits with 35% cleave." } },
       w: { zh: "镜像", en: "Mirror Image", mana: 35, cd: 14, dur: 6, images: 2, imageDmg: 0.45,
         desc: { zh: "6 秒内镜像同时攻击至多 3 个目标（分身 45% 伤害）。", en: "6s: strike up to 3 targets, images deal 45%." } },
       e: { zh: "疾步风", en: "Wind Walk", mana: 30, cd: 12, dur: 3, speed: 2.1, ambush: 3,
-        desc: { zh: "3 秒疾行且不可被攻击，脱离时首次攻击 3 倍伤害。", en: "3s of untouchable sprint; the next strike hits for 3x." } } },
-    { id: "demonhunter", name: { zh: "伊利丹", en: "Illidan" }, title: { zh: "恶魔猎手", en: "Demon Hunter" },
+        desc: { zh: "3 秒疾行且不可被攻击，脱离时首次攻击 3 倍伤害。", en: "3s of untouchable sprint; the next strike hits for 3x." } },
+      r: { zh: "钢铁旋风", en: "Steel Cyclone", mana: 100, cd: 45, dur: 6, dps: 90, radius: 96,
+        desc: { zh: "旋风斩 6 秒：免疫伤害，对周围敌人每秒造成 90 英雄伤害。", en: "Spin for 6s: immune to damage, dealing 90 hero dps to all foes around you." } } },
+    { id: "demonhunter", name: { zh: "西尔萨", en: "Sylthar" }, title: { zh: "恶魔猎手", en: "Demon Hunter" },
       color: "#7e57c2", attackType: "hero", dmg: 26, rate: 0.72, range: 75, hp: 360, mana: 200,
       q: { zh: "法力燃烧", en: "Mana Burn", mana: 20, cd: 7, dmg: 75, cast: 260, shred: 5, shredDur: 8, bossBonus: 60,
         desc: { zh: "75 法术伤害并撕裂 5 点护甲 8 秒，对首领额外伤害。", en: "75 spell damage, shreds 5 armor for 8s, bonus versus bosses." } },
       w: { zh: "献祭", en: "Immolation", mana: 8, cd: 1.5, toggle: true, affects: "creeps", aura: 16, radius: 82, drain: 7,
         desc: { zh: "开关：每秒对周围敌人造成 16 伤害，持续消耗法力。", en: "Toggle: 16 dps around the hero while mana drains." } },
-      e: { zh: "变身", en: "Metamorphosis", mana: 80, cd: 24, dur: 8, dmgMul: 1.5, rangeBonus: 70, splash: 58, splashRatio: 0.4, hasteMul: 0.85,
-        desc: { zh: "8 秒恶魔形态：+50% 伤害、+70 射程且攻击溅射。", en: "8s demon form: +50% damage, +70 range, splashing attacks." } } },
-    { id: "deathknight", name: { zh: "阿尔萨斯", en: "Arthas" }, title: { zh: "死亡骑士", en: "Death Knight" },
+      e: { zh: "恶魔变身", en: "Demon Form", mana: 80, cd: 24, dur: 8, dmgMul: 1.5, rangeBonus: 70, splash: 58, splashRatio: 0.4, hasteMul: 0.85,
+        desc: { zh: "8 秒恶魔形态：+50% 伤害、+70 射程且攻击溅射。", en: "8s demon form: +50% damage, +70 range, splashing attacks." } },
+      r: { zh: "混沌裂隙", en: "Chaos Rift", mana: 100, cd: 40, dmg: 200, radius: 180, chaos: true, shred: 3, shredDur: 8,
+        desc: { zh: "对周围 180 码内敌人造成 200 混沌伤害（无视护甲类型与魔法免疫）并撕裂 3 点护甲。", en: "200 chaos damage (ignores armor type and spell immunity) to foes within 180, shredding 3 armor." } } },
+    { id: "deathknight", name: { zh: "莫尔文", en: "Morvane" }, title: { zh: "死亡骑士", en: "Death Knight" },
       color: "#90caf9", attackType: "hero", dmg: 24, rate: 0.8, range: 80, hp: 400, mana: 190,
       q: { zh: "死亡缠绕", en: "Death Coil", mana: 35, cd: 7, dmg: 90, heal: 130, cast: 270,
         desc: { zh: "90 法术伤害并汲取生命治疗自身。", en: "90 spell damage that drains life back to the hero." } },
       w: { zh: "邪恶光环", en: "Unholy Aura", mana: 25, cd: 18, affects: "towers", stat: "rate", aura: 0.12, boost: 0.35, dur: 8, radius: 200,
         desc: { zh: "被动：范围内防御塔 +12% 攻速；激活后 8 秒 +35%。", en: "Passive: +12% tower attack speed. Active: +35% for 8s." } },
       e: { zh: "亡者复生", en: "Animate Dead", mana: 60, cd: 22, dur: 14, count: 2, dmg: 26, gold: 15,
-        desc: { zh: "召唤 2 具骷髅战士作战 14 秒，并从尸体上搜刮黄金。", en: "Raise 2 skeletons for 14s and loot gold from the corpses." } } },
+        desc: { zh: "召唤 2 具骷髅战士作战 14 秒，并从尸体上搜刮黄金。", en: "Raise 2 skeletons for 14s and loot gold from the corpses." } },
+      r: { zh: "亡者军团", en: "Legion of the Dead", mana: 110, cd: 50, dur: 20, count: 6, dmg: 26,
+        desc: { zh: "召唤 6 具骷髅战士组成军团，作战 20 秒。", en: "Raise a legion of 6 skeletons that fight for 20s." } } },
   ];
 
   // Summoned unit statlines reuse the tower shape so HUD/renderer can draw them.
@@ -440,6 +451,29 @@
     }).join(zh ? "，" : "; ");
   }
 
+  /**
+   * Wave economy (R1-FABLE-3 rebalance).
+   * Total wave HP follows an exponential budget — 1.16x per wave, softening to
+   * 1.11x after wave 20 (players run out of build room/upgrades late, so the
+   * knee keeps waves 21–30 tense instead of impossible). Bounty is proportional
+   * to the raw budget with a slowly rising divisor, so income tracks the threat
+   * early while interest and lumber tech carry the late game.
+   */
+  const WAVE_BUDGET_BASE = 250;
+  const WAVE_GROWTH = 1.16;
+  const WAVE_GROWTH_LATE = 1.11;
+  const WAVE_KNEE = 20;
+  const BOSS_HP_MULT = 1.35;
+  const BOSS_BOUNTY_MULT = 1.25;
+  const FLYING_HP_MULT = 0.8; // fewer towers can shoot air
+  const IMMUNE_HP_MULT = 0.9; // magic lines go dark vs spell immunity
+
+  function waveBudget(i) {
+    let b = WAVE_BUDGET_BASE;
+    for (let k = 0; k < i; k++) b *= k < WAVE_KNEE - 1 ? WAVE_GROWTH : WAVE_GROWTH_LATE;
+    return b;
+  }
+
   function makeWaves() {
     const plan = [];
     const seq = [
@@ -453,22 +487,31 @@
     for (let i = 0; i < 30; i++) {
       const pair = seq[i];
       const a = arch(pair[0]);
-      const n = pair[1] + Math.floor(i / 6);
       const boss = (i + 1) % 5 === 0;
-      const hp = 28 + i * 18 + (boss ? 220 + i * 20 : 0);
-      const bounty = 4 + Math.floor(i / 2) + (boss ? 18 : 0);
+      // Boss waves are one consolidated boss: a set piece whose telegraphed
+      // abilities matter, instead of a diluted mini-pack.
+      const count = boss ? 1 : pair[1];
+      const spellImmune = !!a.spellImmune || (boss && i === 19);
+      const raw = waveBudget(i);
+      let budget = raw;
+      if (a.flying) budget *= FLYING_HP_MULT;
+      if (spellImmune) budget *= IMMUNE_HP_MULT;
+      const hp = Math.max(1, Math.round(boss ? budget * BOSS_HP_MULT : budget / count));
+      // Bounty comes from the *raw* budget so flying/immune waves pay full risk.
+      const divisor = 12 + (i + 1) * 0.25;
+      const bounty = Math.max(1, Math.round((boss ? raw * BOSS_BOUNTY_MULT : raw / count) / divisor));
       const profile = boss ? BOSS_PROFILES[Math.floor(i / 5) % BOSS_PROFILES.length] : null;
       plan.push({
         index: i + 1,
         boss: boss,
-        count: boss ? Math.max(1, Math.floor(n / 3)) : n,
+        count: count,
         hp: hp,
         bounty: bounty,
-        armor: a.armor + Math.floor(i / 10),
+        armor: a.armor + Math.floor(i / 10) + (boss ? 2 : 0),
         armorType: boss && i >= 24 ? "hero" : a.armorType,
         flying: a.flying,
-        spellImmune: !!a.spellImmune || (boss && i === 19),
-        speed: a.speed,
+        spellImmune: spellImmune,
+        speed: a.speed * (boss ? 0.85 : 1),
         color: a.color,
         name: a.name,
         key: a.key,

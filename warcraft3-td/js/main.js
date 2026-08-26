@@ -1,12 +1,12 @@
 /**
- * Boot, menus, settings and input for Azeroth Keep TD.
+ * Boot, menus, settings and input for Frontier Keep TD.
  * The command card is the single source of truth for hotkeys: every key press
  * resolves to the slot the player can see, so card and keyboard cannot drift.
  */
 (function () {
   "use strict";
 
-  const SETTINGS_KEY = "azeroth-keep-td-settings";
+  const SETTINGS_KEY = "frontier-keep-td-settings";
   const SPEEDS = [1, 1.5, 2];
 
   const app = {
@@ -543,6 +543,7 @@
       app.game.buildGhost = null;
       app.game.selected = null;
     } else if (act.indexOf("cast-") === 0) app.game.cast(act.slice(5));
+    else if (act.indexOf("tech-") === 0) app.game.spendLumber(act.slice(5));
     else if (act.indexOf("build-") === 0) {
       app.game.selected = null;
       app.game.buildId = act.slice(6);
@@ -596,6 +597,6 @@
     setText($("btn-restart"), app.hud.str("restart"));
   }
 
-  window.AzerothApp = app;
+  window.FrontierApp = app;
   window.addEventListener("load", boot);
 })();

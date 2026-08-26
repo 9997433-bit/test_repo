@@ -1,5 +1,5 @@
 /**
- * Azeroth Keep TD — headless simulation core (browser + Node).
+ * Frontier Keep TD — headless simulation core (browser + Node).
  * Pure Warcraft III TFT-inspired combat/economy math. No DOM.
  */
 (function (root, factory) {
@@ -25,12 +25,20 @@
     spells: { unarmored: 1.0, light: 1.0, medium: 1.0, heavy: 1.0, fortified: 1.0, hero: 0.7, divine: 0.05 },
   };
 
+  /**
+   * Difficulty changes the feel, not just the sponge: creep speed scales,
+   * bounty scales, and HP multipliers above 1 ramp in over the first
+   * HP_RAMP_WAVES waves so harder starts stay survivable while the player's
+   * economy comes online.
+   */
   const DIFFICULTY = {
-    easy: { hp: 0.75, bounty: 1.15, gold: 160, lives: 30, name: "easy" },
-    normal: { hp: 1.0, bounty: 1.0, gold: 120, lives: 20, name: "normal" },
-    hard: { hp: 1.45, bounty: 0.85, gold: 100, lives: 15, name: "hard" },
-    insane: { hp: 2.1, bounty: 0.7, gold: 80, lives: 10, name: "insane" },
+    easy: { hp: 0.7, bounty: 1.2, gold: 180, lives: 30, speed: 0.92, name: "easy" },
+    normal: { hp: 1.0, bounty: 1.0, gold: 130, lives: 20, speed: 1.0, name: "normal" },
+    hard: { hp: 1.3, bounty: 0.9, gold: 110, lives: 15, speed: 1.06, name: "hard" },
+    insane: { hp: 1.65, bounty: 0.8, gold: 100, lives: 10, speed: 1.12, name: "insane" },
   };
+
+  const HP_RAMP_WAVES = 12;
 
   function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -161,9 +169,23 @@
     return Math.max(1, Math.round(base * d.bounty));
   }
 
-  function waveHp(base, difficulty) {
+  /**
+   * HP multipliers above 1 ramp in linearly over the first HP_RAMP_WAVES
+   * waves (pass the 1-based wave number). Discounts (easy) apply immediately.
+   * Omitting waveNum applies the full multiplier, which keeps old callers valid.
+   */
+  function waveHp(base, difficulty, waveNum) {
     const d = DIFFICULTY[difficulty] || DIFFICULTY.normal;
-    return Math.max(1, Math.round(base * d.hp));
+    let m = d.hp;
+    if (m > 1 && waveNum) {
+      m = 1 + (m - 1) * Math.min(1, waveNum / HP_RAMP_WAVES);
+    }
+    return Math.max(1, Math.round(base * m));
+  }
+
+  function creepSpeed(base, difficulty) {
+    const d = DIFFICULTY[difficulty] || DIFFICULTY.normal;
+    return base * (d.speed || 1);
   }
 
   function hashGridKey(x, y, cell) {
@@ -249,6 +271,8 @@
     nextInterestRate,
     waveBounty,
     waveHp,
+    creepSpeed,
+    HP_RAMP_WAVES,
     hashGridKey,
     SpatialHash,
     tickInterest,

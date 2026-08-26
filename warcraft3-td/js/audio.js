@@ -1,5 +1,5 @@
 /**
- * Procedural WebAudio for Azeroth Keep TD.
+ * Procedural WebAudio for Frontier Keep TD.
  *
  * Public contract used by main.js / game.js (do not change):
  *   new AudioBus(), .master (0..1, set directly), .enabled, .ensure(),

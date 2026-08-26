@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * No-dep Node test runner for Azeroth Keep TD.
+ * No-dep Node test runner for Frontier Keep TD.
  */
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
@@ -59,7 +59,7 @@ function resolveProjectile(game, projectile, creeps) {
   game._tickProjectiles(0);
 }
 
-console.log("Azeroth Keep TD — tests");
+console.log("Frontier Keep TD — tests");
 
 console.log("\n[damage table]");
 almost(S.damageMultiplier("pierce", "light"), 2.0, "pierce vs light = 2x");
@@ -83,7 +83,7 @@ assert(S.interestGold(80, 0.08) === 6, "8% of 80 = 6");
 assert(S.sellRefund(200, 0.75) === 150, "75% of 200 = 150");
 assert(S.nextInterestRate(0.02, 3) === 0.08, "interest cap 8%");
 const eco = S.createEconomy("easy");
-assert(eco.gold === 160 && eco.lives === 30, "easy start gold/lives");
+assert(eco.gold === 180 && eco.lives === 30, "easy start gold/lives");
 const interestGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 11 });
 interestGame.gold = 100;
 interestGame.update(15);
@@ -115,11 +115,11 @@ assert(hash.queryRadius(12, 12, 20)[0].id === 1, "hash returns correct entity");
 
 console.log("\n[headless match]");
 const g = new globalThis.Game({ difficulty: "easy", heroId: "paladin", lang: "en", headless: true, seed: 42 });
-assert(g.gold === 160, "easy gold");
+assert(g.gold === 180, "easy gold");
 assert(g.lives === 30, "easy lives");
 const t = g.tryBuild("h_guard", 3 * 48 + 24, 5 * 48 + 24);
 assert(!!t, "placed guard tower off-path");
-assert(g.gold === 160 - 70, "gold deducted");
+assert(g.gold === 180 - 70, "gold deducted");
 const beforeOverlap = g.gold;
 assert(
   g.tryBuild("h_guard", 3 * 48 + 24, 5 * 48 + 24) === false &&
@@ -266,6 +266,155 @@ resolveProjectile(splashGame, {
 almost(splashPrimary.hp, 900, "splash projectile damages primary target");
 almost(splashNearby.hp, 960, "splash damages nearby creep for 40%");
 almost(splashFar.hp, 1000, "splash does not damage creep outside radius");
+
+console.log("\n[chain hop order]");
+const hopGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 21 });
+const hopA = testCreep("hop-a", 100, 100);
+const hopB = testCreep("hop-b", 130, 100);
+const hopC = testCreep("hop-c", 160, 100);
+const hopD = testCreep("hop-d", 190, 100);
+resolveProjectile(hopGame, {
+  x: hopA.x, y: hopA.y, vx: 0, vy: 0, targetId: hopA.id,
+  dmg: 100, attackType: "magic", splash: 0, chain: 3,
+  source: { kind: "tower", attackType: "magic", canHitFlying: true },
+  life: 1,
+}, [hopA, hopB, hopC, hopD]);
+almost(hopA.hp, 900, "chain primary takes full damage exactly once");
+almost(hopB.hp, 930, "first hop is the nearest creep (70%)");
+almost(hopC.hp, 945, "second hop continues down the line (55%)");
+almost(hopD.hp, 960, "third hop never revisits a struck creep (40%)");
+
+console.log("\n[difficulty ramp & speed]");
+assert(S.waveHp(100, "hard", 12) === 130, "hard multiplier fully ramped at wave 12");
+assert(S.waveHp(100, "hard", 30) === 130, "hard multiplier stays flat after the ramp");
+assert(S.waveHp(100, "hard", 1) < 110, "hard wave 1 is nearly unscaled");
+assert(S.waveHp(100, "easy", 1) === 70, "easy discount applies immediately");
+assert(S.waveHp(100, "insane", 6) === Math.round(100 * (1 + 0.65 * 0.5)), "insane ramps linearly");
+almost(S.creepSpeed(50, "insane"), 56, "insane creeps move 12% faster");
+almost(S.creepSpeed(50, "easy"), 46, "easy creeps move 8% slower");
+assert(S.DIFFICULTY.easy.gold > S.DIFFICULTY.normal.gold &&
+  S.DIFFICULTY.normal.gold > S.DIFFICULTY.hard.gold &&
+  S.DIFFICULTY.hard.gold > S.DIFFICULTY.insane.gold, "start gold ordered by difficulty");
+
+console.log("\n[wave curves]");
+const wavesPlan = (globalThis.GameData || require(join(root, "../js/data.js")), globalThis.GameData).makeWaves();
+assert(wavesPlan.length === 30, "30 waves");
+assert([5, 10, 15, 20, 25, 30].every(function (n) { return wavesPlan[n - 1].boss; }), "bosses at 5/10/15/20/25/30");
+assert(wavesPlan.every(function (w) { return !w.boss || w.count === 1; }), "boss waves are a single consolidated boss");
+assert(wavesPlan.some(function (w) { return w.flying && !w.boss; }), "flying waves exist");
+assert(wavesPlan.some(function (w) { return w.spellImmune; }), "spell immune waves exist");
+function totalHp(w) { return w.hp * w.count; }
+function totalBounty(w) { return w.bounty * w.count; }
+assert(totalHp(wavesPlan[29]) > totalHp(wavesPlan[0]) * 40, "EHP grows super-linearly across 30 waves");
+const earlyRatio = totalHp(wavesPlan[9]) / totalHp(wavesPlan[4]);
+const lateRatio = totalHp(wavesPlan[29]) / totalHp(wavesPlan[24]);
+assert(lateRatio < earlyRatio, "late growth softens after the knee");
+// Income must track threat: gold-per-EHP may drift down slowly (interest era)
+// but never collapse the way the linear bounty did.
+const goldPerHpW3 = totalBounty(wavesPlan[2]) / totalHp(wavesPlan[2]);
+const goldPerHpW23 = totalBounty(wavesPlan[22]) / totalHp(wavesPlan[22]);
+assert(goldPerHpW23 > goldPerHpW3 * 0.55, "bounty stays proportional to EHP (no linear collapse)");
+assert(wavesPlan[13].spellImmune && !wavesPlan[13].boss, "wave 14 ancients are spell immune");
+
+console.log("\n[data-driven status effects]");
+const fxGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 31 });
+const webbed = testCreep("webbed", 100, 100);
+webbed.slow = 0; webbed.slowPow = 0; webbed.poison = 0; webbed.poisonDps = 0; webbed.root = 0;
+fxGame._hitCreep(webbed, 10, "magic", { slow: 0.35, tier: 1 });
+const chilled = testCreep("chilled", 100, 100);
+chilled.slow = 0; chilled.slowPow = 0; chilled.poison = 0; chilled.poisonDps = 0; chilled.root = 0;
+fxGame._hitCreep(chilled, 10, "magic", { slow: 0.25, tier: 1 });
+assert(webbed.slowPow === 0.35 && chilled.slowPow === 0.25, "slow strength comes from tower data");
+const poisoned = testCreep("poisoned", 100, 100);
+poisoned.slow = 0; poisoned.slowPow = 0; poisoned.poison = 0; poisoned.poisonDps = 0; poisoned.root = 0;
+fxGame._hitCreep(poisoned, 10, "pierce", { poison: 4, tier: 2 });
+assert(poisoned.poisonDps === 8, "poison dps = data value x tier");
+const rooted = testCreep("rooted", 100, 100);
+rooted.slow = 0; rooted.slowPow = 0; rooted.poison = 0; rooted.poisonDps = 0; rooted.root = 0;
+fxGame._hitCreep(rooted, 10, "normal", { root: 0.6 });
+almost(rooted.root, 0.6, "root duration comes from tower data");
+
+console.log("\n[boss rules]");
+const bossGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 32 });
+const livesBefore = bossGame.lives;
+bossGame._leak({ boss: true, hp: 10, name: { zh: "x", en: "x" } });
+assert(bossGame.lives === livesBefore - 3, "boss leak costs 3 lives");
+const bossGame2 = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 33 });
+bossGame2._leak({ boss: false, hp: 10, name: { zh: "x", en: "x" } });
+assert(bossGame2.lives === bossGame2.eco.lives - 1, "normal leak costs 1 life");
+
+console.log("\n[overkill prevention]");
+const okGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 34 });
+okGame.hero = null;
+okGame.gold = 1000;
+const towerA = okGame.tryBuild("h_guard", 3 * 48 + 24, 5 * 48 + 24);
+const towerB = okGame.tryBuild("h_guard", 4 * 48 + 24, 5 * 48 + 24);
+assert(!!towerA && !!towerB, "overkill probe towers placed");
+const weak = testCreep("weak", towerA.x, towerA.y - 40);
+weak.hp = 5; weak.dist = 50; weak.incoming = 0; weak.speed = 0; weak.slow = 0; weak.root = 0; weak.poison = 0;
+const tank = testCreep("tank", towerA.x + 30, towerA.y - 40);
+tank.hp = 1000; tank.dist = 40; tank.incoming = 0; tank.speed = 0; tank.slow = 0; tank.root = 0; tank.poison = 0;
+okGame.creeps = [weak, tank];
+okGame._rebuildHash();
+towerA.cd = 0;
+towerB.cd = 0;
+okGame._tickTowers(0.01);
+const targets = okGame.projectiles.map(function (p) { return p.targetId; }).sort();
+assert(targets.length === 2 && targets[0] !== targets[1],
+  "second tower avoids the creep already doomed by in-flight damage");
+assert(weak.incoming > 0 || tank.incoming > 0, "expected damage is booked on targets");
+
+console.log("\n[hero ultimates]");
+const ultPala = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 41 });
+ultPala.hero.mana = 200;
+ultPala.hero.hp = 100;
+const novaVictim = testCreep("nova", ultPala.hero.x + 50, ultPala.hero.y);
+ultPala.creeps = [novaVictim];
+ultPala._rebuildHash();
+assert(ultPala.cast("r") === true, "paladin R casts");
+assert(novaVictim.hp < 1000, "Holy Wrath damages nearby creeps");
+assert(ultPala.hero.hp === ultPala.hero.maxHp, "Holy Wrath fully heals the Paladin");
+assert(ultPala.hero.cd.r > 0, "R goes on cooldown");
+
+const ultBm = new Game({ difficulty: "normal", heroId: "blademaster", headless: true, seed: 42 });
+ultBm.hero.mana = 200;
+assert(ultBm.cast("r") === true, "blademaster R casts");
+assert(ultBm.hero.cycloneUntil > ultBm.time, "Steel Cyclone is active");
+const spinVictim = testCreep("spin", ultBm.hero.x + 20, ultBm.hero.y);
+ultBm.creeps = [spinVictim];
+ultBm._rebuildHash();
+ultBm._heroCyclone(ultBm.hero, 1);
+assert(spinVictim.hp < 1000, "Steel Cyclone deals AoE damage");
+
+const ultDh = new Game({ difficulty: "normal", heroId: "demonhunter", headless: true, seed: 43 });
+ultDh.hero.mana = 200;
+const immuneVictim = testCreep("immune", ultDh.hero.x + 40, ultDh.hero.y);
+immuneVictim.spellImmune = true;
+ultDh.creeps = [immuneVictim];
+ultDh._rebuildHash();
+assert(ultDh.cast("r") === true, "demon hunter R casts");
+assert(immuneVictim.hp < 1000, "Chaos Rift pierces spell immunity");
+assert(immuneVictim.shredAmt >= 3, "Chaos Rift shreds armor");
+
+const ultDk = new Game({ difficulty: "normal", heroId: "deathknight", headless: true, seed: 44 });
+ultDk.hero.mana = 200;
+const towersBefore = ultDk.towers.length;
+assert(ultDk.cast("r") === true, "death knight R casts");
+assert(ultDk.towers.length === towersBefore + 6, "Legion of the Dead raises 6 skeletons");
+assert(ultDk.towers.every(function (tw) { return !tw.temp || tw.expire > ultDk.time; }), "skeletons carry an expiry");
+
+console.log("\n[lumber shop]");
+const shopGame = new Game({ difficulty: "normal", heroId: "paladin", headless: true, seed: 51 });
+shopGame.lumber = 7;
+assert(shopGame.spendLumber("interest") === true && shopGame.interestRate === 0.04, "interest tech +2%");
+assert(shopGame.spendLumber("armory") === true && shopGame.towerDamageMul === 1.08, "armory tech +8% damage");
+assert(shopGame.spendLumber("sentry") === true && shopGame.towerRangeMul === 1.08, "sentry tech +8% range");
+const livesPre = shopGame.lives;
+assert(shopGame.spendLumber("repair") === true && shopGame.lives === livesPre + 3, "repair tech +3 lives");
+assert(shopGame.lumber === 0, "lumber fully spent");
+assert(shopGame.spendLumber("interest") === false, "cannot buy without lumber");
+const shopState = shopGame.lumberUpgradeState("interest");
+assert(shopState.level === 1 && shopState.affordable === false, "upgrade state reports level and affordability");
 
 console.log("\n" + passed + " passed, " + failed + " failed");
 if (failed) process.exit(1);

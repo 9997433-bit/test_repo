@@ -32,7 +32,7 @@
       tier: "阶", maxTier: "已达最高阶", needGold: "黄金不足", refundText: "立即返还",
       upgradeTo: "升级至", stopBuild: "取消建造", nothing: "无",
       logTitle: "战斗日志", alliesTitle: "盟友", noLog: "尚无战报",
-      keepName: "艾泽拉斯要塞（你）", commander: "指挥官", forces: "驻防部队",
+      keepName: "边境要塞（你）", commander: "指挥官", forces: "驻防部队",
       towersWord: "座", totalWord: "合计", waveWord: "波次", enemiesWord: "场上敌军",
       manaShort: "法力", cdWord: "冷却", readyWord: "就绪", castable: "可施放",
       immuneNote: "该波次魔法免疫", flyNote: "该波次为空中单位",
@@ -41,6 +41,8 @@
       noSelection: "选择一座塔或一名敌军，查看魔兽式攻击护甲克制。",
       sellTip: "出售该塔，立即返还已投入黄金的 75%。",
       cancelTip: "取消当前建造预览并取消选择。",
+      lumberShort: "木", maxWord: "满级", buyWord: "购买",
+      lumberHint: "每 5 波获得 1 木材。升级永久生效。",
     },
     en: {
       atk: "Attack", arm: "Armor", rng: "Range", spd: "Speed", dps: "DPS",
@@ -51,7 +53,7 @@
       tier: "Tier", maxTier: "Max tier reached", needGold: "Not enough gold", refundText: "refunded instantly",
       upgradeTo: "Upgrade to", stopBuild: "Stop build", nothing: "none",
       logTitle: "Combat Log", alliesTitle: "Allies", noLog: "No reports yet",
-      keepName: "Azeroth Keep (you)", commander: "Commander", forces: "Garrison",
+      keepName: "Frontier Keep (you)", commander: "Commander", forces: "Garrison",
       towersWord: "towers", totalWord: "Total", waveWord: "Wave", enemiesWord: "Enemies alive",
       manaShort: "Mana", cdWord: "Cooldown", readyWord: "ready", castable: "Castable",
       immuneNote: "This wave is spell immune", flyNote: "This wave is airborne",
@@ -60,6 +62,8 @@
       noSelection: "Select a tower or an enemy to read the WC3 attack/armor counters.",
       sellTip: "Sell this tower and refund 75% of the gold invested.",
       cancelTip: "Clear the build preview and deselect.",
+      lumberShort: "lumber", maxWord: "MAX", buyWord: "Buy",
+      lumberHint: "+1 lumber every 5 waves. Upgrades are permanent.",
     },
   };
 
@@ -89,6 +93,14 @@
     ".hud-head{color:#e4c04a;margin:8px 0 2px;letter-spacing:.5px;}",
     ".hud-head:first-child{margin-top:0;}",
     ".hud-dim{color:#b9a57a;}",
+    ".hud-tech{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;",
+    "padding:4px 0;border-bottom:1px dashed rgba(168,132,34,.22);}",
+    ".hud-tech button{background:linear-gradient(#4a3c28,#2a2118);color:#ffe08a;border:1px solid #a88422;",
+    "border-radius:3px;padding:3px 8px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;}",
+    ".hud-tech button:hover{filter:brightness(1.2);border-color:#e4c04a;}",
+    ".hud-tech.off button{opacity:.45;cursor:default;filter:none;}",
+    ".hud-tech .d{color:#b9a57a;}",
+    ".hud-tech .lv{color:#9ade8a;margin-left:4px;font-variant-numeric:tabular-nums;}",
     ".cmd-btn.cmd-dim{opacity:.42;}",
     '.cmd-btn[data-deny="1"]{cursor:default;}',
     ".cmd-btn:empty{opacity:.28;cursor:default;box-shadow:none;}",
@@ -238,6 +250,15 @@
           self.closePanel();
         } else if (btn.getAttribute("data-tab")) {
           self.openPanel(btn.getAttribute("data-tab"));
+        } else if (btn.getAttribute("data-tech")) {
+          // Lumber mill shop: route through the game API; a denied purchase
+          // still announces itself in the combat log for feedback.
+          const g = self.app ? self.app.game : null;
+          if (g && !g.ended) {
+            g.spendLumber(btn.getAttribute("data-tech"));
+            self._panelHtml = "";
+            self.renderPanel(g);
+          }
         }
         if (self.app && self.app.audio) self.app.audio.click();
       });
@@ -355,11 +376,38 @@
       (game.towers ? game.towers.length : 0) + " " + this.str("towersWord") + " · " +
       this.str("dps") + " " + num(totalDps, 1)));
 
+    out.push(this._lumberShopHtml(game));
+
     const waveCount = game.waves ? game.waves.length : 30;
     out.push('<div class="hud-head">' + esc(this.str("waveWord")) + "</div>");
     out.push(row("#8d6e63", this.str("waveWord"),
       Math.min(game.waveIndex + 1, waveCount) + " / " + waveCount));
     out.push(row("#e24a3b", this.str("enemiesWord"), String(game.creeps ? game.creeps.length : 0)));
+    return out.join("");
+  };
+
+  /** Element TD-style lumber sinks, purchasable from the Allies panel (F11). */
+  HUD.prototype._lumberShopHtml = function (game) {
+    if (!game || typeof game.lumberUpgradeState !== "function" || !D || !D.LUMBER_UPGRADES) return "";
+    const self = this;
+    const out = [];
+    out.push('<div class="hud-head">' + esc(this.str("lumberShop")) +
+      " · " + esc(this.str("lumber")) + " " + (game.lumber | 0) + "</div>");
+    out.push('<div class="hud-dim">' + esc(this.str("lumberHint")) + "</div>");
+    D.LUMBER_UPGRADES.forEach(function (def) {
+      const st = game.lumberUpgradeState(def.id);
+      if (!st) return;
+      const label = st.maxed
+        ? self.str("maxWord")
+        : self.str("buyWord") + " " + def.cost + " " + self.str("lumberShort");
+      out.push(
+        '<div class="hud-tech' + (st.affordable ? "" : " off") + '">' +
+        '<button type="button" data-tech="' + esc(def.id) + '">' + esc(label) + "</button>" +
+        '<span class="d">' + esc(self.localName(def.name)) +
+        ' <span class="lv">Lv ' + st.level + "/" + def.max + "</span><br>" +
+        esc(self.localName(def.desc)) + "</span></div>"
+      );
+    });
     return out.join("");
   };
 
@@ -422,7 +470,7 @@
     setText($("btn-close-settings"), this.str("close"));
     setText(qs("#settings-overlay .panel h1"), this.str("settings"));
     setText(qs("#start-overlay .howto"), this.str("howTo"));
-    if (document.title !== undefined) document.title = this.str("title") + " · Azeroth Keep TD";
+    if (document.title !== undefined) document.title = this.str("title") + " · Frontier Keep TD";
 
     const startBtn = $("btn-start");
     if (startBtn) {
@@ -554,7 +602,7 @@
       this._portrait(sel);
     } else if (sel.kind === "hero") {
       setText($("sel-name"), this.localName(sel.def.name) + " · " + this.localName(sel.def.title));
-      setText($("sel-flavor"), this.lang() === "zh" ? "右键移动，Q/W/E 施法。" : "Right-click to move, Q/W/E to cast.");
+      setText($("sel-flavor"), this.lang() === "zh" ? "右键移动，Q/W/E/R 施法。" : "Right-click to move, Q/W/E/R to cast.");
       bar(hp, 100 * sel.hp / sel.maxHp);
       bar(mp, 100 * sel.mana / sel.maxMana);
       setText($("hp-text"), Math.max(0, sel.hp | 0) + " / " + sel.maxHp);
@@ -717,7 +765,7 @@
   HUD.prototype._heroSlots = function (game, h) {
     const slots = new Array(12).fill(null);
     const self = this;
-    [["q", "Q"], ["w", "W"], ["e", "E"]].forEach(function (pair, i) {
+    [["q", "Q"], ["w", "W"], ["e", "E"], ["r", "R"]].forEach(function (pair, i) {
       const ab = h.def[pair[0]];
       if (!ab) return;
       const cd = h.cd ? h.cd[pair[0]] || 0 : 0;
