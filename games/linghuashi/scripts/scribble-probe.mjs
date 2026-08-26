@@ -4,7 +4,7 @@ import { classifyStroke, synthesizeStroke } from "../src/drawing/recognizer.js";
 
 export const SCRIBBLE_SAMPLES = 400;
 export const HARD_FALSE_POSITIVE_LIMIT = 0.05;
-export const HARD_FALSE_POSITIVE_TYPES = Object.freeze(["line", "circle", "spiral"]);
+export const HARD_FALSE_POSITIVE_TYPES = Object.freeze(["line", "circle", "spiral", "cloud"]);
 
 export function runScribbleProbe() {
   const random = createRandom(0x5c71bb1e);

@@ -7,6 +7,10 @@ export function isMuted(store) {
   return Boolean(store.get().settings?.mute);
 }
 
+export function isMotionReduced(store) {
+  return Boolean(store.get().settings?.reducedMotion);
+}
+
 /**
  * 静音开关：aria-pressed 反映状态，改动立即落盘。
  * 只改存档里的 `settings.mute`，音频总线由 ui/audio-bridge.js 订阅同步，
@@ -26,6 +30,32 @@ export function muteToggle(store, { compact = false } = {}) {
     store.persist();
     paint();
     announce(settings.mute ? "已静音" : "已恢复声息");
+  });
+  paint();
+  return node;
+}
+
+/**
+ * 减动效开关：与静音开关同构，只改存档里的 `settings.reducedMotion`，
+ * 由 ui/motion-bridge.js 推给 <html data-reduced-motion> 及各处回放。
+ * 系统已经声明 prefers-reduced-motion 的玩家关掉本开关也不会被强喂动画，
+ * 所以文案只说「本作」这一层，不假装能覆盖系统偏好。
+ */
+export function motionToggle(store, { compact = false, onChange } = {}) {
+  const node = button({ class: "toggle", "aria-pressed": "false" });
+  function paint() {
+    const reduced = isMotionReduced(store);
+    node.setAttribute("aria-pressed", reduced ? "true" : "false");
+    node.textContent = reduced ? `${compact ? "" : "动效 · "}静纸` : `${compact ? "" : "动效 · "}流墨`;
+    node.setAttribute("aria-label", reduced ? "已减少动效，按下恢复墨迹动画" : "墨迹动画开启中，按下减少动效");
+  }
+  node.addEventListener("click", () => {
+    const settings = { ...(store.get().settings || {}), reducedMotion: !isMotionReduced(store) };
+    store.set({ settings });
+    store.persist();
+    paint();
+    announce(settings.reducedMotion ? "已减少动效" : "已恢复墨迹动画");
+    onChange?.(settings.reducedMotion);
   });
   paint();
   return node;

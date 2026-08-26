@@ -12,19 +12,26 @@ export const TALENTS = [
   { id: "control", name: "控制专精", tree: "sup", per: 0.1 },
 ];
 
+/** 天赋定价与等级上限的唯一来源；UI 展示同一份数字，不要再自己抄一个常量。 */
+export const TALENT_COST = 12;
+export const TALENT_MAX_LEVEL = 5;
+
 export function talentMult(save, tree) {
   return TALENTS.filter((t) => t.tree === tree).reduce((acc, t) => acc + (save.talents?.[t.id] || 0) * t.per, 1);
 }
 
+/** 纯函数：升一级天赋。失败时回写 notice，不扣灵气丹（未知 id 原样返回，连提示都不给）。 */
 export function applyTalent(save, id) {
   const t = TALENTS.find((x) => x.id === id);
   if (!t) return save;
   const cur = save.talents?.[id] || 0;
-  if (cur >= 5 || save.qiPills < 12) return save;
+  if (cur >= TALENT_MAX_LEVEL) return { ...save, notice: `「${t.name}」已至满级。` };
+  if ((save.qiPills || 0) < TALENT_COST) return { ...save, notice: `参悟需灵气丹 ${TALENT_COST}。` };
   return {
     ...save,
-    qiPills: save.qiPills - 12,
+    qiPills: save.qiPills - TALENT_COST,
     talents: { ...save.talents, [id]: cur + 1 },
+    notice: `「${t.name}」精进至 ${cur + 1} 级。`,
   };
 }
 

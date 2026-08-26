@@ -1,4 +1,5 @@
 import { mountPainter } from "../drawing/canvas.js";
+import { motionReduced } from "./motion-bridge.js";
 
 /**
  * 画布宿主。
@@ -21,7 +22,7 @@ function hasCanvas2d(canvas) {
 }
 
 function stubPainter() {
-  return { resize() {}, clear() {}, destroy() {} };
+  return { resize() {}, clear() {}, cancel() {}, destroy() {} };
 }
 
 export function acquirePainter({ onStroke, label } = {}) {
@@ -43,7 +44,10 @@ export function acquirePainter({ onStroke, label } = {}) {
 
 export function releasePainter() {
   cancelPreview();
-  if (host) host.onStroke = null;
+  if (!host) return;
+  // 半截的笔不跟着换屏：离屏时当 pointercancel 处理，别留在「正在画」的状态里。
+  host.painter.cancel?.();
+  host.onStroke = null;
 }
 
 function cancelPreview() {
@@ -95,8 +99,7 @@ export function previewStroke(points, { color = "rgba(26,18,11,0.82)", animate =
     }, 420);
   };
 
-  const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (!animate || reduced || typeof window.requestAnimationFrame !== "function") {
+  if (!animate || motionReduced() || typeof window.requestAnimationFrame !== "function") {
     draw(points.length);
     fade();
     return;

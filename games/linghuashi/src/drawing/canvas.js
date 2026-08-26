@@ -155,15 +155,36 @@ export function mountPainter(canvas, { onStroke, ink = INK, fadeMs = FADE_MS } =
     }
   }
 
-  function end(ev) {
-    if (!drawing) return;
-    ev?.preventDefault?.();
+  /** 收笔的共同善后：松开捕获、停笔，返回这一笔是否真的在画。 */
+  function finishStroke() {
+    if (!drawing) return false;
     drawing = false;
     if (pointerId !== null) {
       canvas.releasePointerCapture?.(pointerId);
       pointerId = null;
     }
     brush.end();
+    return true;
+  }
+
+  /**
+   * 被系统夺走的一笔（来电、手势接管、笔尖离屏、多指误触）作废。
+   *
+   * pointercancel 的点列是半截的，交给识别只会得到一个玩家没打算画的符；
+   * 这里既不 finalize 也不回调 onStroke，纸面淡出当无事发生。识别本身不动。
+   */
+  function discard(ev) {
+    if (!finishStroke()) return;
+    ev?.preventDefault?.();
+    points = [];
+    recognizer.reset();
+    fadeOut();
+  }
+
+  function end(ev) {
+    if (!drawing) return;
+    ev?.preventDefault?.();
+    finishStroke();
     const result = recognizer.finalize(points);
     const last = points[points.length - 1];
     if (last && result.type !== "scribble") {
@@ -181,11 +202,12 @@ export function mountPainter(canvas, { onStroke, ink = INK, fadeMs = FADE_MS } =
     ["pointerdown", start, undefined],
     ["pointermove", move, undefined],
     ["pointerup", end, undefined],
-    ["pointercancel", end, undefined],
+    ["pointercancel", discard, undefined],
     ["pointerleave", end, undefined],
     ["touchstart", start, { passive: false }],
     ["touchmove", move, { passive: false }],
     ["touchend", end, undefined],
+    ["touchcancel", discard, undefined],
   ];
   for (const [type, fn, opts] of listeners) canvas.addEventListener(type, fn, opts);
   if (typeof window !== "undefined") window.addEventListener("resize", size);
@@ -193,6 +215,8 @@ export function mountPainter(canvas, { onStroke, ink = INK, fadeMs = FADE_MS } =
 
   return {
     resize: size,
+    /** 主动作废未完成的一笔，例如离开战斗屏时。 */
+    cancel: discard,
     clear() {
       stopFade();
       paintPaper();
@@ -208,7 +232,7 @@ export function mountPainter(canvas, { onStroke, ink = INK, fadeMs = FADE_MS } =
     },
     destroy() {
       stopFade();
-      drawing = false;
+      if (finishStroke()) points = [];
       for (const [type, fn, opts] of listeners) canvas.removeEventListener(type, fn, opts);
       if (typeof window !== "undefined") window.removeEventListener("resize", size);
     },

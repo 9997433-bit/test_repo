@@ -1,5 +1,6 @@
 import { announce, button, el, meter, srOnly } from "./dom.js";
-import { muteToggle, pageHeader, strokeGlyph } from "./components.js";
+import { motionToggle, muteToggle, pageHeader, strokeGlyph } from "./components.js";
+import { prefersReducedMotion } from "./motion-bridge.js";
 import { MO_STROKE_TYPES, moProgress } from "../classes/unlock.js";
 import { strokeKeyByType } from "./keycast.js";
 import { replayOnCanvas } from "../drawing/replay.js";
@@ -33,7 +34,12 @@ export function renderGallery({ root, store, navigate }) {
   });
 
   const section = el("section", { class: "screen" }, [
-    pageHeader({ kicker: "墨迹留痕", title: "画阁", tools: [muteToggle(store)] }),
+    pageHeader({
+      kicker: "墨迹留痕",
+      title: "画阁",
+      // 改了动效偏好就地重绘：正在铺展的回放要按新偏好重新落笔。
+      tools: [muteToggle(store), motionToggle(store, { onChange: () => navigate("gallery") })],
+    }),
     el("div", { class: "card" }, [
       el("p", { text: `近 ${items.length} 笔，已通 ${mo.have} / ${mo.need} 式。` }),
       progress.node,
@@ -172,13 +178,6 @@ export function renderGallery({ root, store, navigate }) {
 
 function hasTrace(item) {
   return Array.isArray(item?.points) && item.points.length >= 2;
-}
-
-function prefersReducedMotion(save) {
-  if (save?.settings?.reducedMotion) return true;
-  return typeof window !== "undefined" && typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    : false;
 }
 
 function when(at) {

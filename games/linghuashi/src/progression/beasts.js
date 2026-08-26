@@ -1,29 +1,24 @@
-import * as beastData from "../data/beasts.js";
+import { BEASTS, BEAST_CATCH_COST, BEAST_EVOLVE_COST_PER_STAR, BEAST_REROLL_COST } from "../data/beasts.js";
 
-const BEASTS = beastData.BEASTS || [];
-
-/** 键名走变量：图鉴表还没定价时，打包器不会报「缺少导出」。 */
-function readData(key) {
-  return beastData[key] || null;
-}
+/** 图鉴转出：养成层是灵兽数值的唯一门面，调用方（含 UI）不必各自去 import data 层。 */
+export { BEASTS };
 
 export const BEAST_CAP = 3;
 export const MAX_STAR = 3;
 /** 按星级索引的被动倍率，STAR_MULT[1] 为初始值。 */
 export const STAR_MULT = [0, 1, 1.65, 2.6];
-export const EVOLVE_COST = 30;
-export const REROLL_COST = 18;
+/** 合成成本 = 该值 × 当前星级。定价唯一来源是 data/beasts.js，这里只做转出。 */
+export const EVOLVE_COST = BEAST_EVOLVE_COST_PER_STAR;
+export const REROLL_COST = BEAST_REROLL_COST;
 
 /**
  * 收兽定价：优先花包子（挂机产出的唯一出口），包子不够再花灵气丹。
- * 数值以图鉴表里的 CATCH_COST 为准，表里没有就用兜底 6 包子 / 8 丹。
+ * 包子价来自图鉴表；灵气丹替付价暂无表项，待 data 层补 `BEAST_CATCH_QI_COST` 后一并上移。
  */
-const DATA_CATCH_COST = readData("CATCH_COST") || readData("CATCH_BEAST_COST");
-const BUNS_COST = Number.isFinite(beastData.BEAST_CATCH_COST) ? beastData.BEAST_CATCH_COST : 36;
-export const CATCH_COST = {
-  buns: Number.isFinite(DATA_CATCH_COST?.buns) ? DATA_CATCH_COST.buns : BUNS_COST,
-  qiPills: Number.isFinite(DATA_CATCH_COST?.qiPills) ? DATA_CATCH_COST.qiPills : (Number.isFinite(beastData.BEAST_REROLL_COST) ? 8 : 8),
-};
+export const CATCH_COST = { buns: BEAST_CATCH_COST, qiPills: 8 };
+
+/** 放生返还：收兽包子价的一半，且只退包子——防止「收兽↔放生」把灵气丹刷出来。 */
+export const RELEASE_REFUND = Math.floor(CATCH_COST.buns / 2);
 
 const PASSIVES = ["crit", "qiRegen", "shield"];
 const PASSIVE_BASE = BEASTS.reduce((acc, b) => {
@@ -57,12 +52,31 @@ export function catchBeast(save, rng = Math.random, nowMs = Date.now()) {
   };
 }
 
+/**
+ * 纯函数：放生一只灵兽，腾出栏位并返还半价包子。
+ * uid 找不到（重复点击、旧档没 uid）时只回写 notice，不返还也不改 beasts —— 返还不可重复领。
+ */
+export function releaseBeast(save, uid) {
+  const owned = save?.beasts || [];
+  if (!uid) return { ...save, notice: "请先选中要放生的灵兽。" };
+  const target = owned.find((b) => b?.uid === uid);
+  if (!target) return { ...save, notice: "未找到该灵兽。" };
+  const name = target.name || target.id || "灵兽";
+  return {
+    ...save,
+    buns: (save.buns || 0) + RELEASE_REFUND,
+    beasts: owned.filter((b) => b?.uid !== uid),
+    notice: `放生「${name}」，返还包子 ${RELEASE_REFUND}。`,
+  };
+}
+
 export function beastBonus(save) {
   const acc = { crit: 0, qiRegen: 0, shield: 0 };
   for (const b of save?.beasts || []) {
-    if (!b?.passive) continue;
+    // 认不出的被动直接跳过：坏档不该在 acc 上凭空长出战斗不认识的键。
+    if (!b?.passive || !PASSIVES.includes(b.passive)) continue;
     const v = Number.isFinite(b.value) ? b.value : beastValue(b.passive, b.star);
-    acc[b.passive] = (acc[b.passive] || 0) + v;
+    acc[b.passive] += v;
   }
   return acc;
 }

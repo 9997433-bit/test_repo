@@ -47,6 +47,15 @@ function shredGain(precision) {
   return SHRED_BASE + precision * SHRED_PER_PRECISION;
 }
 
+// 束缚（缠丝索）控制时长：底噪压低、斜率抬高，让精度真正拉开差距。
+// 满精度仍是 1600ms，最低精度 0.2 从 880ms 降到 720ms，可控区间由 720ms 拉到 880ms。
+const CONTROL_BASE_MS = 500;
+const CONTROL_PER_PRECISION_MS = 1100;
+
+export function controlDurationMs(precision, reactionControl = 0) {
+  return CONTROL_BASE_MS + precision * CONTROL_PER_PRECISION_MS + reactionControl;
+}
+
 const TALENT_KEYS = { atk: "atkMult", def: "defMult", sup: "supMult" };
 const BEAST_KEYS = { crit: "crit", qiRegen: "qiRegen", shield: "shield" };
 
@@ -208,7 +217,7 @@ export function createBattle({ player, enemy, seed = 1, modifiers } = {}) {
       state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
       push(`${talisman.name} · 回春 ${Math.round(heal)}`, { kind: "heal" });
     } else if (stroke.type === "curve") {
-      state.enemy.controlMs += (700 + prec * 900 + (react.control || 0)) * mods.supMult;
+      state.enemy.controlMs += controlDurationMs(prec, react.control || 0) * mods.supMult;
       hit = deal(state.enemy, dmg * 0.55);
       push(`${talisman.name} · 束缚并伤 ${Math.round(hit)}`, { kind: "ctrl" });
     } else if (stroke.type === "zigzag") {

@@ -1,5 +1,6 @@
 import { announce, button, el, meter } from "./dom.js";
-import { muteToggle, pageHeader } from "./components.js";
+import { motionToggle, muteToggle, pageHeader } from "./components.js";
+import { beastPanel } from "./beast-panel.js";
 import { openTutorial } from "./tutorial.js";
 import { moProgress } from "../classes/unlock.js";
 import { CLASSES } from "../data/classes.js";
@@ -9,7 +10,7 @@ import { realmById } from "../data/realms.js";
 import { TALENTS, applyTalent } from "../classes/talents.js";
 import { tickIdle } from "../progression/idle.js";
 import { breakthrough } from "../progression/realm.js";
-import { catchBeast } from "../progression/beasts.js";
+import { BEAST_CAP } from "../progression/beasts.js";
 
 const TALENT_COST = 12;
 
@@ -29,18 +30,24 @@ export function renderHub({ root, store, navigate }) {
     pageHeader({
       kicker: save.playerName,
       title: `${cls?.name || "未择业"} · ${realm.name}`,
-      tools: [muteToggle(store), button({ text: "重看教程", onclick: () => openTutorial({ mount: root, store, markDone: false }) })],
+      tools: [
+        muteToggle(store),
+        motionToggle(store),
+        button({ text: "重看教程", onclick: () => openTutorial({ mount: root, store, markDone: false }) }),
+      ],
     }),
     el("div", { class: "card resource-card" }, [
       el("div", { class: "resource-row" }, [
         stat("灵气丹", save.qiPills),
         stat("包子", save.buns),
         stat("修为", `${save.xp} / ${Number.isFinite(realm.xp) ? realm.xp : "∞"}`),
-        stat("灵兽", `${save.beasts?.length || 0} / 3`),
+        stat("灵兽", `${save.beasts?.length || 0} / ${BEAST_CAP}`),
       ]),
       xpMeter.node,
     ]),
     showIdle ? el("p", { class: "card idle-banner", role: "status", text: idleText }) : null,
+    // 全屏共用一条回执：修炼、灵兽栏、天赋改动后的 notice 都落在这里。
+    el("p", { class: "notice hub-notice", role: "status", text: save.notice || "" }),
     el("div", { class: "grid hub-grid" }, [
       el("section", { class: "card", "aria-labelledby": "hub-stages" }, [
         el("h3", { id: "hub-stages", text: "秘境出战" }),
@@ -57,21 +64,14 @@ export function renderHub({ root, store, navigate }) {
                 navigate("hub");
               },
             }),
-            button({
-              text: "收伏灵兽",
-              onclick: () => {
-                store.set(catchBeast(store.get()));
-                navigate("hub");
-              },
-            }),
             button({ text: "画阁", onclick: () => navigate("gallery") }),
           ]),
-          el("p", { class: "notice", role: "status", text: save.notice || "" }),
           el("p", {
             class: "muted",
             text: progress.unlocked ? "六式圆满，墨客隐线已现。" : `已通六式 ${progress.have} / ${progress.need}`,
           }),
         ]),
+        beastPanel({ store, navigate }),
         el("section", { class: "card", "aria-labelledby": "hub-talents" }, [
           el("h3", { id: "hub-talents", text: `天赋 · 每级 ${TALENT_COST} 灵气丹` }),
           talentList(store, navigate, save),

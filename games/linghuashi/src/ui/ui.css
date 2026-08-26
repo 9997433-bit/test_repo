@@ -13,14 +13,15 @@
   border: 0;
 }
 
+/* 焦点环与 ink.css 的全局兜底同源同色（tokens --focus-ring，朱磦），不再各调各的朱 */
 :where(button, [href], [tabindex], canvas):focus-visible {
-  outline: 3px solid var(--seal);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
 }
 .screen-title:focus-visible,
 .brand:focus-visible,
 .tutorial-title:focus-visible {
-  outline: 2px dashed var(--seal);
+  outline: 2px dashed var(--seal-bright);
   outline-offset: 6px;
 }
 
@@ -116,10 +117,11 @@ ul.log-list {
   flex-direction: column;
   line-height: 1.35;
 }
+/* 小字辅助信息一律 --ink-mute 实色：opacity 淡化在宣纸上只剩 4.4:1，不达 4.5 */
 .stat-label {
   font-size: 0.76rem;
   letter-spacing: 0.2em;
-  opacity: 0.6;
+  color: var(--ink-mute);
 }
 
 .stage-list {
@@ -139,6 +141,68 @@ ul.log-list {
   border-left: 3px solid var(--malachite);
 }
 
+.hub-notice {
+  margin: 0 0 14px;
+}
+
+/* 灵兽栏：收伏 / 合成 / 洗练 / 放生 */
+.beast-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.beast-cell {
+  display: flex;
+}
+.beast-pick {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+}
+.beast-pick.is-picked {
+  border-color: var(--seal);
+  background: var(--seal-wash);
+}
+.beast-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.beast-star {
+  color: var(--gold-ink);
+  letter-spacing: 0.12em;
+}
+.beast-passive {
+  font-size: 0.84rem;
+}
+.beast-lore:empty {
+  display: none;
+}
+.beast-lore {
+  font-size: 0.78rem;
+}
+.beast-actions {
+  margin-top: 12px;
+}
+.beast-release[aria-disabled="false"] {
+  color: var(--seal);
+  border-color: var(--seal);
+}
+.beast-release.is-confirming {
+  background: var(--seal);
+  border-color: var(--seal);
+  color: var(--paper-bright);
+}
+.beast-hint {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  min-height: 2.4em;
+}
+
 .talent-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -151,7 +215,7 @@ ul.log-list {
   width: 100%;
 }
 .talent-lv {
-  opacity: 0.7;
+  color: var(--ink-mute);
 }
 
 /* 战斗屏 */
@@ -188,7 +252,7 @@ ul.log-list {
 .stat-num {
   font-variant-numeric: tabular-nums;
   font-size: 0.85rem;
-  opacity: 0.8;
+  color: var(--ink-soft);
 }
 .intent {
   font-family: var(--script);
@@ -216,15 +280,20 @@ ul.log-list {
 .log-line.enemy {
   color: var(--seal);
 }
+/* 日志小字（0.87rem）用矿彩写字色：石绿/藤黄原色对裱卡只有 3.7:1 / 2.2:1 */
 .log-line.heal,
 .log-line.buff {
-  color: var(--malachite);
+  color: var(--malachite-ink);
 }
 .log-line.react {
   color: var(--cyan);
 }
+/* 束缚行与「意图 · 束缚」同用石青一族；普通伤害（hit/aoe）保持焦墨本色 */
+.log-line.ctrl {
+  color: var(--cyan);
+}
 .log-line.warn {
-  color: var(--gold);
+  color: var(--gold-ink);
 }
 .log-line.crit,
 .log-line.combo {
@@ -266,14 +335,37 @@ ul.log-list {
 }
 .cast-key-cost {
   font-size: 0.76rem;
-  opacity: 0.6;
+  color: var(--ink-mute);
 }
+/* 灵气不足：不整键压淡（连费用一起糊掉），改作素纸虚线签 ——
+   名目与键帽褪成重墨，费用保持朱砂满对比，「缺多少灵气」正是此刻最要紧的字。 */
 .cast-key.is-short {
-  opacity: 0.5;
+  opacity: 1; /* 盖过 button[aria-disabled] 的整体减淡 */
+  color: var(--ink-mute);
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+}
+.cast-key.is-short .cast-key-head {
+  color: var(--ink-mute);
+}
+.cast-key.is-short .stroke-glyph {
+  color: var(--ink-faint);
+}
+.cast-key.is-short kbd {
+  color: var(--ink-mute);
+  background: transparent;
+  border-color: var(--ink-line);
 }
 .cast-key.is-short .cast-key-cost {
   color: var(--seal);
-  opacity: 1;
+}
+.cast-key.is-short:hover,
+.cast-key.is-short:active {
+  transform: none;
+  color: var(--ink-mute);
+  border-color: var(--ink-line);
+  box-shadow: none;
 }
 .cast-key.flash {
   animation: cast-flash 420ms ease-out;
@@ -359,6 +451,7 @@ kbd {
   gap: 8px;
   margin-top: 14px;
 }
+/* 未通六式：褪墨而不糊字 —— 字色退到重墨、字形退成淡墨，不再整块压淡到 3.8:1 */
 .mastery-item {
   display: grid;
   justify-items: center;
@@ -366,12 +459,18 @@ kbd {
   padding: 8px 4px;
   border: 1px dashed var(--ink-line);
   font-size: 0.84rem;
-  opacity: 0.55;
+  color: var(--ink-mute);
+}
+.mastery-item .stroke-glyph {
+  color: var(--ink-faint);
 }
 .mastery-item.done {
-  opacity: 1;
+  color: var(--ink);
   border-style: solid;
   border-color: var(--seal);
+}
+.mastery-item.done .stroke-glyph {
+  color: var(--seal);
 }
 .gallery-head {
   display: flex;
@@ -457,4 +556,35 @@ button.gallery-item:hover {
   .tutorial-mask {
     backdrop-filter: none;
   }
+}
+
+/*
+ * 游戏内的减动效开关：ui/motion-bridge.js 把 settings.reducedMotion
+ * 写成 <html data-reduced-motion="true">，这里复述 styles/ink.css 里
+ * 那条系统偏好的礼仪，两条路径关掉的是同一批动效。
+ */
+[data-reduced-motion="true"] .screen,
+[data-reduced-motion="true"] .stamp,
+[data-reduced-motion="true"] .cast-key.flash {
+  animation: none;
+}
+[data-reduced-motion="true"] .cast-key.flash {
+  border-color: var(--seal);
+}
+[data-reduced-motion="true"] button,
+[data-reduced-motion="true"] .seal,
+[data-reduced-motion="true"] .bar > i {
+  transition: none;
+}
+[data-reduced-motion="true"] button:hover,
+[data-reduced-motion="true"] .seal:hover,
+[data-reduced-motion="true"] button:active,
+[data-reduced-motion="true"] .seal:active {
+  transform: none;
+}
+[data-reduced-motion="true"] .tutorial-mask {
+  backdrop-filter: none;
+}
+html[data-reduced-motion="true"] {
+  scroll-behavior: auto;
 }
