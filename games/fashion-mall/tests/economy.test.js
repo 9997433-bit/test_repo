@@ -13,6 +13,7 @@ import {
   blindboxRoll,
   fortuneSpin,
   paidGameExpectation,
+  LEVEL_INCOME_GATES,
   LEVEL_XP_GATES,
   FURNITURE,
   GOAL_CURVE,
@@ -36,20 +37,41 @@ test("shopRate grows with level and staff", () => {
 });
 
 test("offline gold caps at 8 hours", () => {
-  const eight = offlineGold(10, 8, 0);
-  const twelve = offlineGold(10, 12, 0);
-  assert.equal(eight, twelve);
+  const rate = 10;
+  const eight = offlineGold(rate, 8, 0);
+  assert.ok(offlineGold(rate, 8 - 1 / 3600, 0) < eight, "封顶前一秒仍应继续累计");
+  assert.equal(offlineGold(rate, 8 + 1 / 3600, 0), eight, "封顶后一秒不得多发");
+  assert.equal(offlineGold(rate, Number.MAX_VALUE, 0), eight, "超长离线仍只结算 8 小时");
+  assert.equal(offlineGold(rate, -1, 0), 0, "回拨时间不得产生负收益");
   assert.ok(offlineGold(10, 1, 0.1) > offlineGold(10, 1, 0));
 });
 
-test("partner match beats mismatch", () => {
-  assert.ok(partnerShopBonus("休闲", "休闲", 1) > partnerShopBonus("休闲", "丽人", 1));
+test("partner mismatch never receives the matching specialty bonus", () => {
+  for (const level of [1, 2, 10]) {
+    const match = partnerShopBonus("休闲", "休闲", level);
+    const mismatch = partnerShopBonus("休闲", "丽人", level);
+    assert.ok(match > mismatch, `Lv.${level} 错配收益不得等同匹配收益`);
+    assert.equal(match / mismatch, 4, `Lv.${level} 特长倍率必须保持一致`);
+  }
 });
 
 test("level gate needs both gold and xp", () => {
   assert.equal(nextLevelReady(1, 800, 20), true);
   assert.equal(nextLevelReady(1, 799, 20), false);
   assert.equal(nextLevelReady(1, 800, 19), false);
+});
+
+test("every level gate accepts exact thresholds and rejects either value one short", () => {
+  assert.equal(LEVEL_INCOME_GATES.length, LEVEL_XP_GATES.length);
+  for (let level = 1; level < LEVEL_INCOME_GATES.length; level += 1) {
+    const gold = LEVEL_INCOME_GATES[level];
+    const xp = LEVEL_XP_GATES[level];
+    assert.equal(nextLevelReady(level, gold, xp), true, `Lv.${level} 精确门槛应可升级`);
+    assert.equal(nextLevelReady(level, gold - 1, xp), false, `Lv.${level} 少 1 营收不得升级`);
+    assert.equal(nextLevelReady(level, gold, xp - 1), false, `Lv.${level} 少 1 阅历不得升级`);
+  }
+  const maxLevel = LEVEL_INCOME_GATES.length;
+  assert.equal(nextLevelReady(maxLevel, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER), false);
 });
 
 test("charm sums outfit pieces", () => {
@@ -76,15 +98,33 @@ test("paid RNG games have negative gold expectation and carry shards", () => {
   }
 });
 
-test("blindbox pool weights are complete and roll is deterministic on boundaries", () => {
+test("blindbox weights sum to 100 and imported roller follows every derived boundary", () => {
   const { pool } = MINIGAME_PAYOUTS.blindbox;
-  assert.equal(pool.reduce((s, p) => s + p.w, 0), 100);
-  assert.equal(blindboxRoll(0).id, "common");
-  assert.equal(blindboxRoll(0.5499).id, "common");
-  assert.equal(blindboxRoll(0.55).id, "rare");
-  assert.equal(blindboxRoll(0.85).id, "hidden");
-  assert.equal(blindboxRoll(0.97).id, "sign");
-  assert.equal(blindboxRoll(0.9999).id, "sign");
+  const total = pool.reduce((sum, prize) => sum + prize.w, 0);
+  assert.equal(total, 100);
+
+  let cumulative = 0;
+  for (let i = 0; i < pool.length; i += 1) {
+    const prize = pool[i];
+    const midpoint = (cumulative + prize.w / 2) / total;
+    assert.equal(blindboxRoll(midpoint).id, prize.id, `${prize.id} 权重区间中点应命中自身`);
+    cumulative += prize.w;
+    if (i + 1 < pool.length) {
+      const boundary = cumulative / total;
+      assert.equal(blindboxRoll(boundary).id, pool[i + 1].id, `边界 ${boundary} 应进入下一档`);
+      assert.equal(
+        blindboxRoll((cumulative - 1e-9) / total).id,
+        prize.id,
+        `边界 ${boundary} 前应留在当前档`,
+      );
+    }
+  }
+
+  const expectation = paidGameExpectation("blindbox");
+  const weightedGold = pool.reduce((sum, prize) => sum + prize.w * prize.gold, 0) / total;
+  const weightedShard = pool.reduce((sum, prize) => sum + prize.w * prize.shard, 0) / total;
+  assert.equal(expectation.gold, weightedGold);
+  assert.equal(expectation.shard, weightedShard);
 });
 
 test("fortune spin maps rand to slot table uniformly", () => {

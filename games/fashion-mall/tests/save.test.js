@@ -144,6 +144,58 @@ test("v1 legacy save migrates and deep fills by registry", () => {
   assert.equal(s.toast, "");
 });
 
+test("parseable dirty save is sanitized into a playable current state", () => {
+  const now = 1_800_000_000_000;
+  const dirty = JSON.stringify({
+    v: CURRENT_VERSION,
+    data: {
+      name: 42,
+      gold: "not-a-number",
+      goldEarned: {},
+      xp: [],
+      level: -4,
+      shards: -9,
+      lastTick: "yesterday",
+      outfit: { hair: "ghost", top: { id: "blazer", charm: 99999 } },
+      furniture: ["sofa", "sofa", "ghost-item", null],
+      researchDone: ["line-a", "line-a", "ghost-node"],
+      shops: {
+        fastfood: { unlocked: "yes", level: 0, staff: 999, auto: 0, assignees: ["ghost"] },
+        fresh: null,
+      },
+      partners: [
+        { id: "lin", owned: true, level: 0, assigned: "ghost-shop" },
+        { id: "su", owned: false, level: "bad-level", assigned: "fastfood" },
+        { id: "ghost", owned: true, level: 999, assigned: "fastfood" },
+      ],
+      goal: { target: "bad-target", until: null, reward: { gold: -10, xp: -10 } },
+      toast: "<script>dirty transient</script>",
+    },
+  });
+
+  const s = fromSaveData(importSave(dirty), now);
+  assert.equal(s.name, "未命名老板");
+  assert.equal(s.gold, 40);
+  assert.equal(s.goldEarned, 40);
+  assert.equal(s.xp, 0);
+  assert.equal(s.level, 1);
+  assert.equal(s.shards, 0);
+  assert.equal(s.lastTick, now);
+  assert.equal(s.outfit.hair.id, OUTFITS.hair[0].id);
+  assert.equal(s.outfit.top, OUTFITS.top.find((item) => item.id === "blazer"));
+  assert.deepEqual(s.furniture, ["sofa"]);
+  assert.deepEqual(s.researchDone, ["line-a"]);
+  assert.equal(s.shops.fastfood.level, 1);
+  assert.equal(s.shops.fastfood.staff, SHOPS.find((shop) => shop.id === "fastfood").staffSlots);
+  assert.equal(s.shops.fresh.level, 1);
+  assert.equal(s.partners.length, PARTNERS.length);
+  assert.equal(s.partners.find((p) => p.id === "lin").assigned, null);
+  assert.deepEqual(s.shops.fastfood.assignees, []);
+  assert.ok(Number.isFinite(s.goal.target));
+  assert.ok(Number.isFinite(totalOnlinePerSec(s)));
+  assert.equal(s.toast, "");
+});
+
 test("adding a shop to SHOPS cannot break an old save", () => {
   const data = migrate(JSON.parse(LEGACY_V1));
   delete data.shops.fresh;
@@ -282,9 +334,13 @@ test("settle: offline is capped at 8 hours", () => {
     s.shops.fastfood.staff = 3;
     return s;
   };
+  const justBefore = settle(make(), 8 * 3600_000 - 1000).gold;
   const eight = settle(make(), 8 * 3600_000).gold;
-  const twenty = settle(make(), 20 * 3600_000).gold;
-  assert.equal(eight, twenty);
+  const longState = make();
+  const twenty = settle(longState, 20 * 3600_000);
+  assert.ok(justBefore < eight, "8 小时前一秒仍应累计收益");
+  assert.equal(eight, twenty.gold, "超出 8 小时不得继续累计收益");
+  assert.equal(longState.lastTick, 20 * 3600_000, "封顶不应阻止结算时钟追到当前时间");
 });
 
 test("tick does not touch lastTick — settle owns it", () => {
@@ -347,6 +403,23 @@ test("actions guard spending and return {ok, reason, toast}", () => {
   assert.equal(actions.upgradeShop(s, "boutique").reason, "locked");
 });
 
+test("shop upgrade rejects one coin short and accepts the exact cost", () => {
+  const s = defaultState();
+  const cost = actions.shopUpgradeCost(s.shops.fastfood.level);
+
+  s.gold = cost - 1;
+  const denied = actions.upgradeShop(s, "fastfood");
+  assert.equal(denied.reason, "insufficient-gold");
+  assert.equal(s.gold, cost - 1, "失败时不得扣款");
+  assert.equal(s.shops.fastfood.level, 1, "失败时不得升级");
+
+  s.gold = cost;
+  const upgraded = actions.upgradeShop(s, "fastfood");
+  assert.equal(upgraded.ok, true);
+  assert.equal(s.gold, 0, "精确金额应全部扣清");
+  assert.equal(s.shops.fastfood.level, 2);
+});
+
 test("hiring fills slots then flips the shop to auto", () => {
   const s = defaultState();
   s.gold = 1e6;
@@ -379,6 +452,28 @@ test("assignment lives only on the partner, assignees is derived", () => {
   const rate = totalOnlinePerSec(s);
   s.shops.fastfood.assignees = [];
   assert.equal(totalOnlinePerSec(s), rate, "收益只认 partner.assigned");
+});
+
+test("unowned and specialty-mismatched partners cannot leak a matching bonus", () => {
+  const s = defaultState();
+  const lin = s.partners.find((p) => p.id === "lin");
+  const su = s.partners.find((p) => p.id === "su");
+
+  const matchedRate = totalOnlinePerSec(s);
+  lin.assigned = null;
+  su.assigned = "fastfood";
+  su.owned = false;
+  s.shops.fastfood.assignees = ["su", "ghost"];
+  syncUnlocks(s);
+  const noPartnerRate = totalOnlinePerSec(s);
+  assert.deepEqual(s.shops.fastfood.assignees, []);
+
+  su.owned = true;
+  syncUnlocks(s);
+  const mismatchedRate = totalOnlinePerSec(s);
+  assert.deepEqual(s.shops.fastfood.assignees, ["su"]);
+  assert.ok(mismatchedRate > noPartnerRate, "已签约错配伙伴仍应提供基础驻店加成");
+  assert.ok(mismatchedRate < matchedRate, "错配伙伴不得获得特长匹配加成");
 });
 
 test("importState swaps the live state object in place", () => {

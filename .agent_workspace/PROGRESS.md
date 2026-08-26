@@ -54,8 +54,8 @@
 | B | F4 叙事 | fable | 已完成，copy/a11y/intro 已合入 | `bc-d59a71a3-ccdc-577d-acf8-1c77b7bb4350` |
 | C | O2 小游戏 | opus-fast | 运行中 | `bc-7ceaa17b-4d09-5c3e-9a3f-def313d419d6` |
 | C | O4 伙伴事件 | opus-fast | 运行中 | `bc-6dcadcdd-e4ab-550f-a2f1-dfffcedb3679` |
-| C | G1 测试 | gpt-sol | 运行中 | `bc-9174c37f-cbb9-5717-be48-a835c39f9752` |
-| D | G2 性能边界 | 排队 | 待空位 | — |
+| C | G1 测试 | gpt-sol | 已完成，47 项单测已合入 | `bc-9174c37f-cbb9-5717-be48-a835c39f9752` |
+| D | G2 性能边界 | gpt-sol | 续发中 | 待回填 |
 
 ## 已实现基线（Parent 预置）
 
