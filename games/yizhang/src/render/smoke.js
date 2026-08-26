@@ -14,10 +14,10 @@
 //   ?manual=1               不自动 rAF，由 window.smoke.step(dt) 驱动（截图/回归用）
 //   ?dpr=1.5                覆盖设备像素比
 //   ?hud=1                  显示一行调试读数
-//   ?t=6.5                  manual 模式下先快进到第 t 秒
+//   ?t=6.5                  manual 模式下先快进到第 t 秒（只有最后半秒真渲染）
 //   ?seed=7                 对局种子
 //   ?crumble=1.2            每隔几秒往台面上砸一发（0 表示不砸）
-//   ?combat=real            强行接 src/combat（见下面 loadDeps 里的说明）
+//   ?combat=real            强行接 src/combat（见下面 createLiveMatch 里的说明）
 //
 // 就绪后 window.smoke 可用；异步引导的 Promise 在 window.smokeReady 上。
 
@@ -258,13 +258,41 @@ export async function bootSmoke(canvas) {
     get view() {
       return match.view;
     },
-    /** 定步快进，用于截图对齐到同一时刻 */
+    /** 定步快进（照常出图），用于截图对齐到同一时刻 */
     advance(seconds, dt = 1 / 60) {
       const n = Math.max(1, Math.round(seconds / dt));
       for (let i = 0; i < n; i++) step(dt);
       return n;
     },
+    /**
+     * 只推 sim 不出图。截图脚本要跳到第 20 秒时，逐帧渲染要等上千次 draw；
+     * 这里让对局自己跑完，最后再由 advance 渲几帧把镜头/动画收住即可。
+     */
+    fastForward(seconds, dt = 1 / 60) {
+      const n = Math.max(0, Math.round(seconds / dt));
+      for (let i = 0; i < n; i++) match.step(dt);
+      return n;
+    },
     smash: (...a) => match.smash(...a),
+    /**
+     * 抬到台面上方补一张俯视图。跟随/观战机位都是贴着地平线的，
+     * 想核对「洞的位置和 sim 的 tile 一一对上」时得换个角度看。
+     * 只给截图回归用，正式壳不该调它。
+     */
+    photo({ from = [0, 34, 30], to = [0, 0, 0] } = {}) {
+      const cam = renderer.camera;
+      cam.position.set(from[0], from[1], from[2]);
+      cam.lookAt(to[0], to[1], to[2]);
+      cam.rotation.z = 0;
+      renderer.post.render(cam);
+      return { from, to };
+    },
+    /** sim 里塌掉的格子中心，用来跟画面上的洞对位。 */
+    holes() {
+      return match.state.arena.tiles
+        .filter((t) => !t.alive)
+        .map((t) => ({ i: t.i, x: t.x, z: t.z }));
+    },
     setQuality(tier) {
       const t = setQuality(tier);
       fit();
@@ -289,7 +317,11 @@ export async function bootSmoke(canvas) {
 
   if (manual) {
     const warm = numOpt('t', 0);
-    api.advance(warm > 0 ? warm : 1 / 60);
+    // 最后一段照常渲染：镜头是阻尼跟随的，塌落动画也只在渲染帧里推进，
+    // 直接一帧跳过去会拍到还没收敛的机位和一堆悬在半空的板子。
+    const settle = Math.min(warm, 1.8);
+    if (warm > settle) api.fastForward(warm - settle);
+    api.advance(settle > 0 ? settle : 1 / 60);
   } else {
     raf = requestAnimationFrame(loop);
     globalThis.addEventListener?.('keydown', (e) => {

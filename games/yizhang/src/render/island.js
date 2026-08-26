@@ -823,8 +823,11 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     tiles,
     core,
     arenaRadius: R,
+    /** 还立着的块数。塌掉的记录会留在表里等落完，但它们已经是洞了。 */
     get tileCount() {
-      return tiles.size;
+      let n = 0;
+      for (const rec of tiles.values()) if (!rec.broken) n++;
+      return n;
     },
 
     /**
