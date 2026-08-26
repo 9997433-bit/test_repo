@@ -24,8 +24,12 @@ interface Entry {
 const STYLE_ID = "decor-scene-style";
 
 const CSS = `
-.decor-row { position: relative; z-index: 1; }
-.decor-chip { cursor: pointer; color: inherit; line-height: 1.25; white-space: nowrap;
+/* 陈列牌恒为一行横滑：花园网格的高度按单行 34px 计算，换行会把花圃挤出舞台。 */
+.decor-row { position: relative; z-index: 1; flex-wrap: nowrap; justify-content: safe center;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; scroll-snap-type: x proximity; }
+.decor-row::-webkit-scrollbar { display: none; }
+.decor-chip { cursor: pointer; color: inherit; line-height: 1.25; white-space: nowrap; flex: none;
+  scroll-snap-align: start;
   transition: transform .16s ease, background .2s ease, color .2s ease, box-shadow .2s ease; }
 .decor-chip:hover { transform: translateY(-1px); }
 .decor-chip.is-focus { background: var(--vermilion, #b8442f); color: #fff8e8;

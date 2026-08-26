@@ -34,15 +34,15 @@ const SNOW = "#f2efe4";
 const SLOTS: Record<string, DecorSlot> = {
   lantern: { x: 8, y: 20, w: 8, depth: "near" },
   chimes: { x: 92, y: 13, w: 8, depth: "near" },
-  path: { x: 50, y: 86, w: 44, depth: "far" },
+  path: { x: 44, y: 84, w: 38, depth: "far" },
   swing: { x: 82, y: 78, w: 16, depth: "near" },
   screen: { x: 70, y: 24, w: 17, depth: "far" },
   scarecrow: { x: 30, y: 22, w: 9, depth: "far" },
-  pond: { x: 18, y: 84, w: 22, depth: "near" },
+  pond: { x: 16, y: 86, w: 20, depth: "near" },
   snowlion: { x: 93, y: 55, w: 12, depth: "near" },
   brazier: { x: 7, y: 56, w: 11, depth: "near" },
   pavilion: { x: 15, y: 32, w: 24, depth: "far" },
-  bridge: { x: 62, y: 92, w: 30, depth: "near" },
+  bridge: { x: 74, y: 92, w: 26, depth: "near" },
   moongate: { x: 88, y: 33, w: 15, depth: "far" },
 };
 
@@ -249,6 +249,7 @@ function snowlion(): string {
       `<ellipse cx="38" cy="54" rx="24" ry="17" fill="${SNOW}"/>` +
       `<path d="M18 66 q6 6 14 5" stroke="#d8d2be" stroke-width="3" fill="none" stroke-linecap="round"/>` +
       mane +
+      `<circle cx="50" cy="22" r="4.6" fill="#e2ddca"/><circle cx="70" cy="22" r="4.6" fill="#e2ddca"/>` +
       `<circle cx="60" cy="34" r="15" fill="${SNOW}"/>` +
       `<circle cx="55" cy="31" r="1.9" fill="${INK}"/><circle cx="66" cy="31" r="1.9" fill="${INK}"/>` +
       `<path d="M57 38 q4 4 8 0" stroke="${INK}" stroke-width="1.4" fill="none" stroke-linecap="round"/>` +
@@ -282,17 +283,22 @@ function pavilion(): string {
   return svg(
     160,
     110,
-    shadow(80, 100, 58, 7) +
-      `<path d="M20 46 Q80 6 140 46 Q108 34 80 32 Q52 34 20 46 Z" fill="${TILE}"/>` +
-      `<path d="M20 46 Q80 6 140 46" stroke="${TILE_DARK}" stroke-width="2.4" fill="none"/>` +
-      `<path d="M80 32 V22" stroke="${GOLD}" stroke-width="3" stroke-linecap="round"/><circle cx="80" cy="19" r="3.4" fill="${GOLD}"/>` +
-      `<path d="M32 62 Q80 36 128 62 Q104 52 80 51 Q56 52 32 62 Z" fill="${TILE_DARK}"/>` +
-      `<rect x="44" y="60" width="7" height="36" rx="2" fill="${WOOD_DARK}"/>` +
-      `<rect x="109" y="60" width="7" height="36" rx="2" fill="${WOOD_DARK}"/>` +
-      `<rect x="44" y="78" width="72" height="4" rx="2" fill="${WOOD}"/>` +
-      `<path d="M56 82 V94 M68 82 V94 M80 82 V94 M92 82 V94 M104 82 V94" stroke="${WOOD}" stroke-width="2.2"/>` +
-      `<rect x="34" y="94" width="92" height="6" rx="2" fill="${STONE}"/>` +
-      `<ellipse cx="80" cy="72" rx="20" ry="9" fill="rgba(60,80,90,0.18)"/>`,
+    shadow(80, 101, 58, 7) +
+      `<rect x="30" y="92" width="100" height="8" rx="3" fill="${STONE}"/>` +
+      `<rect x="36" y="88" width="88" height="5" rx="2" fill="${STONE_HI}"/>` +
+      `<path d="M50 64 H110 V90 H50 Z" fill="rgba(52,70,80,0.16)"/>` +
+      `<rect x="43" y="62" width="8" height="28" rx="3" fill="${WOOD_DARK}"/>` +
+      `<rect x="109" y="62" width="8" height="28" rx="3" fill="${WOOD_DARK}"/>` +
+      `<rect x="43" y="74" width="74" height="4" rx="2" fill="${WOOD}"/>` +
+      `<path d="M56 78 V89 M68 78 V89 M80 78 V89 M92 78 V89 M104 78 V89" stroke="${WOOD}" stroke-width="2.2"/>` +
+      `<path d="M46 30 H114 L142 58 H18 Z" fill="${TILE}"/>` +
+      `<path d="M60 34 L50 58 M80 34 V58 M100 34 L110 58" stroke="${TILE_DARK}" stroke-width="1.6" opacity="0.55"/>` +
+      `<path d="M18 58 Q8 50 2 53 Q12 60 16 64 Z" fill="${TILE}"/>` +
+      `<path d="M142 58 Q152 50 158 53 Q148 60 144 64 Z" fill="${TILE}"/>` +
+      `<path d="M16 58 H144 L140 65 H20 Z" fill="${TILE_DARK}"/>` +
+      `<path d="M44 30 H116 L120 36 H40 Z" fill="${TILE_DARK}"/>` +
+      `<path d="M80 30 V21" stroke="${GOLD}" stroke-width="3" stroke-linecap="round"/>` +
+      `<circle cx="80" cy="18" r="3.6" fill="${GOLD}"/>`,
   );
 }
 
