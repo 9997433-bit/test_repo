@@ -208,6 +208,17 @@ export function installGameApi(game, modules = {}) {
     return out;
   }
 
+  /**
+   * 战报文案里的技能名。
+   *
+   * `combat` 有自己的一套技能库，`data` 的 `sk_*` 不在其中，取不到时它会合成一条
+   * 同名条目（`name` 直接等于 id），于是战报会写成「施展【sk_pishan】」。
+   * combat 目录不归本代理改，就在出口处把这些 id 换回中文名。
+   */
+  function namedSkills(text) {
+    return String(text).replace(/sk_[a-z0-9_]+/gi, (id) => skillById[id]?.name ?? id);
+  }
+
   /** 战斗结果 → 界面战报（battleReport.js 读 kind / survivors / total）。 */
   function viewBattle(result, rewards) {
     const timeline = (result.timeline ?? [])
@@ -217,7 +228,7 @@ export function installGameApi(game, modules = {}) {
         kind: ev.side === 'player' ? 'ally' : ev.side === 'enemy' ? 'foe' : 'sys',
         element: ev.element ?? null,
         type: ev.t,
-        text: escapeHtml(ev.text),
+        text: escapeHtml(namedSkills(ev.text)),
       }));
     const total = (result.players ?? []).length;
     return {
