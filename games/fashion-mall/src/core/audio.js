@@ -1,12 +1,29 @@
 let ctx;
+let muted = false;
 
 function ac() {
   if (typeof window === "undefined") return null;
-  ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) return null;
+  try {
+    ctx ||= new Ctor();
+  } catch {
+    return null;
+  }
   return ctx;
 }
 
+export function setMuted(next) {
+  muted = !!next;
+  return muted;
+}
+
+export function isMuted() {
+  return muted;
+}
+
 export function beep(freq = 520, dur = 0.09, type = "sine", gain = 0.04) {
+  if (muted) return;
   const c = ac();
   if (!c) return;
   const o = c.createOscillator();
@@ -21,6 +38,10 @@ export function beep(freq = 520, dur = 0.09, type = "sine", gain = 0.04) {
 }
 
 export const sfx = {
+  // 视图层（如 fastfood 的失误音）按 sfx.beep 调用，这里补齐转发避免静默失效。
+  beep: (...args) => beep(...args),
+  setMuted,
+  isMuted,
   coin: () => beep(740, 0.08, "triangle", 0.05),
   tap: () => beep(420, 0.05, "square", 0.03),
   win: () => {

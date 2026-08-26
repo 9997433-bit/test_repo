@@ -1,27 +1,43 @@
-import { SHOPS } from "../data/balance.js";
-import { shopRate } from "../data/balance.js";
+import { SHOPS, shopRate } from "../data/balance.js";
 import { charmOf, shopBonusMap, formatGold } from "../core/economy.js";
-import { grantGold, persist, syncUnlocks } from "../core/state.js";
+import { persist, syncUnlocks } from "../core/state.js";
+import { upgradeShop, hireStaff, shopUpgradeCost, shopHireCost } from "../core/actions.js";
+import { esc, setText } from "../ui/dom.js";
 import { sfx } from "../core/audio.js";
 
-export function renderMall(root, state, openShop) {
+const COUNTDOWN_MS = 1000;
+
+function goalLine(state, now = Date.now()) {
+  const goal = state.goal;
+  if (!goal) return "";
+  const remain = Math.max(0, goal.until - now);
+  const mins = Math.floor(remain / 60000);
+  const secs = Math.floor((remain % 60000) / 1000);
+  const left = Math.max(0, goal.target - state.goldEarned);
+  return `第 ${goal.tier} 档目标 ${formatGold(goal.target)}（还差 ${formatGold(left)}）· 剩余 ${mins}:${String(secs).padStart(2, "0")} · 奖励 ${formatGold(goal.reward.gold)} 金`;
+}
+
+export function renderMall(root, state, ctx = {}) {
+  root._cleanup?.();
+  const openShop = typeof ctx === "function" ? ctx : ctx.openShop;
+  const toast = (typeof ctx === "object" && ctx.toast) || ((msg) => (state.toast = msg));
+  const repaint = () => renderMall(root, state, ctx);
+
   syncUnlocks(state);
   const charm = charmOf(state.outfit);
-  const bonuses = shopBonusMap(state.partners, state.shops);
-  const left = Math.max(0, state.goal.until - Date.now());
-  const mins = Math.floor(left / 60000);
+  const bonuses = shopBonusMap(state.partners);
   root.innerHTML = `
     <section class="hero">
-      <h1>${state.name} 的时尚百货城</h1>
-      <p>主角 Lv.${state.level} · 把冷清店铺一座座爆改。限时目标 ${formatGold(state.goal.target)} ${state.goal.done ? "已完成" : `还剩 ${mins} 分`}</p>
+      <h1>${esc(state.name)} 的时尚百货城</h1>
+      <p>主角 Lv.${state.level} · 把冷清店铺一座座爆改。</p>
+      <p id="goal-line">${esc(goalLine(state))}</p>
     </section>
     <div class="mall-grid"></div>`;
+
   const grid = root.querySelector(".mall-grid");
   for (const shop of SHOPS) {
     const s = state.shops[shop.id];
-    const rate = s.unlocked
-      ? shopRate(shop, s.level, s.staff, bonuses[shop.id] || 0, charm)
-      : 0;
+    const rate = s.unlocked ? shopRate(shop, s.level, s.staff, bonuses[shop.id] || 0, charm) : 0;
     const card = document.createElement("button");
     card.className = `shop-card ${s.unlocked ? "" : "locked"}`;
     card.style.background = `linear-gradient(180deg, ${shop.color}, #fff)`;
@@ -31,12 +47,9 @@ export function renderMall(root, state, openShop) {
       <small>${s.unlocked ? `Lv.${s.level} · ${formatGold(rate)}/秒` : `主角 Lv.${shop.unlockLevel} 解锁`}</small>
       <div>${s.auto ? "自动经营中" : s.unlocked ? "需照看" : "筹备中"}</div>`;
     card.onclick = () => {
-      if (!s.unlocked) {
-        state.toast = `主角升到 ${shop.unlockLevel} 级后收购${shop.name}`;
-        return;
-      }
+      if (!s.unlocked) return toast(`主角升到 ${shop.unlockLevel} 级后收购${shop.name}`);
       sfx.tap();
-      openShop(shop.id);
+      openShop?.(shop.id);
     };
     grid.append(card);
   }
@@ -52,38 +65,44 @@ export function renderMall(root, state, openShop) {
     </div>
     <div id="upgrades"></div>`;
   root.append(panel);
+
   const box = panel.querySelector("#upgrades");
   for (const shop of SHOPS.filter((x) => state.shops[x.id].unlocked)) {
     const s = state.shops[shop.id];
-    const cost = Math.floor(80 * 1.45 ** (s.level - 1));
-    const hire = Math.floor(50 * 1.5 ** s.staff);
     const row = document.createElement("div");
     row.className = "row";
     row.style.margin = "10px 0";
     row.innerHTML = `
       <div>${shop.emoji} ${shop.name} Lv.${s.level} 员工 ${s.staff}/${shop.staffSlots}</div>
       <div style="display:flex;gap:6px">
-        <button class="btn ghost" data-up>升级 ${cost}</button>
-        <button class="btn ghost" data-hire>招聘 ${hire}</button>
+        <button class="btn ghost" data-up>升级 ${formatGold(shopUpgradeCost(s.level))}</button>
+        <button class="btn ghost" data-hire>招聘 ${formatGold(shopHireCost(s.staff))}</button>
       </div>`;
     row.querySelector("[data-up]").onclick = () => {
-      if (state.gold < cost) return (state.toast = "现金不够装修");
-      state.gold -= cost;
-      s.level += 1;
+      const res = upgradeShop(state, shop.id);
+      if (!res.ok) return toast(res.toast);
       sfx.coin();
       persist(state);
-      renderMall(root, state, openShop);
+      toast(res.toast);
+      repaint();
     };
     row.querySelector("[data-hire]").onclick = () => {
-      if (s.staff >= shop.staffSlots) return (state.toast = "工位已满");
-      if (state.gold < hire) return (state.toast = "发不起工资");
-      state.gold -= hire;
-      s.staff += 1;
-      if (s.staff >= shop.staffSlots) s.auto = true;
+      const res = hireStaff(state, shop.id);
+      if (!res.ok) return toast(res.toast);
       sfx.coin();
       persist(state);
-      renderMall(root, state, openShop);
+      toast(res.toast);
+      repaint();
     };
     box.append(row);
   }
+
+  // 限时目标是活的：倒计时每秒刷新，dispose 必须把它收掉。
+  const line = root.querySelector("#goal-line");
+  const timer = setInterval(() => {
+    if (!line.isConnected) return clearInterval(timer);
+    setText(line, goalLine(state));
+  }, COUNTDOWN_MS);
+  root._cleanup = () => clearInterval(timer);
+  return root._cleanup;
 }
