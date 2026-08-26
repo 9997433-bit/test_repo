@@ -194,7 +194,7 @@ export function renderRoster(root, state, ctx = {}) {
     train.className = "btn ghost";
     train.type = "button";
     train.dataset.act = "train";
-    train.onclick = () => commit(trainPartner(state, p.id), sfx.coin, p.id, train);
+    train.onclick = () => commit(trainPartner(state, p.id), sfx.coin, p.id, "train");
     card.querySelector("[data-actions]").append(train);
 
     const posts = card.querySelector("[data-posts]");
@@ -206,7 +206,7 @@ export function renderRoster(root, state, ctx = {}) {
       btn.innerHTML = "<b></b><small></small>";
       btn.onclick = () => {
         if (p.assigned === shop.id) return toast(`${p.name} 已经在${shop.name}了`);
-        commit(assignPartner(state, p.id, shop.id), sfx.tap, p.id, btn);
+        commit(assignPartner(state, p.id, shop.id), sfx.tap, p.id, `post:${shop.id}`);
       };
       posts.append(btn);
       return { shop, btn, label: btn.querySelector("b"), hint: btn.querySelector("small") };
@@ -218,7 +218,11 @@ export function renderRoster(root, state, ctx = {}) {
     off.type = "button";
     off.dataset.act = "recall";
     off.textContent = "撤回驻店（先空着，等更合适的店开门）";
-    off.onclick = () => commit(assignPartner(state, p.id, null), sfx.tap, p.id, off);
+    off.onclick = () => {
+      // 撤回后这个按钮自己就藏了，焦点接给刚撤出来的那家店——顺手就能改派。
+      const from = p.assigned;
+      commit(assignPartner(state, p.id, null), sfx.tap, p.id, ["recall", `post:${from}`]);
+    };
     posts.append(off);
 
     const locked = SHOPS.length - shops.length;
@@ -298,7 +302,7 @@ export function renderRoster(root, state, ctx = {}) {
     sign.className = "btn";
     sign.type = "button";
     sign.dataset.act = "sign";
-    sign.onclick = () => commit(signPartner(state, p.id), sfx.rare, p.id, sign);
+    sign.onclick = () => commit(signPartner(state, p.id), sfx.rare, p.id, "sign");
     card.querySelector("[data-actions]").append(sign);
 
     return function paint(base) {
@@ -396,27 +400,34 @@ export function renderRoster(root, state, ctx = {}) {
     if (flashId) flash(flashId);
   }
 
-  /** 按"伙伴 + 动作"这把钥匙把焦点还给刚点的按钮；按钮没了或变灰就退到本人卡片。 */
-  function restoreFocus(partnerId, act) {
+  const usable = (btn) => !!btn && !btn.disabled && !btn.hidden;
+
+  /**
+   * 按"伙伴 + 动作"这把钥匙把焦点还给刚点的按钮。按钮没了（签约换卡、撤回后自藏）
+   * 或变灰（钱不够再培训）就顺着候选键往下找，最后才退到卡片本身。
+   */
+  function restoreFocus(partnerId, acts) {
     const node = cards.get(partnerId)?.node;
     if (!node) return;
-    const btn = act ? node.querySelector(`[data-act="${act}"]`) : null;
-    const alive = btn && !btn.disabled && !btn.hidden;
-    (alive ? btn : node).focus({ preventScroll: true });
+    for (const act of acts) {
+      const btn = node.querySelector(`[data-act="${act}"]`);
+      if (usable(btn)) return btn.focus({ preventScroll: true });
+    }
+    const next = [...node.querySelectorAll("[data-act]")].find(usable);
+    (next || node).focus({ preventScroll: true });
   }
 
   /** 动作成功后的统一收尾：落盘 → 音效 → toast → 局部刷新 → 焦点归位。 */
-  function commit(res, sound, flashId, btn) {
+  function commit(res, sound, flashId, acts) {
     if (!res.ok) {
       toast(res.toast);
       return false;
     }
-    const act = btn?.dataset.act || null;
     persist(state);
     sound?.();
     toast(res.toast);
     refresh(flashId);
-    restoreFocus(flashId, act);
+    restoreFocus(flashId, [].concat(acts || []));
     syncHead();
     return true;
   }
