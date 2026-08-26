@@ -11,7 +11,7 @@
 
 import { COMBO, ELEMENT, STATUS } from "./constants.js";
 import { advanceCombo, createCombo, decayCombo, planCombo } from "./combo.js";
-import { EFFECT, damageEffect } from "./effects.js";
+import { COMBO_OP, EFFECT, damageEffect } from "./effects.js";
 import { statusEndEvent, statusTickEvent } from "./events.js";
 import { modsFromBuffs } from "./modifiers.js";
 
@@ -119,19 +119,19 @@ export function applyEffects(state, effects = [], now = state?.time ?? 0) {
         break;
       }
       case EFFECT.COMBO: {
-        if (fx.op === "burst") {
+        if (fx.op === COMBO_OP.BURST) {
           // value = 引爆后保留的层数，默认清零；连击流 4 人羁绊会留一部分
           const kept = Math.max(0, Math.floor(fx.value ?? 0));
           next.combo = { ...next.combo, value: kept, lastHitAt: now, bursts: (next.combo.bursts ?? 0) + 1, burstUntil: now + (fx.duration || COMBO.BURST_DURATION) };
           next.stats = { ...next.stats, bursts: (next.stats?.bursts ?? 0) + 1 };
-        } else if (fx.op === "reset") {
+        } else if (fx.op === COMBO_OP.RESET) {
           next.combo = { ...next.combo, value: 0, lastHitAt: now };
-        } else if (fx.op === "set") {
+        } else if (fx.op === COMBO_OP.SET) {
           next.combo = { ...next.combo, value: Math.max(0, fx.value), lastHitAt: now };
-        } else if (fx.op === "add") {
+        } else if (fx.op === COMBO_OP.ADD) {
           const plan = planCombo({ combo: next.combo.value, gain: fx.value, mods: activeMods(next, now) });
           next.combo = advanceCombo(next.combo, plan, now);
-        } else if (fx.op === "hold") {
+        } else if (fx.op === COMBO_OP.HOLD) {
           next.combo = { ...next.combo, lastHitAt: now + (fx.duration ?? 0) };
         }
         break;
