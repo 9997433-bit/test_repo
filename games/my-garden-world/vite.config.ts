@@ -7,6 +7,7 @@ export default defineConfig({
   preview: { host: true, port: 4173 },
   test: {
     environment: "jsdom",
+    environmentOptions: { jsdom: { pretendToBeVisual: true } },
     include: ["tests/**/*.test.ts"],
   },
 });
