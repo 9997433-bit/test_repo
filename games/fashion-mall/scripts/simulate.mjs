@@ -23,6 +23,7 @@ import {
   upgradeShop,
   buyResearch,
 } from "../src/core/actions.js";
+import { GOALS } from "../src/data/copy.js";
 import { totalOnlinePerSec } from "../src/core/economy.js";
 import { PARTNER_LEVEL_MAX, PARTNERS_PER_SHOP_MAX, SHOP_LEVEL_MAX } from "../src/core/limits.js";
 import { defaultState, tick } from "../src/core/state.js";
@@ -293,7 +294,8 @@ function simulate(mode) {
   for (let second = 1; second <= MAX_SECONDS; second += 1) {
     const beforeLevel = state.level;
     const result = tick(state, 1, START_NOW + second * 1000);
-    stats.goalsCompleted += result.notes.filter((note) => note.startsWith("限时目标达成")).length;
+    // 达标播报带格式化数值，无法前缀匹配；advanceGoal 只发达标/超时两种，取补集即可。
+    stats.goalsCompleted += result.notes.filter((note) => note !== GOALS.miss).length;
     if (mode === "active") applyExpectedActivePlay(state, second, stats);
     if (state.level !== beforeLevel) optimizePartnerAssignments(state);
     signAvailablePartners(state);

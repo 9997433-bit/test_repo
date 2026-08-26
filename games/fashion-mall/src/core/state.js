@@ -1,11 +1,22 @@
 import * as BALANCE from "../data/balance.js";
 import { SHOPS, PARTNERS, OUTFITS, nextLevelReady } from "../data/balance.js";
+import { GOALS, OFFLINE } from "../data/copy.js";
 import { readSaveData, writeSave } from "./save.js";
-import { settleOffline, totalOnlinePerSec, outfitItem } from "./economy.js";
-import { PARTNERS_PER_SHOP_MAX, capAdd, finiteOr, partnerLevel, shopLevel } from "./limits.js";
+import { settleOffline, totalOnlinePerSec, outfitItem, formatGold } from "./economy.js";
+import {
+  OFFLINE_CAP_HOURS,
+  PARTNERS_PER_SHOP_MAX,
+  capAdd,
+  finiteOr,
+  partnerLevel,
+  shopLevel,
+} from "./limits.js";
 
 /** 间隔 ≤ 该值按在线全额记账，超过按离线倍率结算。 */
 export const ONLINE_GAP_MAX_SEC = 30;
+
+/** 离开短于该时长只播 OFFLINE.short 轻量变体（UX_NARRATIVE §6.1）。 */
+export const OFFLINE_SHORT_HOURS = 0.5;
 
 /** 离线被动阅历的折减系数，与金币同策；balance 未导出时用 0.65 兜底。 */
 const PASSIVE_XP_OFFLINE_RATE = (() => {
@@ -169,6 +180,17 @@ function normalizeGoal(goal, state, now) {
   };
 }
 
+/**
+ * 离店回执文案：金额 > 时长 > 封顶（UX_NARRATIVE §6.1）。数值一律先 formatGold /
+ * toFixed 再交给 copy——copy 层不做数学，回执与 HUD 的金额口径因此一致（RUBRIC B8）。
+ */
+export function offlineReceipt(result) {
+  if (result.hours < OFFLINE_SHORT_HOURS) return OFFLINE.short;
+  const summary = OFFLINE.summary(result.hours.toFixed(1), formatGold(result.gold));
+  if (result.hours <= OFFLINE_CAP_HOURS) return summary;
+  return `${summary}${OFFLINE.cappedNote(String(OFFLINE_CAP_HOURS))}`;
+}
+
 export function hydrate(now = Date.now()) {
   const { data, corrupt } = readSaveData();
   let state;
@@ -178,9 +200,7 @@ export function hydrate(now = Date.now()) {
     state = defaultState(now);
   }
   const result = settle(state, now);
-  if (result.mode === "offline" && result.gold > 0) {
-    state.toast = `离线 ${result.hours.toFixed(1)} 小时，到账 ${Math.floor(result.gold)}`;
-  }
+  if (result.mode === "offline" && result.gold > 0) state.toast = offlineReceipt(result);
   for (const note of result.notes) state.toast = note;
   if (corrupt) state.toast = "旧存档无法识别，已备份原档并开新档";
   syncUnlocks(state);
@@ -282,9 +302,7 @@ export function advanceGoal(state, now = Date.now()) {
       const reward = goal.reward || { gold: 0, xp: 0 };
       grantGold(state, reward.gold);
       grantXp(state, reward.xp);
-      if (reward.gold || reward.xp) {
-        notes.push(`限时目标达成，奖励 ${Math.floor(reward.gold)} 金 · 阅历+${reward.xp}`);
-      }
+      if (reward.gold || reward.xp) notes.push(GOALS.done(formatGold(reward.gold), reward.xp));
       state.goal = rollNextGoal(state, now, false, true);
       // 营收饱和（曲线已经加不动区间）时新目标会落在当前营收之下，
       // 继续循环就是「达标→发奖→再达标」的奖励泵，这里必须停手。
@@ -293,7 +311,8 @@ export function advanceGoal(state, now = Date.now()) {
     }
     if (now > goal.until) {
       state.goal = rollNextGoal(state, now, false, false);
-      notes.push("限时目标超时，换成更稳的一档重新开张");
+      // 超时只播一条（UX_NARRATIVE §6.2）：降档编号由商场目标行交代，不重复羞辱。
+      notes.push(GOALS.miss);
       continue;
     }
     break;
