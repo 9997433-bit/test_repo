@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>三国：冰河时代 — 极寒城建 × 武将讨伐</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>❄</text></svg>" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">❄ 三国<i>·</i>冰河时代</div>
+    <div id="chips"></div>
+    <div id="controls">
+      <div id="speeds"></div>
+      <button class="btn ghost" data-act="save">💾</button>
+    </div>
+  </header>
+  <main id="mainrow">
+    <section id="stage">
+      <canvas id="game-canvas"></canvas>
+      <div id="banner" class="hidden"></div>
+    </section>
+    <aside id="panel">
+      <nav id="tabs"></nav>
+      <div id="tab-body"></div>
+    </aside>
+  </main>
+  <footer id="logbar"></footer>
+  <div id="toasts"></div>
+  <div id="modal-root" class="hidden"></div>
+</div>
+<noscript>本游戏需要启用 JavaScript。</noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
