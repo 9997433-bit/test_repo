@@ -6,6 +6,9 @@ import {
   coverageRatio,
   coverageWindows,
   distanceToProgress,
+  grazeOf,
+  hitFactor,
+  hitFactorAt,
   inReach,
   reachConfig,
   reachOf,
@@ -45,6 +48,21 @@ describe("lane geometry", () => {
     }
     const gapStart = windows[0].to + (windows[1].from - windows[0].to) / 2;
     expect(distanceToProgress(6, gapStart)).toBeGreaterThan(reachOf(1));
+  });
+
+  it("tapers damage between the core reach and the graze edge", () => {
+    expect(grazeOf(1)).toBeGreaterThan(reachOf(1));
+    expect(hitFactorAt(reachOf(1) * 0.5, 1)).toBe(1);
+    expect(hitFactorAt(reachOf(1), 1)).toBe(1);
+    const mid = hitFactorAt((reachOf(1) + grazeOf(1)) / 2, 1);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+    expect(hitFactorAt(grazeOf(1), 1)).toBe(0);
+    expect(hitFactorAt(grazeOf(1) + 1, 1)).toBe(0);
+    // 同一点，射程越长命中系数越高
+    const d = reachOf(1) * 1.2;
+    expect(hitFactor(9, 0.6, 2)).toBeGreaterThanOrEqual(hitFactor(9, 0.6, 1));
+    expect(hitFactorAt(d, 2)).toBeGreaterThan(hitFactorAt(d, 1));
   });
 
   it("anchors report the nearest lane progress for a cell", () => {

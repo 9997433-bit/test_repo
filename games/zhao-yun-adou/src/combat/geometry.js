@@ -17,7 +17,7 @@ const LANE = measurePath(pathPoints(COLS, ROWS, false));
  * reach = range * scale + pad。默认值下近战覆盖约半条路，
  * 弓/赵云覆盖大半，黄忠(range 3)接近全场，射程档位因此拉得开。
  */
-const REACH = { scale: 1.2, pad: 0.55 };
+const REACH = { scale: 1.2, pad: 0.55, graze: 1.6 };
 
 export function reachConfig() {
   return { ...REACH };
@@ -26,6 +26,7 @@ export function reachConfig() {
 export function configureReach(patch = {}) {
   if (typeof patch.scale === "number") REACH.scale = patch.scale;
   if (typeof patch.pad === "number") REACH.pad = patch.pad;
+  if (typeof patch.graze === "number") REACH.graze = Math.max(1, patch.graze);
   return reachConfig();
 }
 
@@ -64,6 +65,28 @@ export function distanceToProgress(index, t) {
 
 export function inReach(index, t, range) {
   return distanceToProgress(index, t) <= reachOf(range);
+}
+
+/** 掠射外沿：核心射程之外还能擦到，伤害线性衰减到 0。 */
+export function grazeOf(range) {
+  return reachOf(range) * REACH.graze;
+}
+
+/**
+ * 命中系数：核心圈内满伤，外沿线性衰减。
+ * 软边缘让摆位收益落在「谁把敌人罩进核心圈」，
+ * 而不是差半格就完全打不到。
+ */
+export function hitFactorAt(distance, range) {
+  const reach = reachOf(range);
+  if (distance <= reach) return 1;
+  const outer = grazeOf(range);
+  if (distance >= outer) return 0;
+  return 1 - (distance - reach) / (outer - reach);
+}
+
+export function hitFactor(index, t, range) {
+  return hitFactorAt(distanceToProgress(index, t), range);
 }
 
 /**

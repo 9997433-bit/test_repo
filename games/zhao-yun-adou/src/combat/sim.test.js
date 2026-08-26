@@ -30,16 +30,32 @@ describe("range vs lane progress", () => {
     expect(cellDistToPath(9)).toBe(cellDistToPath(5));
   });
 
-  it("lets the same cell reach an enemy once it walks into cover", () => {
+  it("falls off with distance: full damage in cover, a graze outside, nothing far away", () => {
+    const damageAt = (t) => {
+      const side = makeSide();
+      putUnit(side, 9, { id: "dao" });
+      const e = makeEnemy({ t });
+      side.enemies.push(e);
+      tickSideCombat(side, 0.05, collect());
+      return 100 - e.hp;
+    };
+    const core = damageAt(0.35);
+    const graze = damageAt(0.6);
+    const far = damageAt(0.75);
+    expect(core).toBeGreaterThan(graze);
+    expect(graze).toBeGreaterThan(0);
+    expect(far).toBe(0);
+  });
+
+  it("spends the shot on the leader inside cover, not on a distant graze", () => {
     const side = makeSide();
-    putUnit(side, 9, { id: "gong" });
-    const e = makeEnemy({ t: 0.8 });
-    side.enemies.push(e);
+    putUnit(side, 9, { id: "dao" });
+    const grazed = makeEnemy({ t: 0.6 });
+    const inCover = makeEnemy({ t: 0.5 });
+    side.enemies.push(grazed, inCover);
     tickSideCombat(side, 0.05, collect());
-    expect(e.hp).toBe(100);
-    e.t = 0.35;
-    tickSideCombat(side, 0.05, collect());
-    expect(e.hp).toBeLessThan(100);
+    expect(inCover.hp).toBeLessThan(100);
+    expect(grazed.hp).toBe(100);
   });
 
   it("longer range covers strictly more of the lane than melee", () => {

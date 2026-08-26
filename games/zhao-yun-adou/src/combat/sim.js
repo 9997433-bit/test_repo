@@ -3,7 +3,7 @@ import { heroById } from "../data/heroes.js";
 import { waveSpec, leakCompensation, MAX_WAVE } from "../data/waves.js";
 import { castSkill } from "./skills.js";
 import { applyDamage } from "./damage.js";
-import { cellCenter, lanePoint, reachOf } from "./geometry.js";
+import { cellCenter, grazeOf, hitFactorAt, lanePoint, reachOf } from "./geometry.js";
 import { linkArena, notePressureKill, opponentOf, sendPressure } from "./pressure.js";
 
 /** 路线推进的时间常数：speed(点/秒) / PATH_SCALE = 每秒推进的进度。 */
@@ -15,6 +15,22 @@ const BOSS_DELAY = 0.6;
 const MAX_ENEMIES = 120;
 /** 冷却最多提前储备这么多秒，空闲不再攒出爆发。 */
 const CD_BANK = 0.5;
+
+/**
+ * 覆盖补偿：射程改成「一格只守一段路」后，单位的有效输出时间约剩七成，
+ * 不补的话整局会比旧版早三四波结束（实测 avgWave 9.1 → 5.8）。
+ * data 表不归本轮改，补偿系数因此留在战斗层，并做成可调。
+ */
+const BALANCE = { towerDamage: 1.35 };
+
+export function balanceConfig() {
+  return { ...BALANCE };
+}
+
+export function configureBalance(patch = {}) {
+  if (typeof patch.towerDamage === "number") BALANCE.towerDamage = patch.towerDamage;
+  return balanceConfig();
+}
 
 let enemySeq = 1;
 
@@ -129,14 +145,18 @@ function runBoard(side, dt, haste, rally, notify) {
 
     const range = hero ? (hero.range ?? 2) : (UNIT_TABLE[u.id]?.range ?? 1);
     const reach = reachOf(range);
+    const outer = grazeOf(range);
     const c = cellCenter(cell.index);
     const targets = [];
     for (const m of marks) {
       if (m.e.hp <= 0) continue;
-      if (Math.hypot(c.x - m.x, c.y - m.y) <= reach) targets.push(m.e);
+      const d = Math.hypot(c.x - m.x, c.y - m.y);
+      if (d >= outer) continue;
+      targets.push({ e: m.e, factor: hitFactorAt(d, range) });
     }
     if (!targets.length) continue;
-    targets.sort((a, b) => b.t - a.t);
+    // 先打罩在核心圈里的领头者：否则一个刚擦到外沿的敌人会把满伤的一发骗走。
+    targets.sort((a, b) => (b.factor === 1) - (a.factor === 1) || b.e.t - a.e.t);
 
     if (hero) {
       if (u.cooldown <= 0) {
@@ -157,16 +177,16 @@ function runBoard(side, dt, haste, rally, notify) {
         });
       }
       if (u.cd <= 0) {
-        applyDamage(targets[0], hero.atk * rally);
+        applyDamage(targets[0].e, hero.atk * rally * BALANCE.towerDamage * targets[0].factor);
         u.cd = 1 / hero.rate;
       }
     } else {
       if (u.cd > 0) continue;
       const row = UNIT_TABLE[u.id];
       if (!row) continue;
-      const dmg = unitAttack(u.id, u.level) * rally;
+      const dmg = unitAttack(u.id, u.level) * rally * BALANCE.towerDamage;
       const pierce = row.pierce || 0;
-      for (const tgt of targets.slice(0, 1 + pierce)) applyDamage(tgt, dmg);
+      for (const tgt of targets.slice(0, 1 + pierce)) applyDamage(tgt.e, dmg * tgt.factor);
       u.cd = 1 / row.rate;
     }
   }
