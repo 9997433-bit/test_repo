@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>边境要塞塔防 · Frontier Keep TD</title>
+  <link rel="stylesheet" href="css/wc3.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="res">
+        <span class="res-item r-gold" title="黄金 Gold"><i class="ricon coin"></i><span id="res-gold">0</span></span>
+        <span class="res-item r-lumber" title="木材 Lumber"><i class="ricon wood"></i><span id="res-lumber">0</span></span>
+        <span class="res-item r-lives" title="生命 Lives"><i class="ricon helm"></i><span id="res-lives">20</span></span>
+        <span class="res-item r-wave" title="波次 Wave"><i class="ricon banner"></i><span class="res-label">WAVE</span><b id="res-wave">1 / 30</b></span>
+        <span class="res-item r-time" title="时间 Time"><i class="ricon hourglass"></i><span id="res-time">0:00</span></span>
+      </div>
+      <div class="top-actions">
+        <div class="ta-group">
+          <button id="btn-next" type="button">下一波 N</button>
+          <button id="btn-pause" type="button">暂停 Space</button>
+          <button id="btn-speed" type="button">×1</button>
+        </div>
+        <span class="ta-sep" aria-hidden="true"></span>
+        <div class="ta-group">
+          <button id="btn-menu" type="button">菜单</button>
+          <button id="btn-allies" type="button">盟友</button>
+          <button id="btn-log" type="button">日志</button>
+          <button id="btn-settings" type="button">设置</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="stage-wrap">
+      <canvas id="stage" width="1152" height="720"></canvas>
+      <div id="logline" class="logline"></div>
+
+      <div id="start-overlay" class="overlay">
+        <div class="panel">
+          <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+          <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
+          <h1 id="menu-title">边境要塞塔防</h1>
+          <div class="sub" id="menu-sub">魔兽争霸 III · 自定义塔防致敬作</div>
+          <div class="howto">在道路旁建造四族防御塔，利用攻击/护甲克制，守住 30 波从黑暗之门涌出的敌军。漏怪扣除生命。每 5 波 +1 木材，黄金每 15 秒产生利息。命令卡与小地图致敬冰封王座 HUD。</div>
+          <div class="row">
+            <label>难度 Difficulty</label>
+            <div class="choices">
+              <button type="button" data-diff="easy">简单</button>
+              <button type="button" class="active" data-diff="normal">普通</button>
+              <button type="button" data-diff="hard">困难</button>
+              <button type="button" data-diff="insane">疯狂</button>
+            </div>
+          </div>
+          <div class="row">
+            <label>指挥官 Commander</label>
+            <div class="choices">
+              <button type="button" class="active" data-hero="paladin">圣骑士</button>
+              <button type="button" data-hero="blademaster">剑圣</button>
+              <button type="button" data-hero="demonhunter">恶魔猎手</button>
+              <button type="button" data-hero="deathknight">死亡骑士</button>
+            </div>
+          </div>
+          <button class="menu-btn primary" id="btn-start" type="button">开始战役</button>
+          <div class="hint">Q–V 建塔 · U 升级 · S 出售 · N 下一波 · 空格 暂停</div>
+        </div>
+      </div>
+
+      <div id="settings-overlay" class="overlay hidden">
+        <div class="panel">
+          <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+          <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
+          <h1>设置</h1>
+          <div class="row">
+            <label>语言 Language</label>
+            <select id="opt-lang">
+              <option value="zh" selected>简体中文</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="row"><label><input id="opt-range" type="checkbox" checked /> 显示射程</label></div>
+          <div class="row"><label><input id="opt-dmg" type="checkbox" checked /> 伤害数字</label></div>
+          <div class="row">
+            <label>音量</label>
+            <input id="opt-vol" type="range" min="0" max="1" step="0.05" value="0.55" />
+          </div>
+          <button class="menu-btn" id="btn-close-settings" type="button">关闭</button>
+        </div>
+      </div>
+
+      <div id="end-overlay" class="overlay hidden">
+        <div class="panel">
+          <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+          <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
+          <h1 id="end-title">结束</h1>
+          <p id="end-detail"></p>
+          <button class="menu-btn primary" id="btn-restart" type="button">再来一局</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="bottom">
+      <div class="portrait-wrap">
+        <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+        <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
+        <canvas id="portrait" width="200" height="200"></canvas>
+        <div class="portrait-name" id="sel-name">边境要塞</div>
+      </div>
+      <div class="info-panel">
+        <div class="bars">
+          <div class="bar hp"><i id="bar-hp"></i><span id="hp-text"></span></div>
+          <div class="bar mp"><i id="bar-mp"></i><span id="mp-text"></span></div>
+        </div>
+        <div class="stats">
+          <div>攻击 <b id="stat-atk">—</b></div>
+          <div>护甲 <b id="stat-arm">—</b></div>
+          <div>射程 <b id="stat-rng">—</b></div>
+          <div>攻速 <b id="stat-spd">—</b></div>
+        </div>
+        <div class="flavor" id="sel-flavor">选择一座塔或一名敌军，查看魔兽式攻击护甲克制。</div>
+      </div>
+      <div class="cmd" id="cmd">
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+        <button class="cmd-btn" type="button"></button>
+      </div>
+      <div class="minimap-wrap">
+        <b class="fc fc-tl" aria-hidden="true"></b><b class="fc fc-tr" aria-hidden="true"></b>
+        <b class="fc fc-bl" aria-hidden="true"></b><b class="fc fc-br" aria-hidden="true"></b>
+        <canvas id="minimap" width="196" height="176"></canvas>
+      </div>
+    </footer>
+  </div>
+  <div id="tooltip" class="tooltip"></div>
+
+  <script src="js/sim-core.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/hud.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
