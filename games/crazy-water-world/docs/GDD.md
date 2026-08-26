@@ -79,9 +79,10 @@ Boss首通+深海稀有点 ─→ 传说碎片 ─→ 升星 ─→ 更高的墙
 **本轮修复的死端**（验收红3/红9 对应项）：
 
 1. `shard`（传说碎片）：全库原本只有消耗无产出。现在两条获取链：
-   Boss 关首通固定掉落（5/10/15/20/25/30 关 → 10/15/20/25/30/40，合计 140，见 `stages.js`）
-   + 深海稀有点可重复刷取（`dive.js`：wreck 25 权重 ×1、city 45 权重 ×1–2、trench 60 权重 ×2–3）。
-   全里程碑升星需求约 160（§8.3），关卡供 140、潜水补 20+，刻意留潜水缺口制造复玩动机。
+   Boss 关首通固定掉落（5/10/15/20/25/30 关 → 10/30/50/75/105/120，合计 390，见 `stages.js`；
+   Round 3 随 B30 重做同步抬升，终局要求全员★4）+ 深海稀有点可重复刷取
+   （`dive.js`：wreck 25 权重 ×1、city 45 权重 ×1–2、trench 70 权重 ×2–4）。
+   全里程碑升星需求 300（§8.3），B25 前关卡供 270、潜水补 ~30，刻意留潜水缺口制造复玩动机。
 2. `salt`（海盐）：来源 = 净化器副产（0.006/秒/级）+ 青壳蟹；去向 = 腌鱼配方（鱼片+盐→熟食×2）+ 订单。
 3. `coins`（漂流币）：来源 = 订单奖励、关卡通关、图鉴首钓；去向 = 漂流商人事件（买蓝图/沙漏/种子/建材）、招募居民。
 4. `wheat`：新增去向 = 熟食配方（生鱼+小麦→熟食）与选种厂维持消耗，农田反过来吃淡水（`farm.input`），形成水→麦→种→更多田的正循环。
@@ -89,10 +90,23 @@ Boss首通+深海稀有点 ─→ 传说碎片 ─→ 升星 ─→ 更高的墙
 
 `diamonds` 仅作后期加速，免费来源 = Boss 首通与图鉴首钓（禁逼氪节奏，无付费入口）。
 
-### 4.3 居民与订单（`orders.js`，接线）
+### 4.3 居民与订单（`orders.js`）
 
-- 订单池 9 种，按 HQ 等级分 3 档；交单后轮换抽取、同居民不连抽同单，需求数量随 HQ 放大（+15%/级）。
-- 居民池 6 人（含开局阿强），广播站按等级招募，人口上限 = Σ小屋 pop；每人有岗位被动（对口建筑 +8%，同岗可叠 3 层）。
+- 订单池 9 种，按 HQ 等级分 3 档；交单后轮换抽取、同居民不连抽同单，需求数量随 HQ 放大
+  （+15%/级）——`rollOrder`/`fulfillOrder` 已接线。
+- **招募（Round 3 机读口径，待广播站屏消费）**：`RESIDENT_POOL[*].recruit =
+  { radioLevel, cost }`，radio 等级达标且 `residents.length < Σ小屋床位`
+  （`RESIDENT_RULES.needsBed`）时可招；cost 里 `coins` 扣 `player.coins`、
+  其余键扣 `resources`（meal/freshWater/scrap 各有一位居民要），不足置灰。
+  入队用 `RESIDENT_RULES.spawn` 初始三值并立即挂一张单（`orderOnJoin`）。
+  六人合计收 coins 42 / meal 9 / freshWater 4 / scrap 8——coins 与熟食由此有了常态去向。
+- **多订单**：`ORDER_RULES.ordersPerResident = 1`，总挂单数 = 居民数（旧字段
+  `maxOpenOrders: "residents.length"` 是句人话不可机读，已替换）；`ui/orders.js`
+  的 `orderOf` 现只取第一张，接线时改为逐居民展示与交付。
+- **perk（机读结构已定）**：`perk = { target, rate }`，target 是建筑 id
+  （fish_plant/fish_chair/farm/workshop）或 `"flotsam"`（海面漂浮物刷新）；
+  tick 对 target 建筑产率乘 `(1 + rate × 同 target 在船人数)`，封顶
+  `RESIDENT_RULES.perkStackCap = 3` 层。
 - 超时 240 秒不交单：心情 −10 并轮换，不没收资源（保持“不焦虑”的基调）。
 
 ## 5. 建筑（数据口径 `buildings.js`）
@@ -193,14 +207,18 @@ Boss首通+深海稀有点 ─→ 传说碎片 ─→ 升星 ─→ 更高的墙
   8 关起蛙人刺客入场，14 关起鱼叉手入场。
 - Boss = 门神：本体 + 4 护卫（护卫 = 本关杂兵 × `escortMult`）。Round 2 战斗实装
   酒劲叠层、连珠多段、治疗护盾后联盟侧大幅变强，Boss 倍率随之整体上调：
-  本体 hp ×4.8–13、atk ×1.9–3.4 逐 Boss 覆写（B10 钩手船长血最厚 ×13 ——
+  本体 hp ×4.8–13、atk ×2.3–3.4 逐 Boss 覆写（B10 钩手船长血最厚 ×13 ——
   他要在开局钩走奶妈后还站得住；B25 废铁鲸 ×4.8 但自带嘲讽当分母）。
   六个 Boss 机制全部用 `battle.js` 已支持的 skill 字段点亮，零战斗代码改动：
   巨齿鲨王（爆发撕咬）、钩手船长（开局钩后排）、深潮塞壬（群奶车轮战）、
   克拉肯触腕（全体溅射）、废铁鲸（嘲讽 DPS 检定）、潮汐领主（3.2 倍潮涌终局考试）。
-- **快照冻结例外**：`STAGES[29].enemies`（B30 全阵）与 `STAGES[0].enemies[0]` 被
-  `tests/combat-contract.test.js` 快照冻结，B30 维持 Round 1 倍率（hp ×3.8 atk ×1.3，
-  护卫 ×0.7），终局带 26–30 因此是「胜利巡礼」而非墙；重录快照后可再上调（§12）。
+- **B30 再平衡（Round 3）**：旧冻结值（hp ×3.8 atk ×1.3 护卫 ×0.7）造成难度倒挂——
+  全员★2 也能 113/128 胜，终局无墙。现抬到 **hp ×6、atk ×2.6、护卫 ×0.85**
+  （潮汐领主 6696 血 / 155 攻，护卫总血 3414），128 盐实测：全员★2 **0/128** 全灭、
+  全员★3 **0/128**（终局墙成立）、全员★4 **118/128** 可过、全员★5 128/128 巡礼。
+  此改动会破坏 `tests/combat-contract.test.js` 的「满编挑战终局 Boss」快照
+  （`STAGES[29].enemies` 入参变了），需由测试所有方 `vitest -u` 重录；
+  `STAGES[0].enemies[0]`（raider(1, 0.7)）未动，另一张快照不受影响。
 
 ### 8.2 曲线验证（游戏本体 simulateBattle + campaign.js 真实种子逐关仿真）
 
@@ -215,22 +233,25 @@ Boss首通+深海稀有点 ─→ 传说碎片 ─→ 升星 ─→ 更高的墙
 | M4 山姆★2 + 兰博/一龙/椰子妹/米娅★1 | 8–10 | 全胜（B10 17 回合残 2 人） | B10 4/5 | B15 1/10 ✓ |
 | M5 山姆/兰博/米娅★2 + 一龙/微醺★1 | 11–15 | 全胜（B15 20 回合残 2 人） | 5/5 | B20 0/10 ✓ |
 | M6 山姆★3 + 兰博/一龙/微醺/米娅★2 | 16–20 | 全胜（B20 15 回合残 3 人） | B20 4/5 | B25 0/10 ✓ |
-| M7 兰博★3/一龙★3 双输出 + 山姆★3/微醺/米娅★2 | 21–25 | 全胜（B25 16 回合残 2 人） | 5/5 | B30 10/10 ✗（快照冻结，见 §8.1） |
-| M8 山姆★4 + 兰博★3/一龙★3/微醺/米娅★2 | 26–30 | 全胜（B30 11 回合零战损，通关） | 5/5 | — |
+| M7 兰博★3/一龙★3 双输出 + 山姆★3/微醺/米娅★2 | 21–25 | 全胜（B25 16 回合残 2 人） | 5/5 | B30 0/10 ✓（Round 3 重做后终局墙成立） |
+| M8 全员★4（山姆/兰博/一龙/微醺/米娅） | 26–30 | 全胜（26–29 各 6 回合；B30 首打 15 回合残 1 人，通关） | B30 4/5 | — |
 
 对位里程碑首打 30/30 全胜；杂兵关允许越级（上一里程碑打下一带杂兵关 5/5），
-Boss 关是硬门神（B5–B25 五道墙全部 ≤1/10）。B30 墙受快照冻结暂缺，由 B25 承担
-最后一道墙。验收 F-P0「≤10 关内完成一次升星」达成：B5 首通 = 10 shard = 恰好一次 1→2 星。
+Boss 关是硬门神（B5–B30 六道墙全部 ≤1/10：全员★3 打 B30 也是 0/10，必须升到全员★4）。
+验收 F-P0「≤10 关内完成一次升星」达成：B5 首通 = 10 shard = 恰好一次 1→2 星。
 
 ### 8.3 奖励与碎片收支
 
 - 每关：exp = 24+6n，沙漏 = 4+⌈n/3⌉（Boss ×1.5），coins = 6+2n（已接 `campaign.js`）。
 - 首通（已接 `campaign.js` grant）：普通关徽章 1 + 币；Boss 关 shard/蓝图/徽章/钻石
-  （合计 shard 140、蓝图 11、钻石 10）。徽章仅首通发放（每次通关 +1 已收口）。
-- 升星总需求（八里程碑，按 §8.2 明细）= 140 shard，与关卡供给 140 恰好持平；
-  但时间轴上需求领先供给：M6–M8 期缺口峰值 ≈40（如 M7 需累计 110、Boss 才供到 70），
-  由深海稀有点复刷补足（trench 期望 2–3/次 ≈ 15–20 次潜水），复刷动机成立；
-  B30 的 40 shard 是通关后养 5 星的盈余。
+  （shard 曲线 10/30/50/75/105/120，合计 390；蓝图 11、钻石 10）。
+  徽章仅首通发放（每次通关 +1 已收口）。
+- 升星总需求（八里程碑，按 §8.2 明细）= 300 shard（M4 10 → M5 30 → M6 70 →
+  M7 110 → M8 全员★4 共 300）。供给节奏：M6 成型时 B15 已供 90、M7 成型时
+  B20 已供 165，均有富余；缺口集中在终局——M8 需 300、B25 前只供 270，
+  差额 ~30 由深海稀有点复刷补足（trench 期望 ≈1.3 shard/次 ≈ 20–25 次下潜，
+  `dive.js` Round 3 同步上调），复刷动机保留在最需要的地方；
+  B30 首通的 120 shard 是通关后向全员★5（总需 500）推进的第一桶金。
 - 重打已通关卡：奖励 ×0.25，首通不重发（`STAGE_RULES.replayRewardMult`，已接）。
 
 ## 9. 动态世界
@@ -244,12 +265,34 @@ Boss 关是硬门神（B5–B25 五道墙全部 ≤1/10）。B30 墙受快照冻
 天气权重按 HQ 等级分档（`WEATHER_SCHEDULE`）：HQ1 无风暴海啸——开荒 10 分钟不被天灾打断；
 HQ5 起全档开放。现行全局 `WEATHER_WEIGHTS` 保留为回退。
 
-### 9.2 随机事件（`events.js`，接线）
+### 9.2 随机事件（`events.js`，Round 3 已补齐 tick 消费口径）
 
-海盗袭击（可战可躲，战力 = 最高通关 ×0.6）、鲨群过境（禁钓 + 潜水加鲨）、
-漂流商人（coins 唯一大额去向）、海鸥快递 / 风平浪静（正反馈小事件）。
-每 45 秒掷一次、基础 12% 概率、事件间隔 ≥120 秒、每昼夜 ≤3 次；袭击类有预警时长；
-开荒期（<3 关 / HQ1）不出袭击。种子公式与天气同源，保证可复现。
+事件五种 + 天气余波两种：海盗袭击（可战可躲）、鲨群过境（禁钓 + 潜水加鲨）、
+漂流商人（coins 主力去向）、海鸥快递 / 风平浪静（正反馈小事件）、
+风暴余波 / 海啸余波（weight 0，天气触发）。
+
+- **生命周期（tick 直读表，零猜测）**：每 `checkIntervalSec = 45` 秒用
+  `deriveRng(meta.seed, meta.tick, EVENT_RULES.seedSalt)` 掷一次（与天气掷法同构、
+  可复现），通过 `chance = 12%` 后按 `weight × weatherBias` 抽取；受
+  `minGapSec ≥ 120`、`maxPerDay ≤ 3`（昼夜 = `dayLengthSec = 240`）约束。
+  落地写 `world.event = { id, phase: "telegraph"|"active", endsAt }`，
+  telegraph 走完转 active，`durationSec` 走完清空。
+  注意：`core/store.js` normalize 现把 `world.event` 钳成 string|null，
+  接线时须放宽成对象形状（§12 待接项）。
+- **海盗后果**：袭击波 = `stages.js` 导出的 `raidWave(campaign.bestStage, 0.6)`
+  （5 人、与关卡敌人同形状，直接喂 `simulateBattle`，零战斗代码改动）。
+  `telegraphSec = 20` 秒内二选一：迎战（胜 +20 coins +1 徽章；负按
+  `onLose.resourceLossPct = 10%` 从 lossPool 扣）或躲藏（固定损 5% 免战）；
+  超时按 `autoResolve: "hide"` 自动结算，事件不会挂死。
+- **风暴/海啸后果**：`EVENT_RULES.aftermath` —— 天气离开 storm/tsunami 时分别按
+  60%/100% 掷余波事件：按 `resourceLossPct`（8%/15%）从 lossPool 扣，
+  `shelterScaled: true` 表示损失先乘 `stormShelter(state).mult`（围栏终于有账可算），
+  `flotsamBurst`（5/8）个额外漂浮物随后刷上海面（损失有找补，基调不焦虑）。
+- **商栈收 coins**：漂流商人 7 笔交易各带 `id`（UI 按钮/成交日志引用），
+  give 侧 coins 扣 `player.coins`、资源扣 `resources`，`maxDeals = 3` 计数挂在
+  `world.event` 上。5 笔收 coins（8/8/20/30/25），2 笔付 coins 收鱼片/海盐——
+  与订单奖励、关卡 coins 构成「进—出」闭环（另一常态去向是招募居民，§4.3）。
+- 开荒期（<3 关 / HQ1）不出袭击（`minStage/minHq` 门槛）。
 
 ## 10. 卡点与解卡（设计承诺表）
 
@@ -258,10 +301,10 @@ HQ5 起全档开放。现行全局 `WEATHER_WEIGHTS` 保留为回退。
 | 蓝图荒（HQ2/切鱼厂2 升级） | 建筑升级 | 拾荒稀有闪光 2%；潜水 wreck 保底权重；灯笼鱼；高阶订单；漂流商人 20 币 |
 | 沙漏不足（招募/广播站升级） | 英雄梯度 | 每关必掉；幽灵灯鱼；漂流商人 30 币换 5 |
 | 徽章不足（史诗/传说招募） | 阵容强度 | 每关首通 +1；海王鱼苗；击退海盗 |
-| shard 荒（升星） | 推图墙 | Boss 首通固定 140；深海稀有点复刷（trench 期望 ≥1.2/次） |
+| shard 荒（升星） | 推图墙 | Boss 首通固定 390（曲线 10→120）；深海稀有点复刷（trench 期望 ≈1.3/次） |
 | 种子瓶颈（多开农田） | 粮食产能 | 选种厂（吃小麦）；漂流商人 25 币换 2 |
 | 淡水赤字（农田+人口） | 生存/农业 | 多座净化器；暴雨 ×1.4 白嫖；月光水母 |
-| B5–B25 五道墙 | 推图 | 升星（主）；补齐 5 人；对症选人（塞壬→堆输出，克拉肯→双奶，废铁鲸→纯 DPS）。B30 墙待快照重录后恢复（§8.1） |
+| B5–B30 六道墙 | 推图 | 升星（主）；补齐 5 人；对症选人（塞壬→堆输出，克拉肯→双奶，废铁鲸→纯 DPS，潮汐领主→全员★4） |
 
 原则：每个卡点必须同时存在「主动可刷」与「等挂机」两条解法，禁止只能等。
 
@@ -293,19 +336,29 @@ HQ5 起全档开放。现行全局 `WEATHER_WEIGHTS` 保留为回退。
    但上阵取舍应换用 `selectLineup`（伤病过滤 + 保前排），现行是 `heroes` 前 5。
 7. **天气扩展轴**（P1）：`hunger/thirst/fishing/diveO2/stillBonus/durationSec/warnSec` +
    `WEATHER_SCHEDULE` 分档。
-8. **订单与居民**（P1）：`ORDER_POOL/RESIDENT_POOL/ORDER_RULES` 替换 fulfillOrder 硬编码轮换。
-9. **事件系统**（P1）：`EVENTS/EVENT_RULES` 填充 `world.event`。
-10. **coins/diamonds 闭环**（P2）：关卡 `reward.coins` 已接 campaign；订单 `reward`、
-    商人 `trades`、首钓奖励待接。
+8. **订单与居民**（P1，数据侧 Round 3 已补齐）：订单轮换已接（`rollOrder`）；
+   待接三件——(a) 广播站屏按 `RESIDENT_POOL[*].recruit` 招募（radioLevel 门槛 +
+   床位检查 + 扣 coins/meal 等 cost，规则读 `RESIDENT_RULES`）；(b) 多订单：
+   `ORDER_RULES.ordersPerResident`，`ui/orders.js` 的 `orderOf` 改逐居民展示交付；
+   (c) tick 消费 `perk.{target,rate}`（建筑产率 / flotsam 刷新，叠加封顶
+   `perkStackCap`）。
+9. **事件系统**（P1，数据侧 Round 3 已补齐）：`EVENTS/EVENT_RULES` 按 §9.2 生命周期
+   填充 `world.event`；海盗波用 `stages.raidWave`；天气余波走 `EVENT_RULES.aftermath`；
+   前置：`core/store.js` normalize 需把 `world.event` 从 string|null 放宽为
+   `{ id, phase, endsAt }` 对象。
+10. **coins/diamonds 闭环**（P2，出口侧数据已备）：关卡 `reward.coins` 与订单 `reward`
+    已接；待接三个 coins 出口——商人 `trades`（5 笔收 coins）、居民招募 cost
+    （合计 42 coins）、首钓奖励（进项）。
 
 本轮（Fable-3 · 5v5 曲线）复核新增的待办：
 
 11. **跳过门槛**（P2）：`STAGE_RULES.skipAfterSec = 10` 未被消费，现行进战报即可跳过。
 12. **UI 血条分母读 growth**（P2）：`campaign.js` hpTable 我方满血仍写死成长 0.18，
     山姆/兰博/微醺（growth 0.2）高星时血条分母偏小；应与 `battle.js` 同口径读表。
-13. **B30 再平衡**（P2，依赖 GPT-sol 重录快照）：`combat-contract` 冻结了
-    `STAGES[29].enemies`，B30 维持旧倍率导致终局无墙（§8.2 M7 10/10）；
-    重录后建议 hp ×7–8、atk ×2.2 一档，与 B25 衔接。
+13. **B30 再平衡**（数据侧已完成，Round 3）：`tide_lord` 抬到 hp ×6 / atk ×2.6 /
+    护卫 ×0.85，128 盐验证 ★2 0/128、★3 0/128、★4 118/128、★5 128/128（§8.1）。
+    **待办只剩重录快照**：`tests/combat-contract.test.js` 的「满编挑战终局 Boss」
+    需 `vitest -u` 重录（★5 满编对新 B30 仍全胜，快照语义不变，只是数值序列变了）。
 
 ## 13. SOTA 体验门槛
 
