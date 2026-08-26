@@ -1,22 +1,32 @@
 import { SEASONS } from "../data/crops.js";
+import { XP_TABLE, levelForXp } from "../data/levels.js";
 
 export const HOUR_MS_DEFAULT = 6_000;
+/** 设置里能切的时速档：1 游戏时 = 3 / 6 / 12 秒真实时间。 */
+export const HOUR_MS_CHOICES = [3_000, 6_000, 12_000];
 export const DAY_HOURS = 24;
 export const DAYS_PER_SEASON = 7;
 
 /** 离线折算上限：8 真实小时（farm 内同名常量与此对齐）。 */
 export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
 
-/** 升级所需累计经验，索引 i 对应 Lv.(i+1) */
-export const LEVELS = [0, 40, 100, 180, 280, 420, 600, 820, 1100, 1450];
+/** 升级所需累计经验，索引 i 对应 Lv.(i+1)。事实源是 data/levels.js，这里只做再导出。 */
+export const LEVELS = XP_TABLE;
 
 /** 新手引导：翻土 → 播种 → 收获 → 进屋看看 */
 export const TUTORIAL_TOTAL = 4;
 
-export function levelFor(xp) {
-  let lv = 1;
-  for (let i = 0; i < LEVELS.length; i += 1) if (xp >= LEVELS[i]) lv = i + 1;
-  return lv;
+export const levelFor = levelForXp;
+
+/** 存档/设置里读到的时速一律先过白名单，非法值当默认档。 */
+export function normalizeHourMs(value) {
+  return HOUR_MS_CHOICES.includes(value) ? value : HOUR_MS_DEFAULT;
+}
+
+/** 顺着 3 秒 → 6 秒 → 12 秒 → 3 秒 转一格，供设置按钮循环切档。 */
+export function nextHourMs(value) {
+  const i = HOUR_MS_CHOICES.indexOf(normalizeHourMs(value));
+  return HOUR_MS_CHOICES[(i + 1) % HOUR_MS_CHOICES.length];
 }
 
 export function levelProgress(xp) {
@@ -41,11 +51,12 @@ export function createInitialState() {
       muted: false,
       tutorialStep: 0,
     },
-    resources: { coin: 80, pearl: 0, happiness: 40, warmth: 20, pop: 2, popCap: 4, shovel: 2, axe: 1, saw: 1 },
+    // 开局只送一把锹（够开第 3 块田）；斧和锯走心愿保底掉落，见 GDD「工具经济」。
+    resources: { coin: 80, pearl: 0, happiness: 40, warmth: 20, pop: 2, popCap: 4, shovel: 1, axe: 0, saw: 0 },
     inv: { chili: 2 },
     plots: [
-      { id: "p1", status: "empty", cropId: null, plantedAt: 0, doneAt: 0, greenhouse: false },
-      { id: "p2", status: "untilled", cropId: null, plantedAt: 0, doneAt: 0, greenhouse: false },
+      { id: "p1", status: "empty", cropId: null, plantedAt: 0, doneAt: 0, wiltAt: 0, greenhouse: false },
+      { id: "p2", status: "untilled", cropId: null, plantedAt: 0, doneAt: 0, wiltAt: 0, greenhouse: false },
     ],
     buildings: {
       mushroom: { built: true, slots: [] },

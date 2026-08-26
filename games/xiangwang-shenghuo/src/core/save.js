@@ -1,6 +1,15 @@
-import { createInitialState, createInitialUi } from "./engine.js";
+import { createInitialState, createInitialUi, normalizeHourMs } from "./engine.js";
 
 export const SAVE_KEY = "xwsh.save.v1";
+
+/**
+ * 地块补字段：`wiltAt`/`greenhouse` 缺就补 0 / false。
+ * 存档还没有 schema 版本号，所以这里**不能**替「盖了温室却没有温室田」的档补温室——
+ * 那和刚在 Round 3 里花钱盖完温室的新档长得一模一样，补了等于白送三块地。
+ */
+function hydratePlots(plots) {
+  return plots.map((p) => ({ wiltAt: 0, greenhouse: false, ...p }));
+}
 
 export function serialize(state) {
   const { ui, ...rest } = state;
@@ -23,14 +32,15 @@ export function deserialize(raw) {
 export function hydrate(saved, base = createInitialState()) {
   if (!saved || typeof saved !== "object") return base;
   const arr = (v, fallback) => (Array.isArray(v) ? v : fallback);
+  const meta = { ...base.meta, ...(saved.meta || {}) };
   return {
     ...base,
     ...saved,
-    meta: { ...base.meta, ...(saved.meta || {}) },
+    meta: { ...meta, hourMs: normalizeHourMs(meta.hourMs) },
     resources: { ...base.resources, ...(saved.resources || {}) },
     inv: { ...(saved.inv && typeof saved.inv === "object" ? saved.inv : base.inv) },
     buildings: { ...base.buildings, ...(saved.buildings || {}) },
-    plots: arr(saved.plots, base.plots),
+    plots: hydratePlots(arr(saved.plots, base.plots)),
     jobs: arr(saved.jobs, base.jobs),
     wishes: arr(saved.wishes, base.wishes),
     guests: arr(saved.guests, base.guests),

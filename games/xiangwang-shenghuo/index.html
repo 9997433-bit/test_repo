@@ -144,6 +144,79 @@
         display: none;
       }
 
+      /* ---------- 院子里的剪影（挂点契约见 docs/ART_DIRECTION.md）----------
+         .xw-yard 只负责排布与站位，每种 .xw-npc[data-kind] 的样子由这里的
+         内联 SVG 剪影兜底；样式层想画得更好看，覆盖 --sil 即可。 */
+      .xw-yard {
+        position: absolute;
+        left: 8%;
+        bottom: 11%;
+        z-index: 5;
+        display: flex;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        gap: 10px;
+        max-width: 15%;
+        pointer-events: none;
+      }
+      .xw-npc {
+        --sil: none;
+        display: block;
+        width: 20px;
+        height: 22px;
+        background: var(--sil) center bottom / contain no-repeat;
+        opacity: 0.72;
+        filter: drop-shadow(0 2px 2px rgba(20, 12, 6, 0.45));
+        animation: xw-amble 3.4s ease-in-out infinite;
+      }
+      .xw-npc:nth-child(2n) {
+        animation-duration: 4.2s;
+        animation-delay: -1.1s;
+      }
+      .xw-npc:nth-child(3n) {
+        animation-duration: 5s;
+        animation-delay: -2.3s;
+      }
+      @keyframes xw-amble {
+        0%,
+        100% {
+          transform: translate(0, 0);
+        }
+        50% {
+          transform: translate(7px, -2px);
+        }
+      }
+      .xw-npc[data-kind="guest"] {
+        width: 16px;
+        height: 28px;
+        --sil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 28'%3E%3Ccircle cx='8' cy='5' r='4.4' fill='%232c2118'/%3E%3Cpath d='M8 10.5c3.4 0 5.2 2.4 5.6 6l.6 5.6h-3l-.5 5.4H5.3l-.5-5.4h-3l.6-5.6c.4-3.6 2.2-6 5.6-6Z' fill='%232c2118'/%3E%3C/svg%3E");
+      }
+      .xw-npc[data-kind="pet"] {
+        width: 22px;
+        height: 17px;
+        --sil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 17'%3E%3Cpath d='M3.6 6.4h11.2c2.1 0 3.4 1.4 3.4 3.4v2.4h-1.9v4.3h-2.4v-4.3H6.6v4.3H4.2v-4.3H2.3V9.8c0-2 1.3-3.4 3.4-3.4Z' fill='%232c2118'/%3E%3Ccircle cx='16.6' cy='4.6' r='3.6' fill='%232c2118'/%3E%3Cpath d='M2.6 6.6 0 1.6l3.9 2.6Z' fill='%232c2118'/%3E%3C/svg%3E");
+      }
+      .xw-npc[data-pet="cat"] {
+        width: 20px;
+        height: 18px;
+        --sil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 18'%3E%3Cpath d='M4.4 7.6h8.4c1.8 0 2.9 1.2 2.9 3v3.2h-1.9v4.2h-2.1v-4.2H6.6v4.2H4.5v-4.2H2.6v-3.2c0-1.8 1-3 2.9-3Z' fill='%232c2118'/%3E%3Ccircle cx='14.4' cy='5.4' r='3.4' fill='%232c2118'/%3E%3Cpath d='M11.6 3.4V0.4l2.2 2.1ZM17.2 3.4V0.4L15 2.5Z' fill='%232c2118'/%3E%3Cpath d='M3.4 8.4C1.6 7 1.2 4.4 2 2.2c.6 2.2 1.6 3.8 2.9 4.6Z' fill='%232c2118'/%3E%3C/svg%3E");
+      }
+      .xw-npc[data-kind="chick"] {
+        width: 14px;
+        height: 15px;
+        --sil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 15'%3E%3Cellipse cx='7' cy='9.4' rx='5.2' ry='4.6' fill='%232c2118'/%3E%3Ccircle cx='9.6' cy='4.2' r='3.1' fill='%232c2118'/%3E%3Cpath d='M12.4 4.4 14 5.4l-1.6 1Z' fill='%232c2118'/%3E%3Cpath d='M5.4 13.6v1.2M8.6 13.6v1.2' stroke='%232c2118' stroke-width='1.2'/%3E%3C/svg%3E");
+      }
+      .xw-npc[data-kind="sheep"] {
+        width: 24px;
+        height: 19px;
+        --sil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 19'%3E%3Ccircle cx='8' cy='8.6' r='4.6' fill='%232c2118'/%3E%3Ccircle cx='13' cy='7.2' r='5' fill='%232c2118'/%3E%3Ccircle cx='17.2' cy='9' r='4.2' fill='%232c2118'/%3E%3Ccircle cx='20.4' cy='6.4' r='3.2' fill='%232c2118'/%3E%3Cpath d='M7 12.4v6M11 12.6v6M16 12.6v6' stroke='%232c2118' stroke-width='1.6'/%3E%3C/svg%3E");
+      }
+      .xw-npc[data-kind="cow"] {
+        width: 28px;
+        height: 21px;
+        --sil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 21'%3E%3Crect x='3' y='5.4' width='16' height='8.6' rx='4' fill='%232c2118'/%3E%3Ccircle cx='22.4' cy='7.4' r='4.6' fill='%232c2118'/%3E%3Cpath d='M18.6 3.4 20.6 5M26.2 3.4 24.2 5' stroke='%232c2118' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M5.6 13.6v6.4M10 13.8v6.2M15.4 13.8v6.2' stroke='%232c2118' stroke-width='1.8'/%3E%3Cpath d='M3 6.2 0.6 1.8 3.8 3.6Z' fill='%232c2118'/%3E%3C/svg%3E");
+      }
+
       .xw-toolbar {
         grid-column: 1 / -1;
         display: flex;
@@ -205,6 +278,12 @@
       }
       .xw-seed.is-poor {
         text-decoration: line-through rgba(196, 92, 62, 0.6);
+      }
+      /* 等级没到的种子：灰掉并换成虚线框，价钱位改显解锁等级 */
+      .xw-seed.is-locked {
+        border-style: dashed;
+        border-color: rgba(44, 33, 24, 0.32);
+        filter: grayscale(1);
       }
       .xw-seed .k {
         display: inline-block;
@@ -490,6 +569,7 @@
 
       @media (prefers-reduced-motion: reduce) {
         .xw-hint,
+        .xw-npc,
         #app .plot.ready {
           animation: none;
         }
@@ -528,6 +608,10 @@
           left: 4%;
           bottom: 5%;
           max-width: 92%;
+        }
+        /* 窄屏下院子会压在房子牌上，剪影是装饰，直接收起来 */
+        .xw-yard {
+          display: none;
         }
       }
     </style>
