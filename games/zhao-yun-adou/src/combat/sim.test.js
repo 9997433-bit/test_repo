@@ -1,14 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { cellDistToPath } from "../board/grid.js";
 import { waveSpec } from "../data/waves.js";
 import {
+  balanceConfig,
   checkWinner,
+  configureBalance,
   enqueueWave,
   maybeAdvanceWave,
   spawnEnemy,
   tickSideCombat,
 } from "./sim.js";
 import { collect, makeArena, makeEnemy, makeSide, putUnit } from "./testkit.js";
+
+const BALANCE_DEFAULTS = balanceConfig();
+afterEach(() => configureBalance(BALANCE_DEFAULTS));
 
 describe("range vs lane progress", () => {
   it("only hits enemies whose path progress is inside the cell's cover", () => {
@@ -108,6 +113,23 @@ describe("towers and heroes", () => {
     expect(evt.payload.juice.shape).toBe("rain");
     expect(evt.payload.targets.length).toBe(1);
     expect(evt.payload.cellIndex).toBe(9);
+  });
+
+  it("scales tower damage by the tunable cover compensation", () => {
+    const shoot = () => {
+      const side = makeSide();
+      putUnit(side, 9, { id: "dao" });
+      const e = makeEnemy({ t: 0.35 });
+      side.enemies.push(e);
+      tickSideCombat(side, 0.05, collect());
+      return 100 - e.hp;
+    };
+    const base = balanceConfig().towerDamage;
+    const normal = shoot();
+    configureBalance({ towerDamage: base * 2 });
+    const doubled = shoot();
+    expect(normal).toBeGreaterThan(0);
+    expect(doubled).toBeCloseTo(normal * 2, 5);
   });
 
   it("does not bank unlimited attacks while idle", () => {
@@ -227,6 +249,18 @@ describe("win order", () => {
     checkWinner(state, emit);
     expect(emit.of("game-over")).toHaveLength(0);
     expect(state.winner).toBe("player");
+  });
+
+  it("clears the previous match's verdict when a new one is running", () => {
+    const state = makeArena();
+    state.sides.ai.hearts = 0;
+    checkWinner(state, collect());
+    expect(state.reason).toBe("hearts");
+    state.phase = "playing";
+    state.sides.ai.hearts = 3;
+    checkWinner(state, collect());
+    expect(state.reason).toBeNull();
+    expect(state.tie).toBe(false);
   });
 
   it("stops advancing waves once the match is over", () => {

@@ -4,7 +4,7 @@ import { waveSpec, leakCompensation, MAX_WAVE } from "../data/waves.js";
 import { castSkill } from "./skills.js";
 import { applyDamage } from "./damage.js";
 import { cellCenter, falloffFor, lanePoint } from "./geometry.js";
-import { linkArena, notePressureKill, opponentOf, sendPressure } from "./pressure.js";
+import { linkArena, notePressureKill } from "./pressure.js";
 
 /** 路线推进的时间常数：speed(点/秒) / PATH_SCALE = 每秒推进的进度。 */
 const PATH_SCALE = 520;
@@ -283,6 +283,11 @@ export function checkWinner(state, emit) {
   if (!state) return;
   linkArena(state);
   if (state.phase !== "playing") return;
+  // 重开一局时清掉上一局的结算标记，避免 UI 读到过期的 tie/reason。
+  if (state.reason) {
+    state.reason = null;
+    state.tie = false;
+  }
   const p = state.sides.player.hearts;
   const a = state.sides.ai.hearts;
   if (p > 0 && a > 0) return;
