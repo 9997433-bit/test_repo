@@ -125,6 +125,9 @@
 /* ---------- 面板坞（底部长廊） ---------- */
 
 .dock {
+  /* body 的 color 在 #app 之外解析，吃不到夜晚的 --ink 换色；
+     这里在相位作用域内重申一次，面板里没写死颜色的字夜里才不会缩进暗纸里 */
+  color: var(--ink);
   background:
     repeating-linear-gradient(
       90deg,

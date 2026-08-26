@@ -9,6 +9,7 @@
 @import "./village.css";
 @import "./panels.css";
 @import "./season.css";
+@import "./ui.css";
 
 #app {
   min-height: 100vh;
@@ -35,6 +36,14 @@
   gap: 14px;
   padding-block: 16px 24px;
   padding-inline: max(16px, calc((100% - 1240px) / 2));
+}
+
+/* 工具架横跨两列，面板在它下面并肩。
+   min-width:0 斩断「横滑种子架 → 工具架 → 面板坞」的
+   min-content 连锁，不然窄屏上整页会被撑到一千多像素宽。 */
+.xw-toolbar {
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .topbar {
@@ -104,6 +113,30 @@
 
   .meters span {
     padding: 4px 8px;
+  }
+}
+
+/* =============================================================
+   小手机（~390px）：顶梁收紧但热区不缩 —— 按钮仍 ≥ 44px
+   ============================================================= */
+
+@media (max-width: 420px) {
+  .topbar {
+    padding-block: 8px;
+  }
+
+  .meters {
+    gap: 5px;
+    font-size: 0.78rem;
+  }
+
+  .meters button {
+    min-height: var(--tap);
+    padding: 8px 10px;
+  }
+
+  .xw-bar-xp {
+    width: 44px;
   }
 }
 

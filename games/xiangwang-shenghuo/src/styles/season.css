@@ -55,6 +55,27 @@
     var(--shadow-soft);
 }
 
+/* 夜里的田垄：描边、标签提亮，苗株打一点月光，别缩进土色里 */
+[data-phase="night"] .plot {
+  border-color: rgba(222, 204, 166, 0.3);
+  color: #f9f0da;
+  text-shadow: 0 1px 2px rgba(5, 8, 14, 0.75);
+}
+
+[data-phase="night"] .plot::before {
+  filter: brightness(1.4) saturate(0.92);
+}
+
+/* 熟地本就金亮，字色保持深墨 */
+[data-phase="night"] .plot.ready {
+  color: #33261a;
+  text-shadow: 0 1px 0 rgba(255, 245, 220, 0.5);
+}
+
+[data-phase="night"] .xw-plot-time {
+  opacity: 1;
+}
+
 /* ---------- 冬：雪顶与霜 ---------- */
 
 [data-season="winter"] .mountain::before {

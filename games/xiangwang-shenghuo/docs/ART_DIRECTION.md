@@ -1,4 +1,4 @@
-# 美术与体验总纲（Fable-2 · Round 1）
+# 美术与体验总纲（Fable-2 · Round 1 + Round 2）
 
 > 可写范围：本文件 + `src/styles/**`。全部视觉为 CSS / 内联 SVG（data URI），
 > 零外部图片、零字体下载。目标：综艺蘑菇屋的烟火气 —— 木结构、暖黄灯、
@@ -166,11 +166,13 @@
 ```
 src/styles/
   tokens.css   令牌 + 重置 + 无障碍基线（main.js 首个引入）
-  layout.css   骨架与断点；@import 打包下面三件（main.js 第二个引入）
+  layout.css   骨架与断点；@import 打包下面四件（main.js 第二个引入）
   village.css  村景绘制：天空/山/地/蘑菇屋/牌匾/地块 + 场景关键帧
   panels.css   顶梁/面板/按钮/日志等界面木作
   season.css   季节相位离散特征 + 粒子系统（选择器带 [data-season/phase]，
                靠属性特异性覆盖基础层）
+  ui.css       xw- 前缀界面部件精修（Round 2 新增，@import 序列最后，
+               接管 index.html 里 UI 层的素坯兜底样式）
 ```
 
 - 只有 Fable-2 写 `src/styles/**`；其他角色需要新视觉状态时，
@@ -179,11 +181,94 @@ src/styles/
   --shadow/--radius/--font/--soil`）保留为别名，旧代码不破。
 - `@keyframes pulse` 保留（旧类名兼容）。
 
-## 11. 已知空缺（Round 2 候选）
+## 11. Round 2 · 界面部件层（`src/styles/ui.css`）
 
-- 相位切换是瞬时换色：CSS 自定义属性未注册 `@property`，渐变无法插值。
-  可给关键令牌注册 `<color>` 类型 + transition 做日落渐变。
-- NPC / 动物 / 嘉宾在村景里还没有形象（需要 UI 层给挂点元素）。
-- 收获时"+N 上浮数字"、播种轻弹等**事件型**动效需要 JS 加临时类名配合。
+UI 层曾在 `index.html` 的内联 `<style>` 里给全部 `xw-` 部件铺过素坯兜底
+（那份文件不归美术改）。级联顺序是 内联兜底 → tokens → village → panels →
+season → **ui.css**，同名同特异度后写者赢，所以 ui.css 能整层接管精修；
+唯独带 `#app` 前缀的兜底规则是 UI 层刻意钉死的几何（地块内排版、
+牌匾竖排、窄屏错位），特异度带 ID，样式层**不去抢**。
+
+### 部件词汇表
+
+- **进度条 `.xw-bar`**：凿进木头的浅槽（深木底 + 上下沿 inset 高光），
+  `> i` 注一线金（`--gold → --gold-bright` 渐变 + 微辉光）。
+  生长中的地块条是青的（`.plot.growing`），熟了、经验条、工单条是金的；
+  做好的工单（`.xw-job.done`）转叶青。顶栏经验条要剥掉 `.meters span`
+  的药丸壳（`.meters .xw-bar` 覆写 + `::before` 圆点摘除）。
+- **小木牌按钮 `.xw-topbtn`**：与 `.panel button` 同一套橡木配方。
+  底色走自定义属性 `--face`，hover 只举起不换木色（兜底的 hover 会换纸底，
+  这里用同名选择器按住）；`.is-go` 金漆牌配深墨字（送去/收走），
+  `.is-on` 染叶青（客人已入住），`:disabled` 统一褪色 + 不再起跳。
+  顶栏里的 `.topbar .xw-topbtn` 是"刻进房梁的凹槽"变体，字色钉死米色
+  ——夜里 `--paper` 变暗纸，绝不能拿它当字色。
+- **种子纸包 `.xw-seed`**：米纸包 + 细木描边；`.is-on` 金纸打包、
+  外圈金环、字色钉死深墨（防夜里米墨上金底）；`.off-season` 虚线封口 +
+  半灰（受潮）；`.is-poor` 价签见红。`.k` 是键位小木块，
+  `.xw-price` 自带小铜钱圆点。
+- **工具架 `.xw-toolbar`**：与面板同配方的窄木框米纸，`grid-column: 1/-1`
+  横跨面板坞两列；**必须 `min-width: 0`**——种子架窄屏横滑
+  （`overflow-x: auto`）后，它的 min-content 仍会顺着 工具架→面板坞
+  的链条把整页撑到一千多像素。
+- **村景字牌**：`.xw-roof` 屋名圆牌、`.xw-scene-tip` 村口一句话，
+  都是"纸片钉木边"，颜色全走令牌，昼夜自动换；tip 在 z=8，
+  骑在相位罩和粒子之上。
+- **牌匾附件**：`.xw-badge` 红灯笼角标（描边 + `--lamp-a` 联动辉光）、
+  `.xw-sub` 副题、`.bldg.xw-more` 图纸本（虚线框 + 卷册图记）、
+  `.bldg.is-open` 追加一圈灯气（描边色归 UI 层的 `#app` 规则）。
+- **心愿单 `.xw-wish`**：虚线纸条；`.can` 换实线金边 + 金晕。
+  `.xw-need` 药丸默认淡墨底，`.ok` 转叶青并加 "✓" 前缀。
+- **气泡 `.xw-toast`**：檐下小木匾（深木纹 + 米字 + `--lamp-a` 暖光圈），
+  固定底部居中 z=40；`.show` 淡入上浮，`.bad` 换火红木。
+- **引导卡 `.xw-tut`**：信纸 + 左侧灯芯色书签（夜里透光），fixed 右下
+  z=45；`.xw-dot.on` 柿橙点。`.xw-hint` 是呼吸金圈——基态就有 outline，
+  reduced-motion 冻结后提示仍在（别用纯动画表达状态）。
+
+### 收获飘字 `.xw-fx`（事件型动效契约）
+
+CSS 已就位，等 UI/逻辑层挂节点：
+
+```html
+<button class="plot ready">…<span class="xw-fx">+2 稻米</span></button>
+```
+
+- append 到任意 position 非 static 的容器（`.plot`、`.panel` 都行）；
+- 900ms `fx-float` 上浮淡出后停在透明，**节点由挂它的人在 ≥1s 后移除**；
+- 默认金字四向描边，扣减用 `.xw-fx.bad`（火红）；
+- reduced-motion 下静止显示、不上浮，信息不丢。
+
+### 夜景对比度（Round 2 补丁）
+
+- **根修复**：`body` 的 `color: var(--ink)` 在 `#app` 之外解析，
+  吃不到夜晚换墨——`.dock` 在相位作用域内重申 `color: var(--ink)`，
+  心愿标题、配方名这些没写死颜色的字夜里才不会缩进暗纸。
+- 夜里田垄：描边提亮、标签换 `#f9f0da` + 深影，苗株 SVG
+  `brightness(1.4)` 打一点月光（season.css）；熟地保持深墨字。
+- `.xw-need` 夜里底色加深一档；写死字色的部件（顶栏按钮、is-on 种子、
+  is-go 金牌）一律"米字深底 / 深字金底"，不跟令牌翻转。
+
+### 390 顶栏
+
+≤420px 时顶梁只收紧衬距与字号（layout.css），所有按钮仍锁
+`min-height: 44px`；种子架转横滑木廊，键位提示（键盘专属）收起。
+
+### 枯萎地块（Round 2 加笔）
+
+灰土底上加两道 `background-size` 圈住的短裂缝 + 枯草屑，
+秆子 SVG 垂头 5° 并降饱和，标签换干草色——和荒地(深土杂草)、
+空地(耙沟)一眼分得开，翻土提示照旧。
+
+## 12. 已知空缺（Round 3 候选）
+
+- **NPC / 动物 / 嘉宾剪影仍缺 DOM 挂点**（screens.js 归 UI 层，本轮只读，
+  村景里没有可画的元素）。建议挂点契约：`.village` 里加
+  `<div class="xw-yard"><i class="xw-npc" data-kind="guest|chick|sheep|pet"
+  data-id="…"></i>…</div>`，容器绝对定位在 z=5、`pointer-events: none`；
+  样式层即可用纯 CSS/内联 SVG 给每种 `data-kind` 画剪影 + 踱步/啄食动画。
+- `.xw-fx` 同理：CSS 契约已就位，等收获/扣减逻辑处 append 节点。
+- 相位切换是瞬时换色：可给关键令牌注册 `@property <color>` + transition
+  做日落渐变。
 - 雪的横向摆动、萤火虫更不规则的路径需要更多层或 offset-path。
-- 温室/码头等建筑目前只有牌匾，没有村景里的建筑剪影。
+- 温室/码头等建筑只有牌匾，没有村景里的建筑剪影。
+- 心愿"送去"成功一刻缺一个庆祝动效（纸条飞走/金币迸溅），
+  同样需要 UI 层给临时类名或节点。

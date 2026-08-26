@@ -622,17 +622,34 @@
   animation: glow-pulse 1.7s var(--ease-soft) infinite;
 }
 
-/* 枯萎：垂头的秆子 */
+/* 枯萎：晒裂的灰土 + 垂头褪色的秆子，一眼看出"这块地该翻了" */
 .plot.wilted {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--soil-1) 55%, #5a5148),
-    color-mix(in srgb, var(--soil-2) 55%, #453e36)
-  );
+  color: #ddd2bc;
+  border-color: rgba(128, 115, 94, 0.55);
+  background:
+    /* 两道短短的干裂缝（用 background-size 圈住，不横贯整块地） */
+    linear-gradient(115deg, transparent 44%, rgba(25, 20, 14, 0.32) 48%, transparent 52%)
+      16% 20% / 42% 56% no-repeat,
+    linear-gradient(58deg, transparent 44%, rgba(25, 20, 14, 0.26) 48%, transparent 52%)
+      86% 90% / 34% 44% no-repeat,
+    /* 散落的枯草屑 */
+    radial-gradient(4px 2.6px at 26% 84%, rgba(160, 146, 114, 0.6) 50%, transparent 72%),
+    radial-gradient(3px 2px at 76% 72%, rgba(160, 146, 114, 0.45) 50%, transparent 72%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--soil-1) 55%, #5a5148),
+      color-mix(in srgb, var(--soil-2) 55%, #453e36)
+    );
+  box-shadow:
+    inset 0 2px 3px rgba(255, 240, 210, 0.08),
+    inset 0 -5px 0 rgba(20, 12, 6, 0.28);
 }
 
 .plot.wilted::before {
   background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 22V12' stroke='%23705238' stroke-width='2.2' stroke-linecap='round'/><path d='M12 13c-1-4-4-5.5-7-5 1.5 3.5 4 5 7 5Z' fill='%23907050'/><path d='M12 13c2.5-1 3.5-3.5 3-6-2.5 1-3.6 3-3 6Z' fill='%23a08058'/></svg>");
+  transform: rotate(-5deg);
+  filter: saturate(0.55) brightness(0.95);
+  opacity: 0.9;
 }
 
 /* 开垦按钮：虚线框待垦地（暗色垫底保证雪地里也读得清） */

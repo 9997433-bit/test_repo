@@ -1,0 +1,775 @@
+/* =============================================================
+   界面部件 · xw- 前缀（Fable-2 · Round 2）
+   -------------------------------------------------------------
+   UI 层在 index.html 里给这批部件铺过一版素坯兜底（那份不归美术改）。
+   本文件在级联更后端接手精修：同名同特异度 → 后写的赢；
+   带 #app 前缀的兜底规则是 UI 层刻意钉死的几何，不去抢。
+   词汇沿用总纲：按钮=小木牌，种子=纸种子包，气泡=灯下木匾，
+   进度条=木槽注金。夜晚全部走 tokens 自动换色，个别处打对比度补丁。
+   ============================================================= */
+
+/* ---------- 进度条：凿出来的木槽，注一线金 ---------- */
+
+.xw-bar {
+  display: inline-block;
+  vertical-align: middle;
+  width: 84%;
+  height: 5px;
+  padding: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wood-4) 64%, transparent);
+  box-shadow:
+    inset 0 1px 1px rgba(15, 8, 3, 0.5),
+    inset 0 -1px 0 rgba(255, 240, 210, 0.14);
+  overflow: hidden;
+}
+
+.xw-bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+  box-shadow: 0 0 6px rgba(245, 207, 110, 0.5);
+  transition: width 0.14s linear;
+}
+
+/* 生长期是青的，熟了才见金 */
+.plot.growing .xw-bar > i {
+  background: linear-gradient(90deg, #5f9a49, #93c06a);
+  box-shadow: 0 0 5px rgba(140, 190, 100, 0.45);
+}
+
+/* 顶栏经验条：嵌在纸签里的小槽（.meters span 的药丸样式要剥掉） */
+.meters .xw-bar {
+  padding: 0;
+  border: 0;
+  background: rgba(15, 8, 3, 0.55);
+}
+
+.meters .xw-bar::before {
+  content: none;
+}
+
+.xw-bar-xp {
+  width: 56px;
+  height: 5px;
+}
+
+/* ---------- 顶梁按钮：像刻进房梁的凹槽，夜里也认得出 ---------- */
+
+.topbar .xw-topbtn {
+  min-height: var(--tap);
+  padding: 6px 12px;
+  border: 1px solid rgba(20, 10, 4, 0.55);
+  border-radius: var(--radius-s);
+  color: #f6ead0;
+  text-shadow: 0 1px 0 rgba(20, 10, 4, 0.6);
+  --face:
+    repeating-linear-gradient(94deg, rgba(60, 36, 21, 0.16) 0 2px, transparent 2px 8px),
+    linear-gradient(180deg, rgba(255, 235, 200, 0.14), rgba(20, 10, 4, 0.3));
+  background: var(--face);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.18),
+    inset 0 -2px 4px rgba(20, 10, 4, 0.35);
+}
+
+/* ---------- 小木牌按钮（工具条、面板通用） ---------- */
+
+.xw-topbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--wood-4);
+  border-radius: var(--radius-s);
+  color: #f6ead0;
+  font-size: 0.9rem;
+  text-shadow: 0 1px 0 rgba(30, 15, 5, 0.5);
+  --face:
+    repeating-linear-gradient(94deg, rgba(60, 36, 21, 0.12) 0 2px, transparent 2px 8px),
+    linear-gradient(180deg, var(--plaque-hi), var(--plaque-lo));
+  background: var(--face);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.28),
+    inset 0 -3px 5px rgba(30, 15, 5, 0.32),
+    var(--shadow-soft);
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out),
+    filter var(--dur-1) var(--ease-out);
+}
+
+/* 兜底样式的 hover 会把底色换成纸面，这里按住：还是那块木头，只是被举起来 */
+.xw-topbtn:hover:not(:disabled) {
+  background: var(--face);
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+
+.xw-topbtn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 2px 5px rgba(30, 15, 5, 0.45),
+    var(--shadow-soft);
+}
+
+/* 高亮行动（送去 / 收走）：金漆牌 */
+.xw-topbtn.is-go {
+  color: #3a2a12;
+  text-shadow: 0 1px 0 rgba(255, 246, 220, 0.55);
+  border-color: #8a6a24;
+  --face:
+    repeating-linear-gradient(94deg, rgba(140, 100, 30, 0.14) 0 2px, transparent 2px 8px),
+    linear-gradient(180deg, var(--gold-bright), #cf9f3e);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 250, 230, 0.55),
+    inset 0 -3px 5px rgba(120, 80, 20, 0.35),
+    0 0 12px rgba(245, 207, 110, 0.35),
+    var(--shadow-soft);
+}
+
+/* 已生效的状态（客人已在屋里）：染上一层叶青 */
+.xw-topbtn.is-on {
+  border-color: #2f4a22;
+  --face:
+    repeating-linear-gradient(94deg, rgba(40, 60, 30, 0.16) 0 2px, transparent 2px 8px),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--plaque-hi) 55%, #4e7a3a),
+      color-mix(in srgb, var(--plaque-lo) 60%, #35522a)
+    );
+}
+
+/* 禁用与"按不动"的统一口径：褪色、不再起跳 */
+.xw-topbtn:disabled,
+.xw-seed:disabled,
+.panel button:disabled,
+.meters button:disabled {
+  opacity: 0.55;
+  filter: saturate(0.45);
+  cursor: default;
+}
+
+.xw-topbtn:disabled:hover,
+.xw-seed:disabled:hover,
+.panel button:disabled:hover,
+.meters button:disabled:hover {
+  transform: none;
+  filter: saturate(0.45);
+}
+
+/* ---------- 种子纸包 ---------- */
+
+.xw-seed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  padding: 6px 11px;
+  border: 1.5px solid color-mix(in srgb, var(--wood-3) 65%, var(--paper));
+  border-radius: var(--radius-s);
+  color: var(--ink);
+  font-size: 0.88rem;
+  --face: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--paper) 94%, white),
+    var(--paper-2)
+  );
+  background: var(--face);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 2px 5px rgba(44, 33, 24, 0.16);
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+
+.xw-seed:hover:not(:disabled) {
+  background: var(--face);
+  transform: translateY(-2px);
+}
+
+.xw-seed:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* 选中的那包：金纸打包、麻绳一圈（外圈光环）。字色钉死，夜里不跟米墨走 */
+.xw-seed.is-on {
+  color: #3a2a12;
+  font-weight: 700;
+  border-color: #8a6a24;
+  --face: linear-gradient(180deg, #f7e0a4, #ecc25f);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--gold-bright) 55%, transparent),
+    inset 0 1px 0 rgba(255, 250, 230, 0.6);
+}
+
+.xw-seed.is-on .xw-price {
+  color: #6b4a10;
+}
+
+/* 反季：包装受了潮，虚线封口 */
+.xw-seed.off-season {
+  border-style: dashed;
+  filter: grayscale(0.45);
+  opacity: 0.8;
+}
+
+/* 买不起：价钱见红 */
+.xw-seed.is-poor {
+  opacity: 0.82;
+}
+
+.xw-seed.is-poor .xw-price {
+  color: color-mix(in srgb, #c2502e 78%, var(--ink));
+}
+
+/* 键位小木块 */
+.xw-seed .k {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  margin-right: 0;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1;
+  color: #f6ead0;
+  background: var(--wood-3);
+  box-shadow: inset 0 -1px 0 rgba(20, 10, 4, 0.5);
+  opacity: 1;
+}
+
+/* 价签：小铜钱 + 数目 */
+.xw-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  font-size: 0.76em;
+  opacity: 1;
+  color: color-mix(in srgb, var(--gold) 55%, var(--ink));
+}
+
+.xw-price::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--gold-bright), #a87c22 82%);
+  box-shadow: inset 0 0 0 1px rgba(120, 80, 20, 0.4);
+}
+
+/* ---------- 常驻工具架：一块钉在面板坞上的窄木框米纸 ---------- */
+
+.xw-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(45deg, rgba(120, 90, 50, 0.03) 0 3px, transparent 3px 6px),
+    var(--panel);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--paper) 60%, transparent),
+    var(--shadow);
+}
+
+.xw-seedrow,
+.xw-quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+/* 「种子」小木匾 */
+.xw-label {
+  flex: none;
+  padding: 3px 9px;
+  margin-right: 2px;
+  border: 1px solid var(--wood-4);
+  border-radius: 7px;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: #f6ead0;
+  text-shadow: 0 1px 0 rgba(30, 15, 5, 0.5);
+  background: linear-gradient(180deg, var(--plaque-hi), var(--plaque-lo));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.25),
+    inset 0 -2px 4px rgba(30, 15, 5, 0.3);
+  opacity: 1;
+}
+
+.xw-keys {
+  margin-left: auto;
+  font-size: 0.78rem;
+}
+
+/* ---------- 村景里的字牌：屋名、村口一句话 ---------- */
+
+.xw-roof {
+  position: absolute;
+  left: 50%;
+  bottom: -20px;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--wood-3) 55%, transparent);
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  box-shadow: var(--shadow-soft);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.xw-scene-tip {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 8;
+  max-width: min(86%, 520px);
+  padding: 4px 14px;
+  border: 1px solid color-mix(in srgb, var(--wood-3) 50%, transparent);
+  border-radius: 999px;
+  font-size: 0.86rem;
+  text-align: center;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--paper) 86%, transparent);
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+}
+
+.xw-scene-tip:empty {
+  display: none;
+}
+
+/* ---------- 牌匾附件：角标红灯笼、副题、图纸本 ---------- */
+
+.xw-sub {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  opacity: 0.78;
+}
+
+.xw-badge {
+  top: -8px;
+  right: -8px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border: 1.5px solid #7c2a12;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  color: #fff6e8;
+  background: radial-gradient(circle at 38% 30%, #ff9a5c, #d84b2a 78%);
+  box-shadow:
+    0 0 calc(4px + 8px * var(--lamp-a)) rgba(255, 130, 60, 0.55),
+    0 2px 5px rgba(20, 10, 4, 0.35);
+}
+
+/* 图纸本：一册卷边的簿子，虚线木框 */
+.bldg.xw-more {
+  --icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'><path d='M7 4h11a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z'/><path d='M8 9h8M8 13h6'/></svg>");
+  border-style: dashed;
+  background:
+    repeating-linear-gradient(94deg, rgba(60, 36, 21, 0.1) 0 2px, transparent 2px 9px),
+    color-mix(in srgb, var(--plaque-lo) 62%, transparent);
+}
+
+/* 敞着门的那家（选中）：多一圈灯气；描边色由 UI 层的 #app 规则说了算 */
+.bldg.is-open {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.28),
+    inset 0 -3px 6px rgba(30, 15, 5, 0.35),
+    0 0 14px rgba(255, 170, 90, 0.4),
+    var(--shadow-soft);
+}
+
+/* ---------- 地块上的小字 ---------- */
+
+.xw-plot-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.xw-plot-time {
+  min-height: 11px;
+  font-size: 10px;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 面板里的小物件 ---------- */
+
+.xw-h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  opacity: 1;
+}
+
+.xw-h3::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50% 50% 50% 4px;
+  transform: rotate(-38deg);
+  background: var(--leaf);
+}
+
+.xw-h3::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.xw-line {
+  border-bottom-color: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
+/* 背包纸签 */
+.xw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--paper) 70%, var(--paper-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.xw-chip b {
+  margin-left: 0;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--fire) 62%, var(--ink));
+}
+
+.xw-warn {
+  color: color-mix(in srgb, var(--fire) 72%, var(--ink));
+  font-size: 0.88rem;
+}
+
+/* ---------- 心愿单：一张张纸条，凑齐的那张镀金边 ---------- */
+
+.xw-wish {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px dashed color-mix(in srgb, var(--ink) 26%, transparent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--paper) 55%, transparent);
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+
+.xw-wish.can {
+  border: 1px solid #b28a2e;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--gold) 22%, transparent),
+    color-mix(in srgb, var(--gold) 8%, transparent)
+  );
+  box-shadow:
+    0 0 10px rgba(245, 207, 110, 0.28),
+    inset 0 1px 0 rgba(255, 250, 230, 0.35);
+}
+
+.xw-need {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+.xw-need.ok {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--leaf) 30%, transparent);
+}
+
+.xw-need.ok::before {
+  content: "✓";
+  font-size: 0.9em;
+  color: color-mix(in srgb, var(--leaf) 70%, var(--ink));
+}
+
+/* ---------- 工坊工单 ---------- */
+
+.xw-job {
+  color: var(--ink);
+}
+
+.xw-job .xw-bar {
+  width: 100%;
+  height: 7px;
+}
+
+.xw-job.done {
+  color: color-mix(in srgb, var(--gold) 40%, var(--ink));
+  font-weight: 600;
+}
+
+.xw-job.done .xw-bar > i {
+  background: linear-gradient(90deg, #79b25c, #a7cd7a);
+  box-shadow: 0 0 6px rgba(150, 200, 110, 0.55);
+}
+
+.xw-job-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 收获飘字（事件型，由 UI/逻辑层临时挂节点） ----------
+   契约：append 一个 <span class="xw-fx">+2 稻米</span> 到任意
+   position 非 static 的容器（地块 .plot、面板 .panel 都行），
+   900ms 动画演完停在透明，节点由挂它的人负责移除（建议 ≥1s 后）。
+   变体：.bad 扣减用（火红）。reduced-motion 下静止显示不上浮。 */
+
+.xw-fx {
+  position: absolute;
+  left: 50%;
+  top: 16%;
+  transform: translate(-50%, 0);
+  z-index: 12;
+  pointer-events: none;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--gold-bright);
+  /* 四向描边 + 一圈暗晕：晴天草地上也读得清 */
+  text-shadow:
+    -1px 0 0 rgba(30, 15, 5, 0.85),
+    1px 0 0 rgba(30, 15, 5, 0.85),
+    0 -1px 0 rgba(30, 15, 5, 0.85),
+    0 1px 0 rgba(30, 15, 5, 0.85),
+    0 0 10px rgba(20, 10, 4, 0.5);
+  animation: fx-float 900ms var(--ease-out) forwards;
+}
+
+.xw-fx.bad {
+  color: #ffa584;
+}
+
+@keyframes fx-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.85);
+  }
+  16% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -30px) scale(1.06);
+  }
+}
+
+/* ---------- 引导高亮：呼吸的金圈 ----------
+   基态就有描边，reduced-motion 冻结动画后提示仍在。 */
+
+.xw-hint {
+  outline: 3px solid color-mix(in srgb, var(--gold-bright) 85%, white);
+  outline-offset: 2px;
+  animation: hint-beckon 1.5s var(--ease-soft) infinite;
+}
+
+@keyframes hint-beckon {
+  0%,
+  100% {
+    outline-color: color-mix(in srgb, var(--gold-bright) 85%, white);
+    outline-offset: 2px;
+  }
+  50% {
+    outline-color: color-mix(in srgb, var(--gold-bright) 40%, transparent);
+    outline-offset: 5px;
+  }
+}
+
+/* ---------- 飘字气泡：挂在檐下的小木匾 ---------- */
+
+.xw-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  z-index: 40;
+  max-width: min(88vw, 440px);
+  padding: 10px 20px;
+  border: 1px solid rgba(20, 10, 4, 0.7);
+  border-radius: 999px;
+  font-size: 0.94rem;
+  text-align: center;
+  color: #f6ead0;
+  text-shadow: 0 1px 0 rgba(20, 10, 4, 0.5);
+  background:
+    repeating-linear-gradient(94deg, rgba(255, 235, 200, 0.05) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, rgba(74, 48, 26, 0.96), rgba(44, 26, 13, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 200, 0.22),
+    0 6px 20px rgba(20, 10, 4, 0.4),
+    0 0 calc(18px * var(--lamp-a)) rgba(255, 190, 110, 0.25);
+  opacity: 0;
+  transform: translate(-50%, 12px) scale(0.98);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+}
+
+.xw-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.xw-toast.bad {
+  border-color: rgba(90, 24, 10, 0.8);
+  background:
+    repeating-linear-gradient(94deg, rgba(255, 220, 200, 0.06) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, rgba(150, 58, 38, 0.96), rgba(105, 36, 22, 0.96));
+}
+
+/* ---------- 新手引导卡：桌角压着的一页信纸 ---------- */
+
+.xw-tut {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 45;
+  max-width: 320px;
+  padding: 12px 14px 12px 18px;
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background:
+    repeating-linear-gradient(45deg, rgba(120, 90, 50, 0.03) 0 3px, transparent 3px 6px),
+    var(--panel);
+  box-shadow: var(--shadow);
+  animation: tut-in var(--dur-2) var(--ease-out);
+}
+
+/* 左侧一条灯芯色书签，夜里透光 */
+.xw-tut::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 12px;
+  bottom: 12px;
+  width: 6px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, var(--lamp-hot), var(--fire));
+  box-shadow: 0 0 calc(10px * var(--lamp-a)) rgba(255, 150, 80, 0.5);
+}
+
+.xw-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
+  transition: background var(--dur-1) var(--ease-out);
+}
+
+.xw-dot.on {
+  background: var(--fire);
+  box-shadow: 0 0 6px rgba(212, 104, 63, 0.5);
+}
+
+@keyframes tut-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* ---------- 夜晚对比度补丁（UI 侧） ---------- */
+
+[data-phase="night"] .xw-need {
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+[data-phase="night"] .xw-badge {
+  border-color: #5c1f0c;
+}
+
+[data-phase="night"] .xw-seed {
+  border-color: color-mix(in srgb, var(--wood-1) 45%, var(--paper-2));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 210, 0.08),
+    0 2px 5px rgba(0, 0, 0, 0.35);
+}
+
+[data-phase="night"] .xw-wish.can {
+  box-shadow:
+    0 0 12px rgba(245, 207, 110, 0.22),
+    inset 0 1px 0 rgba(255, 250, 230, 0.12);
+}
+
+/* ---------- 窄屏（≤760px）：种子架横滑，键位提示收起 ---------- */
+
+@media (max-width: 760px) {
+  .xw-seedrow {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .xw-seed {
+    flex: none;
+  }
+
+  .xw-keys {
+    display: none;
+  }
+}
+
+/* ---------- reduced-motion：动画停，信息不丢 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .xw-fx {
+    animation: none;
+    opacity: 1;
+    transform: translate(-50%, -12px);
+  }
+
+  .xw-hint,
+  .xw-tut {
+    animation: none;
+  }
+
+  .xw-toast,
+  .xw-bar > i,
+  .xw-dot {
+    transition: none;
+  }
+}
