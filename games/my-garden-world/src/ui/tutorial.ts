@@ -7,8 +7,11 @@ import type { GameState } from "../engine/state";
  */
 const GATE_CHECKS: Record<TutorialGate, (state: GameState) => boolean> = {
   sow: (s) => s.stats.planted >= 1,
-  // 收获会把花圃连同浇水计数一起清空，故已有收获也视作浇过水
-  water: (s) => s.stats.harvested >= 1 || s.plots.some((p) => p.watered > 0),
+  // 浇水计数在长到下一阶段或收获时会被清零，而没有水花长不动：
+  // 有过收获、圃里有水、或任一株已长过播种期，都视作浇过水
+  water: (s) =>
+    s.stats.harvested >= 1 ||
+    s.plots.some((p) => p.watered > 0 || (p.flowerId !== null && p.stage !== "empty" && p.stage !== "seeded")),
   harvest: (s) => s.stats.harvested >= 1,
   order: (s) => s.stats.ordersDone >= 1,
 };
@@ -49,7 +52,8 @@ function startPoll(box: HTMLElement, state: GameState, beat: StoryBeat): void {
 
 /** 只更新与门槛相关的文案与按钮态，不重建 DOM，点击才不会落空 */
 function syncGate(box: HTMLElement, state: GameState, beat: StoryBeat): void {
-  const ready = isGateMet(state, beat);
+  // 门槛一旦点亮便锁存，不因后续状态变化（如生长清零浇水计数）而回退
+  const ready = box.dataset.ready === "1" || isGateMet(state, beat);
   const flag = ready ? "1" : "0";
   if (box.dataset.ready === flag) return;
   box.dataset.ready = flag;
@@ -125,7 +129,7 @@ function buildModal(state: GameState, beat: StoryBeat, onNext: () => void): HTML
     ${isLast ? `<div class="muted" style="font-size:12px">按 Esc 键亦可收起</div>` : ""}
   `;
   box.querySelector("button")?.addEventListener("click", () => {
-    if (!isGateMet(state, beat)) return;
+    if (box.dataset.ready !== "1" && !isGateMet(state, beat)) return;
     stopPoll();
     onNext();
   });
