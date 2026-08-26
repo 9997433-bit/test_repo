@@ -11,6 +11,7 @@ import {
 } from '../format.js';
 import { furnaceArt, hammerArt, ridgeArt } from '../art/furnace.js';
 import { createSparkField } from '../fx/sparks.js';
+import { flyLoot } from '../fx/flyingLoot.js';
 import { reducedMotion, ripple, haptic, pulse } from '../motion.js';
 import { emptyState, openSheet } from '../components/feedback.js';
 import { lootRow } from '../components/resourceBar.js';
@@ -175,7 +176,13 @@ export function forgeView(ctx) {
               onclick: (e) => {
                 ripple(e);
                 const res = game.collectIdle();
-                if (!res.ok) return ui.toast.bad(res.error);
+                if (!res.ok) return ui.toast.bad(res.error || '暂无产出');
+                // 先飞币再重绘：飞行起点就是这枚按钮，重绘会把它换掉。
+                flyLoot(e.currentTarget, res.loot, {
+                  resourceCell: ui.resourceCell,
+                  onDone: () => ui.refreshChrome()
+                });
+                haptic([8, 24, 12]);
                 ui.toast.gold('炉边所得，已入囊中');
                 ui.refreshChrome();
                 renderIdle();

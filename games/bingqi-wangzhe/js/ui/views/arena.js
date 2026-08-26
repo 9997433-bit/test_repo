@@ -112,18 +112,28 @@ export function arenaView(ctx) {
 
   function fight(foe) {
     const res = game.arenaFight(foe.id);
-    if (!res.ok) return ui.toast.bad(res.error);
+    if (!res.ok) {
+      ui.toast.bad(res.error || '暂时无法上台');
+      if (res.goto) setTimeout(() => ui.go(res.goto), 420);
+      return;
+    }
     haptic(res.result.winner === 'player' ? [12, 40, 18] : 30);
     ui.refreshChrome();
     renderAll();
     if (res.result.rankChange) ui.toast.gold(`名次上升 ${res.result.rankChange} 位`);
-    openSheet(ui.host, {
+
+    const report = battleReport(res.result, {
+      subtitle: `${foe.title} · ${elementCN(foe.element)}阵 · 战力 ${fmtNum(foe.power)}`,
+      ui
+    });
+    const sheet = openSheet(ui.host, {
       title: `擂台 · ${foe.name}`,
-      body: battleReport(res.result, { subtitle: `${foe.title} · ${elementCN(foe.element)}阵 · 战力 ${fmtNum(foe.power)}` }),
+      body: report,
+      onClose: () => report.dispose?.(),
       foot: [h('button.btn.btn--ghost.btn--block', {
         type: 'button',
         text: '退下擂台',
-        onclick: (e) => e.target.closest('.scrim')?.remove()
+        onclick: () => sheet.close()
       })]
     });
   }

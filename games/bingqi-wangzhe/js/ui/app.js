@@ -12,7 +12,7 @@
  */
 
 import { h, clear } from './dom.js';
-import { createUiGame } from './gameAdapter.js';
+import { createUiGame, hasCoreRuntime, probeLogicModules } from './gameAdapter.js';
 import { createResourceBar } from './components/resourceBar.js';
 import { createTabBar } from './components/tabBar.js';
 import { createToaster } from './components/feedback.js';
@@ -84,8 +84,6 @@ export function mountApp(root, injectedGame) {
 
   const shell = h('.shell', topbar, stage, tabBar.el, toaster.el);
 
-  clear(root).append(shell);
-
   /* ---------------- 视图上下文 ---------------- */
 
   const ui = {
@@ -94,7 +92,9 @@ export function mountApp(root, injectedGame) {
     toast: toaster,
     go,
     refreshChrome,
-    rerenderAll
+    rerenderAll,
+    /** 飞行资源的落点：顶部资源条对应格子。 */
+    resourceCell: (id) => resourceBar.cellFor?.(id) || null
   };
 
   function ctx() {
@@ -151,9 +151,56 @@ export function mountApp(root, injectedGame) {
   };
   window.addEventListener('hashchange', onHash);
 
-  const offGame = game.subscribe?.(() => refreshChrome());
+  let offGame = game.subscribe?.(() => refreshChrome());
 
-  go(activeId, { push: true });
+  /** 换一套 game（mock ↔ 逻辑层），资源条与所有视图重建。 */
+  function useGame(next) {
+    offGame?.();
+    game = next;
+    const bar = createResourceBar(game);
+    resourceBar.el.replaceWith(bar.el);
+    resourceBar.powerBadge.replaceWith(bar.powerBadge);
+    resourceBar = bar;
+    offGame = game.subscribe?.(() => refreshChrome());
+    if (mounted) rerenderAll();
+    return game;
+  }
+
+  /* ---------------- 首帧：等逻辑层探测完再落地 ---------------- */
+
+  let mounted = false;
+
+  function mount() {
+    if (mounted) return;
+    mounted = true;
+    clear(root).append(shell);
+    go(activeId, { push: true });
+  }
+
+  // core 运行时在场但玩法模块还没注入时，先去仓库里动态 import 一次。
+  // 探测期间保留开机画面（约百毫秒），避免「mock 一闪再跳真实存档」的数字跳变。
+  if (hasCoreRuntime(injectedGame) && !game.hasCore) {
+    const settle = (probe) => {
+      if (mounted) return;
+      // 探测结果无论成败都换上：即使退回 mock，probe 也把「哪个子系统缺席」
+      // 的真实情况带了回来，「背包 → 设置 → 数据来源」才不会一律报红。
+      if (probe) useGame(createUiGame(injectedGame, mockOptions, probe));
+      mount();
+    };
+    const guard = setTimeout(() => settle(null), 3000);
+    probeLogicModules()
+      .then((probe) => {
+        clearTimeout(guard);
+        settle(probe);
+      })
+      .catch((err) => {
+        clearTimeout(guard);
+        console.error('[bqwz/ui] 逻辑层探测异常', err);
+        settle(null);
+      });
+  } else {
+    mount();
+  }
 
   /* ---------------- 对外句柄 ---------------- */
 
@@ -162,14 +209,9 @@ export function mountApp(root, injectedGame) {
       return game;
     },
     /** 后注入真实逻辑层，界面原地热替换。 */
-    setGame(next) {
-      offGame?.();
-      game = createUiGame(next, mockOptions);
-      const bar = createResourceBar(game);
-      resourceBar.el.replaceWith(bar.el);
-      resourceBar.powerBadge.replaceWith(bar.powerBadge);
-      resourceBar = bar;
-      rerenderAll();
+    setGame(next, probe) {
+      useGame(createUiGame(next, mockOptions, probe));
+      mount();
       toaster.ok(game.hasCore ? '逻辑层已接入' : '仍在使用 mock 数据');
       return game;
     },

@@ -101,7 +101,8 @@ export function bagView(ctx) {
       if (!fresh) { sheet.close(); renderAll(); return; }
       const cost = game.enhanceCost(fresh.uid) || {};
       const canPay = Object.entries(cost).every(([k, v]) => (game.resources()[k] || 0) >= v);
-      const maxed = fresh.level >= (game.levelCap?.() ?? 30);
+      const cap = fresh.levelCap ?? game.levelCap?.(fresh.uid) ?? 30;
+      const maxed = fresh.level >= cap;
 
       clear(body);
       body.append(weaponDetail(fresh, game));
