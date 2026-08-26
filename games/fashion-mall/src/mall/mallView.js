@@ -1,6 +1,7 @@
 import { SHOPS, shopRate } from "../data/balance.js";
 import { charmOf, shopBonusMap, formatGold } from "../core/economy.js";
 import { persist, syncUnlocks } from "../core/state.js";
+import { SHOP_LEVEL_MAX } from "../core/limits.js";
 import { upgradeShop, hireStaff, shopUpgradeCost, shopHireCost } from "../core/actions.js";
 import { esc, setText } from "../ui/dom.js";
 import { sfx } from "../core/audio.js";
@@ -69,14 +70,16 @@ export function renderMall(root, state, ctx = {}) {
   const box = panel.querySelector("#upgrades");
   for (const shop of SHOPS.filter((x) => state.shops[x.id].unlocked)) {
     const s = state.shops[shop.id];
+    const maxed = s.level >= SHOP_LEVEL_MAX;
+    const full = s.staff >= shop.staffSlots;
     const row = document.createElement("div");
     row.className = "row";
     row.style.margin = "10px 0";
     row.innerHTML = `
-      <div>${shop.emoji} ${shop.name} Lv.${s.level} 员工 ${s.staff}/${shop.staffSlots}</div>
+      <div>${shop.emoji} ${shop.name} Lv.${s.level}${maxed ? "（满级）" : ""} 员工 ${s.staff}/${shop.staffSlots}</div>
       <div style="display:flex;gap:6px">
-        <button class="btn ghost" data-up>升级 ${formatGold(shopUpgradeCost(s.level))}</button>
-        <button class="btn ghost" data-hire>招聘 ${formatGold(shopHireCost(s.staff))}</button>
+        <button class="btn ghost" data-up ${maxed ? "disabled" : ""}>${maxed ? `满级 Lv.${SHOP_LEVEL_MAX}` : `升级 ${formatGold(shopUpgradeCost(shop, s.level))}`}</button>
+        <button class="btn ghost" data-hire ${full ? "disabled" : ""}>${full ? "已满员" : `招聘 ${formatGold(shopHireCost(shop, s.staff))}`}</button>
       </div>`;
     row.querySelector("[data-up]").onclick = () => {
       const res = upgradeShop(state, shop.id);
