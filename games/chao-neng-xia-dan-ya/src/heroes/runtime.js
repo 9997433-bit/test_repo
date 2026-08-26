@@ -7,6 +7,7 @@
  * 实例会平铺数据表条目的展示字段（palette / passive / lore / element / ult 等），
  * 并额外提供 `atk` / `maxEnergy` 别名，直接满足主循环 HUD 现有的读法。
  */
+import * as DATA from "../data/index.js";
 import { neutralContext } from "../progression/context.js";
 import { computeHeroStats } from "./stats.js";
 import { auraOf, mergeTraitMods, resolveSkill, unlockedTraits } from "./skills.js";
@@ -18,13 +19,21 @@ import { BASE_ENERGY_MAX } from "./constants.js";
  * @param {{slot?: number, auras?: object, startEnergy?: number}} options
  */
 /**
- * 能量条上限对齐大招消耗：数据表条目声明了 `ult.cost` 时以它为准，
- * 这样 HUD 的「能量满 = 可放大招」读法在两套表下都成立。
+ * 大招消耗以数据表为权威：F3 的英雄表用 `energy` 表示大招能量上限，
+ * `ult` 是指向 `src/data/skills.js` 的字符串 id（其 `energyCost` 与 `energy` 同值）。
+ * 老形状 `ult: { cost }` 继续兼容，供注入的英雄使用。
  */
+function dataUltCost(def) {
+  const ult = def?.ult;
+  const fromSkillTable = typeof ult === "string" ? Number(DATA.SKILLS?.[ult]?.energyCost) : Number(ult?.cost);
+  if (Number.isFinite(fromSkillTable) && fromSkillTable > 0) return fromSkillTable;
+  const fromHeroTable = Number(def?.energy);
+  return Number.isFinite(fromHeroTable) && fromHeroTable > 0 ? fromHeroTable : null;
+}
+
+/** 能量条上限对齐大招消耗，HUD 的「能量满 = 可放大招」读法才成立。 */
 function resolveEnergyMax(def, stats) {
-  const fromDef = Number(def?.ult?.cost);
-  if (Number.isFinite(fromDef) && fromDef > 0) return fromDef;
-  return stats?.energyMax || BASE_ENERGY_MAX;
+  return dataUltCost(def) ?? stats?.energyMax ?? BASE_ENERGY_MAX;
 }
 
 export function createHeroInstance(def, ctx = neutralContext(), options = {}) {
@@ -70,11 +79,10 @@ function clampEnergy(value, max) {
   return Math.min(max, Math.max(0, n));
 }
 
-/** 大招能量消耗：数据表 `ult.cost` 优先，词条可以打折。 */
+/** 大招能量消耗：数据表优先，词条可以打折。 */
 export function ultimateCost(instance) {
   if (!instance?.skill?.ult) return Infinity;
-  const fromDef = Number(instance?.def?.ult?.cost);
-  const base = Number.isFinite(fromDef) && fromDef > 0 ? fromDef : instance.skill.ult.cost;
+  const base = dataUltCost(instance?.def) ?? instance.skill.ult.cost;
   if (!Number.isFinite(base)) return Infinity;
   return Math.max(10, base + (instance?.skillMods?.cost ?? 0));
 }
@@ -105,7 +113,7 @@ export function spendEnergy(instance, amount) {
   return true;
 }
 
-/** 本回合层数（倒霉鸭、鲨齿雕等 stack 型效果用）。 */
+/** 本回合层数（鲨齿雕等 stack 型效果用）。 */
 export function addStack(instance, key, max = Infinity) {
   if (!instance) return 0;
   const next = Math.min(max, (instance.turn.stacks[key] ?? 0) + 1);

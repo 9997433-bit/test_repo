@@ -14,13 +14,21 @@ import {
 import { neutralContext } from "../progression/context.js";
 import { DEFAULT_BASE_STATS } from "./constants.js";
 
+/** 数据表字段名 → 基础属性键。F3 的 18 英雄表用 `energy` 表示大招能量上限。 */
+const FIELD_ALIASES = { energyMax: ["energyMax", "energy"] };
+
 /** 从数据表条目读基础属性，缺项走兜底。 */
 export function baseStatsOf(def) {
   const base = { ...DEFAULT_BASE_STATS };
   if (!def) return base;
   for (const key of Object.keys(base)) {
-    const value = Number(def[key]);
-    if (Number.isFinite(value)) base[key] = value;
+    for (const field of FIELD_ALIASES[key] ?? [key]) {
+      const value = Number(def[field]);
+      if (Number.isFinite(value)) {
+        base[key] = value;
+        break;
+      }
+    }
   }
   return base;
 }
