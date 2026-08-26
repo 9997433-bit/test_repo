@@ -90,9 +90,15 @@ export function tutorialAllows(step: number, done: boolean, buttonId: string): b
 
 // ---------- 可选剧情折（番外） ----------
 // 与主教程完全解耦：不占 tutorialStep、不参与 dock 门控、不推进 tutorialDone。
-// 由邻访/摆放等玩法系统在对应时机首次发生时调用 renderSideStory（ui/tutorial.ts）弹出一次。
+// 由玩法系统在对应时机首次发生时调用 renderSideStory（ui/tutorial.ts）弹出一次。
 
-/** 番外折的触发时机，供玩法系统对号入座（详见 docs/UX.md 八）。 */
+/**
+ * 番外折的触发时机，供玩法系统对号入座（接线现状详见 docs/UX.md 八）。
+ * - visit-first：首次进入邻家园子。已接线（ui/panels.ts 访邻名录卡点击处）。
+ * - visit-pick-first：首次借花成功。已接线（ui/panels.ts 邻家圃摘花成功处）。
+ * - place-first：首次购置陈设成功（placeDecor 返回 true）。尚未接线，
+ *   建议接在 app.ts 装扮面板 place 处理器的成功分支（见 docs/UX.md 8.4）。
+ */
 export type SideStoryTrigger = "visit-first" | "visit-pick-first" | "place-first";
 
 export interface SideStory {
@@ -122,7 +128,7 @@ export const SIDE_STORIES: SideStory[] = [
     id: "settle",
     trigger: "place-first",
     title: "一物得其所",
-    body: "货郎把你购置的物件送进园来，问摆在哪。檐下、径旁、池畔各有讲究：物件放对了地方，园子的气韵才顺。泛着微光的位置就是空位，看好了再落座；不合心意，随时可挪。",
+    body: "货郎把你购置的物件送进园来，径自安放停当——纱灯挂了檐角，锦鲤入了池心，物各有其所。你若另有讲究，点花圃上方陈列牌末尾的「摆放」：泛着微光的空位任你安置，两件对调、收回匣中都随手；不合心意，随时可挪。",
     cta: "亲手安置",
   },
 ];
