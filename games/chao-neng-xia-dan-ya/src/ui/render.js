@@ -172,10 +172,11 @@ export function createRenderer(canvas) {
     ctx.fillStyle = grad;
     ctx.fillRect(0, NEST_Y, 480, 800 - NEST_Y);
     drawNest(ctx, 240, NEST_Y + 30, 200);
-    ctx.fillStyle = "rgba(246,240,230,0.55)";
+    // 标签放在警戒线上方：线下方 96px 被英雄坞挡住，写在那里会被裁掉
+    ctx.fillStyle = "rgba(246,240,230,0.5)";
     ctx.font = "12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("蛋巢防线", 240, NEST_Y + 62);
+    ctx.textAlign = "left";
+    ctx.fillText("蛋巢防线", 12, NEST_Y - 9);
     if (battle.shields > 0) {
       ctx.globalAlpha = 0.5 + Math.sin(t * 5) * 0.2;
       ctx.strokeStyle = "#9fb8ff";
