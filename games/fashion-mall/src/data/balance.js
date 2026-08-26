@@ -145,3 +145,80 @@ export function nextLevelReady(level, goldEarned, xp) {
   if (next >= LEVEL_INCOME_GATES.length) return false;
   return goldEarned >= LEVEL_INCOME_GATES[next] && xp >= LEVEL_XP_GATES[next];
 }
+
+/* ── 小游戏赏金表（唯一口径，Round 2 起视图一律查表，禁止内联数值）──
+ * 技巧型（fastfood/fresh/boutique）：正收益，由操作耗时与技巧上限约束产出。
+ * 付费随机型（blindbox/fortune）：金币期望必须 < 成本（RTP ≤ 85%，测试守护），
+ * 抽水换来的是招募碎片与阅历——随机玩法只承载碎片/惊喜，不承载金币产出。 */
+export const MINIGAME_PAYOUTS = {
+  fastfood: { tipBase: 28, tipPerItem: 12, xp: 2 },
+  fresh: { goldPerCatch: 18, catchesPerXp: 3 },
+  boutique: { base: 40, perScore: 35, xpBase: 3, xpPerScore: 1 },
+  blindbox: {
+    cost: 60,
+    xp: 1,
+    pool: [
+      { id: "common", name: "普通亚克力立牌", w: 55, gold: 18, shard: 0 },
+      { id: "rare", name: "稀有闪卡", w: 30, gold: 45, shard: 0 },
+      { id: "hidden", name: "隐藏款手办", w: 12, gold: 100, shard: 1 },
+      { id: "sign", name: "城主签名隐藏", w: 3, gold: 280, shard: 3 },
+    ],
+  },
+  fortune: {
+    cost: 30,
+    xp: 2,
+    slots: [
+      { id: "daji", name: "大吉", gold: 40, shard: 1, good: true },
+      { id: "taohua", name: "桃花", gold: 30, shard: 0, good: true },
+      { id: "piancai", name: "偏财", gold: 36, shard: 0, good: true },
+      { id: "pingwen", name: "平稳", gold: 10, shard: 0, good: false },
+      { id: "xiaoxiong", name: "小凶", gold: 0, shard: 0, good: false },
+      { id: "qiyu", name: "奇遇", gold: 27, shard: 0, good: true },
+    ],
+  },
+};
+
+export const PARTNER_SIGN_SHARDS = 3;
+
+export function fastfoodTip(orderSize) {
+  const p = MINIGAME_PAYOUTS.fastfood;
+  return { gold: p.tipBase + orderSize * p.tipPerItem, xp: p.xp };
+}
+
+export function freshPayout(caught) {
+  const p = MINIGAME_PAYOUTS.fresh;
+  return { gold: p.goldPerCatch * caught, xp: Math.ceil(caught / p.catchesPerXp) };
+}
+
+export function boutiquePayout(score) {
+  const p = MINIGAME_PAYOUTS.boutique;
+  return { gold: p.base + score * p.perScore, xp: p.xpBase + score * p.xpPerScore };
+}
+
+// rand01 ∈ [0,1)，由调用方注入（视图传 Math.random()），保证公式层可确定性测试
+export function blindboxRoll(rand01) {
+  const { pool } = MINIGAME_PAYOUTS.blindbox;
+  const total = pool.reduce((s, p) => s + p.w, 0);
+  let acc = 0;
+  for (const prize of pool) {
+    acc += prize.w;
+    if (rand01 * total < acc) return prize;
+  }
+  return pool[pool.length - 1];
+}
+
+export function fortuneSpin(rand01) {
+  const { slots } = MINIGAME_PAYOUTS.fortune;
+  const idx = Math.min(slots.length - 1, Math.max(0, Math.floor(rand01 * slots.length)));
+  return slots[idx];
+}
+
+// 付费随机玩法的精确期望（供测试断言与 UI 概率公示）
+export function paidGameExpectation(id) {
+  const cfg = MINIGAME_PAYOUTS[id];
+  const entries = cfg.pool || cfg.slots;
+  const total = entries.reduce((s, e) => s + (e.w ?? 1), 0);
+  const gold = entries.reduce((s, e) => s + (e.w ?? 1) * e.gold, 0) / total;
+  const shard = entries.reduce((s, e) => s + (e.w ?? 1) * (e.shard || 0), 0) / total;
+  return { cost: cfg.cost, gold, shard, netGold: gold - cfg.cost };
+}
