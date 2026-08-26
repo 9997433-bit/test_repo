@@ -24,14 +24,15 @@ export const ELEMENTS = {
   thunder: { id: "thunder", name: "雷", color: "#ffe566", icon: "⚡" },
 };
 
+/** 键取 `src/data/heroes.js` 的权威写法（鸡族是 `chicken`，历史别名 `chick` 只在归一时接受）。 */
 export const RACES = {
   duck: { id: "duck", name: "鸭" },
-  chick: { id: "chick", name: "鸡" },
+  chicken: { id: "chicken", name: "鸡" },
   goose: { id: "goose", name: "鹅" },
   bird: { id: "bird", name: "鸟" },
 };
 
-const RACE_ALIAS = { chicken: "chick", chick: "chick", duck: "duck", goose: "goose", bird: "bird" };
+const RACE_ALIAS = { chicken: "chicken", chick: "chicken", duck: "duck", goose: "goose", bird: "bird" };
 const RARITY_RANK = { r: 3, sr: 4, ssr: 5, n: 2 };
 
 /** 图鉴文案与本地大招表现（静态表只给技能 id，这里补玩家可读的描述）。 */
