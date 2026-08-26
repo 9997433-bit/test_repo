@@ -33,7 +33,7 @@
 
 - Round 1：10/10 已回收并合入父分支
 - Round 2：10/10 已回收并合入父分支
-- Round 3：进行中（注入 Round 2 简报）
+- Round 3：10 路目标已回收（视觉收口并入 juice 合流）；循环结束
 
 ## 基线实测（主调度器 Round 0）
 
@@ -120,4 +120,12 @@ npm run bench  36/36 settled, playerWins 33/36 (91%)
 npm test     134/134 pass
 npm run bench  36/36 settled, playerWins 17/36 (47.2%), 171–242s
 ```
+
+## 《Round 3 结论简报》
+
+- juice 单轨：`#fx-layer` + `fx.css` 契约类；首局三步教程写入 localStorage
+- 课程征兵随 `recruitCount` 入档；坏档战斗不再抛死
+- 棋盘辅助有对拍测试；GDD/验收/架构已回签
+- 最终实测：单测 244；probe 通过；bench 胜率约 47%
+- 残留：Google Fonts 链接仍在（已降级为首屏不阻塞）、平局规则仍偏玩家、无头觉醒率偏低
 
