@@ -29,6 +29,24 @@ function pct(n) {
   return `${Math.round(n * 100)}%`;
 }
 
+/** 只在真的变了才落笔：一次动作只改动到的那几个文本节点。 */
+function paintText(node, text) {
+  if (node && node.textContent !== text) node.textContent = text;
+  return node;
+}
+
+function paintClass(node, className) {
+  if (node && node.className !== className) node.className = className;
+  return node;
+}
+
+/** `.fm-post` 是 display:block，光靠 hidden 属性藏不住，语义与显隐一起给。 */
+function setShown(node, shown) {
+  if (!node || node.hidden === !shown) return;
+  node.hidden = !shown;
+  node.style.display = shown ? "" : "none";
+}
+
 /** 派驻/培训的边际收益常常不到 1 金，formatGold 会抹平成 0，小数量级保留一位。 */
 function signed(n) {
   const v = Math.abs(n) < 0.05 ? 0 : n;
@@ -127,6 +145,19 @@ export function renderRoster(root, state, ctx = {}) {
     note: head.querySelector("[data-headnote]"),
   };
 
+  /** 每张卡建一次，之后只改文本/类名/禁用态；结构变化只有"签约"和"新店开门"两种。 */
+  const cards = new Map();
+
+  function unlockedShops() {
+    return SHOPS.filter((s) => state.shops?.[s.id]?.unlocked);
+  }
+
+  function shopSig() {
+    return unlockedShops()
+      .map((s) => s.id)
+      .join(",");
+  }
+
   function syncHead() {
     const partners = state.partners || [];
     const owned = partners.filter((p) => p.owned);
@@ -134,177 +165,263 @@ export function renderRoster(root, state, ctx = {}) {
     const lift = total - rateWithoutTeam(state);
     const share = total > 0 ? Math.round((lift / total) * 100) : 0;
     const idle = owned.filter((p) => !p.assigned).length;
-    els.shards.textContent = state.shards;
-    els.signed.textContent = `${owned.length}/${partners.length}`;
-    els.lift.textContent = `${signed(lift)}/秒`;
-    els.note.textContent = idle
-      ? `还有 ${idle} 位伙伴闲着，派出去就是白拿的钱。团队目前贡献了全城收入的 ${share}%。`
-      : `团队目前贡献了全城收入的 ${share}%，把人换到匹配的店还能再抬一截。`;
+    paintText(els.shards, String(state.shards));
+    paintText(els.signed, `${owned.length}/${partners.length}`);
+    paintText(els.lift, `${signed(lift)}/秒`);
+    paintText(
+      els.note,
+      idle
+        ? `还有 ${idle} 位伙伴闲着，派出去就是白拿的钱。团队目前贡献了全城收入的 ${share}%。`
+        : `团队目前贡献了全城收入的 ${share}%，把人换到匹配的店还能再抬一截。`,
+    );
   }
 
-  /** 动作成功后的统一收尾：落盘 → 音效 → toast → 重绘。 */
-  function commit(res, sound, flashId) {
+  function wireOwned(card, p) {
+    const shops = unlockedShops();
+    const lv = card.querySelector("[data-lv]");
+    const stateTag = card.querySelector("[data-state]");
+    const note = card.querySelector("[data-note]");
+
+    card.querySelector("[data-posts-head]").innerHTML = `
+      <span>派驻到哪家店</span>
+      <small>${esc(p.specialty)}特长 · 匹配店满额加成</small>`;
+
+    const train = document.createElement("button");
+    train.className = "btn ghost";
+    train.type = "button";
+    train.dataset.act = "train";
+    train.onclick = () => commit(trainPartner(state, p.id), sfx.coin, p.id, train);
+    card.querySelector("[data-actions]").append(train);
+
+    const posts = card.querySelector("[data-posts]");
+    const slots = shops.map((shop) => {
+      const btn = document.createElement("button");
+      btn.className = "fm-post";
+      btn.type = "button";
+      btn.dataset.act = `post:${shop.id}`;
+      btn.innerHTML = "<b></b><small></small>";
+      btn.onclick = () => {
+        if (p.assigned === shop.id) return toast(`${p.name} 已经在${shop.name}了`);
+        commit(assignPartner(state, p.id, shop.id), sfx.tap, p.id, btn);
+      };
+      posts.append(btn);
+      return { shop, btn, label: btn.querySelector("b"), hint: btn.querySelector("small") };
+    });
+
+    // 撤回按钮常驻，只切显隐——待岗/驻店来回切时列表结构不动，焦点也就不会掉。
+    const off = document.createElement("button");
+    off.className = "fm-post recall";
+    off.type = "button";
+    off.dataset.act = "recall";
+    off.textContent = "撤回驻店（先空着，等更合适的店开门）";
+    off.onclick = () => commit(assignPartner(state, p.id, null), sfx.tap, p.id, off);
+    posts.append(off);
+
+    const locked = SHOPS.length - shops.length;
+
+    return function paint(base) {
+      const post = shops.find((s) => s.id === p.assigned);
+      const cost = partnerTrainCost(p.level);
+      const trainLift = rateIf(state, p, { level: p.level + 1 }) - base;
+
+      paintText(lv, `Lv.${p.level}`);
+      paintClass(
+        stateTag,
+        post ? `fm-tag post${post.specialty === p.specialty ? " match" : ""}` : "fm-tag idle",
+      );
+      paintText(
+        stateTag,
+        post
+          ? `驻 ${post.emoji} ${post.name} +${pct(partnerShopBonus(p.specialty, post.specialty, p.level))}`
+          : "待岗中",
+      );
+
+      train.disabled = state.gold < cost;
+      paintText(
+        train,
+        `培训 ${formatGold(cost)} 金 → Lv.${p.level + 1}${trainLift > 0 ? ` · ${signed(trainLift)}/秒` : ""}`,
+      );
+
+      for (const slot of slots) {
+        const bonus = partnerShopBonus(p.specialty, slot.shop.specialty, Math.max(1, p.level));
+        const match = p.specialty === slot.shop.specialty;
+        const here = p.assigned === slot.shop.id;
+        paintClass(slot.btn, `fm-post${match ? " match" : ""}${here ? " on" : ""}`);
+        if (here) slot.btn.setAttribute("aria-current", "true");
+        else slot.btn.removeAttribute("aria-current");
+        const delta = here
+          ? base - rateIf(state, p, { assigned: null })
+          : rateIf(state, p, { assigned: slot.shop.id }) - base;
+        paintText(slot.label, `${slot.shop.emoji} ${slot.shop.name} +${pct(bonus)}`);
+        paintText(slot.hint, here ? `当前贡献 ${signed(delta)}/秒` : `换过来 ${signed(delta)}/秒`);
+      }
+      setShown(off, !!p.assigned);
+
+      let text;
+      if (!post) {
+        text = "待岗的伙伴一分钱都不产，先随便派一家也比空着强。";
+      } else if (post.specialty !== p.specialty) {
+        const best = matchingShops(p.specialty)
+          .map((s) => s.name)
+          .join(" / ");
+        text = `现在是跨行支援，只拿零头；换到${best}才吃满${p.specialty}特长。`;
+      } else {
+        text = `特长对口，${post.name}的基础收入按 +${pct(partnerShopBonus(p.specialty, post.specialty, p.level))} 放大；再培训一级还能多 ${signed(trainLift)}/秒。`;
+      }
+      if (locked > 0) text += `（还有 ${locked} 家店没解锁，升级主角后可改派。）`;
+      note.classList.toggle("warn", !post);
+      paintText(note, text);
+    };
+  }
+
+  function wireNew(card, p) {
+    const stateTag = card.querySelector("[data-state]");
+    const note = card.querySelector("[data-note]");
+
+    const shard = document.createElement("div");
+    shard.className = "fm-shard";
+    shard.innerHTML = `
+      <div class="fm-shard-bar"><i></i></div>
+      <span class="fm-shard-txt">招募碎片 <b data-count></b><span data-hint></span></span>`;
+    card.querySelector("[data-body]").append(shard);
+    const fill = shard.querySelector("i");
+    const count = shard.querySelector("[data-count]");
+    const hint = shard.querySelector("[data-hint]");
+
+    const sign = document.createElement("button");
+    sign.className = "btn";
+    sign.type = "button";
+    sign.dataset.act = "sign";
+    sign.onclick = () => commit(signPartner(state, p.id), sfx.rare, p.id, sign);
+    card.querySelector("[data-actions]").append(sign);
+
+    return function paint(base) {
+      const need = Math.max(0, PARTNER_SHARD_COST - state.shards);
+      paintClass(stateTag, "fm-tag locked");
+      paintText(stateTag, `未签约 · ${PARTNER_SHARD_COST} 碎片`);
+
+      const width = `${(Math.min(1, state.shards / PARTNER_SHARD_COST) * 100).toFixed(0)}%`;
+      if (fill.style.width !== width) fill.style.width = width;
+      paintText(count, `${state.shards} / ${PARTNER_SHARD_COST}`);
+      paintText(hint, need ? ` · 还差 ${need} 枚，去盲盒或占卜转转` : " · 可以签了");
+
+      sign.disabled = need > 0;
+      paintText(sign, need > 0 ? `还差 ${need} 枚碎片` : `消耗 ${PARTNER_SHARD_COST} 碎片签约`);
+
+      const preview = matchingShops(p.specialty).filter((s) => state.shops?.[s.id]?.unlocked)[0];
+      if (preview) {
+        const lift = rateIf(state, p, { owned: true, assigned: preview.id }) - base;
+        const html = `签下后派驻 ${preview.emoji} ${esc(preview.name)} 即刻 <b>${signed(lift)}/秒</b>（${esc(p.specialty)}特长匹配）。`;
+        if (note.innerHTML !== html) note.innerHTML = html;
+      } else {
+        paintText(note, `${p.specialty}特长的店还没开门，签下也只能先跨行支援。`);
+      }
+    };
+  }
+
+  function buildCard(p) {
+    const card = document.createElement("section");
+    card.className = `panel fm-p-card ${p.owned ? "owned" : "new"}`;
+    card.dataset.partner = p.id;
+    // 结构真的换了（签约）时，焦点退到卡片本身，读屏能听见"这张卡现在是什么样"。
+    card.tabIndex = -1;
+    card.innerHTML = `
+      <div class="fm-p-top">
+        <div class="fm-p-avatar">${avatarSvg(p)}</div>
+        <div class="fm-p-id" data-body>
+          <div class="fm-p-name"><b>${esc(p.name)}</b><span class="fm-p-title">${esc(p.title)}</span></div>
+          <div class="fm-p-tags">
+            <span class="fm-tag spec">${themeOf(p.specialty).emoji} ${esc(p.specialty)}特长</span>
+            ${p.owned ? '<span class="fm-tag lv" data-lv></span>' : ""}
+            <span class="fm-tag" data-state></span>
+          </div>
+          <p class="fm-p-story">${esc(p.story)}</p>
+        </div>
+      </div>
+      <div class="fm-p-actions" data-actions></div>
+      ${p.owned ? '<div class="fm-posts-head" data-posts-head></div><div class="fm-posts" data-posts></div>' : ""}
+      <p class="fm-p-note" data-note></p>`;
+    return {
+      node: card,
+      owned: !!p.owned,
+      shopSig: shopSig(),
+      paint: p.owned ? wireOwned(card, p) : wireNew(card, p),
+    };
+  }
+
+  function ordered() {
+    return [...(state.partners || [])].sort(
+      (a, b) => Number(b.owned) - Number(a.owned) || Number(b.level) - Number(a.level),
+    );
+  }
+
+  function reorder() {
+    const want = ordered()
+      .map((p) => cards.get(p.id)?.node)
+      .filter(Boolean);
+    const have = [...list.children];
+    if (want.length === have.length && want.every((node, i) => node === have[i])) return;
+    for (const node of want) list.append(node);
+  }
+
+  function flash(partnerId) {
+    const node = cards.get(partnerId)?.node;
+    if (!node) return;
+    node.classList.remove("signing");
+    void node.offsetWidth;
+    node.classList.add("signing");
+    later(() => node.classList.remove("signing"), 700);
+  }
+
+  /** 签约会把"未签约卡"整张换成"已签约卡"，新店开门会多几个派驻位；其余一律原地改。 */
+  function refresh(flashId) {
+    const sig = shopSig();
+    for (const p of state.partners || []) {
+      const entry = cards.get(p.id);
+      if (!entry) continue;
+      if (entry.owned === !!p.owned && entry.shopSig === sig) continue;
+      const next = buildCard(p);
+      entry.node.replaceWith(next.node);
+      cards.set(p.id, next);
+    }
+    reorder();
+    const base = totalOnlinePerSec(state);
+    for (const entry of cards.values()) entry.paint(base);
+    if (flashId) flash(flashId);
+  }
+
+  /** 按"伙伴 + 动作"这把钥匙把焦点还给刚点的按钮；按钮没了或变灰就退到本人卡片。 */
+  function restoreFocus(partnerId, act) {
+    const node = cards.get(partnerId)?.node;
+    if (!node) return;
+    const btn = act ? node.querySelector(`[data-act="${act}"]`) : null;
+    const alive = btn && !btn.disabled && !btn.hidden;
+    (alive ? btn : node).focus({ preventScroll: true });
+  }
+
+  /** 动作成功后的统一收尾：落盘 → 音效 → toast → 局部刷新 → 焦点归位。 */
+  function commit(res, sound, flashId, btn) {
     if (!res.ok) {
       toast(res.toast);
       return false;
     }
+    const act = btn?.dataset.act || null;
     persist(state);
     sound?.();
     toast(res.toast);
-    paintList(flashId);
+    refresh(flashId);
+    restoreFocus(flashId, act);
     syncHead();
     return true;
   }
 
-  function postButton(p, shop, base) {
-    const bonus = partnerShopBonus(p.specialty, shop.specialty, Math.max(1, p.level));
-    const match = p.specialty === shop.specialty;
-    const here = p.assigned === shop.id;
-    const btn = document.createElement("button");
-    btn.className = `fm-post${match ? " match" : ""}${here ? " on" : ""}`;
-    btn.type = "button";
-    if (here) btn.setAttribute("aria-current", "true");
-    const delta = here
-      ? base - rateIf(state, p, { assigned: null })
-      : rateIf(state, p, { assigned: shop.id }) - base;
-    btn.innerHTML = `
-      <b>${shop.emoji} ${esc(shop.name)} +${pct(bonus)}</b>
-      <small>${here ? `当前贡献 ${signed(delta)}/秒` : `换过来 ${signed(delta)}/秒`}</small>`;
-    btn.onclick = () => {
-      if (here) return toast(`${p.name} 已经在${shop.name}了`);
-      commit(assignPartner(state, p.id, shop.id), sfx.tap, p.id);
-    };
-    return btn;
+  for (const p of ordered()) {
+    const entry = buildCard(p);
+    cards.set(p.id, entry);
+    list.append(entry.node);
   }
-
-  function ownedCard(card, p, base) {
-    const shops = SHOPS.filter((s) => state.shops?.[s.id]?.unlocked);
-    const post = shops.find((s) => s.id === p.assigned);
-    const cost = partnerTrainCost(p.level);
-    const trainLift = rateIf(state, p, { level: p.level + 1 }) - base;
-
-    const tags = card.querySelector("[data-tags]");
-    tags.insertAdjacentHTML(
-      "beforeend",
-      post
-        ? `<span class="fm-tag post${post.specialty === p.specialty ? " match" : ""}">驻 ${post.emoji} ${esc(post.name)} +${pct(partnerShopBonus(p.specialty, post.specialty, p.level))}</span>`
-        : `<span class="fm-tag idle">待岗中</span>`,
-    );
-
-    const actions = card.querySelector("[data-actions]");
-    const train = document.createElement("button");
-    train.className = "btn ghost";
-    train.type = "button";
-    train.disabled = state.gold < cost;
-    train.innerHTML = `培训 ${formatGold(cost)} 金 → Lv.${p.level + 1}${trainLift > 0 ? ` · ${signed(trainLift)}/秒` : ""}`;
-    train.onclick = () => commit(trainPartner(state, p.id), sfx.coin, p.id);
-    actions.append(train);
-
-    card.querySelector("[data-posts-head]").innerHTML = `
-      <span>派驻到哪家店</span>
-      <small>${p.specialty}特长 · 匹配店满额加成</small>`;
-
-    const posts = card.querySelector("[data-posts]");
-    for (const shop of shops) posts.append(postButton(p, shop, base));
-    if (p.assigned) {
-      const off = document.createElement("button");
-      off.className = "fm-post recall";
-      off.type = "button";
-      off.textContent = "撤回驻店（先空着，等更合适的店开门）";
-      off.onclick = () => commit(assignPartner(state, p.id, null), sfx.tap, p.id);
-      posts.append(off);
-    }
-
-    const locked = SHOPS.length - shops.length;
-    const note = card.querySelector("[data-note]");
-    if (!post) {
-      note.classList.add("warn");
-      note.textContent = "待岗的伙伴一分钱都不产，先随便派一家也比空着强。";
-    } else if (post.specialty !== p.specialty) {
-      const best = matchingShops(p.specialty)
-        .map((s) => s.name)
-        .join(" / ");
-      note.textContent = `现在是跨行支援，只拿零头；换到${best}才吃满${p.specialty}特长。`;
-    } else {
-      note.textContent = `特长对口，${post.name}的基础收入按 +${pct(partnerShopBonus(p.specialty, post.specialty, p.level))} 放大；再培训一级还能多 ${signed(trainLift)}/秒。`;
-    }
-    if (locked > 0) note.textContent += `（还有 ${locked} 家店没解锁，升级主角后可改派。）`;
-  }
-
-  function newCard(card, p, base) {
-    const need = Math.max(0, PARTNER_SHARD_COST - state.shards);
-    const tags = card.querySelector("[data-tags]");
-    tags.insertAdjacentHTML(
-      "beforeend",
-      `<span class="fm-tag locked">未签约 · ${PARTNER_SHARD_COST} 碎片</span>`,
-    );
-
-    const shard = document.createElement("div");
-    shard.className = "fm-shard";
-    const filled = Math.min(1, state.shards / PARTNER_SHARD_COST);
-    shard.innerHTML = `
-      <div class="fm-shard-bar"><i style="width:${(filled * 100).toFixed(0)}%"></i></div>
-      <span class="fm-shard-txt">招募碎片 <b>${state.shards} / ${PARTNER_SHARD_COST}</b>${need ? ` · 还差 ${need} 枚，去盲盒或占卜转转` : " · 可以签了"}</span>`;
-    card.querySelector("[data-body]").append(shard);
-
-    const actions = card.querySelector("[data-actions]");
-    const sign = document.createElement("button");
-    sign.className = "btn";
-    sign.type = "button";
-    sign.disabled = need > 0;
-    sign.textContent = need > 0 ? `还差 ${need} 枚碎片` : `消耗 ${PARTNER_SHARD_COST} 碎片签约`;
-    sign.onclick = () => commit(signPartner(state, p.id), sfx.rare, p.id);
-    actions.append(sign);
-
-    const unlockedMatch = matchingShops(p.specialty).filter((s) => state.shops?.[s.id]?.unlocked);
-    const preview = unlockedMatch[0];
-    const note = card.querySelector("[data-note]");
-    if (preview) {
-      const lift = rateIf(state, p, { owned: true, assigned: preview.id }) - base;
-      note.innerHTML = `签下后派驻 ${preview.emoji} ${esc(preview.name)} 即刻 <b>${signed(lift)}/秒</b>（${p.specialty}特长匹配）。`;
-    } else {
-      note.textContent = `${p.specialty}特长的店还没开门，签下也只能先跨行支援。`;
-    }
-  }
-
-  function paintList(flashId) {
-    const base = totalOnlinePerSec(state);
-    list.innerHTML = "";
-    const ordered = [...(state.partners || [])].sort(
-      (a, b) => Number(b.owned) - Number(a.owned) || Number(b.level) - Number(a.level),
-    );
-    for (const p of ordered) {
-      const card = document.createElement("section");
-      card.className = `panel fm-p-card ${p.owned ? "owned" : "new"}`;
-      card.dataset.partner = p.id;
-      card.innerHTML = `
-        <div class="fm-p-top">
-          <div class="fm-p-avatar">${avatarSvg(p)}</div>
-          <div class="fm-p-id" data-body>
-            <div class="fm-p-name"><b>${esc(p.name)}</b><span class="fm-p-title">${esc(p.title)}</span></div>
-            <div class="fm-p-tags" data-tags>
-              <span class="fm-tag spec">${themeOf(p.specialty).emoji} ${esc(p.specialty)}特长</span>
-              ${p.owned ? `<span class="fm-tag lv">Lv.${p.level}</span>` : ""}
-            </div>
-            <p class="fm-p-story">${esc(p.story)}</p>
-          </div>
-        </div>
-        <div class="fm-p-actions" data-actions></div>
-        ${p.owned ? '<div class="fm-posts-head" data-posts-head></div><div class="fm-posts" data-posts></div>' : ""}
-        <p class="fm-p-note" data-note></p>`;
-
-      if (p.owned) ownedCard(card, p, base);
-      else newCard(card, p, base);
-
-      if (p.id === flashId) {
-        card.classList.add("signing");
-        later(() => card.classList.remove("signing"), 700);
-      }
-      list.append(card);
-    }
-  }
-
-  paintList(null);
+  const base = totalOnlinePerSec(state);
+  for (const entry of cards.values()) entry.paint(base);
   syncHead();
 
   root._cleanup = () => {
