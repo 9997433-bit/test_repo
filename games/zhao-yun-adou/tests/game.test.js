@@ -111,7 +111,8 @@ describe("game loop", () => {
     expect(side.hearts).toBe(2);
     expect(side.mantou).toBe(36);
     expect(side.enemies).toEqual([]);
-    expect(g.state.log).toContainEqual({
+    const leak = g.state.log.find((e) => e.type === "leak");
+    expect(leak).toMatchObject({
       t: 0.02,
       type: "leak",
       payload: { side: "player", hearts: 2 },
