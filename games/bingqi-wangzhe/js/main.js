@@ -37,10 +37,10 @@ const TICK_MS = 1000;
 export function createBoundGame(options = {}) {
   const game = createGame({
     saveKey: SAVE_KEY,
-    // 资源挂机由 forge/idle.js 记账，core 只管体力，避免两套账本各发一份。
-    idleResources: false,
     ...options,
   });
+  // 挂机只有一本账：core 的 tick 只回体力，资源全部由 forge/idle.js 在
+  // game.collectIdle() 时一次性结算，绝不在 tick 里预支。
   return installGameApi(game, { data, forge, combat });
 }
 

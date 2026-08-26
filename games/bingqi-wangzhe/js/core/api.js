@@ -18,8 +18,12 @@
  * （`stage.powerReq`、`weapon.stats.atk`、`preview.costs[]`…）。逻辑层的返回值
  * 形状不同，所以这里同时提供两套出口：
  *
- *  - `game.data / game.forge / game.combat`：UI 形状的门面（适配器读这三个）；
- *  - `game.raw.data / raw.forge / raw.combat`：逻辑层原样，供测试与后续代理使用。
+ *  - `game.data / game.forge / game.combat`（= `game.raw.*`）：逻辑层命名空间原样。
+ *    `gameAdapter.inspectCapabilities()` 按**原始导出名**点名（`previewIdle`、
+ *    `computeWeaponStats`、`arenaOpponentToWaves`…），`live/liveGame.js` 也按原始签名调用
+ *    （`combat.estimatePower(units)`、`forge.previewForge(state, opts)`）。这三个键上若挂
+ *    UI 门面，点名单必然缺项，界面就会整体退回 mock —— Round 2 的「mock 成功路径」正是这么来的。
+ *  - `game.view.data / view.forge / view.combat`：UI 形状的门面，给不想自己拼视图模型的调用方。
  */
 
 import {
@@ -35,6 +39,7 @@ import { normalizeSeed } from './rng.js';
 /** UI 适配层要求逻辑层显式提供的编排动词（gameAdapter.js 的同名清单）。 */
 export const ORCHESTRATION_VERBS = Object.freeze([
   'challengeStage',
+  'sweepStage',
   'arenaFight',
   'setLineup',
   'clearSlot',
@@ -54,6 +59,12 @@ const REGION_SIZE = 8;
 const ARENA_WIN_SCORE = 18;
 const ARENA_LOSE_SCORE = 8;
 const ARENA_SCORE_FLOOR = 800;
+
+/** 单次扫荡最多重复几遍（防止一次点掉整天体力）。 */
+const SWEEP_MAX_TIMES = 10;
+
+/** data 未提供 SWEEP_RULES 时的兜底（与 balance.SWEEP_RULES 同值）。 */
+const DEFAULT_SWEEP_RULES = Object.freeze({ freeDaily: 2, staminaCost: 'same-as-stage' });
 
 const isFn = (v) => typeof v === 'function';
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
@@ -514,6 +525,70 @@ export function installGameApi(game, modules = {}) {
     return { ok: true, stage: uiStageById[stage.id], firstClear, result: view, raw: result };
   }
 
+  /** 按关卡掉落表滚一次重复掉落（概率型按 chance 命中，区间型取闭区间整数）。 */
+  function rollRepeatDrops(stage) {
+    const out = {};
+    for (const drop of stage.dropTable ?? []) {
+      const chance = num(drop.chance, 1);
+      if (chance < 1 && !game.rng.bool(chance)) continue;
+      const min = Math.floor(num(drop.min, 0));
+      const max = Math.floor(num(drop.max, min));
+      const n = max > min ? game.rng.int(min, max) : min;
+      if (n > 0) out[drop.id] = (out[drop.id] ?? 0) + n;
+    }
+    return out;
+  }
+
+  /**
+   * 扫荡已通关的关卡：不进战斗，直接按掉落表结算 `times` 次。
+   *
+   * 与 `challengeStage` 并列的第二个体力出口 —— 前 `SWEEP_RULES.freeDaily` 次当日免费，
+   * 之后每次照收本关体力，这样「重复刷素材」不必再逐场看战报。
+   *
+   * @param {string} stageId
+   * @param {number} [times=1] 重复次数，夹在 1..10
+   */
+  function sweepStage(stageId, times = 1) {
+    const state = stateOf();
+    const stage = stageById[stageId];
+    if (!stage) return { ok: false, error: '关卡不存在' };
+    if (num(state.campaign.stars?.[stage.id], 0) <= 0) {
+      return { ok: false, error: '需先通关本关才能扫荡' };
+    }
+
+    const rules = data.SWEEP_RULES ?? DEFAULT_SWEEP_RULES;
+    const runs = Math.max(1, Math.min(SWEEP_MAX_TIMES, Math.floor(num(times, 1))));
+    const usedToday = Math.max(0, Math.floor(num(state.campaign.daily?.sweep, 0)));
+    const freeLeft = Math.max(0, Math.floor(num(rules.freeDaily, 0)) - usedToday);
+    const freeUsed = Math.min(freeLeft, runs);
+    const staminaCost = (runs - freeUsed) * num(stage.staminaCost, 0);
+
+    if (staminaCost > 0 && !game.spend({ stamina: staminaCost }, 'sweep')) {
+      return { ok: false, error: '体力不足' };
+    }
+
+    const loot = {};
+    for (let i = 0; i < runs; i += 1) {
+      for (const [id, n] of Object.entries(rollRepeatDrops(stage))) {
+        loot[id] = (loot[id] ?? 0) + n;
+      }
+    }
+    const gained = grant(loot, `sweep:${stage.id}`);
+    state.campaign.daily.sweep = usedToday + runs;
+    state.campaign.lastPlayedAt = nowOf();
+
+    game.emit(game.EVENTS.STAGE_SWEPT, { stageId: stage.id, times: runs, loot: gained, staminaCost });
+    changed('campaign:sweep');
+    return {
+      ok: true,
+      stage: uiStageById[stage.id],
+      times: runs,
+      freeUsed,
+      staminaCost,
+      loot: gained,
+    };
+  }
+
   /**
    * 竞技挑战：不耗体力，耗每日次数；胜则夺名次。
    * @param {string} foeId
@@ -658,13 +733,17 @@ export function installGameApi(game, modules = {}) {
    * ================================================================ */
 
   const api = {
-    data: dataFacade,
-    forge: forgeFacade,
-    combat: combatFacade,
+    // 逻辑层原样：gameAdapter 的点名单与 liveGame 的调用都按这套签名。
+    data,
+    forge,
+    combat,
     raw: { data, forge, combat },
+    // UI 形状门面（可选出口，见文件头）。
+    view: { data: dataFacade, forge: forgeFacade, combat: combatFacade },
 
     // —— gameAdapter 的编排动词 ——
     challengeStage,
+    sweepStage,
     arenaFight,
     setLineup,
     clearSlot,
