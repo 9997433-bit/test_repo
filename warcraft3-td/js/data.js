@@ -414,8 +414,8 @@
     },
     regen: {
       id: "regen", name: { zh: "石肤再生", en: "Stone Regeneration" },
-      desc: { zh: "每秒恢复 0.7% 最大生命", en: "regenerates 0.7% max health per second" },
-      regen: 0.007,
+      desc: { zh: "每秒恢复 0.45% 最大生命", en: "regenerates 0.45% max health per second" },
+      regen: 0.0045,
     },
     frost: {
       id: "frost", name: { zh: "寒冰光环", en: "Frost Aura" },
@@ -463,7 +463,10 @@
   const WAVE_GROWTH = 1.16;
   const WAVE_GROWTH_LATE = 1.11;
   const WAVE_KNEE = 20;
-  const BOSS_HP_MULT = 1.35;
+  // A single boss already concentrates the wave budget onto one target where
+  // splash/chain do nothing, so the HP premium stays small; the threat comes
+  // from abilities, slow resistance and the 3-life leak penalty.
+  const BOSS_HP_MULT = 1.05;
   const BOSS_BOUNTY_MULT = 1.25;
   const FLYING_HP_MULT = 0.8; // fewer towers can shoot air
   const IMMUNE_HP_MULT = 0.9; // magic lines go dark vs spell immunity
@@ -507,11 +510,11 @@
         count: count,
         hp: hp,
         bounty: bounty,
-        armor: a.armor + Math.floor(i / 10) + (boss ? 2 : 0),
+        armor: a.armor + Math.floor(i / 10) + (boss ? 1 : 0),
         armorType: boss && i >= 24 ? "hero" : a.armorType,
         flying: a.flying,
         spellImmune: spellImmune,
-        speed: a.speed * (boss ? 0.85 : 1),
+        speed: a.speed * (boss ? 0.75 : 1),
         color: a.color,
         name: a.name,
         key: a.key,

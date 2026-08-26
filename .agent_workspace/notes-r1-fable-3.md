@@ -81,7 +81,24 @@ cooldowns: roughly one cast per 1–2 waves, a decision not a rotation.
 - Whole suite deterministic (seeded) and < 60 s.
 
 ## Tuning log
-- (v1 numbers above; per-run results appended below as I tune.)
+- **v1** (BOSS_HP 1.35, boss armor +2, boss speed ×0.85, regen 0.7%/s):
+  Easy mixed WIN 15 lives; Normal t3 dead @26, mixed dead @29; Hard t3 @24;
+  Insane @16. Diagnosis from per-wave traces: regular waves nearly leak-free,
+  but **every single boss leaked 3 lives** (6 bosses ≈ the whole Normal pool).
+  Concentrated HP + regen + slow resist + armor premium made bosses unkillable
+  for spread damage.
+- **v2** (BOSS_HP 1.05, boss armor +1, boss speed ×0.75, regen 0.45%/s; mixed
+  bot reserve no longer blocks counter-building): Easy WIN 24; Normal mixed WIN
+  3 lives; Normal t3 still dead @26 — leaks isolated to hero-armor bosses
+  (15/25) and the immune boss (20): its rotation had zero normal-attack towers,
+  i.e. the designed counter. Added o_watch/n_ancient to the t3 rotation (a
+  legitimate build fix, not a curve change).
+- **v3 final**: Easy mixed **WIN 24/30 lives**; Normal t3 **WIN 5 lives**,
+  Normal mixed **WIN 3 lives**; Hard t3 dead @19, mixed dead @21 (gate ≥18);
+  Insane t3 dead @17. Strict monotonic difficulty order, suite ≈ 6 s.
+  Bots are deliberately mediocre (static hero park, no mazing, no
+  sell-repositioning), so Hard remains winnable for a strong human while
+  Insane stays a leaderboard fight.
 
 ## IP hygiene
 Title 艾泽拉斯要塞塔防/Azeroth Keep TD → 边境要塞塔防 / Frontier Keep TD.
