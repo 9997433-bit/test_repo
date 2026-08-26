@@ -73,7 +73,9 @@ function mergeStatus(prev, fx, now) {
  * 应用一批效果指令。
  *
  * @returns {{ state:object, events:object[], pending:object[], damage:object[] }}
- *   `pending` 是本层不负责执行、需要交给物理 / 队伍 / 表现层的指令。
+ *   `pending` 是本层不负责执行的指令，按入参顺序保留：既包含物理 / 队伍 / 表现域，
+ *   也包含 `explosion` / `chain`——它们虽属 combat 域，但命中谁取决于当时的敌人列表，
+ *   要由模式层用 `expandAreaEffects()` 展开。用 `splitEffects()` 再分流一次即可。
  */
 export function applyEffects(state, effects = [], now = state?.time ?? 0) {
   let next = { ...state, auras: { ...state.auras }, statuses: { ...state.statuses }, buffs: [...state.buffs], combo: { ...state.combo } };
