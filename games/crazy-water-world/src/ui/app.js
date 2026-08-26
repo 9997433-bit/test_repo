@@ -562,7 +562,7 @@ function createApp(root, store) {
       build: { type: "hq", rot: 0, mode: "place", hover: null, moveId: null, armedId: null, pending: null },
       // 钓鱼这层只留表演时钟与图鉴开关：cast 本体在 state.explore.fishing.cast，
       // castRef / seenCatch 只是「上一帧看到的那个对象」，用来发现新竿子和强制收杆。
-      fish: { castRef: null, seenCatch: null, elapsed: 0, pos: 0, cooldown: 0, dexOpen: false },
+      fish: { castRef: null, seenCatch: undefined, elapsed: 0, pos: 0, cooldown: 0, dexOpen: false },
       dive: { zone: DEFAULT_ZONE },
       // picked: null = 交给 selectLineup 自动配队；数组 = 老大自己勾的出战名单。
       campaign: { stage: 0, report: null, picked: null, tickers: [] },

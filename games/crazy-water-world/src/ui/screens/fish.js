@@ -121,8 +121,10 @@ export const fishScreen = {
 
     const last = fishing.lastCatch || null;
     if (last !== f.seenCatch) {
+      // 第一帧只是「认门」：存档里带来的上一条战果不该在进游戏时再播一次。
+      const known = f.seenCatch !== undefined;
       f.seenCatch = last;
-      if (last?.forced) {
+      if (known && last?.forced) {
         f.cooldown = FISHING_RULES.missCooldownSec;
         ctx.sfx("alarm");
         ctx.toast(`${last.name}这杆废了：天气翻脸，线先收回来。命比鱼贵。`, "bad");

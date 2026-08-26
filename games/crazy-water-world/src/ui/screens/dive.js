@@ -313,10 +313,7 @@ export const diveScreen = {
     setClass(ctx.refs.diveLayer, "on", false);
     const hud = diveHud(ctx.state);
     if (hud.active) {
-      ctx.toast(
-        `人还在水下！氧气 ${hud.oxygen} 还在扣，遇上${hud.weather === "海啸预警" ? "这浪头" : "海啸"}会被强制捞上来。左上角有回去的按钮。`,
-        "bad",
-      );
+      ctx.toast(`人还在水下！氧气 ${hud.oxygen} 还在扣，天气一转海啸会被强制捞上来。左上角有回去的按钮。`, "bad");
     }
   },
 };
