@@ -202,8 +202,9 @@ function applyAction(state, action) {
     const itemId = payload.itemId ?? state.ui?.sellId ?? null;
     const stock = itemId ? state.inv?.[itemId] || 0 : 0;
     if (!stock) return withFx(withUi(state, { sellId: null, sellQty: 1 }), "ui");
-    const base = payload.itemId && payload.itemId !== state.ui?.sellId ? 1 : state.ui?.sellQty || 1;
-    const wanted = payload.qty === "max" ? stock : payload.qty != null ? payload.qty : base + (payload.step || 0);
+    // 换一样货就从 1 件重新数起，否则在当前件数上加减。
+    const current = payload.itemId && payload.itemId !== state.ui?.sellId ? 1 : state.ui?.sellQty || 1;
+    const wanted = payload.qty === "max" ? stock : current + (payload.step || 0);
     return withFx(withUi(state, { sellId: itemId, sellQty: Math.max(1, Math.min(stock, wanted)) }), "ui");
   }
   if (type === "meta/serve") {
