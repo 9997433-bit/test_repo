@@ -1,4 +1,4 @@
-# 《Round 1 结论简报》
+# 《Round 1 结论简报》· 超能下蛋鸭
 
 主调度器整理。10/10 子代理已回收，产出已合入 `cursor/chao-neng-xia-dan-ya-799d`。
 
@@ -6,37 +6,21 @@
 
 - **可玩闭环**：主菜单 / 编队 / 冒险 24 关 / 战斗拖拽瞄准 / 结算 / 图鉴；肉鸽三选一、爬塔、讨伐、钓鱼最小闭环。存档 `cnyd-save-v1`。端口 4174。
 - **物理（O1）**：headless 重力弹球，固定步 1/120，圆-线段/AABB/圆，弹道预测与实弹同积分器，分裂/爆炸/回收。
-- **战斗（O2）**：`resolveHit` 纯函数，连击 20 层爆蛋、火冰雷反应、2/3/4 羁绊、20 英雄技能指令表。
+- **战斗（O2）**：`resolveHit` 纯函数，连击 20 层爆蛋、火冰雷反应、2/3/4 羁绊。
 - **养成（O3）**：5 人上场、1–40 / 1–5 星、图鉴 0–15%、钓鱼 BUFF、肉鸽临时队与账号隔离。
 - **数值（F3）**：18 英雄 + 24 关 + 神器/塔/讨伐/钓鱼/元素纯数据表。
 - **视觉（F2）**：夜市霓虹 tokens、HUD/按钮/色盲三重编码、reduce-motion。
 - **契约（F1/F4）**：API 契约、SOTA 57 项清单、验收脚本。
-- **测试/基准（G1/G2）**：单测 + probe + bench/stress；当时物理仍是空转，数字需重跑。
+- **测试/基准（G1/G2）**：单测 + probe + bench/stress。
 
-## 遗留缺陷
+## 当时遗留（Round 2 已处理大部分）
 
-1. **双物理**：O4 探测到上游 `src/physics` 可用，但战斗仍走 `src/core/sim.js`，菜单标明「内置积分器」。预测线与实弹必须同源，Round 2 要对拍后切换。
-2. **数据契约分裂**：combat 读 `DATA.BONDS` / `BOND_TABLE`，F3 导出 `SYNERGIES`；`bonds.js` 因此走内置 fallback。
-3. **英雄数量口径**：GDD/O2 按 20 只，F3 落地 18 只（云朵雀、倒霉鸭进预留）。
-4. **红测**：`tests/combat.test.js` 3 条失败——脚手架断言 `effects === []` 且 `comboDelta === 1`，与真实 `resolveHit` 冲突。G1 skip：弹道长度、出界回收、零威力零伤、18 英雄表（后两项数据/物理已具备，应解锁）。
-5. **build 警告**：`combat/bonds.js` 从 data 引不到 `BONDS`。
-6. **SOTA 手感**：命中停顿/震屏/连击音高、章节主题差、BOSS 行为表、键盘教程关未按 F4 清单闭环验收。
+双物理、BONDS/SYNERGIES 分裂、18/20 英雄口径、combat 红测、空脚手架基准。
 
-## 性能瓶颈
+---
 
-- G2 空脚手架数字无效，禁止引用。O1 自测：12 蛋+48 砖约 0.57µs/步，预测约 35µs。Round 2 必须用真物理重跑 p50/p95/p99，对照 4ms 物理预算。
-- 双积分器并存浪费；切到上游后删或冻结 `core/sim.js`。
+# 附录 · 赵云与阿斗 Round 1
 
-## 下轮攻坚重点（Round 2）
-
-| 优先级 | 事项 | 主责 |
-| --- | --- | --- |
-| P0 | 对拍后战斗改用 `src/physics`，预测与实弹同源 | O4 + O1 |
-| P0 | data 导出 `BONDS` 别名或 combat 改读 `SYNERGIES` | F3 + O2 |
-| P0 | 修好 `tests/combat.test.js`，解锁已实现的 skip | G1 + O2 |
-| P0 | 真物理重跑 bench/stress，改写 budgets | G2 |
-| P1 | 18/20 英雄口径统一，catalog 吃 F3 表 | F3 + O3 |
-| P1 | SOTA juice：停顿、震屏、连击音高、准星 | O4 + F2 |
-| P1 | 对照 F4 清单重评 L0→L1 | F4 + F1 |
-
-文件所有权不变。禁止改其他游戏目录。
+父分支：`cursor/zhao-yun-adou-673d`  
+游戏根：`games/zhao-yun-adou/` 端口 4180  
+攻坚：juice 上屏、胜率从 91% 拉回 45–55%、AI 覆盖窗口、教程/触控、enemySeq 入 state。

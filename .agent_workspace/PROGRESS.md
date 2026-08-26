@@ -1,44 +1,32 @@
+# 多游戏编排进度索引
+
+同仓库并行多款游戏。本文件同时保留各任务简报入口，互不覆盖业务代码。
+
+| 游戏 | 目录 | 端口 | 本轮状态 |
+| --- | --- | --- | --- |
+| 超能下蛋鸭 | `games/chao-neng-xia-dan-ya/` | 4174 | Round 1–3 完成，L1，待合入 main |
+| 灵画师 | `games/linghuashi/` | 4173 | Round 1–3 完成（见下文归档） |
+| 赵云与阿斗 | `games/zhao-yun-adou/` | 4180 | 见 `round1/BRIEF.md` / `round2/BRIEF.md` 附录 |
+
+---
+
 # 超能下蛋鸭 SOTA 复刻 · 编排进度
 
-- 目标：在独立目录 `games/chao-neng-xia-dan-ya/` 实现《超能下蛋鸭》SOTA 级网页复刻（重力弹球 + 卡牌肉鸽 + 禽类英雄流派）。
-- 隔离原因：同仓库后续还会跑其他游戏，禁止污染仓库根目录业务代码，禁止引用或覆盖 `games/` 下其他子目录。
-- 工作分支：`cursor/chao-neng-xia-dan-ya-799d`（系统前缀） / 逻辑名 `agent/chao-neng-xia-dan-ya`
-- 编排模型：Parent Orchestrator（本仓库主调度器）
-- 循环：Round 1 / 2 / 3，每轮 10 个并发云端子代理
-
-## 模型映射（严禁静默降级）
-
-| 简称 | 实际 slug | 每轮数量 | 推荐职能 |
-| --- | --- | --- | --- |
-| fable | `claude-fable-5-thinking-xhigh` | 4 | 架构规划、多维审计、SOTA 验收 |
-| opus-fast | `claude-opus-5-thinking-high-fast` | 4 | 核心业务落地、算法攻坚、单测与原子修复 |
-| gpt-sol | `gpt-5.6-sol-xhigh-fast` | 2 | 探针 / 基准 / 边界探索 / 兜底校验 |
-
-子代理输出**首行必须声明实际使用的模型 slug**。
-
-## 文件所有权（并发防冲突）
-
-详见 `.agent_workspace/ARCHITECTURE.md`。任何代理不得越权改写他人目录。共享文件只追加、不删他人段落。
-
-## 轮次状态
+- 目标：在独立目录 `games/chao-neng-xia-dan-ya/` 实现《超能下蛋鸭》SOTA 级网页复刻。
+- 工作分支：`cursor/chao-neng-xia-dan-ya-799d` / 逻辑名 `agent/chao-neng-xia-dan-ya`
+- 模型：fable → `claude-fable-5-thinking-xhigh`；opus-fast → `claude-opus-5-thinking-high-fast`；gpt-sol → `gpt-5.6-sol-xhigh-fast`
 
 | 轮次 | 状态 | 简报 |
 | --- | --- | --- |
-| 准备 | 完成 | 契约、GDD、脚手架已初始化 |
-| Round 1 | 完成 | 10/10 已回收。简报见 `round1/BRIEF.md` |
-| Round 2 | 完成 | 10/10 已回收。简报见 `round2/BRIEF.md` |
-| Round 3 | 完成 | 10/10 已回收。简报见 `round3/BRIEF.md`。L1 达成 |
-| 归档合并 | 完成 | 测试 21/21 全绿，手工打通 1-1 |
+| Round 1 | 完成 | `round1/BRIEF.md` |
+| Round 2 | 完成 | `round2/BRIEF.md` |
+| Round 3 | 完成 | `round3/BRIEF.md` · L1 |
+| 归档合并 | 进行中 | 与 main 无业务冲突后合入 |
 
-## 目标验收（SOTA）
+---
 
-1. 单目录可独立运行的重力弹球网页游戏（Vite + 原生 JS + Canvas）。
-2. 完整闭环：组队 → 瞄准下蛋 → 物理反弹连击 → 结算养成 → 下一关 / 肉鸽 / 爬塔 / 讨伐。
-3. 至少 16 只英雄、4 大流派羁绊、20+ 主题关卡、Roguelike 三选一、试炼之塔、讨伐魔王、佛系钓鱼、图鉴养成与本地存档。
-4. 视觉与动效达到精品小游戏水准（瞄准虚线、蛋液飞溅、元素特效、连击 HUD、BOSS 预警）。
-5. 自动化测试 + 基准脚本可在无浏览器环境下跑通物理、伤害、羁绊与存档。
-6. 桌面 60fps、触摸滑动瞄准、键盘可达教程关。
+# 灵画师 SOTA 复刻（main 已归档）
 
-## 结论简报
-
-（各轮结束后由主调度器回写）
+- 目录：`games/linghuashi/`
+- 分支：`cursor/linghuashi-sota-a345`
+- Round 1–3 完成。vitest 105/105。详见该游戏目录 `docs/`。
