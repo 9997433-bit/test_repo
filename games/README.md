@@ -4,6 +4,7 @@
 
 | 目录 | 游戏 | 开发端口 |
 | --- | --- | --- |
+| `my-garden-world/` | 《我的花园世界》国风花坊 · 模拟经营 | 5173 |
 | `linghuashi/` | 《灵画师》绘符施法 · 水墨修仙 | 4173 |
 | `chao-neng-xia-dan-ya/` | 《超能下蛋鸭》重力弹球 · 卡牌肉鸽 | 4174 |
 | `zhao-yun-adou/` | 《赵云与阿斗》汉字合成 · 水墨塔防 | 4180 |
@@ -18,8 +19,11 @@
 | 赵云与阿斗 | https://9997433-bit.github.io/test_repo/zhao-yun-adou/ |
 | 造化仙府 | https://9997433-bit.github.io/test_repo/zaohua-xianfu/ |
 | 兵器王者 | https://9997433-bit.github.io/test_repo/bingqi-wangzhe/ |
+| 边境要塞塔防 | https://9997433-bit.github.io/test_repo/warcraft3-td/ |
+| 我的花园世界 | 源码在 `games/my-garden-world/`，本地 `npm run dev` 走 :5173 |
 
 ```bash
+cd games/my-garden-world && npm install && npm run dev        # :5173
 cd games/chao-neng-xia-dan-ya && npm install && npm run dev   # :4174
 cd games/linghuashi && npm install && npm run dev             # :4173
 cd games/zhao-yun-adou && npm install && npm run dev          # :4180
