@@ -48,6 +48,11 @@ const CSS = `
   cursor: pointer; box-shadow: 0 2px 0 var(--shadow);
 }
 .mgw-sheet button.card.is-on { outline: 2px solid var(--jade); }
+.mgw-sheet .mgw-row button.is-on,
+.mgw-sheet .mgw-actions button.is-on {
+  background: var(--jade); border-color: var(--jade); color: #f6efe0;
+  box-shadow: 0 3px 0 var(--shadow), inset 0 0 0 2px rgba(255, 255, 255, 0.22);
+}
 .mgw-sheet button { min-height: 40px; font-size: 13.5px; }
 .mgw-sheet button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 .mgw-sheet .card h4 { margin: 0; font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
@@ -104,6 +109,7 @@ interface Row<T> {
 let handlers: PanelHandlers | null = null;
 let current: GameState | null = null;
 let view: { id: Exclude<PanelId, null>; host: HTMLElement; built: Built } | null = null;
+let resizeBound = false;
 
 /** Workshop selection lives here so the 60fps repaint cannot wipe it. */
 const pick = new Map<string, number>();
@@ -116,6 +122,24 @@ function injectStyle(): void {
   tag.id = STYLE_ID;
   tag.textContent = CSS;
   document.head?.append(tag);
+}
+
+/** The dock wraps to two or three rows on a phone, so park the sheet just above it. */
+function fitAboveDock(el: HTMLElement): void {
+  if (typeof document === "undefined") return;
+  const dock = document.querySelector(".dock");
+  const height = dock instanceof HTMLElement ? dock.offsetHeight : 0;
+  el.style.bottom = `${height > 0 ? height + 8 : 74}px`;
+}
+
+function bindResize(): void {
+  if (resizeBound || typeof window === "undefined") return;
+  resizeBound = true;
+  const refit = () => {
+    if (view) fitAboveDock(view.built.el);
+  };
+  window.addEventListener("resize", refit, { passive: true });
+  window.addEventListener("orientationchange", refit, { passive: true });
 }
 
 function make<K extends keyof HTMLElementTagNameMap>(
@@ -279,18 +303,24 @@ function orderRequirements(order: ActiveOrder, state: GameState, art?: Arrangeme
       },
     ];
   }
-  const ids = order.flowerIds ?? [];
-  if (ids.length) {
-    const need = new Map<string, number>();
-    for (const id of ids) need.set(id, (need.get(id) ?? 0) + 1);
-    return [...need].map(([id, n]) => {
-      const have = state.inventory[id] ?? 0;
-      return { text: `${flowerName(id)} ×${n}（库存 ${have}）`, met: have >= n };
+  const need = new Map<string, number>();
+  for (const id of order.flowerIds ?? []) need.set(id, (need.get(id) ?? 0) + 1);
+  const rows: OrderReq[] = [...need].map(([id, n]) => {
+    const have = state.inventory[id] ?? 0;
+    return { text: `${flowerName(id)} ×${n}（库存 ${have}）`, met: have >= n };
+  });
+  // 订单结算按「枝」计数：具名花材之外的缺口由库存里最便宜的花材补足。
+  const named = [...need.values()].reduce((sum, n) => sum + n, 0);
+  const extra = Math.max(0, (order.flowerCount ?? 0) - named);
+  if (extra > 0 || !rows.length) {
+    const stems = inventoryList(state).reduce((sum, i) => sum + i.n, 0);
+    const spare = Math.max(0, stems - named);
+    rows.push({
+      text: `${rows.length ? "另需" : ""}任意花材 ${extra || 1} 枝（可用 ${spare} 枝）`,
+      met: spare >= (extra || 1),
     });
   }
-  const count = order.flowerCount ?? 1;
-  const kinds = inventoryList(state).length;
-  return [{ text: `任意花材 ${count} 种（库存 ${kinds} 种）`, met: kinds >= count }];
+  return rows;
 }
 
 function bestArrangement(state: GameState, order: ActiveOrder): Arrangement | undefined {
@@ -386,6 +416,9 @@ function buildOrder(): Built {
         } else {
           picker.hidden = true;
         }
+
+        // The flavour hint often repeats the requirement verbatim; only keep it when it adds something.
+        hint.hidden = rows.some((r) => r.text.startsWith(o.hint));
 
         setText(reward, `酬劳 +${o.coin} 金 · +${o.exp} 阅历 · +${o.waterReward} 水 · 口碑 +1`);
         const left = Math.max(0, Math.ceil((o.dueAt - state.now) / 1000));
@@ -730,6 +763,8 @@ export function renderPanel(
     const built = BUILDERS[id]();
     view = { id, host, built };
     host.replaceChildren(built.el);
+    bindResize();
+    fitAboveDock(built.el);
   }
   view.built.update(state);
 }

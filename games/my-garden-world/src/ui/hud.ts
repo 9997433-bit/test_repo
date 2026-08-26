@@ -68,7 +68,7 @@ const CSS = `
 .mgw-hud .mgw-lv-num { font-variant-numeric: tabular-nums; color: var(--ink-soft); white-space: nowrap; }
 .mgw-hud .is-bump { animation: mgw-bump 0.42s ease; }
 @keyframes mgw-bump {
-  40% { transform: translateY(-2px) scale(1.14); color: var(--vermilion); }
+  40% { transform: translateY(-2px) scale(1.14); }
   100% { transform: none; }
 }
 @media (max-width: 420px) {
