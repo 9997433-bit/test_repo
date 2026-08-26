@@ -324,6 +324,85 @@
         background: color-mix(in srgb, var(--leaf) 40%, transparent);
       }
 
+      .xw-h4 {
+        margin: 10px 0 2px;
+        font-size: 0.84rem;
+        opacity: 0.66;
+      }
+      .xw-line.is-done {
+        opacity: 0.62;
+      }
+      .xw-furni-desc {
+        display: block;
+        font-size: 0.78rem;
+        line-height: 1.5;
+      }
+
+      .xw-dish {
+        border: 1px solid rgba(44, 33, 24, 0.14);
+        border-radius: 12px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+      }
+      .xw-dish.can {
+        border-color: var(--leaf);
+        background: color-mix(in srgb, var(--leaf) 14%, transparent);
+      }
+      .xw-dish-desc {
+        font-size: 0.8rem;
+        line-height: 1.5;
+      }
+      .xw-love {
+        margin-left: 6px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--fire);
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 400;
+      }
+
+      .xw-shelves {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+      .xw-shelf {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        border: 2px solid transparent;
+        border-radius: 10px;
+        padding: 4px 10px;
+        background: color-mix(in srgb, var(--paper) 84%, var(--wood));
+        color: var(--ink);
+        font-size: 0.86rem;
+        cursor: pointer;
+      }
+      .xw-shelf b {
+        margin-left: 4px;
+        color: var(--fire);
+      }
+      .xw-shelf .ghost {
+        font-size: 0.74rem;
+      }
+      .xw-shelf.is-on {
+        border-color: var(--fire);
+        background: var(--gold);
+      }
+      .xw-deal {
+        border: 1px dashed rgba(44, 33, 24, 0.28);
+        border-radius: 12px;
+        padding: 8px 10px;
+      }
+      .xw-qty {
+        min-width: 2.2em;
+        text-align: center;
+        font-weight: 700;
+      }
+
       .xw-toast {
         position: fixed;
         left: 50%;
