@@ -18,6 +18,7 @@ import {
   OMENS,
   payouts,
   resolvePayouts,
+  resetPayouts,
   auditPayouts,
   poolExpectation,
   spinExpectation,
@@ -199,6 +200,22 @@ test("越过 B6 红线的 F3 覆盖会被整表拒收，退回保守兜底", () 
 
   const noShard = resolvePayouts("fortune", { ...MINIGAME_PAYOUTS.fortune, shardAllBless: 0, shardTriple: 0 });
   assert.equal(auditPayouts("fortune", noShard).ok, false, "不产碎片的付费玩法只是纯抽水，同样不合格");
+});
+
+test("体检不合格时 payouts() 真的换表，而不只是把红灯记在报告里", () => {
+  const pristine = MINIGAME_PAYOUTS.blindbox.cost;
+  try {
+    MINIGAME_PAYOUTS.blindbox.cost = 1; // 一盒 1 金、奖池不变 —— 教科书级印钞机
+    resetPayouts();
+    const guarded = payouts("blindbox");
+    assert.equal(auditPayouts("blindbox").ok, true, "换表后必须重新合格");
+    assert.equal(guarded.cost, PAYOUT_FALLBACK.blindbox.cost, "越线的覆盖整表退回兜底");
+    assert.deepEqual(guarded.pool, resolvePayouts("blindbox", null).pool);
+  } finally {
+    MINIGAME_PAYOUTS.blindbox.cost = pristine;
+    resetPayouts();
+  }
+  assert.equal(payouts("blindbox").cost, pristine, "恢复后应重新接管 F3 的票价");
 });
 
 test("盲盒期望必须按含保底口径核算，只算单抽会低估返奖率", () => {
