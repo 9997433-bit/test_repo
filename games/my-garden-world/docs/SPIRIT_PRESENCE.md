@@ -48,5 +48,7 @@ HUD 每帧把当前花灵写到根节点（常量 `SPIRIT_ATTR === "data-spirit"
 ```
 
 - 场景 / 样式表可以直接挂钩，例如 `.app[data-spirit="chiguang"] .garden { … }`。
+  视觉层的「花灵驻园灵玉」（`docs/VISUAL.md` §六，`.stage::before/::after`）即由此点亮。
+- 花灵面板的请灵卡同样挂了 `data-spirit="<id>"`，per-灵配色令牌随之生效。
 - 音景（`src/audio/soundscape.ts`）已在观察这三个属性，随季节、昼夜、随行花灵换调，
   所以场景层写不写这个属性都不影响声音，属性只增不减即可。

@@ -263,6 +263,8 @@ function renderDecor(sheet: HTMLElement, state: GameState, h: PanelHandlers): vo
 }
 
 const SPIRIT_ROW = "display:flex;align-items:center;gap:10px;text-align:left";
+// 形象已经替代了视觉层的「首字放大作灵字」占位，标题回到一行，免得灵字与形象打架
+const SPIRIT_TITLE = "display:flex;align-items:baseline;gap:6px";
 
 function renderSpirit(sheet: HTMLElement, state: GameState, h: PanelHandlers): void {
   // 顶部一栏：谁在随行，以及它此刻说的话
@@ -286,7 +288,7 @@ function renderSpirit(sheet: HTMLElement, state: GameState, h: PanelHandlers): v
   off.setAttribute("aria-label", "暂不请灵，园中无花灵随行");
   off.innerHTML =
     `<span class="spirit-figure" aria-hidden="true" style="flex:0 0 auto">${spiritPortrait(null, { size: 40 })}</span>` +
-    `<span><h4>暂不请灵</h4><div class="muted">独自侍弄花草</div></span>`;
+    `<span><h4 style="${SPIRIT_TITLE}">暂不请灵</h4><div class="muted">独自侍弄花草</div></span>`;
   off.addEventListener("click", () => h.spirit(null));
   grid.append(off);
   for (const s of SPIRITS) {
@@ -303,13 +305,15 @@ function renderSpirit(sheet: HTMLElement, state: GameState, h: PanelHandlers): v
     const b = document.createElement("button");
     b.type = "button";
     b.className = `card spirit-card${state.activeSpirit === s.id ? " is-on" : ""}${unlocked ? "" : " is-sealed"}`;
+    // 视觉层的 per-灵配色令牌挂在 [data-spirit] 上（契约见 docs/VISUAL.md §六）
+    b.dataset.spirit = s.id;
     b.style.cssText = SPIRIT_ROW;
     b.disabled = !unlocked;
     b.setAttribute("aria-pressed", String(state.activeSpirit === s.id));
     b.setAttribute("aria-label", unlocked ? `请花灵${s.name}，${motif}，${effects}` : `${s.name}，${motif}，${s.unlockLevel} 阶苏醒`);
     b.innerHTML =
       `<span class="spirit-figure" aria-hidden="true" style="flex:0 0 auto">${spiritPortrait(s.id, { size: 44, locked: !unlocked })}</span>` +
-      `<span><h4>${s.name} <small>${motif}</small></h4>` +
+      `<span><h4 style="${SPIRIT_TITLE}">${s.name} <small>${motif}</small></h4>` +
       `<div class="muted">${unlocked ? effects : `${s.unlockLevel} 阶苏醒`}</div>` +
       `<div class="muted">${s.line}</div></span>`;
     b.addEventListener("click", () => h.spirit(s.id));
