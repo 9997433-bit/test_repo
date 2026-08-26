@@ -2,9 +2,23 @@ import * as BALANCE from "../data/balance.js";
 import { SHOPS, PARTNERS, OUTFITS, nextLevelReady } from "../data/balance.js";
 import { readSaveData, writeSave } from "./save.js";
 import { settleOffline, totalOnlinePerSec, outfitItem } from "./economy.js";
+import { PARTNERS_PER_SHOP_MAX, capAdd, finiteOr, partnerLevel, shopLevel } from "./limits.js";
 
 /** 间隔 ≤ 该值按在线全额记账，超过按离线倍率结算。 */
 export const ONLINE_GAP_MAX_SEC = 30;
+
+/** 离线被动阅历的折减系数，与金币同策；balance 未导出时用 0.65 兜底。 */
+const PASSIVE_XP_OFFLINE_RATE = (() => {
+  const rate = Number(BALANCE.PASSIVE_XP?.offlineRate);
+  return Number.isFinite(rate) && rate >= 0 ? rate : 0.65;
+})();
+
+/** 被动阅历速率归 F3；未导出时按 0 处理（等于本特性未开启，不自造曲线）。 */
+export function passiveXpPerSec(level) {
+  if (typeof BALANCE.passiveXpPerSec !== "function") return 0;
+  const rate = Number(BALANCE.passiveXpPerSec(Math.max(1, finiteOr(level, 1))));
+  return Number.isFinite(rate) && rate > 0 ? rate : 0;
+}
 
 const GOAL_WINDOW_MS = 8 * 60 * 1000;
 const GOAL_BASE_DELTA = 560;
@@ -99,7 +113,7 @@ export function fromSaveData(data, now = Date.now()) {
     if (!saved || typeof saved !== "object") continue;
     const slot = state.shops[shop.id];
     if (typeof saved.unlocked === "boolean") slot.unlocked = saved.unlocked;
-    slot.level = Math.max(1, Math.trunc(numOr(saved.level, 1)));
+    slot.level = shopLevel(numOr(saved.level, 1));
     slot.staff = Math.min(shop.staffSlots, Math.max(0, Math.trunc(numOr(saved.staff, 0))));
     slot.auto = !!saved.auto;
   }
@@ -109,14 +123,23 @@ export function fromSaveData(data, now = Date.now()) {
       .filter((p) => p && typeof p.id === "string")
       .map((p) => [p.id, p]),
   );
+  const headcount = {};
   state.partners = PARTNERS.map((def, i) => {
     const saved = savedPartners.get(def.id);
-    const assigned = saved?.assigned;
+    const wanted = saved?.assigned;
+    const owned = typeof saved?.owned === "boolean" ? saved.owned : i === 0 && !saved;
+    let assigned = typeof wanted === "string" && state.shops[wanted] ? wanted : null;
+    // 人数帽在读档处兜底：手改存档往一家店塞满全员时，按注册表顺序留前 N 位。
+    if (owned && assigned) {
+      const used = headcount[assigned] || 0;
+      if (used >= PARTNERS_PER_SHOP_MAX) assigned = null;
+      else headcount[assigned] = used + 1;
+    }
     return {
       ...def,
-      owned: typeof saved?.owned === "boolean" ? saved.owned : i === 0 && !saved,
-      level: Math.max(1, Math.trunc(numOr(saved?.level, 1))),
-      assigned: typeof assigned === "string" && state.shops[assigned] ? assigned : null,
+      owned,
+      level: partnerLevel(numOr(saved?.level, 1)),
+      assigned,
     };
   });
 
@@ -172,15 +195,15 @@ export function persist(state) {
 export function grantGold(state, n) {
   const amount = Number(n);
   if (!Number.isFinite(amount) || amount === 0) return 0;
-  state.gold += amount;
-  if (amount > 0) state.goldEarned += amount;
+  state.gold = capAdd(state.gold, amount);
+  if (amount > 0) state.goldEarned = capAdd(state.goldEarned, amount);
   return amount;
 }
 
 export function grantXp(state, n) {
   const amount = Number(n);
-  if (!Number.isFinite(amount)) return 0;
-  state.xp += amount;
+  if (!Number.isFinite(amount) || amount === 0) return 0;
+  state.xp = capAdd(state.xp, amount);
   return amount;
 }
 
@@ -263,6 +286,9 @@ export function advanceGoal(state, now = Date.now()) {
         notes.push(`限时目标达成，奖励 ${Math.floor(reward.gold)} 金 · 阅历+${reward.xp}`);
       }
       state.goal = rollNextGoal(state, now, false, true);
+      // 营收饱和（曲线已经加不动区间）时新目标会落在当前营收之下，
+      // 继续循环就是「达标→发奖→再达标」的奖励泵，这里必须停手。
+      if (!(state.goal.target > state.goldEarned)) break;
       continue;
     }
     if (now > goal.until) {
@@ -275,11 +301,16 @@ export function advanceGoal(state, now = Date.now()) {
   return notes;
 }
 
-/** 单次结算管线：收入 → 目标 → 等级/解锁 → 通知。不写 lastTick。 */
+/** 单次结算管线：收入 → 被动阅历 → 目标 → 等级/解锁 → 通知。不写 lastTick。 */
 export function tick(state, dtSec, now = Date.now()) {
   const before = state.goldEarned;
+  const dt = finiteOr(dtSec, 0);
   const rate = totalOnlinePerSec(state);
-  if (dtSec > 0) grantGold(state, rate * dtSec);
+  if (dt > 0) {
+    grantGold(state, rate * dt);
+    // 被动阅历：等级双门里阅历门没有挂机供给，不接线纯挂机会永久卡级。
+    grantXp(state, passiveXpPerSec(state.level) * dt);
+  }
   const notes = advanceGoal(state, now);
   tryLevelUp(state);
   return { gold: state.goldEarned - before, notes };
@@ -290,6 +321,9 @@ export function tick(state, dtSec, now = Date.now()) {
  * 后台节流导致的大 dt 因此不再丢收益，也不会比关页更划算。
  */
 export function settle(state, now = Date.now()) {
+  // 非有限的 now（NaN/Infinity）只可能来自坏调用方，拒绝即可：
+  // 一旦放行，lastTick 会被写成 NaN，此后每次结算都算不出 dt，账目永久冻结。
+  if (!Number.isFinite(now)) return { gold: 0, hours: 0, mode: "none", notes: [] };
   const last = Number.isFinite(state.lastTick) ? state.lastTick : now;
   const dtSec = (now - last) / 1000;
   if (dtSec <= 0) {
@@ -304,6 +338,11 @@ export function settle(state, now = Date.now()) {
   }
   const offline = settleOffline(state, now);
   grantGold(state, offline.gold);
+  // 离线阅历与离线金币同策：按封顶后的时长折减，挂机不再卡在阅历门前。
+  grantXp(
+    state,
+    passiveXpPerSec(state.level) * offline.cappedHours * 3600 * PASSIVE_XP_OFFLINE_RATE,
+  );
   state.lastTick = now;
   const notes = advanceGoal(state, now);
   tryLevelUp(state);
