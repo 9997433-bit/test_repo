@@ -18,8 +18,12 @@
  * （`stage.powerReq`、`weapon.stats.atk`、`preview.costs[]`…）。逻辑层的返回值
  * 形状不同，所以这里同时提供两套出口：
  *
- *  - `game.data / game.forge / game.combat`：UI 形状的门面（适配器读这三个）；
- *  - `game.raw.data / raw.forge / raw.combat`：逻辑层原样，供测试与后续代理使用。
+ *  - `game.data / game.forge / game.combat`（= `game.raw.*`）：逻辑层命名空间原样。
+ *    `gameAdapter.inspectCapabilities()` 按**原始导出名**点名（`previewIdle`、
+ *    `computeWeaponStats`、`arenaOpponentToWaves`…），`live/liveGame.js` 也按原始签名调用
+ *    （`combat.estimatePower(units)`、`forge.previewForge(state, opts)`）。这三个键上若挂
+ *    UI 门面，点名单必然缺项，界面就会整体退回 mock —— Round 2 的「mock 成功路径」正是这么来的。
+ *  - `game.view.data / view.forge / view.combat`：UI 形状的门面，给不想自己拼视图模型的调用方。
  */
 
 import {
@@ -729,10 +733,13 @@ export function installGameApi(game, modules = {}) {
    * ================================================================ */
 
   const api = {
-    data: dataFacade,
-    forge: forgeFacade,
-    combat: combatFacade,
+    // 逻辑层原样：gameAdapter 的点名单与 liveGame 的调用都按这套签名。
+    data,
+    forge,
+    combat,
     raw: { data, forge, combat },
+    // UI 形状门面（可选出口，见文件头）。
+    view: { data: dataFacade, forge: forgeFacade, combat: combatFacade },
 
     // —— gameAdapter 的编排动词 ——
     challengeStage,
