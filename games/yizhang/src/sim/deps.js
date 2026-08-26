@@ -1,22 +1,29 @@
-// 依赖解析：优先用 `../data/gloves.js` 与 `../combat/index.js`，缺席时退回 sim 内置兜底。
+// 依赖接线。生产路径**静态** import 真实 `../data/gloves.js` 与 `../combat/index.js`，
+// 不再有 sim 侧的兜底战斗（fallback-combat 已删除）。
 //
-// 为什么不直接静态 import：这两个文件在 Round 1 还可能只是 .gitkeep，静态 import 会让
-// 整个 sim 加载失败、测试跑不起来。所以走“注入 + 可选动态探测”。
-//
-// TODO(merge): data / combat 合进来之后，可以把下面两行改成静态 import 并删掉 autoWire：
-//   import * as realData from "../data/gloves.js";
-//   import * as realCombat from "../combat/index.js";
+// `installData` / `installCombat` 只保留给测试做替身；`resetDeps()` 回到真实模块，
+// 不是回到兜底。
 
-import * as fallbackData from "./fallback-data.js";
-import * as fallbackCombat from "./fallback-combat.js";
+import * as realData from "../data/gloves.js";
+import * as bridge from "./combat-bridge.js";
+
+const REAL_COMBAT = {
+  resolveSlap: bridge.resolveSlap,
+  resolveSkill: bridge.resolveSkill,
+  tickStatuses: bridge.tickStatuses,
+  applyAwaken: bridge.applyAwaken,
+};
+
+const BASE_GLOVE_BY_ID = realData.GLOVE_BY_ID;
+const BASE_GLOVE = BASE_GLOVE_BY_ID.cotton || realData.GLOVES[0];
 
 let dataMod = null;
 let combatMod = null;
 let cache = null;
 
-/** 手套字段补全，防止 data 少给字段把 sim 打成 NaN */
+/** 手套字段补全，防止替身 data 少给字段把 sim 打成 NaN */
 function normalizeGlove(g, base) {
-  const b = base || fallbackData.GLOVE_BY_ID.cotton;
+  const b = base || BASE_GLOVE;
   const num = (v, d) => (Number.isFinite(v) ? v : d);
   return {
     ...b,
@@ -38,26 +45,31 @@ function normalizeGlove(g, base) {
 }
 
 function rebuild() {
-  const usingRealData = !!(dataMod && Array.isArray(dataMod.GLOVES) && dataMod.GLOVES.length);
-  const rawGloves = usingRealData ? dataMod.GLOVES : fallbackData.GLOVES;
-  const GLOVES = rawGloves.map((g) => normalizeGlove(g, fallbackData.GLOVE_BY_ID[g.id]));
-  const MATCH = { ...fallbackData.MATCH, ...(dataMod && dataMod.MATCH ? dataMod.MATCH : {}) };
+  const overrideGloves = dataMod && Array.isArray(dataMod.GLOVES) && dataMod.GLOVES.length;
+  const rawGloves = overrideGloves ? dataMod.GLOVES : realData.GLOVES;
+  const GLOVES = rawGloves.map((g) => normalizeGlove(g, BASE_GLOVE_BY_ID[g.id]));
+  const MATCH = { ...realData.MATCH, ...(dataMod && dataMod.MATCH ? dataMod.MATCH : {}) };
+  const GLOVE_BY_ID = Object.fromEntries(GLOVES.map((g) => [g.id, g]));
 
+  const usingRealCombat = !combatMod;
   const pick = (name) =>
-    combatMod && typeof combatMod[name] === "function" ? combatMod[name] : fallbackCombat[name];
+    combatMod && typeof combatMod[name] === "function" ? combatMod[name] : REAL_COMBAT[name];
+
+  // combat 内部的延迟结算路径也要看到同一张表
+  bridge.syncGloveTable(GLOVE_BY_ID);
 
   cache = {
     MATCH,
     GLOVES,
-    GLOVE_BY_ID: Object.fromEntries(GLOVES.map((g) => [g.id, g])),
+    GLOVE_BY_ID,
     combat: {
       resolveSlap: pick("resolveSlap"),
       resolveSkill: pick("resolveSkill"),
       tickStatuses: pick("tickStatuses"),
       applyAwaken: pick("applyAwaken"),
     },
-    usingRealData,
-    usingRealCombat: !!(combatMod && typeof combatMod.resolveSlap === "function"),
+    usingRealData: !overrideGloves,
+    usingRealCombat,
   };
   return cache;
 }
@@ -66,7 +78,7 @@ export function getDeps() {
   return cache || rebuild();
 }
 
-/** 由 main.js / 测试注入真实模块；参数是整个模块命名空间对象 */
+/** 测试替身：传整个模块命名空间对象，传 null 回到真实模块 */
 export function installData(mod) {
   dataMod = mod || null;
   cache = null;
@@ -79,44 +91,12 @@ export function installCombat(mod) {
   return getDeps();
 }
 
-/** 回到内置兜底（测试隔离用） */
+/** 卸掉所有替身，回到真实 data + combat */
 export function resetDeps() {
   dataMod = null;
   combatMod = null;
   cache = null;
   return getDeps();
-}
-
-/**
- * 可选：运行时探测真实 data / combat。文件不存在时静默失败。
- * 路径故意拼接 + @vite-ignore，避免打包器在文件缺席时报解析错误。
- */
-export async function autoWireOptionalDeps() {
-  const out = { data: false, combat: false };
-  const dataPath = "../data/" + "gloves.js";
-  const combatPath = "../combat/" + "index.js";
-
-  try {
-    const m = await import(/* @vite-ignore */ dataPath);
-    if (m && Array.isArray(m.GLOVES) && m.GLOVES.length) {
-      installData(m);
-      out.data = true;
-    }
-  } catch {
-    /* data 还没落地 */
-  }
-
-  try {
-    const m = await import(/* @vite-ignore */ combatPath);
-    if (m && typeof m.resolveSlap === "function") {
-      installCombat(m);
-      out.combat = true;
-    }
-  } catch {
-    /* combat 还没落地 */
-  }
-
-  return out;
 }
 
 export function resolveGlove(id) {

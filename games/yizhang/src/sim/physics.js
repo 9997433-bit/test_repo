@@ -4,19 +4,31 @@ import { isSupported } from "./arena.js";
 import { PHYSICS } from "./constants.js";
 import { clamp, damp, forwardX, forwardZ, len2 } from "./math.js";
 
-/** 由 statuses 推出的行动修正 */
-export function statusMods(p) {
+/**
+ * 由 statuses 推出的行动修正。
+ * combat 的状态项是 `{ kind, t, mag }`，sim 早期兜底用的是 `{ id, t, mag }`，两种都认。
+ * `rootUntil` 是 combat 技能（磐石砸地）的自锁，只锁移动不锁出招。
+ */
+export function statusMods(p, now = 0) {
   let speedMul = 1;
   let canMove = true;
   let canAct = true;
+
   for (const s of p.statuses) {
-    if (s.id === "slow") speedMul *= 1 - clamp(s.mag ?? 0.4, 0, 0.9);
-    else if (s.id === "freeze") {
+    if (!s) continue;
+    if (Number.isFinite(s.t) && s.t <= 0) continue;
+    const kind = s.kind || s.id;
+    if (kind === "slow") speedMul *= 1 - clamp(s.mag ?? 0.4, 0, 0.9);
+    else if (kind === "sticky") speedMul *= 1 - clamp(s.mag ?? 0.35, 0, 0.95);
+    else if (kind === "freeze") {
       canMove = false;
       canAct = false;
-    } else if (s.id === "stun") canAct = false;
-    else if (s.id === "root") canMove = false;
+    } else if (kind === "stun") canAct = false;
+    else if (kind === "root") canMove = false;
   }
+
+  if (Number.isFinite(p.rootUntil) && p.rootUntil > now) canMove = false;
+
   return { speedMul, canMove, canAct };
 }
 
@@ -116,13 +128,12 @@ export function resolveGround(state, p, dt) {
 
   if (!p.grounded) return;
 
+  // 失控中（被扇飞）不吃护栏：击退必须能把人送出岛，否则谁也打不死谁。
+  if (p.kbT > 0) return;
+
   const r = len2(p.x, p.z);
   const limit = arena.radius - PHYSICS.railInset;
   if (r <= limit || r < 1e-6) return;
-
-  const speed = len2(p.vx, p.vz);
-  const light = p.kbT <= 0 || speed < PHYSICS.railBlockSpeed;
-  if (!light) return;
 
   const nx = p.x / r;
   const nz = p.z / r;

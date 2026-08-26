@@ -4,22 +4,16 @@
 import { isSupported } from "./arena.js";
 import { getDeps } from "./deps.js";
 import { damageFloor } from "./floor.js";
+import { decideMatch } from "./match.js";
 
 export { createMatch, getPlayer, activeGlove, activeGloveId, respawnPlayer } from "./state.js";
 export { step, applyHits, ZERO_INPUT } from "./step.js";
 export { getView } from "./view.js";
 
-// 依赖接线：真实 data / combat 落地后由 main 或测试注入
-export {
-  installData,
-  installCombat,
-  resetDeps,
-  autoWireOptionalDeps,
-  getDeps,
-  resolveGlove,
-} from "./deps.js";
+// 依赖接线：默认就是真实 ../data/gloves.js + ../combat/index.js，install* 只给测试做替身
+export { installData, installCombat, resetDeps, getDeps, resolveGlove } from "./deps.js";
 
-// combat 同名导出：combat 缺席时这就是实际生效的实现，落地后自动转发到真实实现
+// combat 同名转发，调用方不必知道 bridge 的存在
 export function resolveSlap(state, attacker, glove, now) {
   return getDeps().combat.resolveSlap(state, attacker, glove, now);
 }
@@ -36,8 +30,9 @@ export function applyAwaken(attacker, glove) {
 export { PHYSICS, ARENA, SIM_VERSION } from "./constants.js";
 export { applyKnockback, statusMods } from "./physics.js";
 export { createRngState, nextFloat, nextRange, nextU32 } from "./rng.js";
-export { forwardX, forwardZ } from "./math.js";
+export { FACE, forwardX, forwardZ, rightX, rightZ, yawFromDir, wrapAngle } from "./math.js";
 export { isSupported, tileAt, crackOf } from "./arena.js";
+export { decideMatch, leaderOf } from "./match.js";
 
 /** 生效中的对局常量与手套表（可能来自 ../data，也可能是 sim 兜底） */
 export function getMatchConfig() {
@@ -58,9 +53,16 @@ export function hasFloorUnder(state, x, z) {
   return isSupported(state.arena, x, z);
 }
 
-/** { over, winnerId?, reason? } */
+/**
+ * { over, winnerId?, reason? }
+ * 不依赖 step 是否已经锁定：kills 达标或时间归零就立刻算结束，
+ * 让「直接改分数再问」和「跑满 step」得到同一个答案。
+ */
 export function isMatchOver(state) {
   const m = state.match;
-  if (!m.over) return { over: false };
-  return { over: true, winnerId: m.winnerId, reason: m.reason };
+  if (m.over) return { over: true, winnerId: m.winnerId, reason: m.reason };
+
+  const decided = decideMatch(state);
+  if (!decided) return { over: false };
+  return { over: true, winnerId: decided.winnerId, reason: decided.reason };
 }

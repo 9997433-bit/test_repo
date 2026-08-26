@@ -1,8 +1,10 @@
 // 主推进：一次 step 可能切成多个 <=1/60 的子步，保证不同帧率下手感一致。
 
+import { isSupported } from "./arena.js";
 import { PHYSICS } from "./constants.js";
 import { damageFloor } from "./floor.js";
 import { getDeps } from "./deps.js";
+import { decideMatch } from "./match.js";
 import {
   applyKnockback,
   integratePlayer,
@@ -11,7 +13,7 @@ import {
   statusMods,
 } from "./physics.js";
 import { activeGlove, getPlayer, pushEvent, respawnPlayer } from "./state.js";
-import { forwardX, forwardZ, len2, norm2 } from "./math.js";
+import { clamp, forwardX, forwardZ, len2, norm2 } from "./math.js";
 
 /** 缺省输入：不动、不出招；yaw = null 表示保持当前朝向 */
 export const ZERO_INPUT = Object.freeze({
@@ -30,32 +32,24 @@ function readInput(inputs, id) {
   return raw ? { ...ZERO_INPUT, ...raw } : ZERO_INPUT;
 }
 
-function checkAwaken(state, p) {
-  if (p.meter < 1 || p.awakenedT > 0) return;
-  p.meter = 0;
-  p.awakenedT = state.config.awakenDuration;
-  pushEvent(state, { type: "awaken", id: p.id, gloveId: activeGlove(p).id });
+/**
+ * 掌意由 combat 的 landHit / tickStatuses 记账，这里只补 combat 看不到的击杀奖励。
+ * 觉醒本身由 combat.tickStatuses 在 meter 满时触发，sim 不再自己开觉醒。
+ */
+function gainMeter(p, amount) {
+  p.meter = clamp(p.meter + amount, 0, 1);
 }
 
-function addMeter(state, p, amount) {
-  p.meter = Math.min(1, Math.max(0, p.meter + amount));
-  checkAwaken(state, p);
-}
-
+// invulnT / awakenedT / statuses / knockbackT / impact 由 combat.tickStatuses 倒计时，
+// 这里只管 sim 自己的计时器，避免同一个字段被扣两次。
 function tickTimers(state, p, dt) {
   const dec = (v) => (v > 0 ? Math.max(0, v - dt) : 0);
 
-  p.invulnT = dec(p.invulnT);
   p.dashCd = dec(p.dashCd);
   p.slapCd = dec(p.slapCd);
   p.skillCd = dec(p.skillCd);
   p.switchLockT = dec(p.switchLockT);
   p.kbT = dec(p.kbT);
-
-  if (p.awakenedT > 0) {
-    p.awakenedT = dec(p.awakenedT);
-    if (p.awakenedT === 0) pushEvent(state, { type: "awakenEnd", id: p.id });
-  }
 
   if (p.comboT > 0) {
     p.comboT = dec(p.comboT);
@@ -178,21 +172,33 @@ function handleActions(state, p, input, mods) {
   prev.jump = !!input.jump;
 }
 
-/** 把 combat 返回的命中列表落到物理与计分上 */
+/**
+ * 把 combat 返回的命中列表落到物理与计分上。
+ * `hit.applied` 为 true 表示 combat 已经把冲量写进目标速度（真实 combat 的常态），
+ * 这时 sim 只补自己那份记账：失控窗口、受击倍率、连段、事件。
+ */
 export function applyHits(state, attacker, hits, source) {
   if (!hits || hits.length === 0) return 0;
   let landed = 0;
 
   for (const hit of hits) {
     const target = getPlayer(state, hit.targetId);
-    if (!target || !target.alive || target.invulnT > 0 || target === attacker) continue;
+    if (!target || !target.alive || target === attacker) continue;
 
     const imp = hit.impulse || { x: 0, y: 0, z: 0 };
     if (hit.applied) {
       target.lastHitBy = attacker.id;
       target.lastHitT = state.time;
+      target.lastHitAt = state.time;
       target.hitsTaken++;
+      target.kbT = Math.max(target.kbT, target.knockbackT || 0, PHYSICS.knockControlLock);
+      target.knockScale = Math.min(PHYSICS.knockScaleMax, target.knockScale + PHYSICS.knockGrowth);
+      if ((imp.y || 0) > 0) {
+        target.grounded = false;
+        target.coyoteT = 0;
+      }
     } else {
+      if (target.invulnT > 0) continue;
       applyKnockback(state, target, imp.x || 0, imp.y || 0, imp.z || 0, attacker.id);
     }
 
@@ -205,9 +211,6 @@ export function applyHits(state, attacker, hits, source) {
     attacker.hitsDealt++;
     state.stats.hits++;
     landed++;
-
-    addMeter(state, target, PHYSICS.meterPerHitTaken);
-    addMeter(state, attacker, PHYSICS.meterPerHitDealt);
 
     pushEvent(state, {
       type: "hit",
@@ -226,6 +229,16 @@ export function applyHits(state, attacker, hits, source) {
     attacker.comboT = PHYSICS.comboWindow;
   }
   return landed;
+}
+
+/** combat 延迟结算（陨掌落地 / 疾风冲刺接触 / 残影假掌）回来的命中，按各自的攻击者记账 */
+function applyDelayedHits(state, hits) {
+  if (!hits || hits.length === 0) return;
+  for (const hit of hits) {
+    const attacker = getPlayer(state, hit.attackerId);
+    if (!attacker) continue;
+    applyHits(state, attacker, [hit], "skill");
+  }
 }
 
 function resolveStrike(state, p) {
@@ -273,7 +286,7 @@ function knockOut(state, p, reason) {
     killer.kills++;
     killer.streak++;
     if (killer.streak > killer.bestStreak) killer.bestStreak = killer.streak;
-    addMeter(state, killer, PHYSICS.meterPerKill);
+    gainMeter(killer, PHYSICS.meterPerKill);
   }
 
   pushEvent(state, {
@@ -288,49 +301,37 @@ function knockOut(state, p, reason) {
   p.lastHitBy = null;
 }
 
-function leaderOf(state) {
-  let best = null;
-  for (const p of state.players) {
-    if (!best) {
-      best = p;
-      continue;
-    }
-    if (p.kills > best.kills) best = p;
-    else if (p.kills === best.kills && p.deaths < best.deaths) best = p;
-  }
-  return best;
-}
-
+/** 判定并锁定胜负。判据与 isMatchOver 共用 decideMatch。 */
 function updateMatch(state) {
   const m = state.match;
   m.secondsLeft = Math.max(0, state.config.matchSeconds - state.time);
   if (m.over) return;
 
-  for (const p of state.players) {
-    if (p.kills >= state.config.killsToWin) {
-      m.over = true;
-      m.winnerId = p.id;
-      m.reason = "kills";
-      pushEvent(state, { type: "matchOver", winnerId: p.id, reason: "kills" });
-      return;
-    }
-  }
+  const decided = decideMatch(state);
+  if (!decided) return;
 
-  if (state.time >= state.config.matchSeconds) {
-    const best = leaderOf(state);
-    m.over = true;
-    m.winnerId = best ? best.id : null;
-    m.reason = "time";
-    pushEvent(state, { type: "matchOver", winnerId: m.winnerId, reason: "time" });
-  }
+  m.over = true;
+  m.winnerId = decided.winnerId;
+  m.reason = decided.reason;
+  pushEvent(state, { type: "matchOver", winnerId: m.winnerId, reason: m.reason });
+}
+
+/** 出盘：水平半径超过 arenaRadius + 0.2 且脚下没台，就是掉出去了 */
+function isOffDisk(state, p) {
+  if (p.grounded) return false;
+  if (p.y > state.arena.floorY) return false;
+  if (len2(p.x, p.z) <= state.arena.radius + 0.2) return false;
+  return !isSupported(state.arena, p.x, p.z);
 }
 
 function subStep(state, inputs, dt) {
   const deps = getDeps();
   state.time += dt;
+  state.t = state.time;
   state.tick++;
 
-  deps.combat.tickStatuses(state, dt);
+  const ticked = deps.combat.tickStatuses(state, dt);
+  applyDelayedHits(state, ticked && ticked.hits);
 
   for (const p of state.players) {
     if (!p.alive) {
@@ -345,7 +346,7 @@ function subStep(state, inputs, dt) {
   const frame = [];
   for (const p of state.players) {
     if (!p.alive) continue;
-    const entry = { p, input: readInput(inputs, p.id), mods: statusMods(p) };
+    const entry = { p, input: readInput(inputs, p.id), mods: statusMods(p, state.time) };
     frame.push(entry);
     handleActions(state, p, entry.input, entry.mods);
   }
@@ -368,7 +369,9 @@ function subStep(state, inputs, dt) {
   }
 
   for (const p of state.players) {
-    if (p.alive && p.y < state.config.fallY) knockOut(state, p, "fell");
+    if (!p.alive) continue;
+    if (p.y < state.config.fallY) knockOut(state, p, "fell");
+    else if (isOffDisk(state, p)) knockOut(state, p, "fell");
   }
 
   updateMatch(state);

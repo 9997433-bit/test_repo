@@ -47,7 +47,11 @@ function playerView(p) {
     meter: round4(p.meter),
     awakenedT: round4(p.awakenedT),
     awakened: p.awakenedT > 0,
-    statuses: p.statuses.map((s) => ({ id: s.id, t: round4(s.t), mag: s.mag ?? null })),
+    // combat 用 `kind`，sim 早期用 `id`，view 两个都给，渲染端随便读哪个
+    statuses: p.statuses.map((s) => {
+      const id = s.kind ?? s.id ?? null;
+      return { id, kind: id, t: round4(s.t), mag: s.mag ?? null };
+    }),
 
     alive: p.alive,
     invulnT: round4(p.invulnT),

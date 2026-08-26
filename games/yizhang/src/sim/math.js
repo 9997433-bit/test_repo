@@ -30,15 +30,40 @@ export function wrapAngle(a) {
 }
 
 /**
- * 朝向约定：yaw = 0 面向 -Z，与 three 的 mesh.rotation.y 一致。
- * 渲染端直接 mesh.rotation.y = player.yaw 即可。
+ * 朝向冻结（Round 2）：yaw = 0 面向 -Z，yaw 增大绕 +Y 轴旋转。
+ * 渲染端直接 `mesh.rotation.y = player.yaw`；输入端用 `yawFromDir`。
+ * `src/combat` 内部以 +Z 为 yaw 0，两者相差 `FACE.combatOffset`，
+ * 换算只在 `combat-bridge.js` 一处发生，其余代码一律按本文件的约定写。
  */
+export const FACE = Object.freeze({
+  convention: "yaw0:-Z",
+  forwardX: 0,
+  forwardZ: -1,
+  rightX: 1,
+  rightZ: 0,
+  combatOffset: Math.PI,
+});
+
 export function forwardX(yaw) {
   return -Math.sin(yaw);
 }
 
 export function forwardZ(yaw) {
   return -Math.cos(yaw);
+}
+
+/** 前向的右手边：yaw=0 时指向 +X（见 FACE） */
+export function rightX(yaw) {
+  return Math.cos(yaw);
+}
+
+export function rightZ(yaw) {
+  return -Math.sin(yaw);
+}
+
+/** 世界方向 -> yaw，`forwardX/forwardZ` 的逆 */
+export function yawFromDir(x, z) {
+  return Math.atan2(-x, -z);
 }
 
 /** 指数阻尼：与帧长无关的速度衰减 */
