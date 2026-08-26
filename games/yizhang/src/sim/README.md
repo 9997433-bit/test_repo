@@ -27,10 +27,22 @@ const { over, winnerId, reason } = isMatchOver(state);
 
 `moveX/moveZ` 默认是世界系（input 层已按相机 yaw 转换）；传 `moveSpace: 'local'` 则由 sim 按玩家 yaw 旋转。
 
-### 朝向约定
+### 朝向约定（Round 2 冻结）
 
-`yaw = 0` 面向 **-Z**，与 three 的 `mesh.rotation.y` 一致：渲染端直接 `mesh.rotation.y = player.yaw`。
-`forward = (-sin(yaw), -cos(yaw))`，所以面向 +X 是 `yaw = -PI/2`。
+`yaw = 0` 面向 **-Z**：渲染端直接 `mesh.rotation.y = player.yaw`。
+
+```js
+import { FACE, forwardX, forwardZ, rightX, rightZ, yawFromDir } from "./sim/index.js";
+
+FACE; // { convention: "yaw0:-Z", forwardX: 0, forwardZ: -1, rightX: 1, rightZ: 0, combatOffset: Math.PI }
+forwardX(yaw) === -Math.sin(yaw);
+forwardZ(yaw) === -Math.cos(yaw);
+yawFromDir(dx, dz) === Math.atan2(-dx, -dz); // 世界方向 -> yaw，上面两个的逆
+```
+
+面向 +X 是 `yaw = -PI/2`。**要瞄准某个目标就用 `yawFromDir(target.x - me.x, target.z - me.z)`**，
+不要用 `atan2(dx, dz)`——那是 `src/combat/util.js` 内部的 +Z 基准，两者差 `FACE.combatOffset`（PI）。
+sim 与 combat 之间的相位换算只在 `combat-bridge.js` 里发生一次，别的地方不要再各自补偿。
 
 ### 事件
 
@@ -39,35 +51,43 @@ const { over, winnerId, reason } = isMatchOver(state);
 
 ## data / combat 接线
 
-`../data/gloves.js` 与 `../combat/index.js` 还没落地时，sim 用内置兜底
-（`fallback-data.js` / `fallback-combat.js`，只有木棉是调过的数值）。三种接法：
+`deps.js` **静态** import `../data/gloves.js` 与 `../combat/index.js`，开箱即用，
+不需要 main 或测试做任何注入，sim 侧也不再有第二套兜底战斗。
 
 ```js
-import * as data from "../data/gloves.js";
-import * as combat from "../combat/index.js";
-installData(data);
-installCombat(combat); // 显式注入（推荐）
-
-await autoWireOptionalDeps(); // 运行时探测，文件不存在则静默保持兜底
+import { createMatch, step } from "./sim/index.js"; // 8 掌数值与 8 个主动技已经在局里
 ```
 
-sim 同时按 combat 的导出名转发 `resolveSlap / resolveSkill / tickStatuses / applyAwaken`，
-所以真实 combat 合进来后调用方不用改。
+`installData(mod)` / `installCombat(mod)` 只给测试塞替身，`resetDeps()` 回到真实模块。
 
-`resolveSlap` 的返回约定：
+### combat-bridge
+
+`combat-bridge.js` 是 sim 与 `src/combat` 之间**唯一**的适配点，收敛三处约定差：
+
+| 差异 | 处理 |
+| --- | --- |
+| combat 的 `yaw=0` 面向 +Z | 进出 combat 时整体加/减 `FACE.combatOffset` |
+| data 的 `skillId`（`iron_pull`…）≠ combat handler id（`magnetPull`…） | `SKILL_ALIAS` 映射 |
+| combat 命中是 `{ id, impulse }` 且冲量已写进目标速度 | 转成 `{ targetId, impulse, applied: true }` |
+| combat 有自己的 `cd` / `busyUntil` | 出招时机由 sim 的 attack 状态机独占，调用前清零，避免两套冷却互卡 |
+| combat 的事件字段名（`attackerId` / `playerId`）与碎地记账 | 收进暂存区翻译成 sim 事件，并补 `brokenCount` / `stats.tilesBroken` |
+
+`resolveSlap` 给 sim 的返回约定：
 
 ```js
 { hits: [{ targetId, power, impulse: { x, y, z }, hitX, hitZ, tile, statuses, applied }] }
 ```
 
-冲量由 sim 施加。若 combat 自己已经改了 state，请把该 hit 的 `applied` 置 `true`，sim 就只记分不重复推人。
+`applied: true` 表示冲量已经写进目标速度，sim 只补记账（失控窗口 `kbT`、`knockScale`、连段、事件），
+不重复推人。掌意与觉醒完全由 combat 记账，sim 只在击杀时补 `PHYSICS.meterPerKill`。
 
 ## 物理要点
 
 - 惯性：有限加速度 + 指数摩擦；击退期间 `kbT` 内失控、摩擦降到 1.15，人才滑得出去。
 - 击退：水平速度冲量 + 小抬升，受击方 `knockScale` 每次 +0.075（最高 3.2），落地回一点。
-- 边缘低护栏：站着走不出去；`kbT` 中且水平速度 ≥ `PHYSICS.railBlockSpeed` 的重击可以穿过去。
-- 掉落：`y < config.fallY`（-8）判定出局；脚下台块碎了就没有支撑，会直接漏下去。
+- 边缘低护栏：站着走不出去；**`kbT > 0`（被扇飞）时护栏完全失效**，击退必须能把人送出岛。
+- 掉落：`y < config.fallY`（-8）判定出局；或者水平半径 > `arenaRadius + 0.2` 且脚下无台，
+  一旦掉到台面高度以下就立刻出局（GDD §4）。脚下台块碎了就没有支撑，会直接漏下去。
 - 台面：`arena.tiles` 是圆盘上的方格，各自有 `hp/maxHp/alive/zone/seam`，`damageTileAt(state,x,z,amount)` 是唯一入口。
 
 ## 怎么单测“扇下岛”
@@ -93,5 +113,12 @@ for (let i = 0; i < 360 && !ko; i++) {
 ```
 
 要点：**先把 `invulnT` 清零**（开局没有无敌，但重组后有 1s），**位置要在扇程内**
-（`slapRange + playerRadius`，木棉 2.7 + 0.7），**朝向要对**（背后不吃扇）。
+（`slapRange + playerRadius`，木棉 2.6 + 0.7），**朝向要对**（背后不吃扇），
+**等过前摇**（木棉 `windup` 0.16s，磐石 0.42s，命中在前摇结束那一帧才结算）。
 不想依赖扇击数值时，可以直接 `applyKnockback(state, victim, 30, 4, 0, 'p0')` 再 `step` 到掉出去。
+
+## isMatchOver
+
+`isMatchOver(state)` 不依赖 `step` 是否已经锁定：任一玩家 `kills >= killsToWin`，
+或 `secondsLeft <= 0`，立刻返回 `{ over: true, winnerId, reason }`。
+`step` 用同一份 `decideMatch()` 落锁并发 `matchOver` 事件，两条路答案一致。
