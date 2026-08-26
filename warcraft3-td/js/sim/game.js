@@ -35,6 +35,7 @@
     this.creepHash = new NS.SpatialHash(3);
     this.occupied = {};      // "x,y" -> tower
     this.buildable = this.buildBuildableMask();
+    this.decor = this.generateDecor();
 
     this.wave = 0;
     this.waveState = 'prep';  // prep | spawning | clearing | over
@@ -67,6 +68,28 @@
       mask.push(row);
     }
     return mask;
+  };
+
+  /** Trees, rocks and banners. Kept well clear of the road so the buildable
+   *  ring around it stays intact; decorated tiles simply stop being buildable. */
+  Game.prototype.generateDecor = function () {
+    const g = NS.Config.grid;
+    const out = [];
+    for (let y = 0; y < g.rows; y++) {
+      for (let x = 0; x < g.cols; x++) {
+        const cx = x + 0.5, cy = y + 0.5;
+        const roadD = this.path.distanceTo(cx, cy);
+        const edge = Math.min(x, y, g.cols - 1 - x, g.rows - 1 - y);
+        if (roadD < 3.6 && edge > 1) continue;
+        const r = this.rng.next();
+        const density = edge <= 1 ? 0.75 : 0.3;
+        if (r > density) continue;
+        const kind = r < density * 0.62 ? 'tree' : (r < density * 0.86 ? 'rock' : 'bush');
+        out.push({ x: cx, y: cy, kind, seed: this.rng.next(), scale: 0.8 + this.rng.next() * 0.5 });
+        this.buildable[y][x] = false;
+      }
+    }
+    return out;
   };
 
   Game.prototype.tileKey = function (x, y) { return x + ',' + y; };

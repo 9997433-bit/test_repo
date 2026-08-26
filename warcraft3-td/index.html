@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>艾泽洛斯要塞 · 塔防 | Azeroth Keep TD</title>
+<link rel="stylesheet" href="css/wc3.css">
+</head>
+<body>
+<div id="app">
+  <!-- ===================== top resource bar ===================== -->
+  <header id="topbar">
+    <div class="tb-left">
+      <div class="res gold" title="Gold">
+        <span class="ico coin"></span><b id="res-gold">0</b>
+        <em class="rate" id="res-interest">2%</em>
+      </div>
+      <div class="res lumber" title="Lumber">
+        <span class="ico log"></span><b id="res-lumber">0</b>
+      </div>
+      <div class="res lives" title="Lives">
+        <span class="ico heart"></span><b id="res-lives">20/20</b>
+      </div>
+      <div class="res clock">
+        <span class="ico sun"></span><b id="res-time">0:00</b>
+      </div>
+    </div>
+
+    <div class="tb-center">
+      <div class="wave-box">
+        <span class="wave-label" data-i18n="wave">波次</span>
+        <b id="wave-number">1 / 30</b>
+        <div id="wave-preview" class="wave-preview"></div>
+      </div>
+      <button id="btn-next-wave" class="wc3-btn primary">下一波</button>
+    </div>
+
+    <div class="tb-right">
+      <div class="speed-group">
+        <button class="wc3-btn tiny" data-speed="pause" title="Pause">❙❙</button>
+        <button class="wc3-btn tiny on" data-speed="1">1×</button>
+        <button class="wc3-btn tiny" data-speed="1.5">1.5×</button>
+        <button class="wc3-btn tiny" data-speed="2">2×</button>
+      </div>
+      <div class="menu-group">
+        <button class="wc3-btn" data-menu="quests" data-i18n="quests">任务</button>
+        <button class="wc3-btn" data-menu="allies" data-i18n="allies">盟友</button>
+        <button class="wc3-btn" data-menu="log" data-i18n="log">日志</button>
+        <button class="wc3-btn" data-menu="menu" data-i18n="menu">菜单</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== battlefield ===================== -->
+  <main id="viewport">
+    <canvas id="world" tabindex="0"></canvas>
+    <div id="logstrip"></div>
+    <div id="flash"></div>
+    <div id="fps"></div>
+  </main>
+
+  <!-- ===================== bottom command console ===================== -->
+  <footer id="bottombar">
+    <section class="console-panel portrait-panel">
+      <div class="portrait-frame">
+        <canvas id="portrait-canvas" width="118" height="118"></canvas>
+      </div>
+      <div class="portrait-meta">
+        <div id="portrait-name">艾泽洛斯要塞</div>
+        <div id="portrait-sub"></div>
+      </div>
+    </section>
+
+    <section class="console-panel stat-panel">
+      <div id="statpanel"></div>
+    </section>
+
+    <section class="console-panel card-panel">
+      <div id="commandcard"></div>
+    </section>
+
+    <section class="console-panel map-panel">
+      <div class="minimap-frame">
+        <canvas id="minimap" width="200" height="164"></canvas>
+      </div>
+    </section>
+  </footer>
+
+  <div id="tooltip"></div>
+  <div id="overlay"></div>
+</div>
+
+<!-- classic scripts, in dependency order, so file:// works with no server -->
+<script src="js/config.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/data/strings.zh.js"></script>
+<script src="js/data/strings.en.js"></script>
+<script src="js/data/damageTable.js"></script>
+<script src="js/data/towers.js"></script>
+<script src="js/data/creeps.js"></script>
+<script src="js/data/waves.js"></script>
+<script src="js/data/heroes.js"></script>
+<script src="js/engine/rng.js"></script>
+<script src="js/engine/path.js"></script>
+<script src="js/engine/spatial.js"></script>
+<script src="js/engine/camera.js"></script>
+<script src="js/engine/audio.js"></script>
+<script src="js/engine/input.js"></script>
+<script src="js/engine/loop.js"></script>
+<script src="js/sim/combat.js"></script>
+<script src="js/entities/fx.js"></script>
+<script src="js/entities/creep.js"></script>
+<script src="js/entities/projectile.js"></script>
+<script src="js/entities/tower.js"></script>
+<script src="js/entities/hero.js"></script>
+<script src="js/sim/game.js"></script>
+<script src="js/render/terrain.js"></script>
+<script src="js/render/sprites.js"></script>
+<script src="js/render/icons.js"></script>
+<script src="js/render/renderer.js"></script>
+<script src="js/ui/tooltip.js"></script>
+<script src="js/ui/hud.js"></script>
+<script src="js/ui/commandCard.js"></script>
+<script src="js/ui/minimap.js"></script>
+<script src="js/ui/menus.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
