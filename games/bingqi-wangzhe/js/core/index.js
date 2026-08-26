@@ -23,11 +23,14 @@ import {
   IDLE_RESOURCE_IDS,
   LINEUP_SLOTS,
   LINEUP_UNLOCK_STAGES,
+  SLOT_UNLOCK,
   FORGE_STAGE_IDS,
   ARENA_DAILY_ATTACKS,
   ARENA_BASE_RANK,
   ARENA_LOG_LIMIT,
+  STAMINA_MAX,
   STAMINA_REGEN_MS,
+  STARTER_RESOURCES,
   createInitialState,
   hydrate,
   serialize,
@@ -78,11 +81,14 @@ export {
   IDLE_RESOURCE_IDS,
   LINEUP_SLOTS,
   LINEUP_UNLOCK_STAGES,
+  SLOT_UNLOCK,
   FORGE_STAGE_IDS,
   ARENA_DAILY_ATTACKS,
   ARENA_BASE_RANK,
   ARENA_LOG_LIMIT,
+  STAMINA_MAX,
   STAMINA_REGEN_MS,
+  STARTER_RESOURCES,
   createInitialState,
   hydrate,
   serialize,
@@ -122,6 +128,7 @@ export const EVENTS = Object.freeze({
   LINEUP_CHANGED: 'lineup:changed',
   BATTLE_END: 'battle:end',
   STAGE_CLEARED: 'campaign:cleared',
+  STAGE_SWEPT: 'campaign:swept',
   ARENA_END: 'arena:end',
 });
 
@@ -149,8 +156,8 @@ const AUTOSAVE_INTERVAL_MS = 10 * SECOND;
  * @param {boolean} [options.autoLoad=true]   构造时尝试读档
  * @param {boolean} [options.autoSave=true]   tick 时按间隔自动存档
  * @param {number} [options.tzOffsetMinutes]  每日刷新用的时区偏移（UI 注入）
- * @param {boolean} [options.idleResources=true] tick 时是否由 core 记账资源挂机；
- *        组合根接入 forge/idle.js 后传 false，避免两套挂机账本各发一份收益
+ * @param {boolean} [options.idleResources]   已废弃且被忽略：core 的 tick 永不记账资源挂机，
+ *        挂机产出的唯一入账口是 `game.collectIdle`（forge/idle.js）
  * @returns {Game & Record<string, any>}
  */
 export function createGame(options = {}) {
@@ -165,7 +172,6 @@ export function createGame(options = {}) {
 
   const autoSave = options.autoSave !== false;
   const explicitSeed = options.seed !== undefined && options.seed !== null;
-  const idleOpts = { resources: options.idleResources !== false };
 
   let state = createInitialState({
     seed: explicitSeed ? options.seed : normalizeSeed(clock.nowMs()),
@@ -245,16 +251,19 @@ export function createGame(options = {}) {
     const at = Number.isFinite(atMs) ? atMs : nowMs();
     const rolled = resetDaily(state, at);
     if (rolled) bus.emit(EVENTS.DAILY_RESET, { at, state });
-    const report = tickIdle(state, at, idleOpts);
+    const report = tickIdle(state, at);
     if (report.elapsedMs > 0) bus.emit(EVENTS.IDLE_TICK, report);
     if (autoSave && at - lastAutoSaveMs >= AUTOSAVE_INTERVAL_MS) save();
     return report;
   }
 
-  /** 领取挂机仓库中的整数产出。 */
+  /**
+   * 领取挂机仓库中的整数产出（只剩旧档遗留余额）。
+   * 装上编排层后 `installGameApi()` 会用 forge 的版本覆盖这个方法。
+   */
   function collectIdle(atMs) {
     const at = Number.isFinite(atMs) ? atMs : nowMs();
-    tickIdle(state, at, idleOpts);
+    tickIdle(state, at);
     const collected = takeIdlePending(state, at);
     bus.emit(EVENTS.IDLE_COLLECTED, { collected, at });
     bus.emit(EVENTS.STATE_CHANGED, { reason: 'idle:collect', state });
@@ -356,8 +365,8 @@ export function createGame(options = {}) {
   if (options.autoLoad !== false) load();
   else applyTimezone();
 
-  // 首次进入即结算一次离线收益，UI 可以直接读 idle:tick 报告。
-  const bootReport = tickIdle(state, nowMs(), idleOpts);
+  // 首次进入即结算一次体力与计时，UI 可以直接读 idle:tick 报告。
+  const bootReport = tickIdle(state, nowMs());
   resetDaily(state, nowMs());
   bus.emit(EVENTS.READY, { state, boot: bootReport });
 

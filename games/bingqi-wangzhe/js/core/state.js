@@ -3,14 +3,28 @@
  *
  * 纯数据 + 纯函数：不碰 DOM、不碰 localStorage、不调用 Date.now（时间一律由参数注入）。
  * forge / combat / ui 通过这里的原语读写资源与进度。
+ *
+ * 数值一律取自 `data/balance.js`（架构允许 core → data 的向下依赖，balance 是无 import 的叶子模块）：
+ * Round 2 的开局资源 / 栏位门槛 / 体力规则各写一份，三处互相漂移，Round 3 起只留 balance 一份。
  */
 
 import { HOUR, MINUTE, OFFLINE_CAP_HOURS, elapsedSince, gameDayIndex } from './clock.js';
+import {
+  FORGE_STAGES,
+  MAX_LINEUP,
+  SHARD_RESOURCE_IDS,
+  SLOT_UNLOCK_STAGES,
+  STAMINA_RULES,
+  STARTER_KIT,
+} from '../data/balance.js';
 
 /** 存档结构版本，字段不兼容变更时 +1 并在 MIGRATIONS 里补迁移。 */
 export const SAVE_VERSION = 2;
 
-/** 资源 ID 全集（GDD 3.1）。 */
+/**
+ * 资源 ID 全集（GDD 3.1 + fable-3 §2 的品质碎片）。
+ * 碎片由分解与关卡掉落产出，不登记就会在 hydrate 时被当作未知字段丢掉。
+ */
 export const RESOURCE_IDS = Object.freeze([
   'coin',
   'iron',
@@ -22,22 +36,29 @@ export const RESOURCE_IDS = Object.freeze([
   'luckyCharm',
   'stamina',
   'diamond',
+  // shardCommon / shardUncommon / shardRare / shardEpic / shardLegendary / shardMythic
+  ...SHARD_RESOURCE_IDS,
 ]);
 
 /** 资源上限；未列出的资源无上限。 */
-export const RESOURCE_CAPS = Object.freeze({ stamina: 120 });
+export const RESOURCE_CAPS = Object.freeze({ stamina: STAMINA_RULES.cap });
 
-/** 体力恢复：每 6 分钟 +1（GDD 3.1）。 */
-export const STAMINA_REGEN_MS = 6 * MINUTE;
+/** 体力上限与回复间隔（balance.STAMINA_RULES：120 上限，6 分钟 +1）。 */
+export const STAMINA_MAX = STAMINA_RULES.cap;
+export const STAMINA_REGEN_MS = STAMINA_RULES.regenSeconds * 1000;
 
 /** 阵容总栏位。 */
-export const LINEUP_SLOTS = 5;
+export const LINEUP_SLOTS = MAX_LINEUP;
 
-/** 阵容解锁门槛：第 N 栏需要通关到第 [N-1] 关（与 data/balance.js 同表）。 */
-export const LINEUP_UNLOCK_STAGES = Object.freeze([0, 3, 8, 16, 28]);
+/**
+ * 阵容解锁门槛：通关第 `SLOT_UNLOCK_STAGES[i]` 关后开第 i+1 格（0 = 开局即有）。
+ * core / combat / balance 三处曾各写一份，现统一读 balance 的 [0, 2, 4, 9, 14]。
+ */
+export const SLOT_UNLOCK = SLOT_UNLOCK_STAGES;
+export const LINEUP_UNLOCK_STAGES = SLOT_UNLOCK_STAGES;
 
-/** 三座炉的 id（与 data/balance.js 的 FORGE_STAGES 同表；core 不 import data）。 */
-export const FORGE_STAGE_IDS = Object.freeze(['iron', 'silver', 'gold']);
+/** 三座炉的 id（data/balance.js 的 FORGE_STAGES）。 */
+export const FORGE_STAGE_IDS = Object.freeze([...FORGE_STAGES]);
 
 /** 竞技场每日挑战次数。 */
 export const ARENA_DAILY_ATTACKS = 5;
@@ -60,8 +81,10 @@ export const IDLE_RESOURCE_IDS = Object.freeze([
 ]);
 
 /**
- * 挂机产出速率（每小时），按「已通关最高关卡」估算。
- * 数值为 Round 1 占位常量，Round 2 由 fable-3 的 data/balance.js 对齐后替换。
+ * 挂机产出速率（每小时）的**估算值**，只用于 UI 展示与 `tickIdle` 的报告字段。
+ *
+ * 真正决定发放量的是 `forge/idle.js` 的 `idleRatesFor()`（读 balance.IDLE_RATES，按分钟计）。
+ * core 这份不参与入账，两者不一致也不会造成多发或少发。
  * @param {number} highestStage 已通关最高关卡（0 = 尚未通关）
  * @returns {Record<string, number>} 每小时产出
  */
@@ -254,6 +277,8 @@ export function hydrate(raw, options = {}) {
 export function serialize(state) {
   const s = isPlainObject(state) ? state : createInitialState();
   const resources = {};
+  // 先按全集写一遍，碎片这类新资源即使当前 state 里缺字段也必须落档。
+  for (const id of RESOURCE_IDS) resources[id] = round(toFinite(s.resources?.[id], 0), 3);
   for (const id of Object.keys(s.resources || {})) {
     resources[id] = round(toFinite(s.resources[id], 0), 3);
   }
@@ -276,6 +301,7 @@ export function serialize(state) {
     campaign: cloneJson(s.campaign) || {},
     arena: cloneJson(s.arena) || {},
     codex: cloneJson(s.codex) || {},
+    // forge 必须随档：保底计数丢了会重开 8 锤保底，uid 序号丢了会锻出重复 uid。
     forge: cloneJson(normalizeForgeState(s.forge, s.weapons)),
     flags: cloneJson(s.flags) || {},
     idle: {
@@ -295,24 +321,24 @@ export function serialize(state) {
 }
 
 /**
- * 结算挂机产出与体力回复。幂等安全：可以每帧调用。
+ * 结算体力回复与时间锚点。幂等安全：可以每帧调用。
  *
- * - 单次结算的时间上限 = `idle.capHours`（默认 8 小时，GDD 3.7）。
- * - 仓库上限同样是 capHours × 每小时产出，超出部分记入 `idle.wastedMs`。
- * - 体力按真实经过时间回复（受 120 上限自然封顶），残余不足 6 分钟的部分记在 `staminaCarryMs`。
+ * **不发资源**：挂机产出的唯一入账口是 `forge.collectIdle`（经 `core/api.js` 暴露成
+ * `game.collectIdle`）。core 若再按小时费率往 `idle.pending` 记一笔，同一段时间就会
+ * 兑现两次 —— Round 2 的双计挂机正是这么来的，所以这里只保留体力与计时。
+ *
+ * - 体力按真实经过时间回复（受 STAMINA_RULES.cap 自然封顶），残余不足一格的部分记在 `staminaCarryMs`。
+ * - `idle.capHours`（默认 8 小时）仍用来统计被浪费的离线时长 `wastedMs`。
  * - 时间倒流（改系统时钟）只推进 lastTickMs，不产生收益。
  *
  * @param {object} state
  * @param {number} nowMs 注入的当前时间
- * @param {{ resources?: boolean }} [opts] `resources:false` 时只回体力：
- *        组合根接入 forge/idle.js 之后，资源挂机由 forge 记账，core 不能再记一遍。
  * @returns {{ elapsedMs: number, cappedMs: number, wastedMs: number, capped: boolean,
  *   gained: Record<string, number>, stamina: number, pending: Record<string, number>,
- *   rates: Record<string, number>, offline: boolean }}
+ *   rates: Record<string, number>, offline: boolean }} `gained` 恒为全 0，仅为兼容旧调用点保留
  */
-export function tickIdle(state, nowMs, opts = {}) {
+export function tickIdle(state, nowMs) {
   const s = state;
-  const accrueResources = opts.resources !== false;
   if (!isPlainObject(s) || !isPlainObject(s.idle)) {
     return emptyTickReport(idleRatesPerHour(0));
   }
@@ -327,21 +353,10 @@ export function tickIdle(state, nowMs, opts = {}) {
     return { ...emptyTickReport(rates), pending: { ...s.idle.pending } };
   }
 
-  const hours = span.cappedMs / HOUR;
-  for (const id of IDLE_RESOURCE_IDS) {
-    const rate = accrueResources ? rates[id] || 0 : 0;
-    if (rate <= 0) {
-      gained[id] = 0;
-      continue;
-    }
-    const cap = rate * (capMs / HOUR);
-    const before = Math.max(0, toFinite(s.idle.pending[id], 0));
-    const next = Math.min(cap, before + rate * hours);
-    gained[id] = Math.max(0, next - before);
-    s.idle.pending[id] = next;
-  }
+  // 资源仓库不再由 core 累进；`gained` 全 0 是给旧调用点的兼容形状。
+  for (const id of IDLE_RESOURCE_IDS) gained[id] = 0;
 
-  // 体力：整段真实时间都算，6 分钟一点，余量留到下次。
+  // 体力：整段真实时间都算，一格一点，余量留到下次。
   const staminaMs = span.elapsedMs + Math.max(0, toFinite(s.idle.staminaCarryMs, 0));
   const staminaTicks = Math.floor(staminaMs / STAMINA_REGEN_MS);
   let staminaGained = 0;
@@ -375,7 +390,9 @@ export function tickIdle(state, nowMs, opts = {}) {
 
 /**
  * 取走挂机仓库里的整数部分（小数留在仓库里继续累积），并写入资源。
- * forge 的 `collectIdle` 可直接复用。
+ *
+ * `tickIdle` 不再往仓库累进，因此新档的 `idle.pending` 恒为 0；本函数只用来一次性
+ * 兑现旧档里遗留的仓库余额，兑现后即清零，不会与 `forge.collectIdle` 重复入账。
  * @param {object} state
  * @param {number} [nowMs]
  * @returns {Record<string, number>} 实际领取量
@@ -628,19 +645,26 @@ function normalizeArenaLog(raw) {
     }));
 }
 
+/**
+ * 开局礼包：balance.STARTER_KIT（360 铜钱 / 60 精铁 = 精铁炉 3 锤）+ 1 张幸运符，
+ * 体力按 STAMINA_RULES.startFull 直接给满。
+ *
+ * 之前的 200/30/60 只够 1 锤，首锤若出低 roll 就卡在第 1 关；满体力则保证
+ * 1–20 关（16×3 + 4×6 = 72 体力）在首个小时内打得完。
+ */
+export const STARTER_RESOURCES = Object.freeze({
+  ...STARTER_KIT,
+  luckyCharm: 1,
+  stamina: STAMINA_RULES.startFull ? STAMINA_RULES.cap : 0,
+});
+
 function defaultResources() {
-  return {
-    coin: 200,
-    iron: 30,
-    silverOre: 0,
-    goldOre: 0,
-    fireCrystal: 0,
-    iceCrystal: 0,
-    thunderCrystal: 0,
-    luckyCharm: 1,
-    stamina: 60,
-    diamond: 0,
-  };
+  const resources = {};
+  for (const id of RESOURCE_IDS) resources[id] = 0;
+  for (const [id, amount] of Object.entries(STARTER_RESOURCES)) {
+    resources[id] = clampResource(id, amount);
+  }
+  return resources;
 }
 
 function defaultIdlePending() {
