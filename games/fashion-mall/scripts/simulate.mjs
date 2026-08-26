@@ -37,16 +37,16 @@ const PAID_GAME_SHARE = 0.3;
 // ECONOMY.md §7 的机器人上界。空值表示文档没有给出该项的定量参考。
 const ECONOMY_REFERENCE = {
   180: {
-    active: { levelRange: [3, 4], earnedGold: 42_000, incomePerSec: 400 },
-    idle: { levelRange: [3, 3], earnedGold: null, incomePerSec: 334 },
+    active: { levelRange: [3, 3], earnedGold: 45_000, incomePerSec: 462 },
+    idle: { levelRange: [3, 3], earnedGold: 24_000, incomePerSec: 320 },
   },
   900: {
-    active: { levelRange: [6, 6], earnedGold: null, incomePerSec: 19_000 },
-    idle: { levelRange: [5, 5], earnedGold: null, incomePerSec: 7_000 },
+    active: { levelRange: [5, 5], earnedGold: 2_920_000, incomePerSec: 7_272 },
+    idle: { levelRange: [5, 5], earnedGold: 2_190_000, incomePerSec: 5_639 },
   },
   3600: {
-    active: { levelRange: [7, 7], earnedGold: 260_000_000, incomePerSec: 160_000 },
-    idle: { levelRange: [7, 7], earnedGold: null, incomePerSec: null },
+    active: { levelRange: [7, 7], earnedGold: 172_000_000, incomePerSec: 126_000 },
+    idle: { levelRange: [7, 7], earnedGold: 61_000_000, incomePerSec: 36_000 },
   },
 };
 
@@ -389,7 +389,7 @@ const report = {
       idle.levelReachedAt[MAX_PLAYER_LEVEL] === undefined
         ? null
         : Number((idle.levelReachedAt[MAX_PLAYER_LEVEL] / 60).toFixed(1)),
-    文档纯挂机升到满级分钟: 39.8,
+    文档纯挂机升到满级分钟: 38.6,
   },
   投资次数: {
     半活跃: active.stats,
