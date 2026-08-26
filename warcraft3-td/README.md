@@ -2,6 +2,14 @@
 
 独立目录中的《魔兽争霸 III》风格塔防致敬作。玩法参考 Element TD、Wintermaul 与经典迷宫 TD，**不含暴雪版权素材与专有名词**（画布绘制 + WebAudio 合成，英雄与地名均为原创）。
 
+## 线上
+
+GitHub Pages 一级目录（与其他游戏并列，互不覆盖）：
+
+https://9997433-bit.github.io/test_repo/warcraft3-td/
+
+目录页：https://9997433-bit.github.io/test_repo/
+
 ## 运行
 
 用浏览器直接打开 `index.html`（`file://` 可用），或：
