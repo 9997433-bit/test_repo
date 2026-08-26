@@ -437,7 +437,7 @@ function renderNeighborList(sheet: HTMLElement, state: GameState, rerender: () =
     );
     card.innerHTML =
       `<h4><span aria-hidden="true" style="${SEAL_STYLE}">${def.seal}</span><span style="white-space:nowrap">${def.name}</span></h4>` +
-      `<div class="muted"><small>${heartRow(entry.hearts)}</small> · ${entry.unlocked ? (spent ? "今日已叨扰，明日再来" : `可浇 ${entry.waterLeft} · 可摘 ${entry.pickLeft}`) : `${def.unlockLevel} 阶后来往`}</div>` +
+      `<div class="muted"><small>${heartRow(entry.hearts)}</small> · <span style="white-space:nowrap">${entry.unlocked ? (spent ? "今日已叨扰，明日再来" : `可浇 ${entry.waterLeft} · 可摘 ${entry.pickLeft}`) : `${def.unlockLevel} 阶后来往`}</span></div>` +
       `<div class="muted">${entry.unlocked ? def.greeting : "隔篱只见花影"}</div>`;
     card.addEventListener("click", () => {
       visitFocus = def.id;
