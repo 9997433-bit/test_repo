@@ -38,6 +38,10 @@
 
     this.fps = 0;
     this.tps = 0;
+    // Peak frame time over the last reporting window. Averaged fps hides the
+    // single 90ms hitch that a player actually notices.
+    this.worstFrameMs = 0;
+    this._worstFrame = 0;
     this._fpsFrames = 0;
     this._fpsTicks = 0;
     this._fpsTimer = 0;
@@ -121,9 +125,12 @@
     this._fpsFrames++;
 
     this._fpsTimer += elapsed;
+    if (elapsed > this._worstFrame) this._worstFrame = elapsed;
     if (this._fpsTimer >= 500) {
       this.fps = (this._fpsFrames * 1000) / this._fpsTimer;
       this.tps = (this._fpsTicks * 1000) / this._fpsTimer;
+      this.worstFrameMs = this._worstFrame;
+      this._worstFrame = 0;
       this._fpsFrames = 0;
       this._fpsTicks = 0;
       this._fpsTimer = 0;

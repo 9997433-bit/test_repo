@@ -6,6 +6,7 @@
   'use strict';
 
   var TAU = Math.PI * 2;
+  var HURT_FLASH = global.WC3.Creep ? global.WC3.Creep.HURT_FLASH : 0.12;
 
   // When set, every filled primitive gets a dark contour. This is what makes
   // units readable against the painted terrain.
@@ -78,6 +79,15 @@
     var c = parseColor(color);
     return 'rgb(' + clamp255(c[0] + amount) + ',' + clamp255(c[1] + amount) +
       ',' + clamp255(c[2] + amount) + ')';
+  }
+
+  /** Two dots. Cheap, but it is what turns a coloured blob into a creature. */
+  function eyes(ctx, x, y, spread, size, color) {
+    var keep = outline;
+    outline = 0;
+    ell(ctx, x - spread, y, size, size, color);
+    ell(ctx, x + spread, y, size, size, color);
+    outline = keep;
   }
 
   function shadow(ctx, x, yGround, r, tilt) {
@@ -366,9 +376,9 @@
     var body = c.def.color;
     if (c.slowTimer > 0) body = mix(body, '#7fd8ff', 0.35);
     if (c.poisonTimer > 0) body = mix(body, '#8ce05a', 0.3);
-    // Getting hit brightens the body itself; an overlay blob at this size just
-    // hides the unit under constant fire.
-    if (c.hurtFlash > 0) body = mix(body, '#fff2d0', 0.5);
+    // Getting hit brightens the body and fades out. A fixed-strength tint (or
+    // an overlay blob) just reads as "washed out" under sustained fire.
+    if (c.hurtFlash > 0) body = mix(body, '#fff2d0', 0.55 * (c.hurtFlash / HURT_FLASH));
 
     ctx.save();
     var bob = Math.sin(time * 7 + c.id) * (c.flying ? 0 : r * 0.06);
@@ -384,6 +394,7 @@
       case 'soldier':
         rr(ctx, x, y - r * 1.7 + bob, r * 1.1, r * 1.2, r * 0.3, body);
         ell(ctx, x, y - r * 2.05 + bob, r * 0.46, r * 0.46, '#e8c9a0');
+        eyes(ctx, x, y - r * 2.08 + bob, r * 0.17, r * 0.1, '#3a2c22');
         rr(ctx, x, y - r * 2.35 + bob, r * 1.0, r * 0.4, r * 0.2, shade(body, -30));
         ctx.strokeStyle = '#cfd6e0';
         ctx.lineWidth = 2 * s;
@@ -395,14 +406,25 @@
       case 'beast':
         ell(ctx, x, y - r * 0.85 + bob, r * 1.05, r * 0.68, body);
         ell(ctx, x + r * 0.85, y - r * 1.15 + bob, r * 0.46, r * 0.42, shade(body, 20));
+        eyes(ctx, x + r * 0.85, y - r * 1.22 + bob, r * 0.16, r * 0.09, '#6d1c1c');
         ctx.fillStyle = '#7b2d2d';
         ctx.fillRect(x - r * 1.1, y - r * 0.9 + bob, r * 0.4, r * 0.16);
         break;
       case 'brute':
         ell(ctx, x, y - r * 1.15 + bob, r * 1.15, r * 1.0, body);
-        ell(ctx, x, y - r * 2.15 + bob, r * 0.58, r * 0.55, shade(body, 24));
         ell(ctx, x - r * 1.2, y - r * 1.3 + bob, r * 0.42, r * 0.5, shade(body, -20));
         ell(ctx, x + r * 1.2, y - r * 1.3 + bob, r * 0.42, r * 0.5, shade(body, -20));
+        ell(ctx, x, y - r * 2.15 + bob, r * 0.58, r * 0.55, shade(body, 24));
+        eyes(ctx, x, y - r * 2.2 + bob, r * 0.22, r * 0.14, '#2a2018');
+        // Tusks: reads as "big melee bruiser" even at minimum zoom.
+        poly(ctx, [
+          [x - r * 0.34, y - r * 1.95 + bob], [x - r * 0.14, y - r * 1.95 + bob],
+          [x - r * 0.26, y - r * 1.62 + bob]
+        ], '#efe6cf');
+        poly(ctx, [
+          [x + r * 0.34, y - r * 1.95 + bob], [x + r * 0.14, y - r * 1.95 + bob],
+          [x + r * 0.26, y - r * 1.62 + bob]
+        ], '#efe6cf');
         break;
       case 'rider':
         ell(ctx, x, y - r * 0.9 + bob, r * 1.25, r * 0.6, '#6b5a49');
@@ -430,6 +452,7 @@
       case 'demon':
         ell(ctx, x, y - r * 1.3 + bob, r * 1.0, r * 1.0, body);
         ell(ctx, x, y - r * 2.2 + bob, r * 0.52, r * 0.5, shade(body, 26));
+        eyes(ctx, x, y - r * 2.25 + bob, r * 0.19, r * 0.11, '#ffe27a');
         poly(ctx, [[x - r * 0.55, y - r * 2.5], [x - r * 0.2, y - r * 2.5], [x - r * 0.75, y - r * 3.1]], '#3a1e1a');
         poly(ctx, [[x + r * 0.55, y - r * 2.5], [x + r * 0.2, y - r * 2.5], [x + r * 0.75, y - r * 3.1]], '#3a1e1a');
         ell(ctx, x, y - r * 1.3 + bob, r * 1.5, r * 1.5, '#ff7a4a', 0.14);
@@ -452,7 +475,7 @@
     if (c.boss) {
       // Crown marks the wave boss.
       ctx.fillStyle = '#ffd76a';
-      var cy = y - r * 3.0;
+      var cy = y - r * 2.85;
       poly(ctx, [
         [x - r * 0.6, cy], [x + r * 0.6, cy], [x + r * 0.6, cy - r * 0.35],
         [x + r * 0.3, cy - r * 0.1], [x, cy - r * 0.45], [x - r * 0.3, cy - r * 0.1],
@@ -475,7 +498,7 @@
     if (opts && opts.showBars !== false) {
       var bw = Math.max(16, r * 2.2);
       var bh = Math.max(3, 3.2 * s);
-      var by = y - r * (c.boss ? 3.6 : 2.9);
+      var by = y - r * (c.boss ? 3.7 : 2.9);
       var frac = Math.max(0, c.hp / c.hpMax);
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
       ctx.fillRect(x - bw / 2 - 1, by - 1, bw + 2, bh + 2);

@@ -403,6 +403,7 @@
     this.hud.setFps(
       'FPS ' + loop.fps.toFixed(0) +
       '  TPS ' + loop.tps.toFixed(0) +
+      '  PEAK ' + loop.worstFrameMs.toFixed(0) + 'ms' +
       '\n' + I18N.t('creeps') + ' ' + this.game.creeps.length +
       '  ' + I18N.t('towersBuilt') + ' ' + this.game.towers.length +
       '\nFX ' + this.game.fx.length + '  PROJ ' + this.game.projectiles.length

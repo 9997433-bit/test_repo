@@ -90,6 +90,24 @@ module.exports = function (t, WC3) {
     t.ok(loop.accumulator >= 0, 'accumulator stays sane');
   });
 
+  t.test('the loop reports fps, tps and the worst frame in each window', function () {
+    var loop = new Loop({ update: function () {}, render: function () {} });
+    var reports = 0;
+    loop.onStats = function () { reports++; };
+    loop.running = true;
+    loop.lastTime = 0;
+    var time = 0;
+    for (var i = 0; i < 60; i++) {
+      time += (i === 20) ? 90 : 16.7;   // one deliberate hitch
+      loop.frame(time);
+    }
+    t.gt(reports, 0, 'stats callback fired');
+    t.close(loop.fps, 60, 12, 'fps is roughly 60');
+    t.close(loop.tps, Config.TICK_RATE, Config.TICK_RATE * 0.25, 'tps tracks the tick rate');
+    t.gt(loop.worstFrameMs, 0, 'a peak frame time is reported');
+    t.lt(loop.worstFrameMs, 91, 'peak never exceeds the real frame delta');
+  });
+
   t.test('spatial hash finds exactly the entities inside the radius', function () {
     var hash = new SpatialHash(64, 1000, 1000);
     var ents = [];

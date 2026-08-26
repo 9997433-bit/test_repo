@@ -108,7 +108,7 @@
     if (!this.alive || amount <= 0) return 0;
     var dealt = Math.min(amount, this.hp);
     this.hp -= dealt;
-    this.hurtFlash = 0.12;
+    this.hurtFlash = Creep.HURT_FLASH;
     return dealt;
   };
 
@@ -149,6 +149,9 @@
       this.z = 52 + Math.sin(this.anim * 2.4 + this.id * 0.7) * 5;
     }
   };
+
+  /** Seconds a hit stays visible as a bright flash on the body. */
+  Creep.HURT_FLASH = 0.12;
 
   global.WC3.Creep = Creep;
 
