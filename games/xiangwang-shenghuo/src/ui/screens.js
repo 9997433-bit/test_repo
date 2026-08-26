@@ -590,11 +590,7 @@ function detailStall(state, ui) {
     : `<p class="ghost">先在货架上点一样东西，再定数量。</p>`;
 
   return `<h2>摊位</h2>
-    <p class="ghost">摊上价钱是基准价的 ${Math.round(STALL_MARKUP * 100)}%${
-      (state.guests || []).some((g) => GUESTS.find((x) => x.id === g.id)?.buff?.target === "stall")
-        ? "，茶婆婆在场还能再抬一点"
-        : ""
-    }。</p>
+    <p class="ghost">摊上价钱是基准价的 ${Math.round(STALL_MARKUP * 100)}%，屋里坐着会做生意的客人时还能再抬一点。</p>
     <div class="xw-shelves">${rows || "<span class='ghost'>筐里没有能卖的东西。</span>"}</div>
     ${deal}
     ${worthless.length ? `<p class="ghost">没人收：${worthless.map(([id]) => esc(itemName(id))).join("、")}</p>` : ""}`;
