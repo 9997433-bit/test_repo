@@ -1,38 +1,34 @@
-# 异掌 · 架构总纲（Round 1 · Fable-1）
+# 异掌 · 架构总纲（Round 2 · Fable-1 冻结版）
 
-> 状态：**冻结**。本文与 `docs/API_CONTRACT.md` 共同构成实现基准；与 `.agent_workspace/yizhang/CONTRACT.md` 保持一致，仅做澄清与补全，不推翻种子契约。冲突处以本文 §10「决策记录」为准。需要变更时：先改这两份文档、在提交信息中声明，再改代码。
+> 状态：**冻结（R2）**。Round 1 十条分支已合入 `cursor/yizhang-db8d`，本文按**合并后的实际代码**重新定基：代码里已成立的实现即基准，Round 1 文档与之冲突处一律以本文 §10 的 ADR-16…22 为准（被推翻的 R1 决策在 ADR 列表中标注「已废除」）。变更流程不变：先改本文与 `docs/API_CONTRACT.md`、在提交信息中声明，再改代码。
 
 ## 0. 一句话架构
 
-**纯数据模拟核**（`sim` / `combat` / `data` / `ai`，零 DOM、零 three、可 `structuredClone`）＋ **单向视图流**（`getView` 纯 JSON 快照）＋ **可整体替换的外壳**（`render` / `input` / `audio` / `ui`），由 `core/loop` 以固定 60Hz 步进驱动、渲染插值；HUD 走 DOM，与 WebGL 画布完全分层，互不感知。
-
-设计动机：
-
-1. **可测试** — 命中 / 击退 / 掉落的单测（GPT-sol-1）在 Node 里直接跑模拟核，不启浏览器。
-2. **可联网** — 规则按「输入 + 固定步 + 种子」写。第一版单机，但 `step(state, inputs, dt)` 的形状就是未来 lockstep 的形状。
-3. **十代理并行** — 模块边界即所有权边界（见 `docs/OWNERSHIP.md`），公共面在 `docs/API_CONTRACT.md` 冻结，各写各的目录互不阻塞。
+**纯数据模拟核**（`sim` / `combat` / `data` / `ai`，零 DOM、零 three、可 `structuredClone`）＋ **单向视图流**（`getView` 纯 JSON 快照）＋ **可整体替换的外壳**（`render` / `input` / `audio` / `ui`），由 `main.js` + `core/loop` 以固定 60Hz 步进驱动、渲染插值；HUD 走 DOM，与 WebGL 画布完全分层，互不感知。
 
 ## 1. 模块图
 
 ```
-┌─ 外壳层（DOM / WebGL / WebAudio；可整体替换，禁止反向 import 编排层）────────────┐
+┌─ 外壳层（DOM / WebGL / WebAudio；禁止反向 import 编排层）───────────────────────┐
 │                                                                                │
 │  src/ui/shell.js     src/input/       src/audio/        src/render/            │
 │  主菜单·HUD·结算·     键鼠+触屏归一     WebAudio 合成      three.js 仅此目录       │
-│  触控钮 DOM·存档      摇杆·视角·脉冲键   事件名→音色        场景·相机·插值·画质档   │
+│  触控钮 DOM           摇杆·视角·脉冲     事件名→音色        场景·相机·插值·画质档   │
 │        ▲                  ▲                ▲                  ▲                 │
-│   view │ 快照         Input│            事件│→音名        view │+alpha+events    │
+│   view │ 快照         Input│            事件│→音名         view │（已插值）       │
 └────────┼──────────────────┼────────────────┼──────────────────┼────────────────┘
 ┌─ 编排层 ┴──────────────────┴────────────────┴──────────────────┴────────────────┐
-│  src/main.js（组装、事件→音效映射）    src/core/loop.js（固定步·插值·暂停·画质探测） │
+│  src/main.js（装配、事件→音效/播报映射）                                          │
+│  src/core/（loop 固定步·interp 视图插值·quality 画质探测·storage 存档·            │
+│             modules 兄弟模块探测·fallback/** 降级件）                             │
 └────────▲────────────────────────────────────────────────────────────────────────┘
          │ createMatch / step / getView / isMatchOver          think(view,botId,rng)
 ┌─ 纯数据层（禁 import three、禁 DOM/window；state 可 structuredClone）─────────────┐
 │                                                                                 │
 │  src/sim/ ──每 tick 调用──► src/combat/（扇击·技能·状态·觉醒数值覆盖）              │
 │     │                          │                                                │
-│     └──────读──► src/data/ ◄──读──────┘        src/ai/bots.js（读 view + data）    │
-│                （GLOVES · MATCH · ARENA，只读表，运行期禁止改写）                    │
+│     └──静态 import──► src/data/ ◄──读──────┘   src/ai/bots.js（读 view + data）    │
+│                （GLOVES · MATCH 等只读表，运行期禁止改写）                           │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -42,174 +38,189 @@
 | --- | --- | --- |
 | `src/data` | 无（纯常量表） | 一切 |
 | `src/combat` | `data` | three、DOM、`sim`（防环） |
-| `src/sim` | `data`、`combat` | three、DOM、`ai`、`render` |
+| `src/sim` | `data`、`combat`（**静态 import**，见 ADR-19） | three、DOM、`ai`、`render` |
 | `src/ai` | `data` | three、DOM、`sim` 内部（只吃 `getView` 快照） |
-| `src/render` | `three`、`data`（识别色等只读表） | `sim` 内部、DOM 之外的业务层 |
+| `src/render` | `three`、`data`（识别色等只读表） | `sim` 内部、业务层 |
 | `src/input` | 无业务依赖（DOM API 本体） | three、`sim` |
 | `src/audio` | 无业务依赖（WebAudio 本体） | three、`sim` |
-| `src/ui` | `data`（名字/识别色）、存档读写 | three、`sim` 内部 |
-| `src/core/loop` | `sim`、`ai`；`render/input/ui/audio` 由 `main.js` 注入句柄 | — |
+| `src/ui` | `data`（名字/识别色/解锁表） | three、`sim` 内部 |
+| `src/core` | `sim`/`ai`/`data` 经 `modules.js` 动态探测；`render/input/ui/audio` 由 `main.js` 注入 | — |
 | `src/main.js` | 一切公共 API | — |
 
 「读 view」= 只接受 `getView` 返回的 JSON 快照，绝不持有 `state` 引用。渲染、UI、AI 改不动模拟，这是本项目最重要的一条不变量。
 
-## 2. 帧管线与 tick 顺序
+## 2. 帧管线与 tick 顺序（合并后实况，冻结）
 
-固定模拟步 `MATCH.dt = 1/60`，累加器驱动，渲染插值。每个 `requestAnimationFrame`：
+固定模拟步 `MATCH.dt = 1/60`，累加器驱动（`core/loop.js`），渲染插值（`core/interp.js`）。每个 `requestAnimationFrame`：
 
 ```
-1. input.sample(cameraYaw)            # 人类 Input，一次/帧；脉冲键只发给本帧首个子步
-2. acc += min(frameDt, 0.25)          # 上限 0.25s，防后台回来螺旋死亡
-3. while (acc >= MATCH.dt):
-     a. 每 6 tick：ai.think(lastView, botId, rngBot)   # 用 t-1 快照，10Hz 决策，期间保持上次 Input
-     b. sim.step(state, inputs, MATCH.dt)              # 内部顺序：输入→移动/物理→combat.resolve*→
-     c. lastView = sim.getView(state)                  #   combat.tickStatuses→台面/掉落→计分
-     d. frameEvents.push(...lastView.events)           # 跨子步事件合流
-     acc -= MATCH.dt
-4. alpha = acc / MATCH.dt
-5. render.sync({ ...lastView, alpha, events: frameEvents })   # WebGL；renderer 内部按实体缓存上帧位姿做 lerp
-6. ui.syncHud(lastView)               # DOM；内部脏检查节流（条/数字 ≤15Hz，受击闪白即时）
-7. main: frameEvents → audio.play(映射表见 API_CONTRACT §11)
+1. acc += min(frameDt, 0.25)                  # 防后台回来螺旋死亡
+2. while (acc >= dt):  loop.step(dt) 回调：
+     a. inputs[p0] = input.sample(input.getLook().yaw)      # 人类，世界系
+        inputs[bN] = ai.think(curView, bN, rngBot)          # 每个 bot，用上一 tick 快照
+     b. sim.step(state, inputs, dt)           # 内部再切 ≤1/60 子步；顺序见下
+     c. prevView = curView; curView = sim.getView(state)
+     d. main.handleEvents(curView.events)     # 音效 / 击杀播报 / toast
+     acc -= dt
+3. alpha = acc / dt
+4. view = lerpView(prevView, curView, alpha)  # core/interp.js，编排层完成插值
+5. renderer.sync(view)                        # renderer 收到的已是插值后的快照
+6. shell.updateHud(curView, 'p0')             # 节流 ~30Hz
+```
+
+`sim.step` 内部子步顺序（`src/sim/step.js`，冻结）：
+
+```
+清 events → combat.tickStatuses → 计时器/重生 → 动作处理（换掌/冲刺/跳/扇击前摇/技能）
+→ 位移积分 → 玩家互推 → 地面/护栏解算 → 前摇到帧的扇击结算（combat.resolveSlap）
+→ 掉落判定（y < fallY ⇒ ko）→ updateMatch（胜负缓存 + matchOver 事件）
 ```
 
 要点：
 
-- **tick 顺序冻结为：input → ai.think → sim.step（内调 combat）→ getView → render.sync / ui**。任何人不得在 render 或 ui 里改 state。
-- `getView` 每个子步调一次（bot 需要新快照），分配一次快照对象可接受；`sim.step` 热路径内部零分配为目标。
-- 插值：`alpha ∈ [0,1)` 由 loop 附加在传给 `sync` 的对象上（`getView` 本身保持纯净不含 alpha）。renderer 自持「实体 id → 上帧位姿」缓存，`lerp(prev, cur, alpha)`；瞬移类事件（respawn、magnet 拉拽、afterimage 换位）在 view 里带 `teleported: true` 标记，renderer 跳过插值直接贴。
-- 脉冲键语义：`slap/skill/switchGlove/dash/jump` 是「本 tick 断言一次」的脉冲。input 层把 press 事件闩锁成单帧 true；同一 rAF 有多个子步时只有第一个子步收到脉冲。sim 侧照样用冷却/锁闸门，bot 长按 true 也不会连发。
+- **tick 顺序冻结为：input / ai → sim.step（内调 combat）→ getView → 事件消费 → render / HUD**。任何人不得在 render 或 ui 里改 state。
+- **插值归编排层**：`core/interp.js` 的 `lerpView(prev, cur, alpha)` 产出插值快照，renderer 直接绘制（修订 R1 ADR-12：不再把 alpha 附给 renderer）。瞬移（重生/换位/被拉）由 lerpView 按距离阈值或 view 标记跳过插值。
+- `ai.think` 目前**每个模拟 tick 调用一次**；降频到 10Hz 是允许的优化而非契约，`think` 必须容忍任意调用频率（内部自带计时记忆）。
+- 按键语义（冻结）：`slap` / `skill` 是**可长按**的持续位（sim 用冷却与相位机闸门）；`jump` / `dash` / `switchGlove` 是**边沿触发**——sim 在 `player.prev` 里自做上升沿检测，输入层长报 true 不会连发。
 
 ## 3. HUD DOM 与 WebGL 分层
 
-`index.html` 已有两个根节点，职责冻结：
-
 | 节点 | 层 | 所有者 | 内容 |
 | --- | --- | --- | --- |
-| `<canvas id="gl">` | 底层，全屏 | `render`（Opus-2） | 三维场景。`touch-action: none`。 |
-| `<div id="app">` | 上层 overlay | `ui`（Opus-4） | 主菜单、HUD、结算、暂停、触控钮、虚拟摇杆区。 |
+| `<canvas id="gl">` | 底层，全屏 | `render`（O2） | 三维场景。`touch-action: none`。 |
+| `<div id="app">` | 上层 overlay | `ui`（O4） | 主菜单、HUD、结算、暂停、触控钮、虚拟摇杆区。 |
 
 规则：
 
-- HUD 不进 WebGL：血条/计分/掌意条/冷却全是 DOM，材质化样式由 Fable-2 在 `src/styles` 出（参照 `docs/VISUAL_HANDBOOK.md` §9：材质化控件、无系统字体、70% 屏面积不贴 UI）。
-- `#app` 默认 `pointer-events: none`，只有具体控件（按钮、摇杆区）开 `pointer-events: auto`——保证画布拖视角不被 overlay 吞掉。
-- 安全区：触控控件容器用 `env(safe-area-inset-*)` 内缩；横屏优先、竖屏可玩由 CSS 布局切换，不改逻辑。
-- DOM 写入节流：`syncHud` 每帧被调，但内部对比上次值，文本/宽度类变更合并到 ≤15Hz；受击反馈、击杀播报即时。
+- HUD 不进 WebGL：血条/计分/掌意条/冷却全是 DOM。**样式契约归 F2**：`src/styles/**` 的 `.yz-*` 类名是 HUD 的正式皮肤，O4 的 shell 必须使用这些类名；`src/ui` 自带样式只保留「`src/styles` 一份都没加载到时」的 critical fallback（`loadSiblingStyles()` 返回 0 才生效）。
+- `#app` 默认 `pointer-events: none`，只有具体控件开 `pointer-events: auto`。
+- 安全区：触控控件容器用 `env(safe-area-inset-*)` 内缩；横屏优先、竖屏可玩由 CSS 布局切换。
+- DOM 写入节流：`updateHud` 由 main 以 ~30Hz 间隔调用，内部再做脏检查；受击反馈、击杀播报即时。
 
 ## 4. 状态模型（MatchState）
 
-完整字段类型见 `docs/API_CONTRACT.md` §4.1。这里讲三件贴身机制怎么活在 state 里。
+完整字段见 `docs/API_CONTRACT.md` §4.1。以下是四件贴身机制在合并后代码里的定型。
 
-### 4.1 台面碎裂（floor-break tiles）
+### 4.1 台面碎裂 —— **方格网格（冻结，ADR-18）**
 
-裂岛 = 半径 20 圆盘，**14 块刚性拼板**：
+裂岛 = 半径 20 圆盘上的 **2.5m 方格**（`src/sim/arena.js`）：
 
-```
-tiles[14]:
-  core_n / core_s          — 中缝（seam）把内核（半径 ARENA.coreRadius）劈成两个半圆，不可破坏
-  plate_{s}_{r}            — 环带（coreRadius..20）按 4 个 90° 扇区 s∈0..3 × 3 个环 r∈0..2 切 12 块，可破坏
-```
-
-- 每块 `TileState = { id, destructible, hp, maxHp, brokenT }`。`brokenT = -1` 未碎；碎裂时记 `state.time`，渲染端用它回放坠落/尘烟动画。不可破坏块 `hp = -1`。
-- 几何是 **id 的纯函数**：`sim` 内部 `tileGeom(id)` 由 `ARENA.coreRadius / ringRadii / seamAngle` 推出扇环边界，不在 state 里存顶点。渲染端用同一套参数自行建网格。
-- 伤害入口唯一：`combat` 里的重击效果（磐石砸地、陨掌落地、觉醒态强击）调 `sim` 暴露给 combat 的内部助手 `damageTile(state, tileId, dmg)`；HP 过阈值发 `tile_crack` 事件，≤0 置 `brokenT` 并发 `tile_break`。数值（每块 HP、各技能的对地伤害）在 `data.ARENA` / 手套表里，归 Fable-3。
-- 支撑判定：`groundAt(state, x, z)` 返回所在 tile 且未碎则有地；无地则进入下落，`y < MATCH.fallY(-8)` 或「水平出界且脚下无台」判定出局。**边线会变**：外环块碎掉后，出界半径在该扇区实际内缩，这由 groundAt 自然给出，不需要额外几何。
-- 护栏：外环 3 号块（`r = 2`）各自带一段低护栏，块碎栏亡。轻击退撞栏被拦（速度衰减并贴回），重击退无视：击退冲量带 `heavy` 标记，落到玩家身上转成 `knockHeavyT > 0` 的短窗口，窗口内护栏不生效。
+- `createArena(radius, rng, tileSize = 2.5)`：`cols = ceil(2R / tileSize)` 的方阵裁剪到圆盘内，约 **208 块**。每块 `{ i, ix, iz, x, z, zone, seam, hp, maxHp, alive }`；`grid[iz*cols+ix]` 存下标（-1 = 盘外）。
+- **中缝**：`|x| < ARENA.seamHalfWidth (1.9)` 的格子 `seam: true`，HP 更低（80 vs 120），更易先塌；`zone ∈ 0..3` 按象限归属。边缘格略脆（HP × 0.75..1.0），同 seed 的 rng 抖动保证确定性。
+- **几何可推导**：渲染端由 `view.arena.{origin, tileSize, cols}` + 每块 `x/z` 自行建网格，state 不存顶点。
+- **伤害入口唯一**：`sim` 导出的 `damageTileAt(state, x, z, amount)`（内部走 `floor.js/damageFloor`），保证事件（`tileCrack` / `tileBreak`）、`brokenCount`、`stats.tilesBroken` 三处一致。combat、技能、测试一律走它。
+- **支撑判定**：`hasFloorUnder(state, x, z)`（内部 `isSupported`）——超出 `radius + 0.2` 或格子已碎即无地；无地进入下落，`y < MATCH.fallY (-8)` 判 ko。外环格碎掉后边线自然内缩，无需额外几何。
+- **护栏**：物理层参数（`PHYSICS.railBlockSpeed (9)` / `railInset`）——站着走不出去、轻击退被拦；受击窗口 `kbT > 0` 且水平速度 ≥ 阈值的重击退穿栏而过。
+- 已废除的拓扑：R1 的「2 半核 + 12 扇环板（14 块）」与 F3 `data/tiles.js` 的「3 环 × 24 扇 = 72 块」**都不是台面拓扑**。`data/tiles.js` 的 `TILE` 只保留伤害调参语义（对地伤害数值），其 `ringRadii / sectorsPerRing / quadrants` 字段不再具约束力。
 
 ### 4.2 双掌切换锁（switch lock）
 
-- 玩家携 `gloveId`（槽 0）+ `offhandId`（槽 1），`activeSlot ∈ 0|1` 指当前掌。
-- `switchGlove` 脉冲且 `alive && phase !== 'skill' && 未被冻结` 时：`activeSlot ^= 1`，`switchLockT = MATCH.switchLock (0.4)`，若正处扇击前摇则前摇作废（惩罚换掌取消）。发 `switch` 事件。
-- `switchLockT > 0` 期间：禁扇击、禁技能；移动/冲刺/跳不受限。每 tick 递减。
-- 冷却**按槽位记账**：`slapCdT: [槽0, 槽1]`、`skillCdT: [槽0, 槽1]`。换掌不洗冷却——副掌技能转好了换回来就能放，这是双掌配装的组合深度所在。
+- 玩家携 `gloveId`（槽 0）+ `offhandId`（槽 1），`activeSlot ∈ 0|1`。
+- `switchGlove` 上升沿且 `alive && 不在前摇/出手 && 可行动` 时：`activeSlot ^= 1`，`switchLockT = MATCH.switchLock (0.4)`，`slapCd = max(slapCd, 0.2)`，发 `switch` 事件。
+- `switchLockT > 0` 期间禁扇击、禁技能；移动/冲刺/跳不受限。
+- **冷却是玩家级标量**：`slapCd` / `skillCd` 各一个，双掌共享（R1「按槽位记账」的 ADR-8 **已废除**，以合并后实现为准）。
 
 ### 4.3 掌意与觉醒（awaken meter）
 
-- `meter ∈ 0..1`。加条来源三种：扇中人（攻方）、被扇（受方）、技能命中（攻方），增量在 `data.MATCH`（`meterOnSlapHit / meterOnSlapped / meterOnSkillHit`，数值归 Fable-3）。空挥不加。
-- `meter >= 1` 在该玩家当 tick 结算末自动触发：`awakenedT = MATCH.awakenDuration (8)`，`meter = 0`，发 `awaken_start`。**无手动引爆**（决策 ADR-7）。
-- 觉醒是**人的状态不是掌的状态**：`awakenedT > 0` 期间对「当前激活掌」生效，换掌后 buff 跟着新激活掌走（每掌的觉醒强化定义在手套表 `awaken` 字段）。combat 通过 `applyAwaken(attacker, glove)` 取「觉醒覆盖后的有效数值」，**绝不改写 GLOVES 表本身**。
-- 觉醒期间掌意增量丢弃（不预存下一管）；死亡立即清零 `awakenedT` 与 `meter` 不清（保留一半？不——`meter` 保留，`awakenedT` 清零，见 ADR-7）。
+- `meter ∈ 0..1`。来源：打中人 `+0.09`、被打 `+0.06`、击杀 `+0.15`（`PHYSICS.meterPerHitDealt/Taken/Kill`）。空挥不加。
+- `meter >= 1` 当 tick 自动触发：`awakenedT = MATCH.awakenDuration (8)`、`meter = 0`，发 `awaken` 事件。无手动引爆（ADR-7 沿用）。
+- 觉醒是**人的状态**：`awakenedT > 0` 时对当前激活掌生效，换掌 buff 跟着走。combat 经 `applyAwaken(attacker, glove)` 取覆盖后的派生副本，**绝不改写 GLOVES**。
+- 死亡：`awakenedT` 清零；重生时 `meter = min(meter, 0.35)`（保留一部分，防雪球）。
 
 ### 4.4 事件流
 
-`state.events` 在每次 `step` 开头清空、步内追加，`getView` 原样拷入快照。事件是模拟核对外壳的唯一「发生了什么」通道：renderer 拿它触发 VFX、main 拿它映射音效、HUD 拿它播报击杀。事件分类学与字段冻结在 `API_CONTRACT.md` §10。
+- `state.events` 每次 `step` 开头清空、步内追加（上限 `PHYSICS.maxEvents = 96`），`pushEvent` 自动盖 `t = state.time` 戳；`getView` 逐条浅拷贝进快照。
+- **sim 是唯一事件发射者（ADR-22）**：combat 通过返回值（命中列表 / 技能结果）让 sim 代发，自己不 push 事件——避免同名不同形的双事件流。分类学冻结在 `API_CONTRACT.md` §10（camelCase：`slap` `hit` `ko` `tileBreak` …）。
 
 ## 5. 移动端与自适应
 
-### 5.1 输入所有权（DOM 按钮 vs 画布拖视角）
+### 5.1 输入所有权与坐标系（ADR-16 / ADR-17）
 
-分工冻结：**ui 建 DOM，input 绑事件**。ui/shell 渲染带 `data-yz-*` 标记的控件，`createInput(dom, canvas)` 按标记查询并接管 pointer 事件；视觉态（按下高亮、冷却蒙层）归 ui/styles。
+**朝向约定（全项目唯一，冻结）**：`yaw = 0` 面向 **-Z**，与 three 的 `mesh.rotation.y` 同向——渲染端直接 `mesh.rotation.y = player.yaw`。
 
-| 控件 / 区域 | 载体 | 建 DOM | 绑事件 | 产出 |
-| --- | --- | --- | --- | --- |
-| 虚拟摇杆区（左侧 ~40% 屏） | DOM 透明层 `[data-yz-zone="stick"]` | ui | input | `moveX/moveZ` |
-| 视角拖动（其余空白） | `<canvas id="gl">` 本体 | — | input | 相机 yaw/pitch 增量 |
-| 扇击钮 ≥72dp `[data-yz-btn="slap"]` | DOM | ui | input | `slap` 脉冲 |
-| 技能 / 换掌 / 冲刺 / 跳 各 ≥48dp `[data-yz-btn="skill|switch|dash|jump"]` | DOM | ui | input | 对应脉冲 |
-| 暂停钮 | DOM | ui | **ui**（不进 Input，直接调 loop.pause） | — |
+```
+forward(yaw) = ( -sin(yaw), -cos(yaw) )     // xz 平面
+right(yaw)   = (  cos(yaw), -sin(yaw) )
+面向 +X ⇔ yaw = -PI/2
+```
 
-- 多点触控按 `pointerId` 分轨：摇杆指针与视角指针互不干扰；按钮是独立 DOM 元素天然不与画布抢事件。
-- 画布 `touch-action: none`，禁双击缩放/回弹。桌面端：点画布进 Pointer Lock 转视角，Esc 由 ui 拦为暂停；不支持锁定时退化为按住拖动。
-- **禁止锁敌自动瞄**（种子红线）：input 只产出方向与脉冲，不做任何目标吸附。
-- 相机朝向状态（yaw/pitch）**归 input 所有**（它累积增量），追加导出 `getLook()`；loop 把 `getLook().yaw` 传入 `sample(cameraYaw)` 完成摇杆→世界系换算，render 每帧读 `getLook()` 摆相机。见 ADR-4。
+相机 yaw 用**同一约定**（相机水平朝向 = `forward(cameraYaw)`）。`input.sample(cameraYaw)` 把摇杆/WASD 的**屏幕系**矢量（`sx` 右为正、`sy` 前为正）换算成**世界系** `moveX/moveZ`：
+
+```
+moveX = sx·cos(θ) − sy·sin(θ)
+moveZ = −sx·sin(θ) − sy·cos(θ)          // θ = cameraYaw
+Input.yaw = cameraYaw                    // 期望面朝 = 相机朝向；null = 保持当前朝向
+```
+
+sim 收到的就是世界系（`moveSpace` 缺省 `'world'`；`'local'` 仅供测试）。**sim 不懂相机**。O4 的 input 层现存的 `forward=(cosθ,sinθ)` 内部换算属 R1 分裂产物，Round 2 必须改为上式；G1 的测试 helpers 同改（R1 helpers 的 `yaw=0 朝 +Z` 已废除）。
+
+分工不变：**ui 建 DOM（`data-yz-*` 标记），input 绑事件**。相机朝向状态（yaw/pitch）归 input 所有，导出 `getLook()` / `setLook()`；main 把 `getLook().yaw` 回传给 `sample`，render 读同一 yaw 摆相机。禁止锁敌自动瞄（种子红线）。
 
 ### 5.2 画质自动分档 + DPR 封顶
 
-DPR 全局封顶 2：loop 计算 `dpr = min(devicePixelRatio, 2)` 传给 `render.resize`；档位可再往下压。
+DPR 全局封顶 2（main 的 `applyResize` 计算并传 `renderer.resize`）。三档定义不变：
 
 | 档 | 渲染 DPR | 阴影 | 粒子预算 | 其他 |
 | --- | --- | --- | --- | --- |
-| high | min(dpr, 2) | 1 盏定向光 2048 PCF | 100% | 全材质、碎块坠落网格、热扭曲 |
-| mid | min(dpr, 1.5) | 贴地模糊假影 | 60% | 删热扭曲、雾简化 |
+| high | min(dpr, 2) | 1 盏定向光 2048 PCF | 100% | 全材质、碎块坠落网格 |
+| mid | min(dpr, 1.5) | 贴地模糊假影 | 60% | 简化雾 |
 | low | 1.0 | 圆盘假影 | 30% | 合批简化材质、碎裂用静态贴花 |
 
-自动测档（种子要求「2s 自动测」）：开局以 mid 跑 120 帧，滚动平均帧时 `<8ms → high`、`8–14ms → mid`、`>14ms → low`，然后 `render.setQuality(tier)`。局中**只降不升**：连续 3s p50 帧时 >20ms 自动降一档并发 UI 提示。玩家在设置里手动选档（写入存档 `settings.quality`）后关闭自动逻辑。探测归 loop，执行归 render。
+自动测档：`core/quality.js` 的 `createQualityProbe` 开局 mid 采样 2s 帧时，结果经 `renderer.setQuality(tier)` 生效；局中只降不升；玩家手动选档（存档 `quality`）后关闭自动逻辑。**探测归 core，执行归 render**——main 的 probe 必须真正调用 render 的 `setQuality`（R2 验收点）。
 
 ### 5.3 后台暂停
 
-`document.visibilitychange → hidden`：loop 停止步进并清空累加器、`audio` 挂起 AudioContext、ui 出暂停幕。恢复必须显式点按（同一手势顺带 `audio.unlock()`，满足自动播放策略）。桌面 blur 不强制暂停（R1 决策）。
+`visibilitychange → hidden`：loop 停步进并清累加器、出暂停幕。恢复必须显式点按（同一手势顺带 `audio.unlock()`）。回前台后保持在暂停面板，等玩家自己点继续。
 
 ## 6. 确定性与联网预留
 
-- `sim / combat / ai` 内**禁用 `Math.random`**。模拟随机数用 sfc32，其状态是 `state.rng = { a, b, c, d }` 四个普通整数——没有闭包、没有类，`structuredClone(state)` 后从任意帧继续步进结果一致。
-- Bot 决策随机流由 loop 从 `seed ⊕ hash(botId)` 各自派生（同为 sfc32，loop 持有），不碰 `state.rng`；因此「seed + 人类输入序列」完整决定整局，回放/对时校验只需录人类 Input。
-- `step` 确定性契约：同 seed、同输入序列、同 `dt = MATCH.dt` ⇒ 逐位相同的 state（同一 JS 引擎内）。`dt` 参数保留是给测试用的，产线永远传 `MATCH.dt`。
-- 测试基线（GPT-sol-1）：`structuredClone` 后并行步进比对；命中/击退/掉落/碎地/换掌锁/觉醒各有确定性用例。
+- `sim / combat / ai` 内**禁用 `Math.random`**。模拟随机数用 sfc32，状态是 `state.rng = { a, b, c, d }` 四个普通整数——`structuredClone(state)` 后从任意帧继续步进逐位一致。
+- **确定性契约只约束 sim**：同 seed + 同输入序列 + 同 dt ⇒ 逐位相同 state。Bot 的 rng 由编排层提供（`think(view, botId, rng)` 的 `rng` 参数，`() => number`）；产线用墙钟播种、不参与回放契约，测试传固定种子即可全链确定。
+- `step(dt)`：`dt > 1/60` 自动切成等长子步（`PHYSICS.maxSubStep`），60Hz 与 30Hz 手感一致；`dt` 上限 0.25。
 
 ## 7. 存档
 
-- 唯一 key：**`yizhang-save-v1`**（localStorage，JSON）。schema 冻结在 `API_CONTRACT.md` §12。
-- 只有 `src/ui`（shell 的存档助手）读写 localStorage；sim/render/input/audio 一概不碰。解锁进度由 ui 在收到 `match_over` 及挑战事件后落盘。
-- 读取失败 / 版本不符 ⇒ 回默认值并覆写；写入去抖（≤1 次/s），另在结算与 `visibilitychange:hidden` 时强制刷盘。未知字段透传保留，向前兼容。破坏性改 schema ⇒ 换 key `yizhang-save-v2` 并写迁移。
+- 唯一 key：**`yizhang-save-v1`**（localStorage，JSON），schema 冻结在 `API_CONTRACT.md` §12。
+- **唯一读写者是 `src/core/storage.js`（O4 所有）**——R1「归 ui」的说法修订为此；ui/shell 经它的 `loadSave / updateSave / unlockGlove / recordMatch` 存取，sim/render/input/audio 一概不碰。
+- 读取失败/版本不符 ⇒ 回默认值并覆写；未知字段写回保留；破坏性改 schema ⇒ 换 key `yizhang-save-v2` + 迁移。
 
-## 8. 性能预算（Round 1 验收线，GPT-sol-2 的 bench/probe 按此断言）
+## 8. 性能预算（G2 的 bench/probe 按此断言）
 
 | 项 | 预算 |
 | --- | --- |
-| `sim.step`（1 人 + 3 bot + 14 tile） | ≤ 1ms/tick（Node 基准，中端笔记本） |
+| `sim.step`（1 人 + 3 bot + ~208 tile） | ≤ 1ms/tick（合并后实测 p99 ≈ 0.04ms，余量充足） |
 | 渲染帧时 | high 档桌面 ≤ 8ms；mid 档中端手机 ≤ 14ms |
-| Draw calls / 三角形 | < 150 / < 120k（high 档全场景） |
+| Draw calls / 三角形 | < 150 / < 120k（high 档全场景；方格台面必须合批/Instanced） |
 | GC 压力 | `step` 热路径零分配目标；`getView` 每 tick 一次快照分配可接受 |
 | 启动 | 首屏可交互 < 3s（4G 模拟），three 按需只进 `render` chunk |
 
 ## 9. 部署与端口
 
-- 开发/预览端口 **4181**（`vite.config.js` strictPort，已就位，不与仓库其他游戏抢口）。
-- `base: "./"` 相对路径构建 ⇒ 未来挂 Pages 子路径 `/test_repo/yizhang/` 无需改配置。workflow 由父调度器接，子代理不碰 `.github/`。
+- 开发/预览端口 **4181**（`vite.config.js` strictPort）。`base: "./"` 相对路径构建。workflow 由父调度器接，子代理不碰 `.github/`。
 
-## 10. 决策记录（ADR — 契约歧义的裁定，实现按此执行）
+## 10. 决策记录（ADR）
 
-1. **render/input/audio 的模块级单例**：种子契约把 `sync/resize/setQuality/dispose`（及 `sample/setEnabled`、`unlock/play`）列为模块级导出，同时又有 `createRenderer/createInput/createAudio`。裁定：三个模块均为**模块级单例**——`createX` 初始化内部单例并返回句柄（句柄上有同名方法便于测试注入），模块级函数操作该单例。全游戏只有一块画布，单例成本最低且两种调用姿势都满足契约字面。
-2. **Input 坐标系**：`moveX/moveZ` 由 **input 层完成相机系→世界系换算**（`sample(cameraYaw)` 的参数即为此），sim 收到的就是世界系期望移动方向（模长 ≤1）；`Input.yaw` 是期望面朝角（世界系弧度）。sim 不懂相机。
-3. **脉冲语义**：五个布尔键是单 tick 脉冲（input 闩锁，同帧多子步只给第一个子步）；sim 一律再用冷却/锁闸门，长按 true 无副作用。
-4. **相机朝向归 input**：契约 `sample(cameraYaw)` 暗示 yaw 在外部；裁定 look 状态（yaw/pitch 累积）就住在 input，追加导出 `getLook()`，loop 回传给 `sample`，render 读它摆相机。避免 render↔input 互相依赖。
-5. **combat 解析器副作用**：`resolveSlap/resolveSkill` **就地改 state**（写冲量、掌意、状态、tile 伤害）并**返回命中列表**，sim 据此发事件。`now` 参数 = `state.time`（模拟秒，非墙钟）。
-6. **事件生命周期**：`state.events` 每 `step` 开头清空；`getView` 拷贝；loop 跨子步合流后交给 render/audio。`getView` 保持纯读。
-7. **觉醒触发**：满条**自动**触发（无手动引爆键，操作表没有空位）；觉醒是玩家态、跟随当前激活掌、换掌不断；死亡清 `awakenedT`、保留 `meter`；觉醒中掌意增量丢弃。
-8. **冷却按槽位持久化**：换掌不重置双掌各自的扇击/技能冷却。
-9. **台面拓扑**：2 个不可破坏半核 + 12 个可破坏扇环块（4 扇区 × 3 环）；护栏绑外环块、块碎栏亡；重击退用 `knockHeavyT` 窗口无视护栏。几何为 id 纯函数，state 只存 HP/碎裂时刻。
-10. **击杀归属与平局**：`lastHitBy` 3s 窗口内坠落记击杀，否则算自坠（断连胜、不给分）。4 分钟到点比杀数，再比死数，仍平 ⇒ `{ over: true, winnerId: null, reason: 'draw' }`。加时赛留给后续轮次。
-11. **RNG 无闭包**：随机数状态是 state 里的普通数字字段，保 `structuredClone` 契约。
-12. **插值 alpha**：由 loop 附加在传给 `sync` 的对象上，`getView` 不含 alpha；renderer 自缓存上帧位姿做 lerp，`teleported` 标记跳插值。
-13. **DPR 责任分割**：loop 负责全局封顶 2，renderer 负责档位内进一步降采样。
-14. **HUD 节流**：`syncHud` 每帧调用、内部脏检查合并到 ≤15Hz；打击反馈即时。
-15. **AI 视图延迟**：bot 用 t-1 tick 的快照、10Hz 决策频率（每 6 tick），既省算力又天然有「人类反应延迟」，避免帧完美风筝。
+R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「已废除/修订」。**实现一律以最新裁定为准。**
+
+1. **render/input/audio 模块级单例**：`createX` 初始化内部单例并返回句柄，模块级函数操作该单例。（沿用）
+2. **Input 坐标系**：input 层完成相机系→世界系换算，sim 不懂相机。（沿用，公式收紧见 ADR-17）
+3. **按键语义**：`slap/skill` 可长按（冷却闸门），`jump/dash/switchGlove` 边沿触发且由 **sim 的 `prev` 边沿检测**兜底。（修订：不再要求 input 闩锁单帧脉冲，sim 侧检测为准）
+4. **相机朝向归 input**：look 状态住在 input，导出 `getLook()/setLook()`。（沿用）
+5. **combat 解析器副作用**：`resolveSlap/resolveSkill` 可就地改 state 并返回结果对象，sim 据此记账与发事件；`now = state.time`。（沿用，返回形状冻结见 API_CONTRACT §5）
+6. **事件生命周期**：`state.events` 每 step 开头清空；`getView` 拷贝；main 消费。（沿用）
+7. **觉醒触发**：满条自动、觉醒是玩家态、死亡清 `awakenedT`；重生时 `meter` 截到 0.35。（沿用+细化）
+8. ~~冷却按槽位持久化~~ **已废除**：冷却是玩家级标量 `slapCd/skillCd`，双掌共享。
+9. ~~台面 = 14 块扇环拼板~~ **已废除**：见 ADR-18。
+10. **击杀归属**：`lastHitBy` 窗口 = `PHYSICS.killCreditWindow` = **5s**（R1 的 3s 修订为实现值）；窗口外算自坠。到点比杀数→比死数→按玩家序取先者（本版无 draw）。
+11. **RNG 无闭包**：随机数状态是 state 里的普通数字字段。（沿用）
+12. ~~alpha 附给 renderer 自行 lerp~~ **修订**：插值由 `core/interp.js` 的 `lerpView` 在编排层完成，renderer 收到已插值快照。
+13. **DPR 责任分割**：main/core 封顶 2，renderer 档位内再降采样。（沿用）
+14. **HUD 节流**：main 以 ~30Hz 调 `updateHud`，内部再脏检查。（沿用，频率按实现修订）
+15. **AI 决策频率**：~~固定 10Hz~~ **放宽**：每 tick 调用是现状，降频是优化选项；`think` 必须与调用频率无关。
+16. **人类玩家 id = `p0`（新，冻结）**：sim 已定 `p0`、bot 为 `b0..b2`——**外壳跟随 sim**。`src/main.js` 的 `SELF_ID`、`core/fallback/sim.js` 的人类 id、render 的 `localId/followId` 缺省值全部改 `p0`。任何层不得再出现 `p1` 作为人类 id。
+17. **yaw = 0 面向 -Z（新，冻结）**：`forward = (-sin yaw, -cos yaw)`，与 three `rotation.y` 一致。相机 yaw、`Input.yaw`、测试 helpers 同一约定；摇杆→世界系换算公式见 §5.1。O4 input 内部换算与 G1 helpers 是仅存的违约方，Round 2 必须改。
+18. **台面拓扑 = sim 方格网格（新，冻结）**：`src/sim/arena.js` 的 2.5m 方格圆盘（约 208 块）是唯一拓扑，`view.arena` 的形状即渲染输入。理由：sim 侧支撑/伤害/重生/probe 全链已在此拓扑上通过，render 只需按 `origin/tileSize/cols + tiles[].x,z` 建板即可；而改 sim 迁就 72 扇环要重写 arena/floor/spawn 全部逻辑。**O1 保持、O2 消费、O3 走 `damageTileAt`，禁止发明第四套拓扑。**
+19. **依赖接线 = 静态 import（新，冻结）**：`src/data`、`src/combat` 已落地，`src/sim/deps.js` 改为静态 `import ../data/index.js` 与 `../combat/index.js`（其文件内 TODO(merge) 所述路径）；`installData/installCombat/resetDeps` 保留**仅供测试隔离**，`autoWireOptionalDeps` 删除。main 启动后断言 `getDeps().usingRealData && usingRealCombat`，为假时必须亮降级横幅。main 传给 shell/render 的掌表与 MATCH 一律取自 `sim.getGloves()/getMatchConfig()`，与模拟共用同一张表。
+20. **isMatchOver 即时判定（新，冻结）**：`isMatchOver(state)` 是**纯读的活谓词**，不要求先 `step`：`over ⇔ state.match.over ∨ ∃p: p.kills ≥ killsToWin ∨ state.time ≥ matchSeconds`。调用不改 state、不发事件；`step` 内的 `updateMatch` 仍负责把结果缓存进 `state.match` 并发 `matchOver` 事件——**事件需要 step，布尔真值不需要**。语义细则见 API_CONTRACT §4。
+21. **降级政策：单产线路径（新，冻结）**：产线路径 = 真实模块。`core/fallback/**` 与 sim 内置兜底只在**模块 import 失败/缺席**时于启动期挂载（`loadSiblingModules` 捕获），且必须亮降级横幅；**局中不换件**——真实 sim 已加载后其运行期异常按错误暴露（暂停+提示），不得静默切到占位模拟。所有 fallback 件必须遵守冻结约定（p0、-Z、方格 view 形状），保证换件不换协议。
+22. **sim 是唯一事件发射者（新，冻结）**：事件只从 `sim` 的 `pushEvent` 出，词表见 API_CONTRACT §10（camelCase）。combat 不直接 push 事件；O4 的事件消费改用词表内的名字（`ko` 不是 `kill`，`tileBreak` 不是 `chunkBreak`）。
