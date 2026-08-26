@@ -113,25 +113,40 @@ export function campaignView(ctx) {
 
   function challenge(stage) {
     const res = game.challengeStage(stage.id);
-    if (!res.ok) return ui.toast.bad(res.error);
+    if (!res.ok) return refuse(res);
+
     haptic(res.result.winner === 'player' ? [12, 40, 18] : 30);
     ui.refreshChrome();
     renderHero();
     renderList();
-    openSheet(ui.host, {
+
+    const report = battleReport(res.result, {
+      subtitle: `${stage.regionName} · ${stage.waves} 波${stage.bossName ? ` · ${stage.bossName}` : ''}`,
+      ui
+    });
+    const sheet = openSheet(ui.host, {
       title: `第 ${stage.index} 关 · ${stage.name}`,
-      body: battleReport(res.result, {
-        subtitle: `${stage.regionName} · ${stage.waves} 波${stage.bossName ? ` · ${stage.bossName}` : ''}`
-      }),
+      body: report,
+      onClose: () => report.dispose?.(),
       foot: [
-        h('button.btn.btn--ghost.grow', { type: 'button', text: '知道了', onclick: (e) => e.target.closest('.scrim')?.remove() }),
+        h('button.btn.btn--ghost.grow', { type: 'button', text: '知道了', onclick: () => sheet.close() }),
         h('button.btn.btn--primary.grow', {
           type: 'button',
           text: '再战一场',
-          onclick: (e) => { e.target.closest('.scrim')?.remove(); challenge(stage); }
+          onclick: () => { sheet.close(); challenge(stage); }
         })
       ]
     });
+    if (res.result.firstClear) ui.toast.gold(`首通第 ${stage.index} 关`);
+  }
+
+  /**
+   * 编排动词的失败态：逻辑层给什么就说什么，
+   * 并按 `goto` / `resource` 提示把玩家送到能解决问题的地方。
+   */
+  function refuse(res) {
+    ui.toast.bad(res.error || '暂时无法出征');
+    if (res.goto) setTimeout(() => ui.go(res.goto), 420);
   }
 
   renderHero();

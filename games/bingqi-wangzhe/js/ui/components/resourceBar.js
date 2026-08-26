@@ -58,7 +58,13 @@ export function createResourceBar(game) {
 
   update();
 
-  return { el: bar, powerBadge, update };
+  return {
+    el: bar,
+    powerBadge,
+    update,
+    /** 资源飞行动画的落点；未展示的资源退回铜钱格。 */
+    cellFor: (id) => (cells.get(id) || cells.get('coin'))?.cell || null
+  };
 }
 
 /** 资源掉落条（战报奖励 / 挂机产出复用） */

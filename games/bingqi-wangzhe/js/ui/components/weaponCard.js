@@ -54,7 +54,7 @@ export function weaponCard(w, { onClick, selected = false, compact = false } = {
 
 /** 兵器详情主体（弹层内使用）。 */
 export function weaponDetail(w, game) {
-  const cap = game.levelCap?.() ?? 30;
+  const cap = w.levelCap ?? game.levelCap?.(w.uid) ?? 30;
   return h(
     '.section',
     { dataset: { quality: w.quality, element: w.element } },
