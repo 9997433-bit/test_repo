@@ -14,11 +14,13 @@
 | 游戏 | 地址 |
 | --- | --- |
 | 目录 | https://9997433-bit.github.io/test_repo/ |
-| 赵云与阿斗 | https://9997433-bit.github.io/test_repo/zhao-yun-adou/ |
-| 兵器王者 | https://9997433-bit.github.io/test_repo/bingqi-wangzhe/ |
-| 灵画师 | 源码在 `games/linghuashi/`，发布后走 `/linghuashi/` |
-| 超能下蛋鸭 | 源码在 `games/chao-neng-xia-dan-ya/`，发布后走 `/chao-neng-xia-dan-ya/` |
 | 我的花园世界 | https://9997433-bit.github.io/test_repo/my-garden-world/ |
+| 超能下蛋鸭 | https://9997433-bit.github.io/test_repo/chao-neng-xia-dan-ya/ |
+| 灵画师 | https://9997433-bit.github.io/test_repo/linghuashi/ |
+| 赵云与阿斗 | https://9997433-bit.github.io/test_repo/zhao-yun-adou/ |
+| 造化仙府 | https://9997433-bit.github.io/test_repo/zaohua-xianfu/ |
+| 兵器王者 | https://9997433-bit.github.io/test_repo/bingqi-wangzhe/ |
+| 边境要塞塔防 | https://9997433-bit.github.io/test_repo/warcraft3-td/ |
 
 ```bash
 cd games/my-garden-world && npm install && npm run dev        # :5173

@@ -2,6 +2,8 @@
 
 独立目录的重力弹球 + 卡牌肉鸽网页游戏。不依赖仓库内其他游戏。
 
+线上试玩：https://9997433-bit.github.io/test_repo/chao-neng-xia-dan-ya/
+
 ## 运行
 
 ```bash

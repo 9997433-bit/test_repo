@@ -1,6 +1,6 @@
 # Project Pages lives at https://9997433-bit.github.io/test_repo/
 # Each game is published under one extra path segment so they never share a root.
-# Jobs only replace their own subdirectory plus the catalog; sibling games stay put.
+# This job rebuilds listed games and the catalog; it never deletes sibling games.
 name: pages
 
 on:
@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - "games/zhao-yun-adou/**"
+      - "games/chao-neng-xia-dan-ya/**"
+      - "games/linghuashi/**"
       - "games/my-garden-world/**"
       - "pages/**"
       - ".github/workflows/pages.yml"
@@ -17,7 +19,7 @@ permissions:
   contents: write
 
 jobs:
-  deploy-zhao-yun-adou:
+  deploy-games:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
@@ -36,7 +38,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: src/games/zhao-yun-adou/package-lock.json
+          cache-dependency-path: |
+            src/games/zhao-yun-adou/package-lock.json
+            src/games/chao-neng-xia-dan-ya/package-lock.json
+            src/games/linghuashi/package-lock.json
+            src/games/my-garden-world/package-lock.json
 
       - name: Build 赵云与阿斗
         working-directory: src/games/zhao-yun-adou
@@ -44,47 +50,17 @@ jobs:
           npm ci
           npm run build
 
-      - name: Stage subdirectory + catalog
+      - name: Build 超能下蛋鸭
+        working-directory: src/games/chao-neng-xia-dan-ya
         run: |
-          rm -rf site/zhao-yun-adou
-          mkdir -p site/zhao-yun-adou
-          cp -a src/games/zhao-yun-adou/dist/. site/zhao-yun-adou/
-          cp src/pages/index.html site/index.html
-          touch site/.nojekyll
+          npm ci
+          npm run build
 
-      - name: Publish gh-pages
-        working-directory: site
+      - name: Build 灵画师
+        working-directory: src/games/linghuashi
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No Pages changes."
-            exit 0
-          fi
-          git commit -m "deploy: zhao-yun-adou to /zhao-yun-adou/"
-          git push origin HEAD:gh-pages
-
-  deploy-my-garden-world:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout main
-        uses: actions/checkout@v4
-        with:
-          path: src
-
-      - name: Checkout gh-pages
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: site
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src/games/my-garden-world/package-lock.json
+          npm ci
+          npm run build
 
       - name: Build 我的花园世界
         working-directory: src/games/my-garden-world
@@ -92,11 +68,13 @@ jobs:
           npm ci
           npm run build
 
-      - name: Stage subdirectory + catalog
+      - name: Stage subdirectories + catalog
         run: |
-          rm -rf site/my-garden-world
-          mkdir -p site/my-garden-world
-          cp -a src/games/my-garden-world/dist/. site/my-garden-world/
+          for game in zhao-yun-adou chao-neng-xia-dan-ya linghuashi my-garden-world; do
+            rm -rf "site/$game"
+            mkdir -p "site/$game"
+            cp -a "src/games/$game/dist/." "site/$game/"
+          done
           cp src/pages/index.html site/index.html
           touch site/.nojekyll
 
@@ -110,5 +88,5 @@ jobs:
             echo "No Pages changes."
             exit 0
           fi
-          git commit -m "deploy: my-garden-world to /my-garden-world/"
+          git commit -m "deploy: isolated game paths under /<game>/"
           git push origin HEAD:gh-pages
