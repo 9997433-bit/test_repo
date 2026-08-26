@@ -30,6 +30,13 @@ npx --yes serve -l 4173 .
 
 注意必须通过 HTTP 访问，不能用 `file://` 直接打开 `index.html` —— 浏览器会以跨源策略拒绝加载 ES Modules。
 
+GitHub Pages 也必须带上这一级目录，否则会和其他游戏抢仓库根路径：
+
+- 目录页：<https://9997433-bit.github.io/test_repo/>
+- 本游戏：<https://9997433-bit.github.io/test_repo/games/fashion-mall/>
+
+资源引用全部是相对路径（`./src/...`），挂在 `games/fashion-mall/` 下即可，不要把入口搬到仓库根目录。
+
 ## 测试
 
 ```bash
