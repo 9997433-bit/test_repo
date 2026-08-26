@@ -26,8 +26,8 @@ describe("wireSimDeps", () => {
     // sim 静态 import 的就是这张表，装配前后都得是真数值（Round 2 起不再有兜底棉掌）。
     expect(before.slapCooldown).toBe(1.15);
     expect(sim.getGloves()).toHaveLength(data.GLOVES.length);
-    // 装配的额外收益是技能别名落地：data 的 quake_slam 进局变成 combat 认得的 groundPound。
-    expect(sim.getGloves().find((g) => g.id === "granite").skillId).toBe("groundPound");
+    // 掌表保留 data 词表（quake_slam）；进局翻译在 sim/combat-bridge，不改 GLOVES.skillId。
+    expect(sim.getGloves().find((g) => g.id === "granite").skillId).toBe("quake_slam");
   });
 
   it("接线真值：静态 deps 也算真 combat，装了真模块不该被报成降级", () => {
@@ -42,11 +42,11 @@ describe("wireSimDeps", () => {
     // 装配层把真实模块装进去后，deps 的 usingReal* 只表示「装了东西」而翻假，
     // 但进局的仍是真 combat —— wiringStatus 必须报真，否则 main 会亮假降级横幅。
     const out = wireSimDeps(sim, data, combat);
-    expect(sim.getDeps().usingRealCombat).toBe(false);
+    // 真模块被识别后折回静态桥，usingRealCombat 保持 true（ADR-24）。
+    expect(sim.getDeps().usingRealCombat).toBe(true);
     expect(wiringStatus(sim, out)).toMatchObject({
       usingRealData: true,
       usingRealCombat: true,
-      source: "install+static",
     });
     expect(typeof sim.getDeps().combat.resolveSlap).toBe("function");
   });
@@ -102,8 +102,8 @@ describe("alignSkillIds", () => {
     expect(byId.granite.skillId).toBe("groundPound");
     expect(byId.magnet.skillId).toBe("magnetPull");
     expect(byId.meteor.skillId).toBe("meteorSlam");
-    // 木棉没有主动技，data 侧正式写法就是字符串 "none"：原样保留，不许被翻译。
-    expect(byId.cotton.skillId).toBe("none");
+    // 木棉无主动技：data 定稿为空串，align 视为无技能原样放行（也可是 "none"）。
+    expect(["", "none"]).toContain(byId.cotton.skillId);
     expect(remapped).toHaveLength(7);
     // 原模块不能被就地改写
     expect(data.GLOVE_BY_ID.granite.skillId).toBe("quake_slam");

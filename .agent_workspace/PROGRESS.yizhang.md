@@ -20,7 +20,7 @@
 |-------|------|------|
 | 1 初始构建与基线探索 | 完成 | 91/97 测 · probe 2 kills · 见 round1/BRIEF.md |
 | 2 靶向重构与深度优化 | 完成 | 145/152 · p0 接线 · 见 round2/BRIEF.md |
-| 3 SOTA 打磨与最终验收 | 进行中 | 测试全绿、去 CDN、技能 id、Pages |
+| 3 SOTA 打磨与最终验收 | 完成 | 197/197 · probe wired · 见 FINAL.md |
 | 3 SOTA 打磨与最终验收 | 未开始 | |
 
 ## 测试

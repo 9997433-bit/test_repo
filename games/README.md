@@ -25,7 +25,7 @@
 | 兵器王者 | https://9997433-bit.github.io/test_repo/bingqi-wangzhe/ |
 | 边境要塞塔防 | https://9997433-bit.github.io/test_repo/warcraft3-td/ |
 | 三国：冰河时代 | https://9997433-bit.github.io/test_repo/sanguo-ice-age/ |
-| 异掌 | 源码在 `games/yizhang/`，本地 `npm run dev` 走 :4181 |
+| 异掌 | https://9997433-bit.github.io/test_repo/yizhang/ |
 | 蘑菇屋·慢生活 | 源码在 `games/xiangwang-shenghuo/`，本地 `npm run dev` 走 :4175 |
 
 ```bash
