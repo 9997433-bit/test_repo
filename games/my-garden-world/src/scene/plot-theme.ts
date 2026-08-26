@@ -67,11 +67,11 @@ const PLOT_CSS = `
   z-index: 1;
   opacity: 0;
   pointer-events: none;
-  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--bloom) 55%, transparent) 0%, transparent 58%);
+  background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--bloom) 68%, transparent) 0%, transparent 62%);
   transition: opacity 0.45s ease;
 }
 .garden .plot[data-stage="bloom"] .plot-glow { animation: plot-glow 3.2s ease-in-out infinite; }
-@keyframes plot-glow { 0%, 100% { opacity: 0.42; } 50% { opacity: 0.92; } }
+@keyframes plot-glow { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
 .plot-plant {
   position: absolute;
@@ -145,38 +145,43 @@ const PLOT_CSS = `
   position: absolute;
   left: 50%;
   bottom: var(--stem);
-  width: 58%;
+  width: 66%;
   aspect-ratio: 1;
   transform-origin: 50% 50%;
   transform: translate(-50%, 50%) rotate(var(--tilt)) scale(var(--open));
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.3));
   transition: transform 0.45s cubic-bezier(0.22, 1.1, 0.36, 1);
 }
 .plot-petal {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 40%;
-  height: 52%;
-  margin: -52% 0 0 -20%;
+  width: 38%;
+  height: 50%;
+  margin: -50% 0 0 -19%;
   transform-origin: 50% 100%;
-  transform: rotate(calc(var(--a) * var(--spread))) translateY(var(--reach));
-  border-radius: 50% 50% 44% 44% / 68% 68% 32% 32%;
+  transform: rotate(calc(var(--a) * var(--spread))) translateY(var(--reach)) scale(var(--petal-scale, 1));
+  border-radius: 52% 52% 42% 42% / 70% 70% 30% 30%;
   background:
-    radial-gradient(110% 70% at 50% 100%, color-mix(in srgb, var(--accent) 62%, transparent) 0%, transparent 66%),
-    linear-gradient(180deg, color-mix(in srgb, var(--bloom) 74%, #fff) 0%, var(--bloom) 60%, color-mix(in srgb, var(--bloom) 62%, var(--accent)) 100%);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+    radial-gradient(110% 70% at 50% 100%, color-mix(in srgb, var(--accent) 58%, transparent) 0%, transparent 64%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bloom) 68%, #fff) 0%, var(--bloom) 58%, color-mix(in srgb, var(--bloom) 58%, var(--accent)) 100%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.16);
   transition: transform 0.45s cubic-bezier(0.22, 1.1, 0.36, 1), border-radius 0.4s ease;
 }
 .plot-core {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 30%;
-  height: 30%;
-  margin: -15% 0 0 -15%;
+  width: 25%;
+  height: 25%;
+  margin: -12.5% 0 0 -12.5%;
   border-radius: 50%;
-  background: radial-gradient(circle at 38% 34%, #fff6d8 0%, color-mix(in srgb, var(--accent) 88%, #fff) 68%, var(--accent) 100%);
-  box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 55%, transparent);
+  background: radial-gradient(circle at 38% 32%, #fffdf0 0%, #ffdf8b 46%, color-mix(in srgb, var(--accent) 58%, #cf9a2c) 100%);
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--accent) 42%, transparent),
+    inset 0 -1px 2px rgba(120, 82, 12, 0.35);
 }
 .plot-calyx {
   position: absolute;
@@ -195,15 +200,15 @@ const PLOT_CSS = `
 .garden .plot[data-stage="seeded"] { --stem: 0%; --open: 0; --leaf-op: 0; }
 .garden .plot[data-stage="sprout"] { --stem: 24%; --open: 0; --leaf-op: 1; }
 .garden .plot[data-stage="bud"] { --stem: 44%; --open: 0.5; --spread: 0.16; --reach: 0%; --leaf-op: 1; }
-.garden .plot[data-stage="bloom"] { --stem: 56%; --open: 1; --spread: 1; --reach: -7%; --leaf-op: 1; }
-.garden .plot[data-stage="wilt"] { --stem: 42%; --open: 0.8; --spread: 0.92; --reach: 8%; --leaf-op: 1; }
+.garden .plot[data-stage="bloom"] { --stem: 56%; --open: 1; --spread: 1; --reach: -14%; --leaf-op: 1; }
+.garden .plot[data-stage="wilt"] { --stem: 40%; --open: 0.78; --spread: 0.94; --reach: 4%; --leaf-op: 1; --petal-scale: 0.84; }
 
 .garden .plot[data-stage="wilt"] .plot-plant {
-  filter: grayscale(0.5) sepia(0.5) brightness(0.78);
-  transform: rotate(7deg) translateY(4%);
+  filter: grayscale(0.3) sepia(0.85) brightness(0.86) contrast(1.05);
+  transform: rotate(9deg) translateY(6%);
   animation: none;
 }
-.garden .plot[data-stage="wilt"] .plot-stem { transform: rotate(6deg); }
+.garden .plot[data-stage="wilt"] .plot-stem { transform: rotate(7deg); }
 .garden .plot[data-stage="wilt"] .plot-leaf { opacity: 0.55; transform: rotate(0deg) scaleY(0.7); }
 .garden .plot[data-stage="wilt"] .plot-petal {
   border-radius: 44% 44% 66% 66% / 52% 52% 48% 48%;
