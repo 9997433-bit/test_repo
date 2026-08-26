@@ -45,6 +45,18 @@ export const MANSION_MAX_LEVEL = 12;
 export const LEVEL_BASE = 0.85;
 export const LEVEL_STEP = 0.15;
 
+/** 数据表缺 `xpPerSec` 时，藏经楼一类修业建筑的兜底速率（Lv.1，每秒）。 */
+export const DEFAULT_XP_PER_SEC = 0.35;
+
+/**
+ * 等级归一：坏档里的 null / NaN / 0 / 负数一律收敛到 1 级。
+ * 产量、修业与离线效率都走这里取级，避免一处脏数据把整张账算成 NaN。
+ */
+export function normalizeLevel(level) {
+  const n = Number(level);
+  return Number.isFinite(n) && n > 1 ? n : 1;
+}
+
 /**
  * 仙府侧的建筑画像：五行、职能、驻守弟子看重的资质。
  * 数据表只描述「产什么」，这里描述「怎么经营」。
@@ -57,13 +69,31 @@ export const MANSION_PROFILES = {
   alchemy: { role: "craft", element: "火", crew: "force", staff: 1, combat: { atk: 4 }, blurb: "炉火炼丹，全队攻击随等级涨" },
   forge: { role: "craft", element: "火", crew: "force", staff: 1, combat: { atk: 3 }, blurb: "温养法器，火气会燎着邻田" },
   array: { role: "spirit", element: "水", crew: "force", staff: 1, blurb: "聚灵回气，并抬高离线结算效率" },
-  scripture: { role: "study", element: "水", crew: "profession", staff: 1, blurb: "不产资源，只长弟子专业经验" },
+  scripture: {
+    role: "study",
+    element: "水",
+    crew: "profession",
+    staff: 1,
+    xpPerSec: DEFAULT_XP_PER_SEC,
+    blurb: "不产资源，只出修业；修业满仅代表可晋阶，传功丹药照付",
+  },
   leypulse: { role: "vein", element: "水", crew: "none", staff: 0, blurb: "地脉节点，环绕灵田是最优解" },
+  spring: { role: "harvest", element: "水", crew: "profession", staff: 1, blurb: "涌泉兼出灵气与灵草，中期回气主力" },
+  bounty: { role: "harvest", element: "金", crew: "profession", staff: 1, blurb: "接悬赏换仙玉灵石，礼聘的财源" },
+  drill: { role: "craft", element: "火", crew: "profession", staff: 1, combat: { atk: 5 }, blurb: "操演阵法，全队攻击随等级涨" },
 };
 
 const DEFAULT_PROFILE = { role: "support", element: "土", crew: "diligent", staff: 1, blurb: "" };
 
 const defCache = new Map();
+
+/** 修业速率以数据表为准，表里没写才回落到仙府画像的兜底值。 */
+function xpPerSecOf(raw, profile) {
+  const fromTable = Number(raw.xpPerSec);
+  if (Number.isFinite(fromTable) && fromTable > 0) return fromTable;
+  const fromProfile = Number(profile.xpPerSec);
+  return Number.isFinite(fromProfile) && fromProfile > 0 ? fromProfile : 0;
+}
 
 /**
  * 取归一化后的建筑定义：数据表字段 + 仙府画像，缺省值补齐。
@@ -84,6 +114,7 @@ export function buildingDef(type) {
     glyph: raw.glyph ?? "府",
     desc: raw.desc ?? profile.blurb,
     baseYield: raw.baseYield ?? {},
+    xpPerSec: xpPerSecOf(raw, profile),
     unlockAt: Math.max(1, raw.unlockAt ?? 1),
     unique: Boolean(raw.unique),
     combatBonus: raw.combatBonus ?? profile.combat ?? null,
@@ -108,7 +139,7 @@ export function buildingList() {
 }
 
 export function levelScale(level) {
-  return LEVEL_BASE + LEVEL_STEP * Math.max(1, level ?? 1);
+  return LEVEL_BASE + LEVEL_STEP * normalizeLevel(level);
 }
 
 /** 单座建筑在指定等级下的裸产量（不含弟子、邻接与府邸光环）。 */
@@ -121,24 +152,43 @@ export function yieldAt(type, level = 1) {
   return out;
 }
 
+/** 该建筑是否有资源产出；藏经楼这类只出修业的建筑在此为 false。 */
+export function producesResources(type) {
+  return Object.keys(buildingDef(type)?.baseYield ?? {}).length > 0;
+}
+
+/**
+ * 单座建筑每秒产出的修业（专业经验）。
+ * 曲线刻意与资源不同：修业按楼级线性（Lv.N = xpPerSec × N），不走 `levelScale`，
+ * 也不吃邻接与府邸光环——修业是纯时间投入，不该被布局乘区二次放大。
+ */
+export function xpAt(type, level = 1) {
+  const rate = buildingDef(type)?.xpPerSec ?? 0;
+  return rate > 0 ? rate * normalizeLevel(level) : 0;
+}
+
+/** 该建筑是否产修业。 */
+export function producesXp(type) {
+  return (buildingDef(type)?.xpPerSec ?? 0) > 0;
+}
+
 export function unlockLevel(type) {
   return buildingDef(type)?.unlockAt ?? 1;
 }
 
 export function isUnlocked(type, mansionLevel = 1) {
-  return unlockLevel(type) <= Math.max(1, mansionLevel);
+  return unlockLevel(type) <= normalizeLevel(mansionLevel);
 }
 
 /** 该建筑当前可升到的最高等级：洞府自身走硬上限，其余跟随洞府。 */
 export function maxLevelFor(type, mansionLevel = 1) {
   if (type === "mansion") return MANSION_MAX_LEVEL;
-  return mansionCap(Math.max(1, mansionLevel)).maxBuildingLevel;
+  return mansionCap(normalizeLevel(mansionLevel)).maxBuildingLevel;
 }
 
 export function canUpgrade(building, mansionLevel = 1) {
   if (!building) return false;
-  const level = Math.max(1, building.level ?? 1);
-  return level < maxLevelFor(building.type, mansionLevel);
+  return normalizeLevel(building.level) < maxLevelFor(building.type, mansionLevel);
 }
 
 /** 从 fromLevel 升到 toLevel 的累计消耗，用于「一口气升到顶」的预算提示。 */
@@ -169,7 +219,7 @@ export function canAfford(resources, cost) {
  * 营造面板用的候选清单：带解锁、预算与拦截原因，UI 不必再复算规则。
  */
 export function catalog(mansionLevel = 1, ctx = {}) {
-  const level = Math.max(1, mansionLevel);
+  const level = normalizeLevel(mansionLevel);
   const { resources, buildings, plotsFree } = ctx;
   const cap = mansionCap(level);
   const free = Number.isFinite(plotsFree)
@@ -194,6 +244,8 @@ export function catalog(mansionLevel = 1, ctx = {}) {
         desc: def.desc,
         role: def.role,
         element: def.element,
+        perSec: yieldAt(def.id, 1),
+        xpPerSec: xpAt(def.id, 1),
         cost,
         lack,
         unlocked,

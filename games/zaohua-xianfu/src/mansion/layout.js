@@ -1,4 +1,12 @@
-import { GRID_SIZE, buildingDef, buildingName, mansionCap } from "./buildings.js";
+import {
+  GRID_SIZE,
+  buildingDef,
+  buildingName,
+  mansionCap,
+  normalizeLevel,
+  producesResources,
+  xpAt,
+} from "./buildings.js";
 
 const DIRS = [
   [1, 0],
@@ -35,7 +43,7 @@ export function inBounds(x, y) {
 export function occupancy(buildings) {
   const grid = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null));
   for (const b of buildings ?? []) {
-    if (inBounds(b.x, b.y)) grid[b.y][b.x] = b;
+    if (b && inBounds(b.x, b.y)) grid[b.y][b.x] = b;
   }
   return grid;
 }
@@ -54,7 +62,7 @@ export function countType(buildings, type) {
 }
 
 export function mansionLevel(buildings) {
-  return (buildings ?? []).find((b) => b.type === "mansion")?.level ?? 1;
+  return normalizeLevel((buildings ?? []).find((b) => b?.type === "mansion")?.level);
 }
 
 export function neighbors(buildings, x, y) {
@@ -91,7 +99,7 @@ export function adjacencyDetailOnGrid(grid, x, y, typeHint) {
   for (const n of neighborsOnGrid(grid, x, y)) {
     const rule = ruleFor(n.type, type);
     if (!rule) continue;
-    const level = Math.max(1, n.level ?? 1);
+    const level = normalizeLevel(n.level);
     const value = rule.value + (rule.perLevel ?? 0) * (level - 1);
     if (value === 0) continue;
     if (value > 0) bonus += value;
@@ -173,7 +181,7 @@ export const HARMONY_SPAN = 0.35;
 export function layoutReport(buildings) {
   const list = buildings ?? [];
   const grid = occupancy(list);
-  const rows = list.map((b) => {
+  const rows = list.filter(Boolean).map((b) => {
     const def = buildingDef(b.type);
     const detail = adjacencyDetailOnGrid(grid, b.x, b.y, b.type);
     return {
@@ -181,10 +189,11 @@ export function layoutReport(buildings) {
       type: b.type,
       name: buildingName(b.type),
       role: def?.role ?? "support",
-      level: Math.max(1, b.level ?? 1),
+      level: normalizeLevel(b.level),
       x: b.x,
       y: b.y,
-      produces: Object.keys(def?.baseYield ?? {}).length > 0,
+      produces: producesResources(b.type),
+      xpPerSec: xpAt(b.type, b.level),
       multiplier: detail.multiplier,
       sources: detail.sources,
     };
