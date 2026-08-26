@@ -82,6 +82,7 @@ jobs:
           cp src/games/fashion-mall/index.html site/fashion-mall/
           cp -a src/games/fashion-mall/src site/fashion-mall/
           cp src/pages/index.html site/index.html
+          python3 src/pages/sync-catalog.py site
           touch site/.nojekyll
 
       - name: Publish gh-pages
