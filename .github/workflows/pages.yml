@@ -1,0 +1,100 @@
+# Project Pages lives at https://9997433-bit.github.io/test_repo/
+# Each game is published under one extra path segment so they never share a root.
+# This job rebuilds listed games and the catalog; it never deletes sibling games.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "games/zhao-yun-adou/**"
+      - "games/chao-neng-xia-dan-ya/**"
+      - "games/linghuashi/**"
+      - "games/my-garden-world/**"
+      - "games/crazy-water-world/**"
+      - "pages/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-games:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            src/games/zhao-yun-adou/package-lock.json
+            src/games/chao-neng-xia-dan-ya/package-lock.json
+            src/games/linghuashi/package-lock.json
+            src/games/my-garden-world/package-lock.json
+            src/games/crazy-water-world/package-lock.json
+
+      - name: Build 赵云与阿斗
+        working-directory: src/games/zhao-yun-adou
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build 超能下蛋鸭
+        working-directory: src/games/chao-neng-xia-dan-ya
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build 灵画师
+        working-directory: src/games/linghuashi
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build 我的花园世界
+        working-directory: src/games/my-garden-world
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build 疯狂水世界
+        working-directory: src/games/crazy-water-world
+        run: |
+          npm ci
+          npm run build
+
+      - name: Stage subdirectories + catalog
+        run: |
+          for game in zhao-yun-adou chao-neng-xia-dan-ya linghuashi my-garden-world crazy-water-world; do
+            rm -rf "site/$game"
+            mkdir -p "site/$game"
+            cp -a "src/games/$game/dist/." "site/$game/"
+          done
+          cp src/pages/index.html site/index.html
+          touch site/.nojekyll
+
+      - name: Publish gh-pages
+        working-directory: site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No Pages changes."
+            exit 0
+          fi
+          git commit -m "deploy: isolated game paths under /<game>/"
+          git push origin HEAD:gh-pages

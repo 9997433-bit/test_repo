@@ -4,6 +4,8 @@
 
 同仓库其他游戏请放在 `games/` 平级目录，不要改本目录。
 
+线上地址（GitHub Pages 一级隔离）：https://9997433-bit.github.io/test_repo/crazy-water-world/
+
 ## 开发
 
 ```bash
