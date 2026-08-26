@@ -1,4 +1,4 @@
-# 美术与体验总纲（Fable-2 · Round 1 + Round 2）
+# 美术与体验总纲（Fable-2 · Round 1 – Round 3）
 
 > 可写范围：本文件 + `src/styles/**`。全部视觉为 CSS / 内联 SVG（data URI），
 > 零外部图片、零字体下载。目标：综艺蘑菇屋的烟火气 —— 木结构、暖黄灯、
@@ -166,8 +166,9 @@
 ```
 src/styles/
   tokens.css   令牌 + 重置 + 无障碍基线（main.js 首个引入）
-  layout.css   骨架与断点；@import 打包下面四件（main.js 第二个引入）
+  layout.css   骨架与断点；@import 打包下面五件（main.js 第二个引入）
   village.css  村景绘制：天空/山/地/蘑菇屋/牌匾/地块 + 场景关键帧
+  yard.css     院子剪影层 .xw-yard/.xw-npc（Round 3 新增，见 §12）
   panels.css   顶梁/面板/按钮/日志等界面木作
   season.css   季节相位离散特征 + 粒子系统（选择器带 [data-season/phase]，
                靠属性特异性覆盖基础层）
@@ -224,9 +225,10 @@ season → **ui.css**，同名同特异度后写者赢，所以 ui.css 能整层
   z=45；`.xw-dot.on` 柿橙点。`.xw-hint` 是呼吸金圈——基态就有 outline，
   reduced-motion 冻结后提示仍在（别用纯动画表达状态）。
 
-### 收获飘字 `.xw-fx`（事件型动效契约）
+### 收获飘字 `.xw-fx`（事件型动效契约，Round 3 增艳）
 
-CSS 已就位，等 UI/逻辑层挂节点：
+UI 层已接线（screens.js `spawnFloat`：收获时挂在那块 `.plot` 上，
+找不到地块就退到 `.village` 居中飘，1200ms 后移除节点）：
 
 ```html
 <button class="plot ready">…<span class="xw-fx">+2 稻米</span></button>
@@ -234,8 +236,15 @@ CSS 已就位，等 UI/逻辑层挂节点：
 
 - append 到任意 position 非 static 的容器（`.plot`、`.panel` 都行）；
 - 900ms `fx-float` 上浮淡出后停在透明，**节点由挂它的人在 ≥1s 后移除**；
-- 默认金字四向描边，扣减用 `.xw-fx.bad`（火红）；
+- 默认金字，扣减用 `.xw-fx.bad`（火红）；
+- 同容器连发多条时，用内联 `style="--fx-dx:10px;--fx-dy:-8px"`
+  把后来的错开（错位量走独立 `translate` 属性，不碰关键帧）；
 - reduced-motion 下静止显示、不上浮，信息不丢。
+
+Round 3 增艳：字号 15.5px；换成**真描边**（`paint-order: stroke fill` +
+`-webkit-text-stroke` 3.5px 深墨，text-shadow 只留暗晕兜底），金字压在
+金色熟地、雪地、夜草上都读得清；节奏改为 弹出带过冲（14% 处 1.18 倍）→
+26%~62% 停稳可读的一拍 → 上浮 34px 淡出，总时长仍 900ms，移除契约不变。
 
 ### 夜景对比度（Round 2 补丁）
 
@@ -258,17 +267,65 @@ CSS 已就位，等 UI/逻辑层挂节点：
 秆子 SVG 垂头 5° 并降饱和，标签换干草色——和荒地(深土杂草)、
 空地(耙沟)一眼分得开，翻土提示照旧。
 
-## 12. 已知空缺（Round 3 候选）
+## 12. Round 3 · 院子剪影层（`src/styles/yard.css`）
 
-- **NPC / 动物 / 嘉宾剪影仍缺 DOM 挂点**（screens.js 归 UI 层，本轮只读，
-  村景里没有可画的元素）。建议挂点契约：`.village` 里加
-  `<div class="xw-yard"><i class="xw-npc" data-kind="guest|chick|sheep|pet"
-  data-id="…"></i>…</div>`，容器绝对定位在 z=5、`pointer-events: none`；
-  样式层即可用纯 CSS/内联 SVG 给每种 `data-kind` 画剪影 + 踱步/啄食动画。
-- `.xw-fx` 同理：CSS 契约已就位，等收获/扣减逻辑处 append 节点。
-- 相位切换是瞬时换色：可给关键令牌注册 `@property <color>` + transition
-  做日落渐变。
+DOM 挂点已由 UI 层落地（screens.js `renderYard`，挂在 `.buildings`
+与 `.fields` 之间），本层负责全部视觉。落地版 DOM：
+
+```html
+<div class="xw-yard" data-ref="yard" aria-hidden="true">
+  <i class="xw-npc" data-kind="guest" data-id="aunt_grove"></i>
+  <i class="xw-npc" data-kind="pet"   data-id="hua"  data-pet="dog"></i>
+  <i class="xw-npc" data-kind="pet"   data-id="tuan" data-pet="cat"></i>
+  <i class="xw-npc" data-kind="chick"></i>   <!-- 鸡舍建成后 -->
+  <i class="xw-npc" data-kind="sheep"></i>   <!-- 羊圈建成后 -->
+  <i class="xw-npc" data-kind="cow"></i>     <!-- 牛棚建成后 -->
+</div>
+```
+
+- **kind 词表（落地版）**：`guest`（戴笠帽的村客）/ `chick` /
+  `sheep` / `cow` / `pet`（配 `data-pet="dog|cat"` 分狗猫）。
+  样式层另认 `chicken`、`dog`、`cat` 别名；未知 kind 回落为 guest。
+  `data-id` 只作日后逐人上色的钩子，样式层不强依赖。
+- **与兜底层的分工**：index.html 内联样式给过一版素坯（左下角
+  flex 木凳 + `--sil` 背景剪影 + `xw-amble`）。yard.css 在级联更后端
+  整层接管：容器按回 `inset:0` 全村铺开（`max-width:none`）、
+  清掉 `--sil` 背景/0.72 透明度/整体投影、`nth-child(2n/3n)` 的
+  节拍改写用 `(0,2,0)` 基体选择器按住；猫要 `(0,3,0)` 的
+  `[data-kind="pet"][data-pet="cat"]` 才压得过兜底体格。
+- **画法**：单色剪影 = `::before` 上的内联 SVG mask + 令牌色；
+  `::after` 是不参与 mask 的贴地椭圆影。体格：客人 34×56、
+  牛 48×35、羊 40×31、狗 34×30、猫 24×30、鸡 26×23（px）。
+- **站位**：前 8 个孩子按 `nth-of-type` 派座（房前空地、牌匾廊下的
+  前景草带、路边），派座不认物种；UI 层可用内联
+  `style="--x:38%;--y:5%;--flip:-1"` 覆写（`--flip` 走独立 `scale`
+  属性，不会被动画 transform 冲掉）；第 9~10 个叠在村中兜底,
+  **第 11 个起 display:none** 防刷屏。窄屏（≤760px）整体缩至 0.8、
+  改派中带站位、只站 6 只——兜底层在窄屏直接藏院子是对它自己的
+  左下 flex 条而言，本层站位已避开牌匾与田垄，故保留剪影。
+- **相位换装**：白日深椒褐（随季节植被微调）；黄昏暖褐 + 左侧
+  2px 夕照金边（落日在画面左下）；夜晚月光青灰 + 淡灯晕
+  （`drop-shadow` 作用在 mask 之后，勾的是剪影轮廓）；
+  冬季雪地上天然高对比，无需补丁。
+- **动效**（全 transform/opacity，负延迟 `--seed` 错拍防齐步走）：
+  入场 `npc-in` 500ms 淡入；客人 `npc-wander`（±9px 踱步）+
+  `npc-bob`；鸡 wander + `npc-peck`（停一停快啄两口）；
+  牛羊定点 `npc-graze`（埋头久、抬头缓）；狗 wander + `npc-hop`
+  （隔几秒连蹦两下）；猫定点 `npc-sway` 慢摆。
+  reduced-motion 下全局归零，剪影静止站在原地，信息不丢。
+
+## 13. 剩余视觉空缺（Round 3 收尾时点）
+
+- 心愿「送去」成功一刻缺庆祝动效（纸条飞走/金币迸溅）。
+  `spawnFloat` 已能往地块/村景挂 `.xw-fx`，交单处只要发一条带
+  `text` 的 fx 信号（如 `+40 金`）即有基本反馈；纸条飞走类
+  大动效需要 UI 层给临时类名。
+- 嘉宾剪影暂不逐人差异化（六位共用村客画法），`data-id`
+  钩子已留，后续可按人加配色/佩饰变体。
+- 相位切换是瞬时换色：可给关键令牌注册 `@property <color>` +
+  transition 做日落渐变（注意别与差分渲染打架）。
 - 雪的横向摆动、萤火虫更不规则的路径需要更多层或 offset-path。
-- 温室/码头等建筑只有牌匾，没有村景里的建筑剪影。
-- 心愿"送去"成功一刻缺一个庆祝动效（纸条飞走/金币迸溅），
-  同样需要 UI 层给临时类名或节点。
+- 温室/码头等建筑只有牌匾，没有村景里的建筑剪影；
+  温室地块只有 🏠 emoji 标记（DOM 在 UI 层）。
+- 剪影动画依整表重绘节流（`renderYard` 每次 setHtml 会重启
+  `npc-in`/负延迟），若未来村景改为高频重绘需换 key 复用节点。

@@ -553,46 +553,62 @@
    契约：append 一个 <span class="xw-fx">+2 稻米</span> 到任意
    position 非 static 的容器（地块 .plot、面板 .panel 都行），
    900ms 动画演完停在透明，节点由挂它的人负责移除（建议 ≥1s 后）。
-   变体：.bad 扣减用（火红）。reduced-motion 下静止显示不上浮。 */
+   变体：.bad 扣减用（火红）。同容器连发多条时，可用内联
+   style="--fx-dx:10px;--fx-dy:-8px" 把后来的错开，免得叠成一团。
+   reduced-motion 下静止显示不上浮。 */
 
 .xw-fx {
   position: absolute;
   left: 50%;
-  top: 16%;
+  top: 14%;
   transform: translate(-50%, 0);
   z-index: 12;
   pointer-events: none;
   white-space: nowrap;
-  font-size: 14.5px;
+  font-size: 15.5px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--gold-bright);
-  /* 四向描边 + 一圈暗晕：晴天草地上也读得清 */
+  /* 真描边（paint-order 把 stroke 压到字底下），金字在金色熟地、
+     雪地、夜草上都读得清；text-shadow 只留一圈暗晕垫底兜底 */
+  paint-order: stroke fill;
+  -webkit-text-stroke: 3.5px rgba(26, 13, 5, 0.92);
   text-shadow:
     -1px 0 0 rgba(30, 15, 5, 0.85),
     1px 0 0 rgba(30, 15, 5, 0.85),
     0 -1px 0 rgba(30, 15, 5, 0.85),
     0 1px 0 rgba(30, 15, 5, 0.85),
-    0 0 10px rgba(20, 10, 4, 0.5);
+    0 0 12px rgba(20, 10, 4, 0.55);
+  /* 连发错位量走独立的 translate 属性，与关键帧的 transform 叠加 */
+  translate: var(--fx-dx, 0px) var(--fx-dy, 0px);
   animation: fx-float 900ms var(--ease-out) forwards;
 }
 
 .xw-fx.bad {
-  color: #ffa584;
+  color: #ff9d78;
+  -webkit-text-stroke-color: rgba(46, 10, 2, 0.92);
 }
 
+/* 弹出（带一点过冲）→ 停稳可读的一拍 → 再上浮淡出 */
 @keyframes fx-float {
   0% {
     opacity: 0;
-    transform: translate(-50%, 8px) scale(0.85);
+    transform: translate(-50%, 10px) scale(0.7);
   }
-  16% {
+  14% {
     opacity: 1;
-    transform: translate(-50%, 0) scale(1);
+    transform: translate(-50%, -2px) scale(1.18);
+  }
+  26% {
+    transform: translate(-50%, -6px) scale(1);
+  }
+  62% {
+    opacity: 1;
+    transform: translate(-50%, -14px) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -30px) scale(1.06);
+    transform: translate(-50%, -34px) scale(0.94);
   }
 }
 
