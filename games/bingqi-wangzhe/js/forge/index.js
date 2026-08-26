@@ -17,6 +17,10 @@ export {
   normalizeWeights,
   eligibleProtos,
   pityFloorFor,
+  pityThresholdsFor,
+  firstForgeFloorFor,
+  forgeFloorFor,
+  isFirstForge,
   normalizeOpts,
 } from './forge.js';
 

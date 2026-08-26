@@ -1,9 +1,15 @@
 /**
  * 主线试炼 — 40 关，8 章，每 5 关一个精英 BOSS。纯数据，无副作用。
  *
- * 章节表与关卡名为手写，数值曲线由本文件内的纯函数在模块初始化时算出，
- * 保证「改一个系数，全表跟着动」而不引入运行期随机。
+ * 章节表与关卡名为手写；**经济字段**（体力、首通、重复掉落）逐关取自
+ * `balance.STAGE_BALANCE`（fable-3 §3 的 400 种子校准表），
+ * **战斗字段**（recommendPower / waves / 敌人面板）仍由本文件的曲线算出 ——
+ * 文档的 enemyPower 是按 baseAtk 20–32 的原型标定的，而 data/weapons.js 的原型高约 1.5 倍，
+ * 直接换会让整条难度曲线失真。文档值另存为 `stage.balancePower` 供经济回归比对，
+ * 等 opus-3 的实战引擎重跑天级投影后再统一（fable-3 §11-1）。
  */
+
+import { ELEMENT_CRYSTAL, SHARD_RESOURCE, SLOT_UNLOCK_STAGES, STAGE_BALANCE } from './balance.js';
 
 /** 关卡数值锚点：第 1 关 120 战力，第 40 关 30000 战力，指数插值。 */
 const POWER_START = 120;
@@ -140,7 +146,7 @@ const CHAPTERS = [
 
 const MIXED_CYCLE = ['fire', 'ice', 'thunder'];
 
-const CRYSTAL_OF = { fire: 'fireCrystal', ice: 'iceCrystal', thunder: 'thunderCrystal' };
+const CRYSTAL_OF = ELEMENT_CRYSTAL;
 
 const ENEMY_BASIC_SKILL = {
   fire: 'sk_e_zaowo_hui',
@@ -201,45 +207,84 @@ function buildWaves(chapter, index, isElite, power, element) {
   return Object.freeze(waves);
 }
 
-function buildRewards(index, isElite, element) {
-  const scale = isElite ? 2.4 : 1;
-  const materials = {};
-  materials.iron = round((3 + index * 0.9) * scale);
-  if (index >= 10) materials.silverOre = round((1 + (index - 9) * 0.28) * scale);
-  if (index >= 25) materials.goldOre = round((1 + (index - 24) * 0.16) * scale);
-  materials[CRYSTAL_OF[element]] = round((1 + index * 0.14) * scale);
+/** 经济表里的 `crystal` 指本关元素的三相晶；`shards` 按品质换成碎片资源。 */
+function expandRewardMap(source, element) {
+  const out = {};
+  if (!source) return out;
+  for (const [key, value] of Object.entries(source)) {
+    if (key === 'crystal') {
+      out[CRYSTAL_OF[element]] = (out[CRYSTAL_OF[element]] ?? 0) + value;
+    } else if (key === 'shards') {
+      for (const [quality, n] of Object.entries(value)) {
+        const id = SHARD_RESOURCE[quality];
+        if (id) out[id] = (out[id] ?? 0) + n;
+      }
+    } else {
+      out[key] = (out[key] ?? 0) + value;
+    }
+  }
+  return out;
+}
+
+function buildFirstClear(row, element) {
+  return Object.freeze(expandRewardMap(row.firstClear, element));
+}
+
+/** 每次胜利/扫荡的掉落区间。区间型资源写 [min,max]，概率型写 chance。 */
+function buildRepeat(row, element) {
+  const rolls = {};
+  for (const [key, value] of Object.entries(row.repeat)) {
+    if (Array.isArray(value)) rolls[key] = Object.freeze([value[0], value[1]]);
+  }
   return Object.freeze({
-    coin: round((45 + index * 26) * scale),
-    exp: round((10 + index * 6) * scale),
+    rolls: Object.freeze(rolls),
+    crystalId: CRYSTAL_OF[element],
+    crystalChance: row.repeat.crystalChance ?? 0,
+    shardId: SHARD_RESOURCE[row.repeat.shardTier] ?? null,
+    shardTier: row.repeat.shardTier ?? null,
+    shardChance: row.repeat.shardChance ?? 0,
+  });
+}
+
+/** 重复掉落的期望值视图（UI 展示与经济回归用，实际发放走 dropTable/repeat）。 */
+function buildRewards(row, index, repeat) {
+  const mid = ([min, max]) => round((min + max) / 2);
+  const materials = {};
+  for (const [id, span] of Object.entries(repeat.rolls)) {
+    if (id === 'coin') continue;
+    const n = mid(span);
+    if (n > 0) materials[id] = n;
+  }
+  if (repeat.crystalChance > 0) {
+    const n = (materials[repeat.crystalId] ?? 0) + repeat.crystalChance;
+    materials[repeat.crystalId] = Math.round(n * 100) / 100;
+  }
+  return Object.freeze({
+    coin: mid(row.repeat.coin),
+    exp: round(10 + index * 6),
     materials: Object.freeze(materials),
   });
 }
 
-function buildFirstClear(index, isElite) {
-  const out = { coin: round(120 + index * 55) };
-  if (isElite) {
-    out.diamond = 5 + Math.floor(index / 10);
-    out.luckyCharm = 1 + Math.floor(index / 15);
-  } else if (index % 2 === 1) {
-    out.luckyCharm = 1;
+function buildDropTable(repeat) {
+  const drops = [];
+  for (const [id, [min, max]] of Object.entries(repeat.rolls)) {
+    drops.push({ id, chance: 1, min, max });
   }
-  if (index === 1) out.iron = 40;
-  return Object.freeze(out);
-}
-
-function buildDropTable(index, element) {
-  const drops = [
-    { id: 'iron', chance: 1, min: 2, max: 5 + Math.floor(index / 3) },
-  ];
-  if (index >= 8) drops.push({ id: 'silverOre', chance: 0.45, min: 1, max: 2 + Math.floor(index / 8) });
-  if (index >= 22) drops.push({ id: 'goldOre', chance: 0.3, min: 1, max: 1 + Math.floor(index / 12) });
-  drops.push({ id: CRYSTAL_OF[element], chance: 0.55, min: 1, max: 2 + Math.floor(index / 10) });
-  if (index >= 5) drops.push({ id: 'luckyCharm', chance: 0.08 + index * 0.002, min: 1, max: 1 });
+  if (repeat.crystalChance > 0) {
+    drops.push({ id: repeat.crystalId, chance: repeat.crystalChance, min: 1, max: 1 });
+  }
+  if (repeat.shardId && repeat.shardChance > 0) {
+    drops.push({ id: repeat.shardId, chance: repeat.shardChance, min: 1, max: 1 });
+  }
   return Object.freeze(drops.map((d) => Object.freeze(d)));
 }
 
-/** 阵容栏位在这些关卡通关后解锁（与 balance.LINEUP_UNLOCK_STAGES 对应）。 */
-const LINEUP_UNLOCK_AT = { 3: 2, 8: 3, 16: 4, 28: 5 };
+/** 阵容栏位在这些关卡通关后解锁（balance.SLOT_UNLOCK_STAGES：第 i 项通关后开第 i+1 格）。 */
+const LINEUP_UNLOCK_AT = SLOT_UNLOCK_STAGES.reduce((acc, stage, i) => {
+  if (i > 0 && stage > 0) acc[stage] = i + 1;
+  return acc;
+}, {});
 
 function buildStages() {
   const list = [];
@@ -252,6 +297,8 @@ function buildStages() {
     const element = stageElement(chapter, indexInChapter);
     const basePower = POWER_START * POWER_STEP ** (i - 1);
     const power = round(basePower * (isElite ? ELITE_POWER_SCALE : 1));
+    const row = STAGE_BALANCE[i - 1];
+    const repeat = buildRepeat(row, element);
 
     list.push(
       Object.freeze({
@@ -264,12 +311,15 @@ function buildStages() {
         title: meta.title,
         element,
         isElite,
-        staminaCost: isElite ? 12 : 6,
+        staminaCost: row.staminaCost,
         recommendPower: power,
+        /** fable-3 §3 的敌方战力参考值，暂不驱动战斗，只供经济回归比对。 */
+        balancePower: row.enemyPower,
         waves: buildWaves(chapter, i, isElite, power, element),
-        rewards: buildRewards(i, isElite, element),
-        firstClear: buildFirstClear(i, isElite),
-        dropTable: buildDropTable(i, element),
+        rewards: buildRewards(row, i, repeat),
+        firstClear: buildFirstClear(row, element),
+        repeat,
+        dropTable: buildDropTable(repeat),
         unlockLineupSlot: LINEUP_UNLOCK_AT[i] ?? null,
         /** 精英关需要战力门槛，普通关不设限 */
         powerGate: isElite ? round(power * 0.72) : 0,

@@ -18,6 +18,7 @@ import {
   QUALITIES,
   QUALITY_RANK,
   ELEMENTS,
+  ELEMENT_BIAS,
   ELEMENT_CRYSTAL,
   FORGE_STAGES,
   FORGE_COST,
@@ -29,6 +30,7 @@ import {
   MASTER_FORGE_MULTIPLIER,
   MASTER_FORGE,
   FORGE_PITY,
+  FORGE_PITY_BY_STAGE,
   QUALITY_STAT_MULTIPLIER,
   ENHANCE_COST,
   DISMANTLE,
@@ -49,6 +51,7 @@ import { previewIdle, idleRatesFor, regenStamina, lastCollectAtOf } from './idle
 
 const DAY_MS = 86400000;
 const LEGENDARY_RANK = QUALITY_RANK.legendary;
+const EPIC_RANK = QUALITY_RANK.epic;
 
 const fail = (reason, extra) => ({ ok: false, reason, ...(extra || {}) });
 
@@ -77,8 +80,17 @@ function ensureForgeState(state) {
     if (typeof f.pity[stage].legendary !== 'number') f.pity[stage].legendary = 0;
   }
   if (!f.masterForge || typeof f.masterForge !== 'object') f.masterForge = { dayKey: -1, used: 0 };
-  if (typeof f.totalForged !== 'number') f.totalForged = 0;
+  if (typeof f.totalForged !== 'number' || !Number.isFinite(f.totalForged)) f.totalForged = 0;
   if (typeof f.serial !== 'number') f.serial = deriveSerial(state);
+
+  // 首锻保底只认「这个账号是否成功开过炉」。老存档没有该字段，
+  // 用已有的证据（core 的 flags.firstForgeDone / 累计锻造数 / 背包）反推，
+  // 免得一个 Round 1 的存档在 Round 2 白拿一次保底。
+  if (typeof f.firstForgeDone !== 'boolean') {
+    f.firstForgeDone = Boolean(
+      state.flags?.firstForgeDone || f.totalForged > 0 || state.weapons.length > 0,
+    );
+  }
   return state;
 }
 
@@ -245,16 +257,42 @@ function pityStateFor(state, stage) {
   return state.forge.pity[stage];
 }
 
-/** 返回本次开炉的保底下限品质（null 表示无保底）。 */
+/** 该炉的保底阈值；null 表示这一档不设保底（精铁炉两档皆无）。 */
+export function pityThresholdsFor(stage) {
+  return FORGE_PITY_BY_STAGE[stage] ?? { epic: null, legendary: null };
+}
+
+/** 返回本次开炉的连抽保底下限品质（null 表示无保底）。 */
 export function pityFloorFor(state, stage) {
   const p = pityStateFor(state, stage);
-  const th = FORGE_PITY[stage];
-  if (p.legendary + 1 >= th.legendary) return 'legendary';
-  if (p.epic + 1 >= th.epic) return 'epic';
+  const th = pityThresholdsFor(stage);
+  if (th.legendary && p.legendary + 1 >= th.legendary) return 'legendary';
+  if (th.epic && p.epic + 1 >= th.epic) return 'epic';
   return null;
 }
 
-function applyPityFloor(weights, floorQuality) {
+/** 账号首锻保底：还没成功开过炉时，本次至少出 FORGE_PITY.firstForgeMinQuality。 */
+export function isFirstForge(state) {
+  return !state?.forge?.firstForgeDone;
+}
+
+export function firstForgeFloorFor(state) {
+  return isFirstForge(state) ? FORGE_PITY.firstForgeMinQuality ?? null : null;
+}
+
+/** 取两个下限里更高的那个。 */
+export function highestFloor(a, b) {
+  if (!a) return b ?? null;
+  if (!b) return a ?? null;
+  return (QUALITY_RANK[a] ?? 0) >= (QUALITY_RANK[b] ?? 0) ? a : b;
+}
+
+/** 本次开炉真正生效的品质下限：连抽保底与首锻保底取高。 */
+export function forgeFloorFor(state, stage) {
+  return highestFloor(pityFloorFor(state, stage), firstForgeFloorFor(state));
+}
+
+function applyQualityFloor(weights, floorQuality) {
   if (!floorQuality) return weights;
   const floor = QUALITY_RANK[floorQuality] ?? 0;
   const out = {};
@@ -315,8 +353,10 @@ export function previewForge(state, opts) {
   const missing = missingFor(s, cost);
   const canAfford = Object.keys(missing).length === 0;
 
-  const floor = pityFloorFor(s, o.stage);
-  const weights = applyPityFloor(computeQualityWeights(effective), floor);
+  const pityFloor = pityFloorFor(s, o.stage);
+  const firstFloor = firstForgeFloorFor(s);
+  const floor = highestFloor(pityFloor, firstFloor);
+  const weights = applyQualityFloor(computeQualityWeights(effective), floor);
   const chances = normalizeWeights(weights);
 
   const qualityChances = QUALITIES.map((q) => ({
@@ -328,6 +368,7 @@ export function previewForge(state, opts) {
   }));
 
   const pity = pityStateFor(s, o.stage);
+  const thresholds = pityThresholdsFor(o.stage);
   const expectedAtk = QUALITIES.reduce((sum, q) => {
     const pool = eligibleProtos(o.stage, q);
     if (pool.length === 0) return sum;
@@ -354,12 +395,18 @@ export function previewForge(state, opts) {
       applied: effective.useMasterForge,
       ...mf,
     },
+    /** UI 侧的扁平别名，等价于 masterForge.available。 */
+    masterForgeReady: mf.available,
     pity: {
       epic: pity.epic,
       legendary: pity.legendary,
-      epicThreshold: FORGE_PITY[o.stage].epic,
-      legendaryThreshold: FORGE_PITY[o.stage].legendary,
+      epicThreshold: thresholds.epic,
+      legendaryThreshold: thresholds.legendary,
+      remainingToEpic: thresholds.epic ? Math.max(0, thresholds.epic - pity.epic) : null,
       floorThisForge: floor,
+      pityFloor,
+      firstForgeFloor: firstFloor,
+      isFirstForge: isFirstForge(s),
       guaranteed: Boolean(floor),
     },
     bag: { used: s.weapons.length, capacity: bagCapacity(s) },
@@ -423,10 +470,15 @@ export function forgeWeapon(state, opts, rng) {
   payCost(s, cost);
   if (o.useMasterForge) consumeMasterForge(s, now);
 
-  // 1) 品质：权重 → 保底下限 → 加权抽取
-  const floor = pityFloorFor(s, o.stage);
-  const weights = applyPityFloor(computeQualityWeights(o), floor);
+  // 1) 品质：权重 → 保底下限（连抽保底 / 首锻保底取高）→ 加权抽取
+  const pityFloor = pityFloorFor(s, o.stage);
+  const firstFloor = firstForgeFloorFor(s);
+  const floor = highestFloor(pityFloor, firstFloor);
+  const weights = applyQualityFloor(computeQualityWeights(o), floor);
   let quality = rngA.weightedKey(weights) ?? 'common';
+
+  // 保底是硬承诺：即便权重表被改坏也不许击穿。
+  if (floor && (QUALITY_RANK[quality] ?? 0) < (QUALITY_RANK[floor] ?? 0)) quality = floor;
 
   // 2) 原型：按品质筛出可锻池；池空则逐级降档（防御，正常配置下不会触发）
   let pool = eligibleProtos(o.stage, quality);
@@ -439,12 +491,22 @@ export function forgeWeapon(state, opts, rng) {
     pool = WEAPONS.filter((w) => w.forgeStage === o.stage);
   }
 
+  // 3) 元素偏向：付了三相晶就保证主元素；该品质下没有对应元素原型时才退回加权。
+  let biasApplied = false;
+  if (o.elementBias) {
+    const biased = pool.filter((w) => w.element === o.elementBias);
+    if (biased.length > 0 && ELEMENT_BIAS.guarantee) {
+      pool = biased;
+      biasApplied = true;
+    }
+  }
+
   const proto = rngA.weightedPick(pool, (w) =>
-    o.elementBias && w.element === o.elementBias ? ELEMENT_BIAS_WEIGHT : 1,
+    o.elementBias && !biasApplied && w.element === o.elementBias ? ELEMENT_BIAS_WEIGHT : 1,
   );
   if (!proto) return fail('invalid_state');
 
-  // 3) 词条
+  // 4) 词条
   const affixes = rollAffixes(proto, quality, rngA);
 
   const weapon = {
@@ -464,10 +526,14 @@ export function forgeWeapon(state, opts, rng) {
   const isNewProto = markCodex(s, proto.id, quality);
   s.forge.totalForged += 1;
 
-  // 4) 保底计数
+  const wasFirstForge = isFirstForge(s);
+  s.forge.firstForgeDone = true;
+  if (s.flags && typeof s.flags === 'object') s.flags.firstForgeDone = true;
+
+  // 5) 保底计数（出史诗+即清零）
   const pity = pityStateFor(s, o.stage);
   const qRank = QUALITY_RANK[quality] ?? 0;
-  pity.epic = qRank >= QUALITY_RANK.epic ? 0 : pity.epic + 1;
+  pity.epic = qRank >= EPIC_RANK ? 0 : pity.epic + 1;
   pity.legendary = qRank >= LEGENDARY_RANK ? 0 : pity.legendary + 1;
 
   const line = `${FORGE_STAGE_NAME[o.stage]}开炉，得【${QUALITY_NAME[quality]}·${proto.name}】。`;
@@ -483,7 +549,11 @@ export function forgeWeapon(state, opts, rng) {
     isNewProto,
     usedMasterForge: o.useMasterForge,
     usedLucky: o.useLucky,
-    pityFloorApplied: floor,
+    elementBiasApplied: biasApplied,
+    firstForge: wasFirstForge,
+    floorApplied: floor,
+    pityFloorApplied: pityFloor,
+    firstForgeFloorApplied: firstFloor,
     pityAfter: { epic: pity.epic, legendary: pity.legendary },
     reveal: buildRevealSteps(quality),
     resultLine: FORGE_RESULT_LINE[quality],
@@ -568,14 +638,19 @@ export function enhanceWeapon(state, weaponId) {
  * dismantleWeapon
  * ------------------------------------------------------------------ */
 
-/** 分解返还：60% 锻造消耗 + 45% 强化投入 + 品质奖励。 */
+/**
+ * 分解返还：60% 锻造矿物 + 45% 强化投入 + 同品质碎片。
+ * 铜钱一分不退（DISMANTLE.refundExclude）—— 这是经济表里主要的反通胀沉没口。
+ */
 export function dismantleRefundFor(weapon) {
   const proto = WEAPON_BY_ID[weapon?.protoId];
   if (!proto) return null;
+  const excluded = new Set(DISMANTLE.refundExclude ?? []);
   const refund = {};
 
   const base = FORGE_COST[weapon.forgedStage] ?? FORGE_COST[proto.forgeStage] ?? FORGE_COST.iron;
   for (const [id, n] of Object.entries(base)) {
+    if (excluded.has(id)) continue;
     refund[id] = (refund[id] ?? 0) + Math.floor(n * DISMANTLE.refundRatio);
   }
 
@@ -587,6 +662,7 @@ export function dismantleRefundFor(weapon) {
       const step = enhanceCostFor(probe);
       if (!step) break;
       for (const [id, n] of Object.entries(step)) {
+        if (excluded.has(id)) continue;
         refund[id] = (refund[id] ?? 0) + Math.floor(n * DISMANTLE.enhanceRefundRatio);
       }
     }

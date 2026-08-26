@@ -12,9 +12,19 @@ const ONLINE_WINDOW_MS = 15 * 60 * 1000;
 
 export function clearedStagesOf(state) {
   const c = state?.campaign;
-  const raw = c?.maxCleared ?? c?.cleared ?? c?.highest ?? 0;
-  const n = Math.floor(Number(raw) || 0);
-  return Math.max(0, Math.min(STAGE_COUNT_TOTAL, n));
+  // core/state.js 用 highestStage，且它的 `cleared` 是一张 map 而不是数字，
+  // 所以数字字段优先，map 只在没有其他线索时按 key 数兜底。
+  const candidates = [c?.maxCleared, c?.highestStage, c?.highest, c?.cleared];
+  for (const raw of candidates) {
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return Math.max(0, Math.min(STAGE_COUNT_TOTAL, Math.floor(raw)));
+    }
+  }
+  if (c?.cleared && typeof c.cleared === 'object') {
+    const n = Object.values(c.cleared).filter(Boolean).length;
+    return Math.max(0, Math.min(STAGE_COUNT_TOTAL, n));
+  }
+  return 0;
 }
 
 export function codexCountOf(state) {
@@ -35,7 +45,8 @@ export function codexBonusOf(state) {
 }
 
 /**
- * 当前每分钟产出速率。
+ * 当前每分钟产出速率（fable-3 §4）：
+ *   rate = base + perStage × max(0, cleared − offsetStage)，cleared < minStage 时不产出。
  * @returns {{ rates: Record<string, number>, cleared:number, codexBonus:number }}
  */
 export function idleRatesFor(state) {
@@ -43,8 +54,10 @@ export function idleRatesFor(state) {
   const bonus = 1 + Math.min(CODEX_BONUS.cap, codexBonusOf(state));
   const rates = {};
   for (const [id, def] of Object.entries(IDLE_RATES)) {
-    if (cleared < def.unlockStage) continue;
-    const raw = (def.base + def.perStage * cleared) * bonus;
+    const minStage = def.minStage ?? def.unlockStage ?? 0;
+    if (cleared < minStage) continue;
+    const effective = Math.max(0, cleared - (def.offsetStage ?? 0));
+    const raw = (def.base + def.perStage * effective) * bonus;
     if (raw > 0) rates[id] = Math.round(raw * 1000) / 1000;
   }
   return { rates, cleared, codexBonus: codexBonusOf(state) };
