@@ -8,6 +8,7 @@
 | 超能下蛋鸭 | `games/chao-neng-xia-dan-ya/` | 4174 | Round 1–3 完成，L1，待合入 main |
 | 灵画师 | `games/linghuashi/` | 4173 | Round 1–3 完成（见下文归档） |
 | 赵云与阿斗 | `games/zhao-yun-adou/` | 4180 | 见 `round1/BRIEF.md` / `round2/BRIEF.md` 附录 |
+| 蘑菇屋·慢生活 | `games/xiangwang-shenghuo/` | 4175 | Round 1–3 完成，58 测 / 1 skip，见 `PROGRESS.xiangwang-shenghuo.md` |
 
 ---
 
