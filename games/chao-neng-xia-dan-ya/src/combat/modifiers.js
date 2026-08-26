@@ -5,6 +5,8 @@
  * 结算管线只读这一张表，避免每个来源各写一套分支。
  *
  * 合并语义由 MOD_SPEC 决定：`mul` 连乘、`add` 相加、`max` 取最大。
+ * `max` 键的中性值是 0，所以「倍率型」的 max 键（mainEggMult 等）读出 0 表示未设定，
+ * 消费方自行 `Math.max(1, …)`。
  */
 
 export const MOD_SPEC = {
@@ -14,21 +16,32 @@ export const MOD_SPEC = {
   flatDamage: "add",
   critChance: "add",
   critDmg: "add",
+  /** 主蛋（egg.isMain）专属倍率，按数据表约定取最高档而不叠乘 */
+  mainEggMult: "max",
   /** 连击 */
   comboGain: "add",
   comboGainMult: "mul",
   comboDecayMult: "mul",
   comboDamageMult: "mul",
+  comboWindowBonus: "add",
+  comboCritDmgPerStack: "add",
+  critChanceAt10: "add",
   burstThresholdDelta: "add",
   burstDamageMult: "mul",
+  burstKeepStacksPct: "max",
   /** 元素 */
   elementPowerMult: "mul",
+  elementDamageMult: "mul",
   elementStackBonus: "add",
+  elementThresholdDelta: "add",
   reactionMult: "mul",
+  energyOnReaction: "add",
   statusDurationMult: "mul",
   armorShred: "add",
   /** 碰撞 */
   collisionDamageMult: "mul",
+  collisionDamageBonus: "add",
+  collisionDamageCap: "max",
   splitChance: "add",
   radiusPerCollision: "add",
   /** 通用 */

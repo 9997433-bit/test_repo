@@ -21,6 +21,7 @@ export {
   ELEMENT,
   ELEMENTS,
   RACE,
+  RACE_ALIAS,
   REACTION,
   REACTION_LABEL,
   REACTIVE_ELEMENTS,
@@ -65,11 +66,13 @@ export {
   createCombo,
   decayCombo,
   isBurstActive,
+  keptStacks,
   planCombo,
 } from "./combo.js";
 
 export {
   elementEffects,
+  elementThreshold,
   isReactiveElement,
   previewElement,
   reactionBetween,
@@ -87,6 +90,10 @@ export {
   bondTier,
   computeBonds,
   describeBonds,
+  raceBondTable,
+  schoolBondTable,
+  synergyBondTable,
+  translateSynergyMod,
 } from "./bonds.js";
 
 export {
@@ -105,6 +112,7 @@ export {
   computeDamage,
   eggElement,
   eggSchool,
+  isMainEgg,
   resistOf,
 } from "./damage.js";
 

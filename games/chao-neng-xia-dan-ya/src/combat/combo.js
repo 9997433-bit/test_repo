@@ -41,7 +41,7 @@ export function decayCombo(state = {}, now = 0, mods = {}) {
   if (value <= 0) return 0;
   if (isBurstActive(state, now)) return value;
   const decayMult = Math.max(0.05, modOf(mods, "comboDecayMult"));
-  const holdWindow = COMBO.WINDOW / decayMult;
+  const holdWindow = COMBO.WINDOW / decayMult + Math.max(0, modOf(mods, "comboWindowBonus"));
   const idle = now - (state.lastHitAt ?? now);
   if (idle <= holdWindow) return value;
   const lost = (idle - holdWindow) * COMBO.DECAY_PER_SEC * decayMult;
@@ -50,12 +50,19 @@ export function decayCombo(state = {}, now = 0, mods = {}) {
 
 /** 连击层数换算成结算加成。 */
 export function comboBonuses(stacks = 0, mods = {}) {
-  const n = Math.max(0, stacks);
+  const n = Number.isFinite(stacks) ? Math.max(0, stacks) : 0;
+  const highStacks = n >= COMBO.CRIT_BONUS_STACKS ? modOf(mods, "critChanceAt10") : 0;
   return {
     damageMult: (1 + n * COMBO.DAMAGE_PER_STACK) * modOf(mods, "comboDamageMult"),
-    critChance: n * COMBO.CRIT_CHANCE_PER_STACK,
-    critDmg: n * COMBO.CRIT_DMG_PER_STACK,
+    critChance: n * COMBO.CRIT_CHANCE_PER_STACK + highStacks,
+    critDmg: n * (COMBO.CRIT_DMG_PER_STACK + modOf(mods, "comboCritDmgPerStack")),
   };
+}
+
+/** 爆蛋后保留的连击层数（连击流 4 人羁绊）。 */
+export function keptStacks(reached = 0, mods = {}) {
+  const pct = Math.min(1, Math.max(0, modOf(mods, "burstKeepStacksPct")));
+  return pct > 0 ? Math.floor(Math.max(0, reached) * pct) : 0;
 }
 
 /**
@@ -65,18 +72,22 @@ export function comboBonuses(stacks = 0, mods = {}) {
  * @param {number} params.combo 命中前的连击层数
  * @param {number} [params.gain] 基础叠层（默认 1）
  * @param {object} [params.mods] 羁绊 / 增益修正
- * @returns {{ before:number, gain:number, after:number, delta:number, burst:boolean, threshold:number }}
+ * @returns {{
+ *   before:number, gain:number, after:number, delta:number,
+ *   burst:boolean, threshold:number, reached:number, kept?:number
+ * }}
  */
 export function planCombo({ combo = 0, gain = 1, mods = {} } = {}) {
-  const before = Math.max(0, Math.floor(combo));
+  const before = Number.isFinite(combo) ? Math.max(0, Math.floor(combo)) : 0;
   const threshold = burstThreshold(mods);
   const raw = (gain + modOf(mods, "comboGain")) * modOf(mods, "comboGainMult");
   const applied = gain <= 0 ? 0 : Math.max(1, Math.round(raw));
   const reached = before + applied;
 
   if (applied > 0 && reached >= threshold) {
-    // 引爆：连击清零，进入爆蛋窗口
-    return { before, gain: applied, after: 0, delta: -before, burst: true, threshold, reached };
+    // 引爆：连击清零（连击流 4 人羁绊可保留一部分层数），进入爆蛋窗口
+    const kept = keptStacks(reached, mods);
+    return { before, gain: applied, after: kept, delta: kept - before, burst: true, threshold, reached, kept };
   }
   return { before, gain: applied, after: reached, delta: reached - before, burst: false, threshold, reached };
 }
@@ -86,12 +97,13 @@ export function planCombo({ combo = 0, gain = 1, mods = {} } = {}) {
  *
  * @param {object} params
  * @param {number} params.damage 触发爆蛋的那一击伤害，用作爆炸基数
+ * @param {number} [params.kept] 引爆后保留的连击层数（`planCombo().kept`）
  */
-export function burstEffects({ damage = 0, at = { x: 0, y: 0 }, mods = {}, sourceId = null, targetId = null, element = "physical", now = 0 } = {}) {
+export function burstEffects({ damage = 0, at = { x: 0, y: 0 }, mods = {}, sourceId = null, targetId = null, element = "physical", now = 0, kept = 0 } = {}) {
   const burstMult = modOf(mods, "burstDamageMult");
   const duration = COMBO.BURST_DURATION;
   const effects = [
-    comboEffect({ op: "burst", value: 0, duration, source: sourceId }),
+    comboEffect({ op: "burst", value: kept, duration, source: sourceId }),
     buffEffect({
       id: BURST_BUFF_ID,
       scope: "team",

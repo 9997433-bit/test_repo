@@ -17,6 +17,7 @@ import {
   auraEffect,
   chainEffect,
   clearStatusEffect,
+  energyEffect,
   explosionEffect,
   feedbackEffect,
   statusEffect,
@@ -64,6 +65,11 @@ export function readAura(target, ctx = {}, now = ctx.now ?? 0) {
 /** 反应倍率：只放大超出 1 的部分，避免羁绊把无反应命中也拉高。 */
 function reactionMultiplier(base, mods) {
   return 1 + (base - 1) * modOf(mods, "reactionMult");
+}
+
+/** 触发饱和效果所需的同元素层数（属性流 3 人羁绊会降到 2）。 */
+export function elementThreshold(mods = {}) {
+  return Math.max(1, Math.round(ELEMENTS.STACK_MAX + modOf(mods, "elementThresholdDelta")));
 }
 
 /**
@@ -124,13 +130,14 @@ export function previewElement({ element = ELEMENT.PHYSICAL, power = ELEMENTS.BA
 
   const gain = 1 + Math.max(0, Math.round(modOf(mods, "elementStackBonus")));
   const stacks = (prevAura?.stacks ?? 0) + gain;
+  const threshold = elementThreshold(mods);
 
-  if (stacks >= ELEMENTS.STACK_MAX) {
+  if (stacks >= threshold) {
     return {
       ...base,
       applied: true,
       saturated: SATURATION[element] ?? null,
-      stacks: ELEMENTS.STACK_MAX,
+      stacks: threshold,
       power: appliedPower,
       // 饱和后消耗附着，形成「叠 3 层放一次大的」的节奏
       nextAura: null,
@@ -184,6 +191,10 @@ export function elementEffects(plan, { damage = 0, target = null, position = nul
   if (plan.reaction) {
     events.push(reactionEvent({ targetId, reaction: plan.reaction, label: REACTION_LABEL[plan.reaction], incoming: plan.element, consumed: plan.prevAura?.element ?? null, damage }));
     effects.push(feedbackEffect({ kind: "floater", text: REACTION_LABEL[plan.reaction], tone: plan.reaction, intensity: 1, at }));
+
+    // 属性流 4 人羁绊：每次元素反应全队回能
+    const energy = modOf(mods, "energyOnReaction");
+    if (energy > 0) effects.push(energyEffect({ scope: "team", amount: energy, source: sourceId }));
 
     if (plan.reaction === REACTION.VAPORIZE) {
       // 蒸发移除冻结

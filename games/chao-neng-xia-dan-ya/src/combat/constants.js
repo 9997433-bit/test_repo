@@ -28,9 +28,18 @@ export const SCHOOL = {
 /** 种族枚举，与 src/data 英雄表的 race 字段对齐。 */
 export const RACE = {
   DUCK: "duck",
-  CHICK: "chick",
+  CHICK: "chicken",
   GOOSE: "goose",
   BIRD: "bird",
+};
+
+/** 早期脚手架用过的种族写法，统一归一到 src/data 的口径。 */
+export const RACE_ALIAS = {
+  chick: RACE.CHICK,
+  chickens: RACE.CHICK,
+  ducks: RACE.DUCK,
+  geese: RACE.GOOSE,
+  birds: RACE.BIRD,
 };
 
 /** 状态枚举。 */
@@ -71,6 +80,8 @@ export const COMBO = {
   CRIT_DMG_PER_STACK: 0.06,
   /** 每层提供的暴击率加成。 */
   CRIT_CHANCE_PER_STACK: 0.006,
+  /** 连击流 3 人羁绊「连击≥N 层时全队暴击率 +x%」的门槛层数。 */
+  CRIT_BONUS_STACKS: 10,
   /** 爆蛋时刻持续时间（秒）。 */
   BURST_DURATION: 4,
   /** 爆蛋时刻期间的全局伤害倍率。 */

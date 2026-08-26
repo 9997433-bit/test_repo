@@ -6,6 +6,12 @@
  * `{ damage, effects, comboDelta, events }`（外加一批便于 HUD / 单测的附加字段）。
  *
  * 调用方拿到结果后自行决定：扣血、播特效、把 effects 分发给各层。
+ *
+ * 对外契约（缺字段的蛋也必须满足）：
+ * - `damage`：有限的非负整数；蛋显式写了 0 威力就是 0 伤害，什么都没写才吃默认威力
+ * - `effects`：恒为数组，元素是效果指令；一次普通命中至少带一条飘字指令，不会是空数组
+ * - `comboDelta`：有限数；普通命中 +1（叠层羁绊更多），爆蛋时刻为负（清零或保留部分层数）
+ * - `events`：恒为数组
  */
 
 import { COMBO, ELEMENT } from "./constants.js";
@@ -70,7 +76,7 @@ export function resolveHit(egg = {}, target = {}, ctx = {}) {
   const at = hitPointOf(egg, target, ctx);
   const sourceId = egg?.ownerId ?? ctx.hero?.id ?? ctx.caster?.id ?? null;
   const targetId = target?.id ?? null;
-  const comboBefore = Math.max(0, Math.floor(ctx.combo ?? 0));
+  const comboBefore = Number.isFinite(ctx.combo) ? Math.max(0, Math.floor(ctx.combo)) : 0;
   const element = eggElement(egg, ctx);
 
   // 无敌 / 已死目标：不结算伤害，也不叠连击
@@ -132,7 +138,7 @@ export function resolveHit(egg = {}, target = {}, ctx = {}) {
   events.push(...elemental.events);
 
   if (plannedCombo.burst) {
-    const burst = burstEffects({ damage: dmg.amount, at, mods, sourceId, targetId, element, now });
+    const burst = burstEffects({ damage: dmg.amount, at, mods, sourceId, targetId, element, now, kept: plannedCombo.kept ?? 0 });
     effects.push(...burst.effects);
     events.push(...burst.events);
   } else if (burstMult > 1 || isBurstActive({ burstUntil: ctx.burstUntil ?? 0 }, now)) {
@@ -162,7 +168,8 @@ export function resolveHit(egg = {}, target = {}, ctx = {}) {
   return {
     damage: dmg.amount,
     effects,
-    comboDelta: plannedCombo.delta,
+    // 普通命中恒为 +1（叠层羁绊会更多）；爆蛋时刻是负数（清零 / 保留部分层数），但一定是有限数
+    comboDelta: Number.isFinite(plannedCombo.delta) ? plannedCombo.delta : 0,
     events,
     crit: dmg.crit,
     element,
