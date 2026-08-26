@@ -1,16 +1,178 @@
+/* ============================================================
+   超能下蛋鸭 · 设计令牌 tokens.css
+   所有权：Fable-2 美术 UX（src/styles/** 独占）。其他代理只读。
+   视觉三支柱：搞怪禽类 · 蛋黄金 · 夜市霓虹
+   规范详见 docs/ART_DIRECTION.md；组件示例见 src/styles/gallery.html
+   ============================================================ */
 :root {
-  --bg: #14101c;
-  --bg-2: #1e1830;
-  --panel: #2a2144;
-  --ink: #f6f0e6;
-  --muted: #c9b8d6;
-  --yolk: #ffd447;
-  --yolk-hot: #ff8a3d;
-  --teal: #3ee0c5;
-  --pink: #ff6b9d;
-  --ice: #8fd3ff;
-  --thunder: #ffe566;
+  color-scheme: dark;
+
+  /* —— 夜市底色（冷紫夜空，由深到浅）—— */
+  --night-0: #0b0714;
+  --night-1: #140f21; /* 页面主底 */
+  --night-2: #1d1533;
+  --night-3: #271c46; /* 面板 */
+  --night-4: #332457; /* 浮起面板 / hover */
+  --night-line: #453468; /* 默认描边 */
+
+  /* —— 文字 —— */
+  --ink: #fbf4e6; /* 暖白，衬蛋黄 */
+  --ink-dim: #c9b8d6;
+  --ink-faint: #8d7ba3;
+  --ink-on-yolk: #40260a; /* 蛋黄底上的深字，对比度 ≥ 7:1 */
+
+  /* —— 蛋黄金（品牌主色阶）—— */
+  --yolk-100: #fff6cf;
+  --yolk-300: #ffe28a;
+  --yolk-500: #ffd447; /* 主 */
+  --yolk-600: #ffbe2e;
+  --yolk-700: #ff9f1c;
+  --yolk-hot: #ff8a3d; /* 高温橙，蓄力满 / 暴击 */
+
+  /* —— 夜市霓虹 —— */
+  --neon-teal: #3ee0c5;
+  --neon-pink: #ff6b9d;
+  --neon-blue: #59c2ff;
+  --neon-violet: #b389ff;
+
+  /* —— 元素（正色 + 深底，用于色盲纹样对比）—— */
+  --el-fire: #ff7a3d;
+  --el-fire-deep: #a63a12;
+  --el-ice: #8fd3ff;
+  --el-ice-deep: #1f5f8e;
+  --el-thunder: #ffe566;
+  --el-thunder-deep: #7d6300;
+
+  /* —— 流派 —— */
+  --school-combo: #ff6b9d;
+  --school-brute: #ff9f1c;
+  --school-elemental: #59c2ff;
+  --school-collide: #3ee0c5;
+  --school-support: #b389ff;
+
+  /* —— 稀有度 1–5 星 —— */
+  --rarity-1: #9aa3b2;
+  --rarity-2: #63d68a;
+  --rarity-3: #59c2ff;
+  --rarity-4: #b389ff;
+  --rarity-5: #ffd447;
+
+  /* —— 语义 —— */
+  --ok: #5ad66f;
+  --warn: #ffb020;
   --danger: #ff4d6d;
-  --font: "Trebuchet MS", "PingFang SC", "Noto Sans SC", sans-serif;
+  --hp: #ff5c7a;
+  --energy: var(--yolk-500);
+
+  /* —— 兼容别名（Round 0 脚手架旧名，勿删）—— */
+  --bg: var(--night-1);
+  --bg-2: var(--night-2);
+  --panel: var(--night-3);
+  --muted: var(--ink-dim);
+  --yolk: var(--yolk-500);
+  --teal: var(--neon-teal);
+  --pink: var(--neon-pink);
+  --ice: var(--el-ice);
+  --thunder: var(--el-thunder);
+
+  /* —— 渐变 —— */
+  --grad-yolk: linear-gradient(180deg, #ffe28a 0%, #ffd447 48%, #ff9f1c 100%);
+  --grad-hot: linear-gradient(180deg, #ffd447 0%, #ff8a3d 60%, #ff4d6d 100%);
+  --grad-panel: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--night-4) 72%, transparent) 0%,
+    color-mix(in srgb, var(--night-2) 90%, transparent) 100%
+  );
+  --grad-hp: linear-gradient(90deg, #ff8aa0 0%, #ff5c7a 55%, #e63e5c 100%);
+  --grad-fever: linear-gradient(
+    90deg,
+    #ffd447, #ff6b9d, #b389ff, #59c2ff, #3ee0c5, #ffd447
+  );
+
+  /* —— 色盲纹样（元素双编码第 2 通道；第 3 通道为字形，见 components.css）
+     条纹 = 火 · 圆点 = 冰 · 网格 = 雷
+     圆点必须配 background-size: 8px 8px（var 无法携带 size）—— */
+  --pat-stripes: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.3) 0 5px,
+    rgba(255, 255, 255, 0) 5px 11px
+  );
+  --pat-dots: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.38) 1.5px,
+    rgba(255, 255, 255, 0) 1.9px
+  );
+  --pat-grid: repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.26) 0 3px,
+      rgba(255, 255, 255, 0) 3px 9px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.26) 0 3px,
+      rgba(255, 255, 255, 0) 3px 9px
+    );
+
+  /* —— 字体（系统栈，零外部资产）—— */
+  --font: "Trebuchet MS", ui-rounded, "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-num: "Trebuchet MS", "Segoe UI", var(--font);
+
+  /* —— 字号 —— */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.375rem;
+  --fs-2xl: 1.75rem;
+  --fs-display: clamp(1.75rem, 6vw, 2.5rem);
+
+  /* —— 空间（4px 基）—— */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  /* —— 圆角 —— */
+  --radius-sm: 10px;
   --radius: 16px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  /* —— 阴影 & 霓虹辉光 —— */
+  --shadow-1: 0 2px 8px rgba(5, 2, 12, 0.45);
+  --shadow-2: 0 10px 28px rgba(5, 2, 12, 0.5);
+  --shadow-3: 0 18px 48px rgba(5, 2, 12, 0.62);
+  --glow-yolk: 0 0 10px color-mix(in srgb, var(--yolk-500) 55%, transparent),
+    0 0 26px color-mix(in srgb, var(--yolk-700) 32%, transparent);
+  --glow-teal: 0 0 10px color-mix(in srgb, var(--neon-teal) 55%, transparent),
+    0 0 24px color-mix(in srgb, var(--neon-teal) 26%, transparent);
+  --glow-pink: 0 0 10px color-mix(in srgb, var(--neon-pink) 55%, transparent),
+    0 0 24px color-mix(in srgb, var(--neon-pink) 26%, transparent);
+  --glow-danger: 0 0 12px color-mix(in srgb, var(--danger) 60%, transparent),
+    0 0 30px color-mix(in srgb, var(--danger) 30%, transparent);
+
+  /* —— 动效（时长 / 缓动）—— */
+  --dur-1: 90ms; /* 按压反馈 */
+  --dur-2: 160ms; /* hover / 状态切换 */
+  --dur-3: 260ms; /* 面板入场 / 连击弹跳 */
+  --dur-4: 480ms; /* 结算盖章 / 大转场 */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* —— 触控 & 布局常量 —— */
+  --tap-min: 44px; /* 一切可点目标的最小命中尺寸 */
+  --stage-w: 480px; /* 战场逻辑宽 */
+  --hud-pad: 10px;
+
+  /* —— 层级 —— */
+  --z-hud: 10;
+  --z-flash: 40;
+  --z-overlay: 70;
+  --z-modal: 80;
+  --z-toast: 90;
 }
