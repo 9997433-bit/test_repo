@@ -353,7 +353,7 @@
     this.announce(this.msg("waveStart", {
       n: w.index,
       total: this.waves.length,
-      name: w.name[this.lang] || w.name.zh,
+      name: this.waveLabel(w),
       count: w.count,
       armor: D.armorLabel(w.armorType, this.lang),
       fly: this._flyTag(w),

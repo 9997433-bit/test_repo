@@ -110,7 +110,7 @@
     },
     waveStart: {
       zh: "第 {n}/{total} 波：{name} ×{count} · {armor}甲{fly} · 建议 {counter}",
-      en: "Wave {n}/{total}: {count}× {name} · {armor} armor{fly} · counter with {counter}",
+      en: "Wave {n}/{total}: {count}× {name} · armor: {armor}{fly} · counter with {counter}",
     },
     waveCleared: {
       zh: "第 {n} 波肃清。{secs} 秒后下一波。",
@@ -118,7 +118,7 @@
     },
     waveNext: {
       zh: "下一波预告：{name} ×{count}（{armor}甲{fly}）",
-      en: "Up next: {count}× {name} ({armor} armor{fly})",
+      en: "Up next: {count}× {name} (armor: {armor}{fly})",
     },
     bossFar: {
       zh: "★ 侦察兵报告：{waves} 波后 {name} 将降临，携带「{ability}」。",
@@ -134,7 +134,7 @@
     },
     bossWave: {
       zh: "★ 首领战 · {name}（{hp} 生命 · {armor}甲） — {ability}",
-      en: "★ BOSS · {name} ({hp} HP · {armor} armor) — {ability}",
+      en: "★ BOSS · {name} ({hp} HP · armor: {armor}) — {ability}",
     },
     bossSpawn: {
       zh: "★ {name} 踏入战场！",
