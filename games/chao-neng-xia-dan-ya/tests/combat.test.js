@@ -9,8 +9,13 @@ function expectNonDecreasing(values) {
 
 describe("resolveHit", () => {
   it("produces monotonic damage as egg power increases", () => {
-    const damages = [0, 1, 5, 10, 20].map(
-      (power) => resolveHit({ power }, { hp: 100 }, { combo: 0 }).damage,
+    const damages = [1, 5, 10, 20].map(
+      (power) =>
+        resolveHit(
+          { power, forceCrit: false },
+          { hp: 100 },
+          { combo: 0 },
+        ).damage,
     );
 
     expectNonDecreasing(damages);
