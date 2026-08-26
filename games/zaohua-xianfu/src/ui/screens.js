@@ -340,17 +340,34 @@ export function disciplesView(state, ui = {}) {
 
 /* ---------------------------------------------------------------- 其余 */
 
-export function cultivateView(state) {
+export function cultivateView(state, ui = {}) {
   const r = REALMS[Math.max(0, Math.min(REALMS.length - 1, state.realm.index))];
-  const ratio = (state.realm.exp ?? 0) / r.exp;
+  const exp = state.realm.exp ?? 0;
+  const ratio = exp / r.exp;
   const chance = breakthroughChance(state);
   const ready = chance > 0;
+  const qi = state.resources.qi ?? 0;
+  const gain = 6 + state.realm.index;
+  const need = Math.max(0, Math.ceil((r.exp - exp) / gain));
+  const qiRate = mansion.rates(state).qi ?? 0;
+  const affordableNow = Math.min(need, Math.floor(qi / 4));
+  const waitSec = need > affordableNow && qiRate > 0 ? ((need - affordableNow) * 4 - (qi % 4)) / qiRate : 0;
+  const auto = Boolean(ui.autoCultivate);
   return `<div class="card"><h3>${esc(r.name)} · 第 ${state.realm.layer}/${r.layers} 层</h3>
     ${bar(ratio)}
-    <p>修为 ${fmt(state.realm.exp)} / ${r.exp} · 心魔 ${state.realm.heartDemon ?? 0} · 破境率 ${(chance * 100).toFixed(0)}%</p>
-    <button class="gold" data-act="cultivate" ${(state.resources.qi ?? 0) >= 4 ? "" : "disabled"}>吐纳（-4 灵气）</button>
-    <button class="primary" data-act="breakthrough" ${ready ? "" : "disabled"}>破境</button>
-    <p class="muted">${ready ? "修为已满，可试破境。" : "修为未满，先行吐纳。"}失败不掉境，丹药折损，心魔使下次更稳。</p></div>`;
+    <p>修为 ${fmt(exp)} / ${r.exp} · 心魔 ${state.realm.heartDemon ?? 0} · 破境率 ${(chance * 100).toFixed(0)}%</p>
+    <p class="muted">每次吐纳 -4 灵气 / +${gain} 修为${
+      ready ? "" : ` · 尚需 ${need} 次，当前灵气够 ${affordableNow} 次${waitSec > 0 ? `，攒满约 ${etaText(waitSec)}` : ""}`
+    }</p>
+    <div class="build-list">
+      <button class="gold" data-act="cultivate" ${qi >= 4 ? "" : "disabled"}>吐纳</button>
+      <button data-act="cultivate-x" data-n="10" ${qi >= 4 ? "" : "disabled"}>吐纳 ×10</button>
+      <button data-act="auto-cultivate" aria-pressed="${auto}">自动吐纳：${auto ? "开" : "关"}</button>
+      <button class="primary" data-act="breakthrough" ${ready ? "" : "disabled"}>破境</button>
+    </div>
+    <p class="muted">${
+      ready ? "修为已满，可试破境。" : "修为未满，先行吐纳。"
+    }失败不掉境，丹药折损，心魔使下次更稳。自动吐纳只在本次开着的页面生效，灵气见底即停。</p></div>`;
 }
 
 export function partyView(state) {
@@ -411,25 +428,37 @@ export function waveView(state) {
     <button class="primary" data-act="wave">开府门御敌</button></div>${combatPanel(state)}`;
 }
 
+function artifactCard(state, a) {
+  const own = state.ownedArtifacts.includes(a.id);
+  const eq = state.equipped.includes(a.id);
+  return `<div class="art-card ${eq ? "in" : ""}">
+    <div class="d-main">
+      <div class="d-head"><b>${esc(a.name)}</b>${chip(esc(SLOT_LABEL[a.slot] ?? a.slot))}${chip(
+        esc(RARITY_LABEL[a.rarity] ?? a.rarity),
+        a.rarity === "red" ? "cin" : "gold",
+      )}${own ? "" : chip("未获")}</div>
+      <div class="muted d-skill">${esc(a.desc)}</div>
+    </div>
+    <div class="d-acts">
+      <button ${own ? "" : "disabled"} data-act="equip" data-aid="${a.id}">${eq ? "已佩" : own ? "佩戴" : "未获"}</button>
+    </div></div>`;
+}
+
 export function artifactsView(state) {
-  const cards = ARTIFACTS.map((a) => {
-    const own = state.ownedArtifacts.includes(a.id);
-    const eq = state.equipped.includes(a.id);
-    return `<div class="art-card ${eq ? "in" : ""}">
-      <div class="d-main">
-        <div class="d-head"><b>${esc(a.name)}</b>${chip(esc(SLOT_LABEL[a.slot] ?? a.slot))}${chip(
-          esc(RARITY_LABEL[a.rarity] ?? a.rarity),
-          a.rarity === "red" ? "cin" : "gold",
-        )}</div>
-        <div class="muted d-skill">${esc(a.desc)}</div>
-      </div>
-      <div class="d-acts">
-        <button ${own ? "" : "disabled"} data-act="equip" data-aid="${a.id}">${eq ? "已佩" : own ? "佩戴" : "未获"}</button>
-      </div></div>`;
-  }).join("");
+  const groups = Object.entries(SLOT_LABEL)
+    .map(([slot, label]) => {
+      const list = ARTIFACTS.filter((a) => a.slot === slot);
+      if (!list.length) return "";
+      const owned = list.filter((a) => state.ownedArtifacts.includes(a.id)).length;
+      return `<h4 class="sub">${label} <span class="muted">已得 ${owned}/${list.length}</span></h4>
+        ${list.map((a) => artifactCard(state, a)).join("")}`;
+    })
+    .join("");
+  const rest = ARTIFACTS.filter((a) => !SLOT_LABEL[a.slot]).map((a) => artifactCard(state, a)).join("");
   const names = state.equipped.map((id) => artifactById(id)?.name).filter(Boolean).join("、");
   return `<div class="card"><h3>法器四槽 <span class="muted">${state.equipped.length}/4</span></h3>
-    <p>当前：${esc(names) || "无"}</p>${cards}</div>`;
+    <p>当前：${esc(names) || "无"}</p>
+    <p class="muted">佩满四件后再佩戴，会顶掉最早佩上的一件。</p>${groups}${rest}</div>`;
 }
 
 export function screen(tab, state, ui) {
@@ -437,7 +466,7 @@ export function screen(tab, state, ui) {
     case "disciples":
       return disciplesView(state, ui);
     case "cultivate":
-      return cultivateView(state);
+      return cultivateView(state, ui);
     case "party":
       return partyView(state);
     case "tower":

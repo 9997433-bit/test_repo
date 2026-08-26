@@ -6,7 +6,9 @@ import { esc } from "./util.js";
 /** 界面靠 tick 自刷新，让产量、修业与「买得起吗」保持实时，又不至于每帧重排。 */
 const STAGE_REFRESH_MS = 400;
 
-const UI_ONLY_ACTS = new Set(["tab", "plot", "sel-disciple"]);
+/** 自动吐纳的节流：每秒最多四次，够快又不至于把界面刷成频闪。 */
+const AUTO_CULTIVATE_MS = 250;
+const CULTIVATE_QI = 4;
 
 function cssEscape(value) {
   const s = String(value ?? "");
@@ -15,10 +17,18 @@ function cssEscape(value) {
 
 export function createUI(store) {
   const root = document.getElementById("app");
-  const ui = { tab: "mansion", selPlot: null, selBuilding: null, selDisciple: null, daoName: "" };
+  const ui = {
+    tab: "mansion",
+    selPlot: null,
+    selBuilding: null,
+    selDisciple: null,
+    daoName: "",
+    autoCultivate: false,
+  };
   let lastHtml = "";
   let lastStageHtml = "";
   let lastStageAt = -Infinity;
+  let lastAutoAt = -Infinity;
   let composing = false;
 
   /* -------------------------------------------------- 重绘时的现场保护 */
@@ -116,6 +126,11 @@ export function createUI(store) {
       repaint();
       return;
     }
+    if (act === "auto-cultivate") {
+      ui.autoCultivate = !ui.autoCultivate;
+      repaint();
+      return;
+    }
     if (act === "pick-faction") {
       store.dispatch({ type: "CHOOSE_FACTION", faction: btn.dataset.faction, name: daoName(), now: Date.now() });
       return;
@@ -129,6 +144,13 @@ export function createUI(store) {
       train: () => store.dispatch({ type: "TRAIN", discipleId: btn.dataset.did }),
       recruit: () => store.dispatch({ type: "RECRUIT", heroId: btn.dataset.hid }),
       cultivate: () => store.dispatch({ type: "CULTIVATE" }),
+      "cultivate-x": () => {
+        const times = Math.max(1, Number(btn.dataset.n) || 1);
+        for (let i = 0; i < times; i++) {
+          if ((store.get().resources.qi ?? 0) < CULTIVATE_QI) break;
+          store.dispatch({ type: "CULTIVATE" });
+        }
+      },
       breakthrough: () => store.dispatch({ type: "BREAKTHROUGH", now: Date.now() }),
       "toggle-party": () => {
         const id = btn.dataset.hid;
@@ -147,6 +169,7 @@ export function createUI(store) {
           ui.selPlot = null;
           ui.selBuilding = null;
           ui.selDisciple = null;
+          ui.autoCultivate = false;
           store.dispatch({ type: "RESET" });
         }
       },
@@ -242,9 +265,21 @@ export function createUI(store) {
     return typeof performance !== "undefined" ? performance.now() : Date.now();
   }
 
+  /** 自动吐纳：只是替玩家点那颗按钮，灵气不够就静静停下。 */
+  function autoCultivate(state) {
+    if (!ui.autoCultivate || !state.meta.faction) return false;
+    if ((state.resources.qi ?? 0) < CULTIVATE_QI) return false;
+    const t = now();
+    if (t - lastAutoAt < AUTO_CULTIVATE_MS) return false;
+    lastAutoAt = t;
+    store.dispatch({ type: "CULTIVATE" });
+    return true;
+  }
+
   /** 每帧只刷 HUD，舞台按 STAGE_REFRESH_MS 节流；字符串没变就不碰 DOM。 */
   function frame(state) {
     if (composing) return;
+    if (autoCultivate(state)) return; // 触发了动作，重绘已由订阅接手
     const bar = root.querySelector(".res-bar");
     if (!state.meta.faction || !bar) {
       paint(state);
