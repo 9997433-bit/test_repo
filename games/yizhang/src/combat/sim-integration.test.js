@@ -379,7 +379,9 @@ describe("显式注入路径", () => {
     expect(viaAdapter).toEqual(viaStatic);
   });
 
-  it("宿主把裸命名空间塞进 installCombat 时，朝向保险丝兜住（不许整体反 180°）", async () => {
+  // 装配层 / 探针会把 combat 的裸命名空间原样 installCombat 进来。sim 的 deps 认得出真身
+  // 并折回自己的 combat-bridge；这条守住那个折回：绕过换算层的话，全场朝向会整体反 180°。
+  it("宿主把裸命名空间塞进 installCombat，朝向也不许整体反 180°", async () => {
     const bare = await import("./index.js");
     installCombat(bare);
 
