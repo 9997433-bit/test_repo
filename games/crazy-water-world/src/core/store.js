@@ -70,6 +70,7 @@ function normalize(state, base) {
   for (const k of RESOURCE_KEYS) resources[k] = num(state.resources?.[k], 0, 0, 1e12);
 
   return {
+    ...state,
     meta: {
       ...base.meta,
       ...state.meta,
@@ -105,7 +106,16 @@ function normalize(state, base) {
         rot: b.rot === 90 ? 90 : 0,
         occupantHeroId: typeof b.occupantHeroId === "string" ? b.occupantHeroId : null,
       })),
-    residents: list(state.residents).filter(isPlainObject),
+    residents: list(state.residents)
+      .filter(isPlainObject)
+      .map((r) => ({
+        ...r,
+        hunger: num(r.hunger, 70, 0, 100),
+        thirst: num(r.thirst, 70, 0, 100),
+        hp: num(r.hp, 100, 0, 100),
+        mood: num(r.mood, 60, 0, 100),
+        order: isPlainObject(r.order) ? r.order : null,
+      })),
     heroes: list(state.heroes).filter((h) => isPlainObject(h) && typeof h.id === "string"),
     world: {
       ...base.world,
