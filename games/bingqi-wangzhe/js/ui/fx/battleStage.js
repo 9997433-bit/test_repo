@@ -46,6 +46,23 @@ function isEngineResult(result) {
   return Array.isArray(result?.timeline) && result.timeline.some((e) => typeof e?.t === 'string');
 }
 
+/**
+ * 存活数 / 总数。
+ * `liveGame` 递过来的战报里这两项已经是数字，引擎原始战报里 `survivors` 却是
+ * 一整排单位快照、`total` 压根没有——两种都要能印出「3/5」而不是 `[object Object]`。
+ */
+function countOf(value, fallback = 0) {
+  if (Array.isArray(value)) return value.length;
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+/** 战报的「N 回合 · 存活 x/y」一行。 */
+export function survivalLine(result) {
+  const total = countOf(result?.total ?? result?.players, 0);
+  const alive = countOf(result?.survivors, 0);
+  return `${countOf(result?.rounds, 0)} 回合 · 存活 ${alive}/${total}`;
+}
+
 function centerIn(el, hostRect) {
   const r = el.getBoundingClientRect();
   return {
@@ -366,7 +383,7 @@ export function createBattleStage(result, opts = {}) {
     stampSeal(field, result.winner, {
       grade: result.grade ? `${result.grade} 阶` : '',
       caption: result.winner === 'player'
-        ? `${result.rounds} 回合 · 存活 ${result.survivors}/${result.total}`
+        ? survivalLine(result)
         : result.timeout ? '回合触顶' : '再整旗鼓'
     });
     playCue(result.winner === 'player' ? 'victory' : 'defeat');

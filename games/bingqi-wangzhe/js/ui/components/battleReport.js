@@ -8,7 +8,7 @@
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
 import { lootRow } from './resourceBar.js';
-import { createBattleStage } from '../fx/battleStage.js';
+import { createBattleStage, survivalLine } from '../fx/battleStage.js';
 import { flyLoot } from '../fx/flyingLoot.js';
 
 /**
@@ -34,10 +34,7 @@ export function battleReport(result, { subtitle, ui } = {}) {
   const el = h('.report',
     h('.row.row--between',
       h('.t-dim', { style: { fontSize: '11px' }, text: subtitle || '' }),
-      h('.t-dim', {
-        style: { fontSize: '11px' },
-        text: `${result.rounds} 回合 · 存活 ${result.survivors}/${result.total}`
-      })),
+      h('.t-dim', { style: { fontSize: '11px' }, text: survivalLine(result) })),
     win && result.stars
       ? h('.row', { style: { justifyContent: 'center' } },
         h('.stars', { style: { gap: '6px' } },
