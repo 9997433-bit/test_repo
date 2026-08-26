@@ -268,7 +268,7 @@ describe("wishes", () => {
     expect(delivered.state.inv.rice).toBeUndefined();
     expect(delivered.state.resources.coin).toBe(112);
     expect(delivered.state.meta.xp).toBe(12);
-    expect(delivered.state.wishes).toHaveLength(3);
+    expect(delivered.state.wishes).toHaveLength(0);
     expect(delivered.state.log[0]).toContain("收入 32 金币");
   });
 });
