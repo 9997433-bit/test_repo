@@ -117,7 +117,11 @@ export function boot(root: HTMLElement): void {
   const handlers: PanelHandlers = {
     selectSeed: (fid) => {
       sel.pendingSeed = fid;
-      if (fid) tool = "none";
+      if (fid) {
+        tool = "none";
+        // 收起面板露出花圃，空圃泛绿引导点按播种
+        panel = null;
+      }
       invalidate();
     },
     fulfill: (uid, art) => {

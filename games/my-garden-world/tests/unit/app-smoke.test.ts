@@ -67,8 +67,9 @@ describe("app smoke: full tutorial loop", () => {
       [...document.querySelectorAll<HTMLButtonElement>(".seed-card")].find((c) => c.textContent?.includes("小雏菊"))!;
     findDaisyCard().click();
     tick(50);
-    // 选中后面板重渲染，需重新查询节点
-    expect(findDaisyCard().getAttribute("aria-pressed")).toBe("true");
+    // 选中花种后面板收起，露出花圃；空圃带 is-plantable 引导
+    expect(document.querySelector(".sheet")).toBeNull();
+    expect(el('.plot[data-plot-id="0"]').className).toContain("is-plantable");
     el<HTMLButtonElement>('.plot[data-plot-id="0"]').click();
     tick(50);
     expect(el('.plot[data-plot-id="0"]').getAttribute("aria-label")).toContain("小雏菊");
