@@ -30,7 +30,12 @@ export function addExp(state: GameState, n: number): void {
 }
 
 export function addItem(state: GameState, flowerId: string, n = 1): void {
+  if (n <= 0) return;
   state.inventory[flowerId] = (state.inventory[flowerId] ?? 0) + n;
+}
+
+export function totalInventory(state: GameState): number {
+  return Object.values(state.inventory).reduce((s, n) => s + n, 0);
 }
 
 export function takeItem(state: GameState, flowerId: string, n = 1): boolean {

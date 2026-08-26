@@ -4,11 +4,15 @@ import type { GameState } from "./state";
 const SEASONS: Season[] = ["spring", "summer", "autumn", "winter"];
 const DAY_MS = 90_000;
 const MINUTES_PER_DAY = 24 * 60;
+/** 开局锚定在春日 09:00，而不是随墙钟随机落在某个季节 / 深夜。 */
+const START_MINUTE = 9 * 60;
+const START_OFFSET_MS = (START_MINUTE / MINUTES_PER_DAY) * DAY_MS;
 
 export function advanceClock(state: GameState, dtMs: number): void {
-  const dayProgress = (state.now % DAY_MS) / DAY_MS;
+  const elapsed = Math.max(0, state.now - state.startedAt) + START_OFFSET_MS;
+  const dayProgress = (elapsed % DAY_MS) / DAY_MS;
   state.dayMinute = Math.floor(dayProgress * MINUTES_PER_DAY);
-  const seasonIdx = Math.floor((state.now / (DAY_MS * 4)) % 4);
+  const seasonIdx = Math.floor((elapsed / (DAY_MS * 4)) % 4);
   state.season = SEASONS[seasonIdx] ?? "spring";
   void dtMs;
 }

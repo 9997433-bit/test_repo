@@ -3,6 +3,10 @@ export type GameEvent =
   | { type: "levelup"; level: number }
   | { type: "harvest"; flowerId: string; plotId: number }
   | { type: "bloom"; plotId: number }
+  | { type: "planted"; flowerId: string; plotId: number }
+  | { type: "watered"; plotId: number }
+  | { type: "fertilized"; plotId: number }
+  | { type: "crafted"; score: number }
   | { type: "orderDone"; title: string }
   | { type: "particles"; kind: "water" | "petal" | "gold" | "ink"; x: number; y: number };
 

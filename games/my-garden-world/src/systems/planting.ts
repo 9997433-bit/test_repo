@@ -20,6 +20,7 @@ export function plant(state: GameState, plotId: number, flowerId: string): boole
   plot.lastTick = state.now;
   state.stats.planted += 1;
   bumpQuest(state, "plant3");
+  emit({ type: "planted", flowerId, plotId });
   emit({ type: "toast", text: `已种下${def.name}`, tone: "ok" });
   return true;
 }
@@ -35,6 +36,7 @@ export function waterPlot(state: GameState, plotId: number): boolean {
   }
   state.water -= 1;
   plot.watered += 1;
+  emit({ type: "watered", plotId });
   return true;
 }
 
@@ -45,6 +47,7 @@ export function fertilize(state: GameState, plotId: number): boolean {
   if (state.nectar >= 1) state.nectar -= 1;
   else state.coins -= 25;
   plot.fertilized = true;
+  emit({ type: "fertilized", plotId });
   emit({ type: "toast", text: "施肥完成，花期将提前", tone: "ok" });
   return true;
 }
@@ -54,7 +57,7 @@ export function harvest(state: GameState, plotId: number): boolean {
   const def = plot?.flowerId ? FLOWER_MAP[plot.flowerId] : undefined;
   if (!plot || !def || (plot.stage !== "bloom" && plot.stage !== "wilt")) return false;
   const wilted = plot.stage === "wilt";
-  addItem(state, def.id, wilted ? 0 : 1);
+  if (!wilted) addItem(state, def.id, 1);
   addCoins(state, wilted ? Math.round(def.harvestCoin * 0.2) : def.harvestCoin);
   addExp(state, wilted ? 2 : def.harvestExp);
   if (!wilted) {
