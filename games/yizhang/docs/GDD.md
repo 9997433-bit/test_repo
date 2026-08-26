@@ -96,7 +96,7 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 
 各掌一句话意图：
 
-- **木棉**：默认解锁的「尺子」，所有其他掌都以它为参照上下浮动。无主动技（`skillId: null`，全表唯一；契约测试与装配层 `alignSkillIds` 都要求「无技能 = falsy」，`"none"` 是 combat 内部哨兵、不进数据，接线层把 falsy 归一成它）是刻意的——教学期只学移动/扇/跳三件事。
+- **木棉**：默认解锁的「尺子」，所有其他掌都以它为参照上下浮动。无主动技（`skillId: ""`，全表唯一——空串同时满足「skillId 必须是字符串」的数据契约测试与「无技能必须 falsy」的装配层契约；`"none"` 是 combat 内部哨兵、不进数据，接线层把 falsy 归一成它）是刻意的——教学期只学移动/扇/跳三件事。
 - **磐石**：唯一 power 上 15 的掌；一切弱点（前摇/角度/移速/冷却）都是为这个数字付费。
 - **疾风**：裸 power 全场最低（7.5），必须用 `wind_rush` 冲刺中出掌（+3.5 → 11）才有斩杀力——技能表达在位移里。
 - **冰霜**：power 平庸，价值在把对手移速打到 65% 之后的**追身逼边**。
@@ -121,7 +121,7 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 
 技能 id 收敛（Round 3 定稿）：全游戏只有两套合法词表，映射唯一、一张表定死。
 
-- **data id（规范名，数值与本文用它）**：`GLOVES[].skillId` ∈ { `quake_slam`, `wind_rush`, `frost_arc`, `coil_counter`, `phantom_swap`, `iron_pull`, `sky_fall` }；木棉无主动技，`skillId: null`（唯一 falsy，数据里禁写 `"none"` 字符串）。
+- **data id（规范名，数值与本文用它）**：`GLOVES[].skillId` ∈ { `quake_slam`, `wind_rush`, `frost_arc`, `coil_counter`, `phantom_swap`, `iron_pull`, `sky_fall` }；木棉无主动技，`skillId: ""`（空串——既是字符串又是 falsy，同时满足两份契约测试；数据里禁写 `"none"`）。
 - **combat 处理器 id（运行时分派键，`src/combat/skills.js` 的 `SKILL_HANDLERS`）**：`groundPound` / `dashSlap` / `frostArc` / `parry` / `blinkSwap` / `magnetPull` / `meteorSlam`，外加内部哨兵 `"none"`。
 - 两套词表由 `SKILL_COMBAT_ALIASES`（`skills.js` 导出）一一对应：7 个 data id 各有一条，另含 `none → none` 自映射，表是**完整**的。接线层（`core/modules.js` 的 `alignSkillIds`、`sim/combat-bridge.js` 的 `combatSkillId`）照此翻译后再交给 combat；falsy `skillId` 不查表，直接归一成 combat 的 `"none"`。combat 未来迁移到 data id 时删掉此表即收敛为一套。
 - sim 静态 import 真实 data 与 combat（fallback-combat 已删除，无兜底战斗），`installData` / `installCombat` 只留给测试做替身。

@@ -85,9 +85,9 @@ export const SKILL_IDS = Object.keys(SKILLS);
 
 // data id → combat 处理器 id（src/combat/skills.js SKILL_HANDLERS 的键）的完整映射。
 // 覆盖全部 SKILL_IDS，并含 "none" 哨兵自映射（combat 兜底掌表用它表示无技能）。
-// 数据层的无技能写法是 glove.skillId = null；falsy 不查此表，接线层直接归一成
-// "none"（sim/combat-bridge.js combatSkillId、core/modules.js alignSkillIds）。
-// combat 迁移到 data id 后删除本表即完成最终收敛。
+// 数据层的无技能写法是 glove.skillId = ""（空串，见 gloves.js typedef）；falsy
+// 不查此表，接线层直接归一成 "none"（sim/combat-bridge.js combatSkillId、
+// core/modules.js alignSkillIds）。combat 迁移到 data id 后删除本表即完成最终收敛。
 export const SKILL_COMBAT_ALIASES = {
   none: "none",
   quake_slam: "groundPound",
