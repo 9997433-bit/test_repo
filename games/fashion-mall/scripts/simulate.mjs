@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
 import {
   LEVEL_INCOME_GATES,
   MINIGAME_PAYOUTS,
@@ -34,6 +35,23 @@ const MAX_SECONDS = CHECKPOINTS.at(-1);
 const MAX_PLAYER_LEVEL = LEVEL_INCOME_GATES.length;
 const PAID_GAME_SECONDS = 4;
 const PAID_GAME_SHARE = 0.3;
+const GOAL_DONE_GOLD_TOKEN = "__goal_done_gold__";
+const GOAL_DONE_XP_TOKEN = "__goal_done_xp__";
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const goalDoneTemplate = GOALS.done(GOAL_DONE_GOLD_TOKEN, GOAL_DONE_XP_TOKEN);
+const GOAL_DONE_PATTERN = new RegExp(
+  `^${escapeRegExp(goalDoneTemplate)
+    .replace(GOAL_DONE_GOLD_TOKEN, ".+")
+    .replace(GOAL_DONE_XP_TOKEN, ".+")}$`,
+);
+
+function isGoalDoneNote(note) {
+  return note !== GOALS.miss && GOAL_DONE_PATTERN.test(note);
+}
 
 // ECONOMY.md §7 的机器人上界。空值表示文档没有给出该项的定量参考。
 const ECONOMY_REFERENCE = {
@@ -274,7 +292,7 @@ function checkpoint(state, second, stats) {
   };
 }
 
-function simulate(mode) {
+export function simulate(mode) {
   const state = defaultState(START_NOW);
   const stats = {
     goalsCompleted: 0,
@@ -294,7 +312,7 @@ function simulate(mode) {
   for (let second = 1; second <= MAX_SECONDS; second += 1) {
     const beforeLevel = state.level;
     const result = tick(state, 1, START_NOW + second * 1000);
-    stats.goalsCompleted += result.notes.filter((note) => note !== GOALS.miss).length;
+    stats.goalsCompleted += result.notes.filter(isGoalDoneNote).length;
     if (mode === "active") applyExpectedActivePlay(state, second, stats);
     if (state.level !== beforeLevel) optimizePartnerAssignments(state);
     signAvailablePartners(state);
@@ -309,6 +327,7 @@ function simulate(mode) {
   return {
     checkpoints,
     levelReachedAt,
+    finalState: state,
     stats: {
       ...stats,
       paidGames: Number(stats.paidGames.toFixed(2)),
@@ -340,7 +359,7 @@ function withComparison(result, mode) {
   }));
 }
 
-function assertSimulation(result) {
+export function assertSimulation(result) {
   assert.equal(result.checkpoints.length, CHECKPOINTS.length);
   let previousGold = 0;
   let previousLevel = 1;
@@ -357,45 +376,49 @@ function assertSimulation(result) {
   }
 }
 
-const active = simulate("active");
-const idle = simulate("idle");
-assertSimulation(active);
-assertSimulation(idle);
-assert.ok(
-  active.checkpoints.at(-1).累计金币 >= idle.checkpoints.at(-1).累计金币,
-  "semi-active play should not earn less cumulative gold than idle play",
-);
-assert.ok(
-  active.checkpoints.at(-1).等级 >= idle.checkpoints.at(-1).等级,
-  "semi-active play should not finish below idle play",
-);
+export function simulationReport() {
+  const active = simulate("active");
+  const idle = simulate("idle");
+  assertSimulation(active);
+  assertSimulation(idle);
+  assert.ok(
+    active.checkpoints.at(-1).累计金币 >= idle.checkpoints.at(-1).累计金币,
+    "semi-active play should not earn less cumulative gold than idle play",
+  );
+  assert.ok(
+    active.checkpoints.at(-1).等级 >= idle.checkpoints.at(-1).等级,
+    "semi-active play should not finish below idle play",
+  );
 
-const report = {
-  口径: {
-    步长秒: 1,
-    半活跃: "前3分钟全程手玩，3–15分钟50%，之后25%；含期望盲盒与每秒贪心复投",
-    纯挂机: "零小游戏、每秒贪心复投（ECONOMY.md 的机器人上界，不是无人操作下界）",
-    投资现金缓冲倍数: "1.2 / 2 / 3",
-    店铺等级帽: SHOP_LEVEL_MAX,
-    伙伴等级帽: PARTNER_LEVEL_MAX,
-  },
-  半活跃: withComparison(active, "active"),
-  纯挂机: withComparison(idle, "idle"),
-  里程碑: {
-    半活跃升到满级分钟:
-      active.levelReachedAt[MAX_PLAYER_LEVEL] === undefined
-        ? null
-        : Number((active.levelReachedAt[MAX_PLAYER_LEVEL] / 60).toFixed(1)),
-    纯挂机升到满级分钟:
-      idle.levelReachedAt[MAX_PLAYER_LEVEL] === undefined
-        ? null
-        : Number((idle.levelReachedAt[MAX_PLAYER_LEVEL] / 60).toFixed(1)),
-    文档纯挂机升到满级分钟: 38.6,
-  },
-  投资次数: {
-    半活跃: active.stats,
-    纯挂机: idle.stats,
-  },
-};
+  return {
+    口径: {
+      步长秒: 1,
+      半活跃: "前3分钟全程手玩，3–15分钟50%，之后25%；含期望盲盒与每秒贪心复投",
+      纯挂机: "零小游戏、每秒贪心复投（ECONOMY.md 的机器人上界，不是无人操作下界）",
+      投资现金缓冲倍数: "1.2 / 2 / 3",
+      店铺等级帽: SHOP_LEVEL_MAX,
+      伙伴等级帽: PARTNER_LEVEL_MAX,
+    },
+    半活跃: withComparison(active, "active"),
+    纯挂机: withComparison(idle, "idle"),
+    里程碑: {
+      半活跃升到满级分钟:
+        active.levelReachedAt[MAX_PLAYER_LEVEL] === undefined
+          ? null
+          : Number((active.levelReachedAt[MAX_PLAYER_LEVEL] / 60).toFixed(1)),
+      纯挂机升到满级分钟:
+        idle.levelReachedAt[MAX_PLAYER_LEVEL] === undefined
+          ? null
+          : Number((idle.levelReachedAt[MAX_PLAYER_LEVEL] / 60).toFixed(1)),
+      文档纯挂机升到满级分钟: 38.6,
+    },
+    投资次数: {
+      半活跃: active.stats,
+      纯挂机: idle.stats,
+    },
+  };
+}
 
-console.log(JSON.stringify(report, null, 2));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  console.log(JSON.stringify(simulationReport(), null, 2));
+}
