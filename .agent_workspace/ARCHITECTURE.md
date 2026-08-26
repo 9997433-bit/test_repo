@@ -184,3 +184,64 @@ export function applyBattleResult(state, result, ctx)
 - Round 1 内 `data/balance.js` 归 fable-3 独占，opus-2 只 import 不创建。
 - `tests/run.mjs` 与 `bench/run.mjs` 为唯一入口，失败以非 0 退出码结束。
 - `timeline[]` 条目：`{ t, actorUid, side, action, targetUid, value, element, mod, crit, hpAfter }`。
+
+## Round 2 补丁
+
+> 追加式契约（fable-1），全文与 VM 形状详见 `.agent_workspace/round2/fable1-architecture.md`。
+> 与 Round 1 补丁冲突处以本段为准（P1 的 `game.api` 嵌套命名空间方案作废，改为扁平 facade 动词，
+> 与 `ui/gameAdapter.js` 已实现的探测/守卫机制对齐）。
+
+### R2-P1. 组合根（opus-1）
+
+新文件 `games/bingqi-wangzhe/js/api.js`（所有权 opus-1）导出：
+
+```js
+export function registerModules(game)   // game.register('data'|'forge'|'combat', …)
+export function createGameFacade(game)  // Object.create(game) + 29 个扁平编排动词
+```
+
+`main.js`：`mountApp(root, createGameFacade(registerModules(createGame(...))))`。
+`modules.data` 必须含小写 `weapons`/`stages` 数组别名（数据层导出为大写常量，直接整体注册不过
+`inspectCapabilities` 探测）；`modules.forge`、`modules.combat` 整体命名空间注册即可。
+验收：`inspectCapabilities(facade).ready === true`，且 29 个动词全部为函数。
+
+### R2-P2. Ring-B 编排动词（冻结签名，Result 型返回 `{ok:true,…}|{ok:false,error}`）
+
+```
+challengeStage(stageId)  arenaFight(foeId)  setLineup(slot,uid)  clearSlot(slot)
+bonds(uids?)  peekIdle(now?)  collectIdle(now?)  weapons()  weapon(uid)
+campaign()  arena()  arenaOpponents()  enhanceCost(uid)  estimatePower(uids?)
+previewForge(opts)  forgeWeapon(opts)  enhanceWeapon(uid)  dismantleWeapon(uid)
+stages()  regions()  forgeStages()  codexEntries()  prototypeCount()
+lineup()  lineupUnlocked()  lineupUnlockHint(slot)  levelCap()
+staminaCap()  staminaEtaSeconds()
+```
+
+- 全部返回**视图模型（VM）**，形状按 mock 的既有输出冻结（六视图的事实契约）；
+  data/forge/combat 的 Round 1 导出签名不变，映射只发生在 `api.js`。
+- `error` 为中文人话（`data/strings.js` `REASON` 映射）；reason 码不出 facade。
+- 战斗种子冻结为纯数值公式（见 fable1 文档 §3.1/3.2），字符串哈希不进热路径。
+
+### R2-P3. gameAdapter（opus-4）
+
+`ORCHESTRATION_VERBS` 扩到 R2-P2 全表；全量分支凡 facade 已提供的动词一律优先
+`injected[verb]`（`...guards` 移到对象字面量最后）；内联的 `stages()/codexEntries()/collectIdle()`
+直通映射（对真实 core/data 形状是错的）删除或降级为无 facade 兜底。mock 保留给 `?demo=1`。
+
+### R2-P4. 存档增量（opus-1，additive）
+
+`createInitialState`/`hydrate`/`serialize` 补：`state.forge{pity,masterForge,serial,totalForged,log}`、
+`state.idle.lastCollectAt/lastAt/totalCollected`（与 `lastCollectMs` 互相兜底）、
+`state.arena.log[≤8]`。`SAVE_VERSION` 维持 1，缺失字段按骨架补默认。
+
+### R2-P5. 经济出处（opus-2 / fable-3）
+
+`data/balance.js` 新增冻结键：`FORGE_STAGE_UNLOCK = {iron:0, silver:6, gold:18}`（暂定值）、
+`ARENA.dailyAttacks = 5`。挂机速率唯一权威 = `forge/idle.js` + `balance.IDLE_RATES`；
+core 的 `idleRatesPerHour` 退役为内部估算，UI 挂机只走 facade 的 `peekIdle/collectIdle`。
+
+### R2-P6. 命名落锤
+
+技能 id snake_case 以 `data/skills.js` `SKILL_BY_ID` 为唯一命名法；战斗事件类型以 combat 实现的
+`start|wave|round|action|skill|damage|heal|buff|status|dot|shield|kill|end` 为准，不设别名；
+品质字段 `quality`、品质序 `QUALITY_ORDER`（combat/units.js）。
