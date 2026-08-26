@@ -1,5 +1,5 @@
 import { tickWorld, settleOffline } from "../world/sim.js";
-import { spawnFlotsam, syncExploreWeather } from "../explore/index.js";
+import { finishDive, spawnFlotsam, syncExploreWeather } from "../explore/index.js";
 import { tickInjuries } from "../heroes/index.js";
 import { deriveRng } from "./rng.js";
 import { saveState } from "./store.js";
@@ -9,7 +9,7 @@ export const MAX_FRAME_DT = 0.05;
 export const AUTOSAVE_MS = 4000;
 
 // 一个模拟量子：先结算离线欠账，再推进 0.1s，接着用派生流刷漂浮物，
-// 最后跑两条巡检（伤病销假 / 天气强制收杆上浮），tick 才 +1。
+// 最后跑两条巡检（伤病销假 / 天气强制收杆上浮）并给结束的下潜结账，tick 才 +1。
 // 纯函数——同一个 state 进来永远得到同一个 state 出去，测试可以驱动与线上一致的时间轴。
 //
 // 巡检必须排在 tickWorld 之后：这一量子刚翻脸的天气已经由 tickWorld 盖进 world.mods，
@@ -31,10 +31,13 @@ export function stepSim(state) {
     },
   };
   const patrolled = syncExploreWeather(tickInjuries(spawned));
+  // 被巡检拽上来的会话要当场结算：留一个 done 会话挂在 explore.dive 上，战利品进不了仓库，
+  // 而 explore.dive 一直非空又会让消费方以为老大还泡在水里。没结束的会话在这里原样穿过。
+  const closed = patrolled.explore.dive?.done ? finishDive(patrolled) : patrolled;
   return {
-    ...patrolled,
-    campaign: { ...patrolled.campaign, idleSince: 0 },
-    meta: { ...patrolled.meta, tick: patrolled.meta.tick + 1 },
+    ...closed,
+    campaign: { ...closed.campaign, idleSince: 0 },
+    meta: { ...closed.meta, tick: closed.meta.tick + 1 },
   };
 }
 
