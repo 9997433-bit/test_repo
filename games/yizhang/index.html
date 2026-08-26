@@ -2,14 +2,106 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
     <meta name="theme-color" content="#1a2433" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>异掌</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b111b'/%3E%3Cpath d='M6 24 Q16 3 26 24' stroke='%23d9a441' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M11 24 L21 24' stroke='%23c8702c' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
     <meta name="description" content="异掌 · 双掌换装，扇人下岛。WebGL 浮空擂台。" />
+    <style data-yizhang-critical>
+      /* 关键内联样式：只负责「页面不闪、手势不被浏览器抢走、暮蓝底色先到位」。
+         视觉细节在 src/ui/shell.css，若 src/styles 存在则由其覆盖。 */
+      :root {
+        --yz-dusk-0: #0b111b;
+        --yz-dusk-1: #131d2c;
+        --yz-dusk-2: #1a2433;
+        --yz-ember: #d9a441;
+        --yz-ivory: #e7e1d4;
+        --yz-safe-t: env(safe-area-inset-top, 0px);
+        --yz-safe-r: env(safe-area-inset-right, 0px);
+        --yz-safe-b: env(safe-area-inset-bottom, 0px);
+        --yz-safe-l: env(safe-area-inset-left, 0px);
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+        background: var(--yz-dusk-0);
+        color: var(--yz-ivory);
+        -webkit-text-size-adjust: 100%;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        position: fixed;
+        inset: 0;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        touch-action: none;
+      }
+      #gl {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        background: radial-gradient(
+          120% 90% at 50% 12%,
+          #33465f 0%,
+          #22304400 62%,
+          #0b111b 100%
+        );
+      }
+      #app {
+        position: absolute;
+        inset: 0;
+      }
+      #yz-boot {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        gap: 0.9rem;
+        justify-items: center;
+        letter-spacing: 0.42em;
+        text-indent: 0.42em;
+        font-size: 0.78rem;
+        color: #8b9ab0;
+      }
+      #yz-boot b {
+        font-size: 2.1rem;
+        font-weight: 500;
+        letter-spacing: 0.5em;
+        text-indent: 0.5em;
+        color: var(--yz-ivory);
+      }
+      noscript {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        color: var(--yz-ember);
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
     <canvas id="gl"></canvas>
+    <div id="app">
+      <div id="yz-boot"><b>异掌</b><span>装载中</span></div>
+    </div>
     <noscript>需要启用 JavaScript。</noscript>
     <script type="module" src="/src/main.js"></script>
   </body>
