@@ -5,6 +5,12 @@
 // 2. 动作分「按住型」和「边沿型」：扇击/技能按住可连发（由冷却兜底），
 //    跳/冲/换掌是边沿触发，按住不会每 0.4 秒自己切一次掌。
 // 3. 触屏区域在画布上 preventDefault，避免 iOS 边缘返回、下拉刷新、双指缩放抢走手势。
+//
+// 两个角度空间不要混：本模块内部维护的是**相机方位角**（forward = (cos, sin)），
+// sample() 返回给 sim 的 `yaw` 已经换算成 **sim 约定**（yaw=0 面向 -Z）。
+// 位移向量 moveX/moveZ 一律是世界系，sim 的 readMoveVector 默认就这么读。
+
+import { cameraYawToSimYaw } from "../core/view.js";
 
 const KEY_MOVE = {
   KeyW: [0, -1],
@@ -273,7 +279,7 @@ export function createInput(dom, canvas, opts = {}) {
     sample(cameraYaw) {
       const out = emptyInput();
       const yaw = typeof cameraYaw === "number" ? cameraYaw : state.yaw;
-      out.yaw = yaw;
+      out.yaw = cameraYawToSimYaw(yaw);
       if (!state.enabled) {
         state.edge.jump = false;
         state.edge.dash = false;

@@ -1,5 +1,7 @@
-// 游戏外壳：主菜单 / 局内 HUD / 暂停 / 结算 / 触控层的装配与切换。
+// 游戏外壳：主菜单 / 局内 HUD / 触控 / 暂停 / 设置 / 结算的装配与切换。
 // 只认 view 快照和回调，不直接碰 sim、renderer 或 loop。
+// 类名一律走 Fable-2 合同（docs/ART_DIRECTION.md §11）；shell.css 只在
+// src/styles 缺席时（html[data-yz-fallback]）兜底，见该文件顶部说明。
 
 import "./shell.css";
 import { h, clear } from "./dom.js";
@@ -25,6 +27,15 @@ function detectTouch() {
   return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 }
 
+/** 设置面板的行布局不在 Fable-2 合同里，纯排版胶水走内联样式，不新增 CSS 文件。 */
+function settingRow(label, control) {
+  return h(
+    "div",
+    { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" } },
+    [h("span", { class: "yz-glove-role", text: label }), control]
+  );
+}
+
 export function createShell(opts) {
   const {
     root,
@@ -34,10 +45,11 @@ export function createShell(opts) {
     audio,
     input,
     matchConfig = {},
+    isUnlocked,
+    unlockTextOf,
     callbacks = {},
   } = opts;
 
-  const el = h("div", { class: "yz" });
   const settings = {
     quality: save.quality || "auto",
     muted: !!save.muted,
@@ -45,6 +57,7 @@ export function createShell(opts) {
     pointerLock: save.pointerLock !== false,
     touch: save.touch || "auto",
   };
+  let currentSave = save;
 
   function touchActive() {
     if (settings.touch === "on") return true;
@@ -54,50 +67,49 @@ export function createShell(opts) {
 
   const hud = createHud();
   const feed = createKillFeed();
-  hud.el.appendChild(feed.el);
-
-  const touch = createTouchLayer({
-    input,
-    audio,
-    onPause: () => callbacks.onPauseRequest && callbacks.onPauseRequest(),
+  hud.mountFeed(feed.el);
+  hud.pauseButton.addEventListener("click", () => {
+    audio.play("uiBack");
+    if (callbacks.onPauseRequest) callbacks.onPauseRequest();
   });
+
+  const touch = createTouchLayer({ input, audio });
 
   const menu = createMenu({
     gloves,
     save,
+    switchLock: matchConfig.switchLock || 0.4,
+    isUnlocked,
+    unlockTextOf,
     onStart: (loadout) => {
       audio.unlock();
       audio.play("uiSelect");
-      callbacks.onStart && callbacks.onStart(loadout);
+      if (callbacks.onStart) callbacks.onStart(loadout);
     },
     onPick: () => audio.play("uiMove"),
     onOpenSettings: () => openSheet("settings"),
   });
 
-  const hudScreen = h("div", { class: "yz-screen" }, [hud.el, touch.el]);
-
   // ---------- 弹层（暂停 / 设置 / 结算）----------
 
-  const sheetBody = h("div", { class: "yz-sheet yz-panel" });
-  const sheet = h("div", { class: "yz-screen", "data-modal": true, hidden: true }, [sheetBody]);
+  const sheetBody = h("div", { class: "yz-plate yz-panel" });
+  const sheet = h("div", { class: "yz-screen yz-screen--frost", hidden: true }, [sheetBody]);
 
-  function segment(label, options, get, set) {
-    const buttons = options.map(([value, text]) =>
-      h("button", {
-        type: "button",
-        text,
-        onclick: () => {
-          set(value);
-          audio.play("uiMove");
-          buttons.forEach((b) => (b.dataset.value === String(get()) ? (b.dataset.on = "1") : delete b.dataset.on));
-        },
-        dataset: { value: String(value) },
-      })
-    );
-    buttons.forEach((b) => {
-      if (b.dataset.value === String(get())) b.dataset.on = "1";
+  function segment(options, get, set) {
+    const seg = h("div", { class: "yz-seg" });
+    const buttons = options.map(([value, text]) => {
+      const btn = h("button", { class: "yz-seg-opt", type: "button", text });
+      btn.dataset.value = String(value);
+      btn.addEventListener("click", () => {
+        set(value);
+        audio.play("uiMove");
+        for (const b of buttons) b.classList.toggle("is-on", b.dataset.value === String(get()));
+      });
+      return btn;
     });
-    return h("label", { class: "yz-set" }, [h("span", { text: label }), h("div", { class: "yz-seg" }, buttons)]);
+    for (const b of buttons) b.classList.toggle("is-on", b.dataset.value === String(get()));
+    seg.append(...buttons);
+    return seg;
   }
 
   function settingsBlock() {
@@ -107,6 +119,7 @@ export function createShell(opts) {
       max: "2.5",
       step: "0.1",
       value: String(settings.sensitivity),
+      style: { flex: "1 1 auto", maxWidth: "180px", accentColor: "var(--yz-accent)" },
     });
     const readout = h("span", { class: "yz-num", text: settings.sensitivity.toFixed(1) });
     slider.addEventListener("input", () => {
@@ -115,73 +128,89 @@ export function createShell(opts) {
       emitSettings();
     });
 
-    return h("div", { class: "yz-settings" }, [
-      segment(
+    return h("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, [
+      settingRow(
         "画质",
-        [
-          ["auto", "自动"],
-          ["high", "高"],
-          ["mid", "中"],
-          ["low", "低"],
-        ],
-        () => settings.quality,
-        (v) => {
-          settings.quality = v;
-          emitSettings();
-        }
+        segment(
+          [
+            ["auto", "自动"],
+            ["high", "高"],
+            ["mid", "中"],
+            ["low", "低"],
+          ],
+          () => settings.quality,
+          (v) => {
+            settings.quality = v;
+            emitSettings();
+          }
+        )
       ),
-      segment(
+      settingRow(
         "音效",
-        [
-          [false, "开"],
-          [true, "静音"],
-        ],
-        () => settings.muted,
-        (v) => {
-          settings.muted = v;
-          emitSettings();
-        }
+        segment(
+          [
+            [false, "开"],
+            [true, "静音"],
+          ],
+          () => settings.muted,
+          (v) => {
+            settings.muted = v;
+            emitSettings();
+          }
+        )
       ),
-      segment(
+      settingRow(
         "指针锁定",
-        [
-          [true, "开"],
-          [false, "关"],
-        ],
-        () => settings.pointerLock,
-        (v) => {
-          settings.pointerLock = v;
-          emitSettings();
-        }
+        segment(
+          [
+            [true, "开"],
+            [false, "关"],
+          ],
+          () => settings.pointerLock,
+          (v) => {
+            settings.pointerLock = v;
+            emitSettings();
+          }
+        )
       ),
-      segment(
+      settingRow(
         "触控层",
-        [
-          ["auto", "自动"],
-          ["on", "常开"],
-          ["off", "关"],
-        ],
-        () => settings.touch,
-        (v) => {
-          settings.touch = v;
-          applyTouchMode();
-          emitSettings();
-        }
+        segment(
+          [
+            ["auto", "自动"],
+            ["on", "常开"],
+            ["off", "关"],
+          ],
+          () => settings.touch,
+          (v) => {
+            settings.touch = v;
+            applyTouchMode();
+            emitSettings();
+          }
+        )
       ),
-      h("label", { class: "yz-set" }, [h("span", { text: "视角灵敏度" }), slider, readout]),
+      settingRow(
+        "视角灵敏度",
+        h("span", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [slider, readout])
+      ),
     ]);
   }
 
   function keymapBlock() {
     return h(
       "div",
-      { class: "yz-keys" },
-      KEYMAP.map(([name, key]) => h("div", {}, [h("span", { text: name }), h("kbd", { text: key })]))
+      { style: { display: "flex", flexWrap: "wrap", gap: "8px" } },
+      KEYMAP.map(([name, key]) =>
+        h("span", { style: { display: "inline-flex", alignItems: "center", gap: "4px" } }, [
+          h("span", { class: "yz-glove-role", text: name }),
+          h("span", { class: "yz-kbd", text: key }),
+        ])
+      )
     );
   }
 
   function emitSettings() {
-    callbacks.onSettingsChange && callbacks.onSettingsChange({ ...settings });
+    if (callbacks.onSettingsChange) callbacks.onSettingsChange({ ...settings });
   }
 
   let sheetMode = null;
@@ -200,40 +229,33 @@ export function createShell(opts) {
     sheetMode = null;
   }
 
+  function actions(list) {
+    return h("div", { class: "yz-menu" }, list);
+  }
+
+  function button(text, variant, onclick) {
+    const btn = h("button", { class: `yz-btn${variant ? ` yz-btn--${variant}` : ""}`, type: "button", text });
+    btn.addEventListener("click", onclick);
+    return btn;
+  }
+
   function renderPause() {
     sheetBody.append(
-      h("div", {}, [h("p", { class: "yz-kicker", text: "PAUSED" }), h("h2", { class: "yz-title", text: "暂 停" })]),
+      h("h2", { class: "yz-title", text: "暂 停" }),
       settingsBlock(),
       keymapBlock(),
-      h("div", { class: "yz-actions" }, [
-        h("button", {
-          class: "yz-btn",
-          type: "button",
-          "data-primary": true,
-          text: "继 续",
-          onclick: () => {
-            audio.play("uiSelect");
-            callbacks.onResume && callbacks.onResume();
-          },
+      actions([
+        button("继 续", "primary", () => {
+          audio.play("uiSelect");
+          if (callbacks.onResume) callbacks.onResume();
         }),
-        h("button", {
-          class: "yz-btn",
-          type: "button",
-          text: "重 开",
-          onclick: () => {
-            audio.play("uiSelect");
-            callbacks.onRestart && callbacks.onRestart();
-          },
+        button("重 开", null, () => {
+          audio.play("uiSelect");
+          if (callbacks.onRestart) callbacks.onRestart();
         }),
-        h("button", {
-          class: "yz-btn",
-          type: "button",
-          "data-ghost": true,
-          text: "回 主 菜 单",
-          onclick: () => {
-            audio.play("uiBack");
-            callbacks.onQuit && callbacks.onQuit();
-          },
+        button("回 主 菜 单", "ghost", () => {
+          audio.play("uiBack");
+          if (callbacks.onQuit) callbacks.onQuit();
         }),
       ])
     );
@@ -241,91 +263,80 @@ export function createShell(opts) {
 
   function renderSettings() {
     sheetBody.append(
-      h("div", {}, [h("p", { class: "yz-kicker", text: "SETTINGS" }), h("h2", { class: "yz-title", text: "设 置" })]),
+      h("h2", { class: "yz-title", text: "设 置" }),
       settingsBlock(),
       keymapBlock(),
-      h("div", { class: "yz-actions" }, [
-        h("button", {
-          class: "yz-btn",
-          type: "button",
-          "data-primary": true,
-          text: "返 回",
-          onclick: () => {
-            audio.play("uiBack");
-            closeSheet();
-          },
+      actions([
+        button("返 回", "primary", () => {
+          audio.play("uiBack");
+          closeSheet();
         }),
       ])
     );
   }
 
+  function resultRow(cells, mods = {}) {
+    const row = h("div", { class: "yz-results-row" }, [
+      h("span", { class: "yz-results-name", text: cells[0] }),
+      h("span", { class: "yz-num", text: cells[1] }),
+      h("span", { class: "yz-num", text: cells[2] }),
+      h("span", { class: "yz-num", text: cells[3] }),
+    ]);
+    if (mods.head) row.classList.add("is-head");
+    if (mods.winner) row.classList.add("is-winner");
+    if (mods.me) row.classList.add("is-me");
+    if (mods.glove) row.dataset.glove = mods.glove;
+    return row;
+  }
+
   function renderResult(payload = {}) {
-    const rows = (payload.rows || []).map((r, i) => {
-      const row = h("div", { class: "yz-row" }, [
-        h("i", {}),
-        h("span", { class: "yz-rank yz-num", text: String(i + 1) }),
-        h("span", { text: r.name }),
-        h("small", { text: `${r.deaths} 次坠落` }),
-        h("b", { class: "yz-num", text: `${r.kills}` }),
-      ]);
-      row.style.setProperty("--row-color", r.color || "#7f8c9e");
-      if (r.self) row.dataset.self = "1";
-      return row;
+    const title = h("h2", {
+      class: "yz-results-title",
+      text: payload.won ? "掌 下 留 名" : "被 扇 下 岛",
     });
+    if (payload.won) title.classList.add("is-win");
 
-    const blocks = [
-      h("div", {}, [
-        h("p", { class: "yz-kicker", text: payload.won ? "VICTORY" : "MATCH OVER" }),
-        h("h2", { class: "yz-title", text: payload.won ? "掌 下 留 名" : "被 扇 下 岛" }),
-        h("p", { class: "yz-hintline", text: payload.reasonText || "" }),
-      ]),
-      h("div", { class: "yz-rows" }, rows),
+    const rows = (payload.rows || []).map((r, i) =>
+      resultRow([r.name, String(r.kills), String(r.deaths), String(r.streak ?? 0)], {
+        winner: i === 0,
+        me: r.self,
+        glove: r.gloveId,
+      })
+    );
+
+    sheetBody.append(
+      title,
+      h("p", { class: "yz-subtitle", text: payload.reasonText || "" }),
+      h("div", {}, [resultRow(["选手", "杀", "坠", "连"], { head: true }), ...rows]),
       payload.unlocked && payload.unlocked.length
-        ? h("div", { class: "yz-note", "data-tone": "ok", text: `解锁：${payload.unlocked.join("、")}` })
+        ? h("p", { class: "yz-heading", text: `解锁：${payload.unlocked.join("、")}` })
         : null,
-      h("div", { class: "yz-actions" }, [
-        h("button", {
-          class: "yz-btn",
-          type: "button",
-          "data-primary": true,
-          text: "再 来 一 局",
-          onclick: () => {
-            audio.play("uiSelect");
-            callbacks.onRestart && callbacks.onRestart();
-          },
+      actions([
+        button("再 来 一 局", "primary", () => {
+          audio.play("uiSelect");
+          if (callbacks.onRestart) callbacks.onRestart();
         }),
-        h("button", {
-          class: "yz-btn",
-          type: "button",
-          "data-ghost": true,
-          text: "回 主 菜 单",
-          onclick: () => {
-            audio.play("uiBack");
-            callbacks.onQuit && callbacks.onQuit();
-          },
+        button("回 主 菜 单", "ghost", () => {
+          audio.play("uiBack");
+          if (callbacks.onQuit) callbacks.onQuit();
         }),
-      ]),
-    ];
-    sheetBody.append(...blocks.filter(Boolean));
+      ])
+    );
   }
 
-  // ---------- 降级提示 ----------
+  // ---------- 装配 ----------
 
-  const notes = h("div", { class: "yz-notes" });
-
-  function setNotes(list) {
-    clear(notes);
-    for (const note of list) {
-      notes.appendChild(h("div", { class: "yz-note", dataset: { tone: note.tone || "warn" }, text: note.text }));
-    }
-  }
-
-  el.append(menu.el, hudScreen, sheet, notes);
-  root.appendChild(el);
+  root.appendChild(menu.el);
+  root.appendChild(hud.el);
+  root.appendChild(touch.el);
+  root.appendChild(sheet);
 
   function applyTouchMode() {
-    el.dataset.touch = touchActive() ? "1" : "0";
-    if (!touchActive()) touch.reset();
+    const on = touchActive();
+    // 合同要求把开关挂在 html/body 上：.yz-touch 与 .yz-kbd 的显隐都靠它。
+    if (on) document.documentElement.dataset.touch = "1";
+    else delete document.documentElement.dataset.touch;
+    if (!on) touch.reset();
   }
   applyTouchMode();
 
@@ -334,16 +345,15 @@ export function createShell(opts) {
   function setScreen(next) {
     screen = next;
     menu.el.hidden = next !== "menu";
-    hudScreen.hidden = next === "menu";
-    // 降级提示只在主菜单显示，局内靠渲染器自己的角标，别挡住战场。
-    notes.hidden = next !== "menu";
+    hud.el.hidden = next === "menu";
+    touch.el.hidden = next === "menu";
     if (next === "menu") closeSheet();
   }
 
   setScreen("menu");
 
   return {
-    el,
+    el: root,
     get screen() {
       return screen;
     },
@@ -377,30 +387,52 @@ export function createShell(opts) {
       openSheet("result", payload);
     },
     updateHud(view, selfId) {
-      hud.update(view, selfId, { gloveById, killsToWin: matchConfig.killsToWin || 7 });
+      hud.update(view, selfId, {
+        gloveById,
+        killsToWin: matchConfig.killsToWin || 7,
+        switchLock: matchConfig.switchLock || 0.4,
+      });
       if (touchActive()) {
         const self = (view.players || []).find((p) => p.id === selfId);
-        touch.setCooldowns(self, self ? gloveById[self.gloveId] : null, {
-          ...hud.maxSeen,
-          switchLock: matchConfig.switchLock || 0.4,
-        });
+        touch.setCooldowns(self, self ? gloveById[self.activeGloveId ?? self.gloveId] : null, hud.maxSeen);
       }
     },
     pushKill(entry) {
       feed.push(entry);
     },
-    toast(text, ms) {
-      hud.setToast(text, ms);
+    flashHit() {
+      hud.flashHit();
     },
-    setNotes,
-    setUnlocked(list) {
-      menu.setUnlocked(list);
+    toast(text, ms, gold) {
+      hud.setToast(text, ms, gold);
     },
+    /** 降级提示落在主菜单页脚 .yz-foot，不挡战场。 */
+    setNotes(list) {
+      menu.setFoot(
+        list.map((note) =>
+          h("span", {
+            text: note.text,
+            style: {
+              marginRight: "12px",
+              color: note.tone === "warn" ? "var(--yz-gold-300)" : "var(--yz-text-mute)",
+            },
+          })
+        )
+      );
+    },
+    setSave(next) {
+      currentSave = next;
+      menu.setSave(next);
+    },
+    getSave: () => currentSave,
     refreshSettingsUi() {
       if (sheetMode === "pause" || sheetMode === "settings") openSheet(sheetMode);
     },
     destroy() {
-      el.remove();
+      menu.el.remove();
+      hud.el.remove();
+      touch.el.remove();
+      sheet.remove();
     },
   };
 }

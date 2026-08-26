@@ -1,12 +1,21 @@
-// 异掌 · 入口。职责：装配（模块探测 → 降级）、主循环、事件转音效/播报、存档。
+// 异掌 · 入口。职责：装配（模块探测 → 依赖注入 → 降级）、主循环、事件转音效/播报、存档。
 // 这里不写玩法规则，也不碰 Three.js；规则在 src/sim + src/combat，画面在 src/render。
 
-import { loadSiblingModules, loadSiblingStyles, bindRenderer } from "./core/modules.js";
+import { loadSiblingModules, loadSiblingStyles, bindRenderer, wireSimDeps } from "./core/modules.js";
 import { createLoop } from "./core/loop.js";
 import { lerpView } from "./core/interp.js";
 import { createQualityProbe } from "./core/quality.js";
-import { loadSave, updateSave, recordMatch, unlockGlove } from "./core/storage.js";
+import { loadSave, updateSave, recordMatch, unlockGlove, SAVE_KEY } from "./core/storage.js";
 import { makeRng } from "./core/rng.js";
+import {
+  SELF_ID,
+  adaptView,
+  createRoster,
+  simYawToCameraYaw,
+  toRenderView,
+} from "./core/view.js";
+import { createUnlockChecker, newlyUnlocked, unlockTextOf } from "./core/unlocks.js";
+import { createProgressTracker } from "./core/progress.js";
 import * as fallbackSim from "./core/fallback/sim.js";
 import * as fallbackAi from "./core/fallback/ai.js";
 import { createRenderer as createFallbackRenderer } from "./core/fallback/render2d.js";
@@ -15,7 +24,6 @@ import { createInput } from "./input/index.js";
 import { createAudio } from "./audio/index.js";
 import { createShell } from "./ui/shell.js";
 
-const SELF_ID = "p1";
 const HUD_INTERVAL = 1 / 30;
 
 const app = document.getElementById("app");
@@ -52,27 +60,42 @@ function freshCanvas() {
 
 async function boot() {
   const styleCount = await loadSiblingStyles();
-  const mods = await loadSiblingModules();
+  // src/styles 缺席才让 ui/shell.css 生效，两套 CSS 永远不同时上场。
+  if (styleCount === 0) document.documentElement.dataset.yzFallback = "1";
 
-  const gloves =
-    mods.data.ok && Array.isArray(mods.data.module.GLOVES) && mods.data.module.GLOVES.length
-      ? mods.data.module.GLOVES
-      : FALLBACK_GLOVES;
-  const gloveById =
-    (mods.data.ok && mods.data.module.GLOVE_BY_ID) ||
-    Object.fromEntries(gloves.map((g) => [g.id, g]));
-  const matchConfig = { ...FALLBACK_MATCH, ...((mods.data.ok && mods.data.module.MATCH) || {}) };
+  const mods = await loadSiblingModules();
 
   const sim = mods.sim.ok ? mods.sim.module : fallbackSim;
   const ai = mods.ai.ok ? mods.ai.module : fallbackAi;
+  const dataModule = mods.data.ok ? mods.data.module : null;
+  const combatModule = mods.combat.ok ? mods.combat.module : null;
+
+  // Round 1 的头号缺陷：sim 从来没拿到真实 data / combat，运行时一直跑内置兜底棉掌。
+  const wired = wireSimDeps(sim, dataModule, combatModule);
+
+  const gloves =
+    dataModule && Array.isArray(dataModule.GLOVES) && dataModule.GLOVES.length
+      ? dataModule.GLOVES
+      : FALLBACK_GLOVES;
+  const gloveById =
+    (dataModule && dataModule.GLOVE_BY_ID) || Object.fromEntries(gloves.map((g) => [g.id, g]));
+  const matchConfig = {
+    ...FALLBACK_MATCH,
+    ...((dataModule && dataModule.MATCH) || {}),
+    ...(typeof sim.getMatchConfig === "function" ? sim.getMatchConfig() : {}),
+  };
+  const personaById = (dataModule && dataModule.BOT_PERSONA_BY_ID) || null;
+
+  const isUnlocked = createUnlockChecker(dataModule, { gloves });
 
   const degraded = [];
   if (!mods.sim.ok) degraded.push({ text: `src/sim 未接入（${mods.sim.reason}）· 正在跑占位模拟`, tone: "warn" });
   if (!mods.render.ok) degraded.push({ text: `src/render 未接入（${mods.render.reason}）· 正在跑 Canvas2D 调试视图`, tone: "warn" });
   if (!mods.ai.ok) degraded.push({ text: `src/ai 未接入（${mods.ai.reason}）· 正在跑占位 Bot`, tone: "warn" });
   if (!mods.data.ok) degraded.push({ text: `src/data 未接入（${mods.data.reason}）· 正在用占位掌表`, tone: "warn" });
-  if (styleCount === 0) degraded.push({ text: "src/styles 未接入 · 使用 shell 自带暮蓝主题", tone: "warn" });
-  else degraded.push({ text: `已加载 src/styles ${styleCount} 份样式`, tone: "ok" });
+  if (mods.data.ok && !wired.data) degraded.push({ text: "sim 不支持 installData · 8 掌数值可能未进局", tone: "warn" });
+  if (mods.combat.ok && !wired.combat) degraded.push({ text: "sim 不支持 installCombat · 技能可能未进局", tone: "warn" });
+  if (styleCount === 0) degraded.push({ text: "src/styles 未接入 · 使用 shell 兜底暮蓝主题", tone: "warn" });
 
   let save = loadSave();
   const audio = createAudio({ muted: save.muted });
@@ -87,9 +110,11 @@ async function boot() {
     if (mods.render.ok) {
       try {
         const instance = mods.render.module.createRenderer(canvas, {
-          followId: SELF_ID,
-          gloves,
-          maxDpr: 2,
+          localId: SELF_ID,
+          arenaRadius: matchConfig.arenaRadius,
+          quality: save.quality && save.quality !== "auto" ? save.quality : "mid",
+          mobile: (navigator.maxTouchPoints || 0) > 0,
+          pixelRatio: Math.min(2, window.devicePixelRatio || 1),
         });
         const bound = bindRenderer(mods.render.module, instance);
         if (bound.sync) return { api: bound, fallback: false };
@@ -107,6 +132,10 @@ async function boot() {
   const made = makeRenderer();
   renderer = made.api;
   rendererIsFallback = made.fallback;
+
+  function setSpectator(on) {
+    if (renderer.setSpectator) renderer.setSpectator(on);
+  }
 
   function applyResize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -141,6 +170,8 @@ async function boot() {
     audio,
     input,
     matchConfig,
+    isUnlocked,
+    unlockTextOf: (glove) => unlockTextOf(glove, dataModule),
     callbacks: {
       onStart: (loadout) => startMatch(loadout),
       onResume: () => setPaused(false),
@@ -153,6 +184,7 @@ async function boot() {
   const bootNode = document.getElementById("yz-boot");
   if (bootNode) bootNode.remove();
   shell.setNotes(degraded);
+  setSpectator(true);
 
   function applySettings(next) {
     save = updateSave({
@@ -180,6 +212,7 @@ async function boot() {
 
   function setQuality(tier, why) {
     qualityTier = tier;
+    // 探针的唯一作用就是这一行：档位必须真的落到渲染器上。
     if (renderer.setQuality) renderer.setQuality(tier);
     if (why) shell.toast(`画质 ${tier.toUpperCase()} · ${why}`, 1500);
   }
@@ -197,22 +230,17 @@ async function boot() {
   let state = null;
   let curView = null;
   let prevView = null;
+  let roster = null;
   let lastLoadout = null;
   let rng = makeRng(1);
   let hudAcc = 0;
-  let matchStats = null;
   let resultShown = false;
+  const tracker = createProgressTracker({ selfId: SELF_ID });
 
   function nameOf(id) {
     if (!curView) return id;
     const p = (curView.players || []).find((q) => q.id === id);
     return (p && p.name) || id;
-  }
-
-  function colorOf(id) {
-    if (!curView) return null;
-    const p = (curView.players || []).find((q) => q.id === id);
-    return p && p.color;
   }
 
   function collectInputs() {
@@ -232,77 +260,57 @@ async function boot() {
     return inputs;
   }
 
-  const behindLastHit = new Map();
-
   function handleEvents(view) {
-    const events = Array.isArray(view.events) ? view.events : [];
-    for (const e of events) {
+    for (const e of view.events) {
       switch (e.type) {
         case "slap":
-          if (!e.hit) audio.play("slapWhiff");
+          if (!e.hits) audio.play("slapWhiff");
           else audio.play("slap", { velocity: e.awakened ? 1.2 : 1 });
+          break;
+        case "slapWhiff":
+          audio.play("slapWhiff");
           break;
         case "hit":
           audio.play("hit", { power: e.power });
-          if (e.targetId) behindLastHit.set(e.targetId, !!e.behind);
-          if (e.playerId === SELF_ID) matchStats.hits += 1;
-          break;
-        case "parry":
-          audio.play("heavy");
+          if (e.targetId === SELF_ID) shell.flashHit();
           break;
         case "skill":
           audio.play("skill");
           break;
         case "awaken":
           audio.play("awaken");
-          if (e.playerId === SELF_ID) shell.toast("掌意觉醒", 1800);
+          if (e.playerId === SELF_ID) shell.toast("掌 意 觉 醒", 1800, true);
           break;
         case "dash":
           audio.play("dash");
-          if (e.playerId === SELF_ID) matchStats.dashes += 1;
           break;
         case "jump":
           audio.play("jump");
           break;
-        case "land":
-          audio.play("land", { impact: e.impact || 0 });
-          break;
         case "switch":
           audio.play("switchGlove");
           break;
-        case "chunkCrack":
+        case "tileCrack":
           audio.play("crack");
           break;
-        case "chunkBreak":
+        case "tileBreak":
           audio.play("collapse");
-          shell.toast("台面塌了一块", 1400);
-          break;
-        case "meteorLand":
-          audio.play("heavy");
-          break;
-        case "ringout":
-          audio.play("ringout");
+          if (e.playerId === SELF_ID || e.by === SELF_ID) shell.toast("台面塌了一块", 1400);
           break;
         case "respawn":
           if (e.playerId === SELF_ID) audio.play("respawn");
           break;
-        case "kill": {
-          const behind = behindLastHit.get(e.victimId);
-          behindLastHit.delete(e.victimId);
+        case "ko": {
+          const mine = e.killerId === SELF_ID || e.victimId === SELF_ID;
           shell.pushKill({
             killer: e.killerId ? nameOf(e.killerId) : null,
             victim: nameOf(e.victimId),
-            method: e.killerId ? (behind ? "背身扇落" : "扇 出 岛") : "自 己 掉 下 去",
-            color: e.killerId ? colorOf(e.killerId) : "#6c7787",
+            method: e.killerId ? "扇 出 岛" : "自 己 掉 下 去",
+            mine,
           });
-          if (e.killerId === SELF_ID) {
-            audio.play("kill");
-            matchStats.kills += 1;
-            if (behind) matchStats.behindKills += 1;
-          } else if (e.victimId === SELF_ID) {
-            audio.play("death");
-            matchStats.deaths += 1;
-          }
+          if (e.killerId === SELF_ID) audio.play("kill");
+          else if (e.victimId === SELF_ID) audio.play("death");
+          else audio.play("ringout");
           break;
         }
         default:
@@ -311,40 +319,13 @@ async function boot() {
     }
   }
 
-  // sim 不发事件时的兜底：靠 deaths 计数差分补击杀播报。
-  const lastDeaths = new Map();
-  function diffKills(view) {
-    for (const p of view.players || []) {
-      const before = lastDeaths.get(p.id);
-      lastDeaths.set(p.id, p.deaths || 0);
-      if (before === undefined || (p.deaths || 0) <= before) continue;
-      audio.play("ringout");
-      shell.pushKill({ killer: null, victim: p.name || p.id, method: "坠 岛", color: p.color });
-      if (p.id === SELF_ID) matchStats.deaths += 1;
-    }
-  }
-
-  function evaluateUnlocks() {
-    const newly = [];
+  function evaluateUnlocks(won) {
+    tracker.finish(won);
     save = loadSave();
-    for (const g of gloves) {
-      if (save.unlocked.includes(g.id)) continue;
-      const req = g.unlock && g.unlock.req;
-      let pass = false;
-      if (req) {
-        pass = true;
-        if (req.kills != null && matchStats.kills < req.kills) pass = false;
-        if (req.dashes != null && matchStats.dashes < req.dashes) pass = false;
-        if (req.behindKills != null && matchStats.behindKills < req.behindKills) pass = false;
-        if (req.noDeaths && matchStats.deaths > 0) pass = false;
-      }
-      if (pass) {
-        save = unlockGlove(g.id);
-        newly.push(g.name);
-      }
-    }
-    if (newly.length) shell.setUnlocked(save.unlocked);
-    return newly;
+    const fresh = newlyUnlocked(gloves, tracker.progress, save, dataModule);
+    for (const g of fresh) save = unlockGlove(g.id);
+    if (fresh.length) shell.setSave(save);
+    return fresh.map((g) => g.name);
   }
 
   function finishMatch() {
@@ -353,24 +334,23 @@ async function boot() {
     loop.setPaused(true);
     input.setEnabled(false);
     input.releasePointerLock();
+    setSpectator(true);
     audio.play("matchEnd");
 
-    const players = (curView.players || []).slice().sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+    const players = (curView.players || [])
+      .slice()
+      .sort((a, b) => (b.kills || 0) - (a.kills || 0) || (a.deaths || 0) - (b.deaths || 0));
     const self = players.find((p) => p.id === SELF_ID);
     const won = players.length > 0 && players[0].id === SELF_ID;
-    const over = typeof sim.isMatchOver === "function" ? sim.isMatchOver(state) : { reason: curView.reason };
+    const over =
+      typeof sim.isMatchOver === "function" ? sim.isMatchOver(state) : { reason: curView.reason };
     const reasonText =
       over.reason === "kills"
         ? `${nameOf(over.winnerId || players[0].id)} 先到 ${matchConfig.killsToWin} 杀`
         : "四分钟到，按击杀数结算";
 
-    // 战绩以最终计分板为准；事件计数只用于 view 里没有的维度（冲刺次数、背身击杀）。
-    if (self) {
-      matchStats.kills = self.kills || 0;
-      matchStats.deaths = self.deaths || 0;
-    }
-    recordMatch({ kills: matchStats.kills, deaths: matchStats.deaths, won });
-    const unlocked = evaluateUnlocks();
+    recordMatch({ kills: (self && self.kills) || 0, deaths: (self && self.deaths) || 0, won });
+    const unlocked = evaluateUnlocks(won);
 
     shell.showResult({
       won,
@@ -380,19 +360,23 @@ async function boot() {
         name: p.name || p.id,
         kills: p.kills || 0,
         deaths: p.deaths || 0,
-        color: p.color,
+        streak: p.streak || 0,
+        gloveId: p.activeGloveId || p.gloveId,
         self: p.id === SELF_ID,
       })),
     });
+  }
+
+  function refreshView() {
+    const raw = sim.getView(state);
+    return adaptView(raw, { selfId: SELF_ID, roster, gloveById });
   }
 
   function startMatch(loadout) {
     lastLoadout = loadout;
     save = updateSave({ loadout });
     rng = makeRng((Date.now() & 0xffff) ^ 0x5eed);
-    matchStats = { kills: 0, deaths: 0, hits: 0, dashes: 0, behindKills: 0 };
-    behindLastHit.clear();
-    lastDeaths.clear();
+    tracker.reset();
     resultShown = false;
 
     try {
@@ -413,14 +397,19 @@ async function boot() {
       shell.setNotes([...degraded, { text: "src/sim.createMatch 抛错 · 已退回占位模拟", tone: "warn" }]);
     }
 
-    curView = sim.getView(state);
+    const rawView = sim.getView(state);
+    roster = createRoster(rawView, { selfId: SELF_ID, personaById });
+    curView = adaptView(rawView, { selfId: SELF_ID, roster, gloveById });
     prevView = curView;
     if (fallbackAi.resetBots) fallbackAi.resetBots();
-    if (renderer.setFollow) renderer.setFollow(SELF_ID);
+    if (ai.resetBots) ai.resetBots();
 
+    const self = (curView.players || []).find((p) => p.id === SELF_ID);
+    setSpectator(false);
     shell.showMatch();
     input.setEnabled(true);
-    input.setLook(-Math.PI / 2, 0.3);
+    // 出生朝台心：把 sim 的初始 yaw 换算回相机方位角，开局镜头在人背后。
+    input.setLook(simYawToCameraYaw(self ? self.yaw : 0), 0.3);
     loop.setPaused(false);
     audio.unlock();
     audio.play("matchStart");
@@ -432,6 +421,7 @@ async function boot() {
     loop.setPaused(true);
     input.setEnabled(false);
     input.releasePointerLock();
+    setSpectator(true);
     state = null;
     curView = null;
     prevView = null;
@@ -473,26 +463,29 @@ async function boot() {
       }
       try {
         sim.step(state, inputs, dt);
-        curView = sim.getView(state);
+        curView = refreshView();
       } catch (err) {
         console.error("[yizhang] sim.step 抛错，暂停对局", err);
         shell.setNotes([...degraded, { text: `sim.step 抛错：${err.message}`, tone: "warn" }]);
         loop.setPaused(true);
         return;
       }
-      if (Array.isArray(curView.events) && curView.events.length) handleEvents(curView);
-      else if (!Array.isArray(curView.events)) diffKills(curView);
-
-      const over =
-        typeof sim.isMatchOver === "function" ? sim.isMatchOver(state) : { over: !!curView.over };
-      if (over && over.over) finishMatch();
+      if (curView.events.length) {
+        handleEvents(curView);
+        tracker.feed(curView.events, curView);
+      }
+      if (curView.over) finishMatch();
     },
     draw(alpha, info) {
       if (probe && !info.paused) probe.feed(performance.now() / 1000);
-      if (!curView) return;
+      if (!curView) {
+        if (renderer.sync) renderer.sync({ players: [], tiles: [], events: [] });
+        return;
+      }
       const view = info.paused ? curView : lerpView(prevView, curView, alpha);
       try {
-        if (renderer.sync) renderer.sync(view);
+        // 朝向桥接只对 three 渲染器成立；Canvas2D 调试视图用的是屏幕系角度。
+        if (renderer.sync) renderer.sync(rendererIsFallback ? view : toRenderView(view));
         if (renderer.render) renderer.render(view, alpha);
       } catch (err) {
         console.warn("[yizhang] renderer.sync 抛错", err);
@@ -524,6 +517,8 @@ async function boot() {
 
   // 调试钩子：探针脚本和手测都用得上，不参与游戏逻辑。
   window.__yizhang = {
+    SELF_ID,
+    SAVE_KEY,
     get state() {
       return state;
     },
@@ -533,12 +528,19 @@ async function boot() {
     get modules() {
       return mods;
     },
+    get wiring() {
+      return { ...wired, unlockSource: isUnlocked.source, styleCount, renderer: rendererIsFallback ? "fallback" : "three" };
+    },
+    get progress() {
+      return tracker.progress;
+    },
     get quality() {
       return qualityTier;
     },
     get rendererFallback() {
       return rendererIsFallback;
     },
+    renderer,
     shell,
     input,
     audio,

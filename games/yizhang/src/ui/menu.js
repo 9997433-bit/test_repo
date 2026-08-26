@@ -1,124 +1,158 @@
-// 主菜单：双掌配装。左边两个掌位，下面八张掌卡，点掌位选中槽，点掌卡填进去。
-// 未解锁的掌显示解锁条件而不是灰一片没有下文。
+// 主菜单：标题 + 双掌配装 + 进裂岛。Fable-2 合同（§11.5）：
+//   .yz-screen.yz-screen--deep > .yz-home
+//     ├── .yz-title / .yz-subtitle
+//     ├── .yz-plate.yz-panel.yz-panel--wide（选掌板）
+//     │     └── .yz-glove-grid > .yz-glove-tile(.is-main/.is-off/.is-locked)
+//     ├── .yz-menu > .yz-btn(.yz-btn--primary / .yz-btn--ghost)
+//     └── .yz-foot
 
-import { h } from "./dom.js";
+import { h, clear } from "./dom.js";
+import { gloveIcon } from "./hud.js";
 
-export function createMenu({ gloves, save, onStart, onPick, onOpenSettings }) {
+export function createMenu({
+  gloves,
+  save,
+  switchLock = 0.4,
+  isUnlocked,
+  unlockTextOf,
+  onStart,
+  onPick,
+  onOpenSettings,
+}) {
+  const unlockText = unlockTextOf || (() => "局内挑战");
   const state = {
     slot: 0,
     main: save.loadout.main,
     off: save.loadout.off,
-    unlocked: new Set(save.unlocked),
+    save,
   };
 
-  if (!state.unlocked.has(state.main)) state.main = gloves[0].id;
-  if (!state.unlocked.has(state.off)) state.off = state.main;
-
   const byId = Object.fromEntries(gloves.map((g) => [g.id, g]));
-  const slotEls = [];
-  const cardEls = new Map();
+  const tiles = new Map();
 
-  const detail = h("p", {
-    text: "第三人称浮空擂台。选两只手套进裂岛：扇击积掌意，掌意满 8 秒觉醒，把对手扇出岛外。先到 7 杀或撑满 4 分钟。",
-  });
+  function unlocked(id) {
+    return isUnlocked ? !!isUnlocked(id, state.save) : true;
+  }
 
-  function makeSlot(index, label) {
-    const el = h("button", { class: "yz-slot", type: "button" }, [
-      h("span", { text: label }),
-      h("b", { text: "—" }),
-      h("em", { text: "" }),
+  function firstUnlocked() {
+    const hit = gloves.find((g) => unlocked(g.id));
+    return (hit || gloves[0]).id;
+  }
+
+  if (!unlocked(state.main)) state.main = firstUnlocked();
+  if (!unlocked(state.off)) state.off = state.main;
+
+  // ---- 选掌网格 ----
+  const grid = h("div", { class: "yz-glove-grid" });
+  for (const g of gloves) {
+    const icon = gloveIcon();
+    const lockNote = h("div", { class: "yz-lock-note" });
+    const tile = h("div", {
+      class: "yz-plate yz-glove-tile",
+      role: "button",
+      tabindex: "0",
+      dataset: { glove: g.id },
+    }, [
+      icon.el,
+      h("div", { class: "yz-glove-name", text: g.name }),
+      h("div", { class: "yz-glove-role", text: g.role || "" }),
+      lockNote,
     ]);
+    const choose = () => {
+      if (!unlocked(g.id)) return;
+      if (state.slot === 0) state.main = g.id;
+      else state.off = g.id;
+      state.slot = state.slot === 0 ? 1 : 0;
+      render();
+      if (onPick) onPick(g.id);
+    };
+    tile.addEventListener("click", choose);
+    tile.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        choose();
+      }
+    });
+    tiles.set(g.id, { tile, lockNote });
+    grid.appendChild(tile);
+  }
+
+  // ---- 掌位摘要（当前主 / 副）----
+  const slotRow = h("div", { class: "yz-dock-row" });
+  const slotButtons = [0, 1].map((index) => {
+    const icon = gloveIcon();
+    const name = h("span", { class: "yz-glove-name", text: "—" });
+    const kbd = h("span", { class: "yz-kbd", text: index === 0 ? "主 1" : "副 2" });
+    const el = h("button", { class: "yz-plate yz-glove-card", type: "button" }, [icon.el, name, kbd]);
     el.addEventListener("click", () => {
       state.slot = index;
       render();
       if (onPick) onPick("slot");
     });
-    slotEls.push(el);
-    return el;
-  }
+    return { el, name, index };
+  });
+  slotRow.append(...slotButtons.map((s) => s.el));
 
-  const slotMain = makeSlot(0, "主掌 · 1");
-  const slotOff = makeSlot(1, "副掌 · 2");
+  const hint = h("p", { class: "yz-lock-note" });
 
-  const grid = h("div", { class: "yz-grid" });
-  for (const g of gloves) {
-    const card = h("button", { class: "yz-card", type: "button" }, [
-      h("div", { class: "yz-card-top" }, [
-        h("b", { text: g.name }),
-        h("i", { text: g.role }),
-      ]),
-      h("p", { text: g.skillId === "none" ? g.skillDesc || "无主动技" : `${g.skillName || "主动"}：${g.skillDesc || ""}` }),
-      h("small", { text: `觉醒 · ${g.awakenDesc || "强化当前形态"}` }),
-      h("small", { class: "yz-card-unlock", text: "" }),
-      h("span", { class: "yz-pick-tag", text: "" }),
-    ]);
-    card.style.setProperty("--card-color", g.color || "#7f8c9e");
-    card.addEventListener("click", () => {
-      if (!state.unlocked.has(g.id)) return;
-      if (state.slot === 0) state.main = g.id;
-      else state.off = g.id;
-      state.slot = state.slot === 0 ? 1 : 0;
-      render();
-      if (onPick) onPick("card");
-    });
-    cardEls.set(g.id, card);
-    grid.appendChild(card);
-  }
+  const panel = h("div", { class: "yz-plate yz-panel yz-panel--wide" }, [
+    h("h2", { class: "yz-heading", text: "配 掌" }),
+    slotRow,
+    h("div", { class: "yz-scroll" }, [grid]),
+    hint,
+  ]);
 
   const startBtn = h("button", {
-    class: "yz-btn",
+    class: "yz-btn yz-btn--primary",
     type: "button",
-    "data-primary": true,
     text: "进 裂 岛",
   });
   startBtn.addEventListener("click", () => onStart({ main: state.main, off: state.off }));
 
-  const settingsBtn = h("button", { class: "yz-btn", type: "button", "data-ghost": true, text: "设 置" });
+  const settingsBtn = h("button", { class: "yz-btn yz-btn--ghost", type: "button", text: "设 置" });
   if (onOpenSettings) settingsBtn.addEventListener("click", onOpenSettings);
 
-  const hint = h("div", { class: "yz-hintline" });
+  const foot = h("div", { class: "yz-foot" });
 
-  const el = h("div", { class: "yz-screen yz-menu", "data-modal": true }, [
-    h("div", { class: "yz-menu-head" }, [
-      h("h1", { class: "yz-title", text: "异掌" }),
-      h("div", {}, [h("p", { class: "yz-kicker", text: "Round 1 · 竖切" }), detail]),
+  const el = h("div", { class: "yz-screen yz-screen--deep" }, [
+    h("div", { class: "yz-home" }, [
+      h("div", {}, [
+        h("h1", { class: "yz-title", text: "异 掌" }),
+        h("p", { class: "yz-subtitle", text: "暮色裂岛 · 一场体面的巴掌架" }),
+      ]),
+      panel,
+      h("div", { class: "yz-menu" }, [startBtn, settingsBtn]),
     ]),
-    h("div", { class: "yz-loadout" }, [slotMain, slotOff]),
-    grid,
-    h("div", { class: "yz-menu-foot" }, [startBtn, settingsBtn, hint]),
+    foot,
   ]);
 
   function render() {
     const picks = [state.main, state.off];
-    slotEls.forEach((slotEl, i) => {
-      const g = byId[picks[i]] || gloves[0];
-      slotEl.dataset.active = state.slot === i ? "1" : "0";
-      slotEl.style.setProperty("--slot-color", g.color || "#7f8c9e");
-      slotEl.querySelector("b").textContent = g.name;
-      slotEl.querySelector("em").textContent = `${g.role} · ${g.skillId === "none" ? "无主动" : g.skillName}`;
+
+    // 识别色峰值跟着主掌走
+    el.dataset.glove = state.main;
+
+    slotButtons.forEach((slot) => {
+      const g = byId[picks[slot.index]] || gloves[0];
+      slot.el.dataset.glove = g.id;
+      slot.name.textContent = g.name;
+      slot.el.classList.toggle("is-active", state.slot === slot.index);
     });
 
     for (const g of gloves) {
-      const card = cardEls.get(g.id);
-      const unlocked = state.unlocked.has(g.id);
-      card.disabled = !unlocked;
+      const entry = tiles.get(g.id);
+      const open = unlocked(g.id);
       const slotIndex = picks.indexOf(g.id);
-      const tag = card.querySelector(".yz-pick-tag");
-      if (slotIndex === 0 && picks[0] === picks[1]) tag.textContent = "主 + 副";
-      else if (slotIndex === 0) tag.textContent = "主掌";
-      else if (slotIndex === 1) tag.textContent = "副掌";
-      else tag.textContent = "";
-      if (slotIndex >= 0) card.dataset.picked = "1";
-      else delete card.dataset.picked;
-      card.querySelector(".yz-card-unlock").textContent = unlocked
-        ? `已解锁 · ${g.material || ""}`
-        : `未解锁 · ${g.unlock?.text || "局内挑战"}`;
+      entry.tile.classList.toggle("is-locked", !open);
+      entry.tile.classList.toggle("is-main", open && slotIndex === 0);
+      entry.tile.classList.toggle("is-off", open && picks[1] === g.id && picks[0] !== g.id);
+      entry.lockNote.textContent = open ? g.desc || g.role || "" : unlockText(g);
     }
 
     hint.textContent =
       state.main === state.off
         ? "两个掌位相同：Q 换掌不会有效果，建议配两只不同的手套。"
-        : "Q 键在局内切换主副掌，切换有 0.4 秒收掌硬直。";
+        : `点掌位选槽，点掌卡填入。局内 Q 换掌，有 ${switchLock.toFixed(1)} 秒收掌硬直。`;
   }
 
   render();
@@ -127,11 +161,15 @@ export function createMenu({ gloves, save, onStart, onPick, onOpenSettings }) {
     el,
     render,
     getLoadout: () => ({ main: state.main, off: state.off }),
-    setUnlocked(list) {
-      state.unlocked = new Set(list);
-      if (!state.unlocked.has(state.main)) state.main = gloves[0].id;
-      if (!state.unlocked.has(state.off)) state.off = state.main;
+    setSave(next) {
+      state.save = next;
+      if (!unlocked(state.main)) state.main = firstUnlocked();
+      if (!unlocked(state.off)) state.off = state.main;
       render();
+    },
+    setFoot(nodes) {
+      clear(foot);
+      for (const node of nodes) foot.appendChild(node);
     },
     focusStart() {
       startBtn.focus();
