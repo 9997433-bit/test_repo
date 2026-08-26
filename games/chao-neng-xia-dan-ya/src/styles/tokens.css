@@ -64,6 +64,15 @@
   --hp: #ff5c7a;
   --energy: var(--yolk-500);
 
+  /* —— 准星 / 弹道预测（Canvas 同步取色，配方见 ART_DIRECTION §6.3）
+     锁敌与未锁敌除色相外还差明度 + 形状（准星圈只在锁敌时画），
+     满足色盲三重编码，勿只换色。 —— */
+  --aim-idle: #f6f0e6; /* 未锁敌：暖白，虚线 60% / 端点全色 */
+  --aim-lock: var(--neon-pink); /* 锁敌：虚线 95% / 端点与准星圈全色 */
+  --aim-fan: var(--yolk-500); /* 发射角度扇形，16% 铺底 */
+  --aim-power-lo: var(--yolk-500); /* 力度条低段（条底） */
+  --aim-power-hi: var(--danger); /* 力度条满力段（条顶） */
+
   /* —— 兼容别名（Round 0 脚手架旧名，勿删）—— */
   --bg: var(--night-1);
   --bg-2: var(--night-2);

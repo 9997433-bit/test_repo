@@ -1,9 +1,13 @@
 /* ============================================================
    超能下蛋鸭 · 动效层 fx.css
-   关键帧 / 连击闪光 / 震屏 / 飘字 / 稀有卡流光 / reduce-motion 双通道
+   关键帧 / 停顿 / 震屏 / 连击闪光 / 飘字 / 稀有卡流光 / reduce-motion 双通道
    原则：只动 transform·opacity·background-position·filter；
         一次性动画由 JS 重挂 .is-* 或 .fx-* 类触发，播完自删。
-   本文件在加载序最末，reduce-motion 覆盖必须放在文件底部。
+   加载事实（Round 2 实测）：
+     游戏 index.html 挂 tokens → base → fx → ui.css（O4 的 ui.css 在本文件之后）；
+     gallery.html 挂 tokens → layout(@import base/components/hud) → fx。
+   因此本文件必须自洽：juice 类的基础样式一并放这里（勿依赖 hud.css），
+   reduce-motion 覆盖靠 !important 压过后加载的 ui.css，仍放文件底部。
    ============================================================ */
 
 /* ============ 关键帧 ============ */
@@ -120,6 +124,23 @@
   20%, 80% { transform: translate3d(7px, -2px, 0) rotate(0.4deg); }
   30%, 50%, 70% { transform: translate3d(-7px, 4px, 0) rotate(-0.6deg); }
   40%, 60% { transform: translate3d(7px, -4px, 0) rotate(0.6deg); }
+}
+
+/* 命中停顿亮度脉冲：逻辑冻结由 core/battle.js battle.hitStop 承担，
+   CSS 只补一记「闪白 + 1.2% 微推近」让停顿被看见（filter + transform，零重排） */
+@keyframes kf-hitstop-pop {
+  0% {
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  22% {
+    filter: brightness(1.45) saturate(1.25);
+    transform: scale(1.012);
+  }
+  100% {
+    filter: brightness(1);
+    transform: scale(1);
+  }
 }
 
 /* 满能辉光呼吸（大招钮 / 低血条） */
@@ -278,6 +299,110 @@
   animation: kf-shine-sweep 3.4s var(--ease-in-out) infinite;
 }
 
+/* ============ 战斗 juice：对接 src/ui 现网 DOM ============
+   现网战斗 DOM（src/ui/screens/battle.js）：
+     .screen.screen-battle > .battle-canvas + .hud-top + .aim-hint
+       + .hud-dock > .hero-slot(.active/.ready) + .ult-btn(.ready)
+       + .combo-badge(.on/.hot)
+   接线表（O4 消费）见 docs/ART_DIRECTION.md §5.1；
+   一次性动画重播统一：el.classList.remove(x); void el.offsetWidth; el.classList.add(x)
+   注意：ui.css 在 fx.css 之后加载，凡与 ui.css 同元素同属性冲突的绑定，
+        用双写类名抬特异性（0,3,0），不用 !important。 */
+
+/* —— 命中停顿：挂 .battle-canvas，播完 JS 移除 ——
+   与 combat 反馈事件对齐：kind="hitstop" duration 0.03(暴击) → .fx-hitstop；
+   duration ≥0.09（技能 0.09 / 爆蛋 0.12）→ .fx-hitstop-lg。
+   视觉脉冲比逻辑冻结略长，停顿才可读。 */
+.fx-hitstop {
+  animation: kf-hitstop-pop 160ms var(--ease-out);
+}
+
+.fx-hitstop-lg {
+  animation: kf-hitstop-pop 300ms var(--ease-out);
+}
+
+/* —— 震屏：挂 .battle-canvas（HUD 不抖，读数保持可读）——
+   .fx-shake-sm/md/lg 绑定见上方「动画绑定」段；
+   与 combat 反馈对齐：kind="shake" intensity <0.8 → sm，<1.2 → md，≥1.2 → lg。
+   render.js 内置的 battle.shakeAmt canvas 抖动与本类二选一，勿叠加。 */
+
+/* —— 连击弹跳：现网徽章 .combo-badge，JS 每次连击重挂 .is-bump —— */
+.combo-badge.is-bump.is-bump {
+  animation: kf-combo-bump var(--dur-3) var(--ease-pop);
+}
+
+/* 20 连爆蛋时刻：流光渐变字。压过 ui.css 的 .combo-badge.hot（金字 + pulse） */
+.combo-badge.is-fever.is-fever {
+  background: var(--grad-fever);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--yolk-500) 65%, transparent));
+  animation: kf-fever-shift 1.8s linear infinite;
+}
+
+/* fever 中再弹跳：两条动画并行（transform 与 background-position 互不抢） */
+.combo-badge.is-fever.is-bump {
+  animation:
+    kf-combo-bump var(--dur-3) var(--ease-pop),
+    kf-fever-shift 1.8s linear infinite;
+}
+
+/* —— 连击全屏闪光层：常驻插在 .screen-battle（或 .stage-frame）内，
+   每 5 连 JS 重挂 .is-on 播一次（keyframes kf-combo-flash 见上）。
+   元素反应可用内联 --flash-c 换闪光色（火/冰/雷同 --el-* tokens）。
+   基础样式放本文件（游戏不加载 hud.css）。 —— */
+.fx-combo-flash {
+  --flash-c: var(--yolk-500);
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-flash);
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    58% 46% at 50% 44%,
+    color-mix(in srgb, var(--yolk-100) 85%, transparent) 0%,
+    color-mix(in srgb, var(--flash-c) 40%, transparent) 42%,
+    transparent 72%
+  );
+}
+
+/* —— 伤害/治疗飘字：命中时插入，animationend 自删 ——
+   JS 设 --fx-x/--fx-y（相对定位父级的 px 或 %）与 --fx-color；暴击加 --crit。
+   动画绑定 .fx-float { kf-float-up } 见上方「动画绑定」段。 —— */
+.fx-float {
+  position: absolute;
+  left: var(--fx-x, 50%);
+  top: var(--fx-y, 50%);
+  z-index: var(--z-flash);
+  transform: translate(-50%, -50%);
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: var(--fx-color, var(--ink));
+  text-shadow:
+    0 2px 3px rgba(5, 2, 12, 0.85),
+    0 0 10px color-mix(in srgb, var(--fx-color, var(--ink)) 45%, transparent);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.fx-float--crit {
+  font-size: 1.6rem;
+  -webkit-text-stroke: 1px rgba(5, 2, 12, 0.5);
+}
+
+.fx-float--heal {
+  --fx-color: var(--ok);
+}
+
+/* —— 准星色：Canvas 绘制（src/ui/render.js），取 tokens.css 的
+   --aim-idle/--aim-lock/--aim-fan/--aim-power-lo/--aim-power-hi 同值 hex，
+   配方与三重编码要求见 docs/ART_DIRECTION.md §6.3。 —— */
+
 /* ============ 入场工具类 ============ */
 
 /* 逐项入场：JS 给每项设 --i（0,1,2…）实现 60ms 阶梯 */
@@ -314,14 +439,18 @@
 
   html:not([data-reduced-motion="off"]) .fx-shake-sm,
   html:not([data-reduced-motion="off"]) .fx-shake-md,
-  html:not([data-reduced-motion="off"]) .fx-shake-lg {
+  html:not([data-reduced-motion="off"]) .fx-shake-lg,
+  html:not([data-reduced-motion="off"]) .fx-hitstop,
+  html:not([data-reduced-motion="off"]) .fx-hitstop-lg {
     animation: none;
     transform: none;
   }
 
-  /* 静态替代：爆蛋时刻改为金色描边高亮 */
+  /* 静态替代：爆蛋时刻改为静态流光字/金字，弹跳与流动停 */
   html:not([data-reduced-motion="off"]) .combo.is-fever .combo__count,
-  html:not([data-reduced-motion="off"]) .combo.is-fever .combo__label {
+  html:not([data-reduced-motion="off"]) .combo.is-fever .combo__label,
+  html:not([data-reduced-motion="off"]) .combo-badge.is-fever,
+  html:not([data-reduced-motion="off"]) .combo-badge.is-bump {
     animation: none;
   }
 }
@@ -343,12 +472,27 @@ html[data-reduced-motion="on"] .pick-card[data-rarity="5"]::before {
 
 html[data-reduced-motion="on"] .fx-shake-sm,
 html[data-reduced-motion="on"] .fx-shake-md,
-html[data-reduced-motion="on"] .fx-shake-lg {
+html[data-reduced-motion="on"] .fx-shake-lg,
+html[data-reduced-motion="on"] .fx-hitstop,
+html[data-reduced-motion="on"] .fx-hitstop-lg {
   animation: none;
   transform: none;
 }
 
 html[data-reduced-motion="on"] .combo.is-fever .combo__count,
-html[data-reduced-motion="on"] .combo.is-fever .combo__label {
+html[data-reduced-motion="on"] .combo.is-fever .combo__label,
+html[data-reduced-motion="on"] .combo-badge.is-fever,
+html[data-reduced-motion="on"] .combo-badge.is-bump {
   animation: none;
+}
+
+/* ============ 「屏幕震动」设置通道 ============
+   设置页 settings.shake=false 时 JS 在 <html> 上挂 data-screen-shake="off"
+   （与 data-reduced-motion 相互独立）：只禁位移类镜头反馈，
+   闪光 / 弹跳 / 飘字等非位移动效全部保留。 */
+html[data-screen-shake="off"] .fx-shake-sm,
+html[data-screen-shake="off"] .fx-shake-md,
+html[data-screen-shake="off"] .fx-shake-lg {
+  animation: none;
+  transform: none;
 }
