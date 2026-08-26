@@ -1,6 +1,7 @@
 // 构造一份「中期存档」，用真实的 store/placeBuilding 生成，走真实读档路径。
 import { defaultState } from "../../core/store.js";
 import { placeBuilding } from "../../world/build.js";
+import { recruit } from "../../heroes/index.js";
 
 export function richSave() {
   let s = defaultState();
@@ -50,5 +51,19 @@ export function richSave() {
   ];
   s.log = ["存档载入：木筏还在，恭喜老大。"];
   s.meta.savedAt = Date.now();
+  return s;
+}
+
+/** 六人队 + 指定关卡进度的存档：给「5v5 取舍 / 伤病 / 首通奖励」这三条线做样本。 */
+export function veteranSave({ bestStage = 19, stars = 3 } = {}) {
+  let s = richSave();
+  for (const key of ["mia", "sam", "rambo", "yilong", "kan", "butcher"]) {
+    const next = recruit(s, key);
+    if (next === s) throw new Error(`seed: 招不到 ${key}`);
+    s = next;
+  }
+  s.heroes = s.heroes.map((h) => ({ ...h, star: stars }));
+  s.campaign = { ...s.campaign, stage: Math.min(30, bestStage + 1), bestStage, attempts: 0 };
+  s.log = [`存档载入：六人队，最佳第 ${bestStage} 关。`];
   return s;
 }

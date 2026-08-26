@@ -19,10 +19,26 @@ npm i --no-save playwright-core   # 只在本地装，不污染 devDependencies
 先起 dev server（`npm run dev`，默认 4174），另开一个终端：
 
 ```bash
-OUT=/tmp/cww-e2e/shots node src/ui/e2e/smoke.mjs   # 中期存档：六屏功能走查，36 项断言
-OUT=/tmp/cww-e2e/shots node src/ui/e2e/fresh.mjs   # 空存档：新手指引 → 建指挥中心，11 项断言
-OUT=/tmp/cww-e2e/video node src/ui/e2e/demo.mjs    # 录一段走查视频，不做断言
+OUT=/tmp/cww-e2e/shots node src/ui/e2e/smoke.mjs    # 中期存档：六屏功能走查，37 项断言
+OUT=/tmp/cww-e2e/shots node src/ui/e2e/fresh.mjs    # 空存档：新手指引 → 建指挥中心，11 项断言
+OUT=/tmp/cww-e2e/shots node src/ui/e2e/wiring.mjs   # Round 2 接线：阵容/伤病/种子/碎片/sticky/潜水，41 项断言
+OUT=/tmp/cww-e2e/video node src/ui/e2e/demo.mjs     # 录一段六屏走查视频，不做断言
+OUT=/tmp/cww-e2e/video node src/ui/e2e/demo-r2.mjs  # 录一段 Round 2 接线走查视频，不做断言
 ```
+
+`wiring.mjs` 是 Round 2 的接线证据链，每条断言对着一条「已实现但玩家看不见」的系统：
+
+| 断言组 | 盯的接线 |
+| --- | --- |
+| 阵容与 selectLineup 逐位一致 / 不等于 `heroes.slice(0,5)` | `heroes/lineup.js` 真的被调用 |
+| 勾选、超编拦截、前后排分栏 | 5v5 取舍有 UI |
+| 种子 == `combat.battleSeed`，败一场后换种子 | 重试盐 |
+| 阵亡进「养伤中」分栏、倒计时、不可委任 | `applyBattleInjuries` |
+| Boss 首通后 `#bag-shard` +10 | `STAGES[*].firstClear.shard` |
+| 名单两栏 / 动效开关刷新后仍在 / 横幅 sticky / 潜水切屏氧气继续掉 | 四条 UX 债 |
+
+录像需要 playwright 自带的 ffmpeg（`npx playwright install ffmpeg`，或把系统 ffmpeg
+软链到 `~/.cache/ms-playwright/ffmpeg-1011/ffmpeg-linux`）。
 
 环境变量：
 

@@ -176,7 +176,7 @@ await page.waitForTimeout(900);
 await page.mouse.up();
 await page.waitForTimeout(200);
 const stat = await page.textContent("#dive-stat");
-check("方向热区能下潜", /深度 ([1-9]\d*) 米/.test(stat), stat);
+check("方向热区能下潜", /深度 ([1-9]\d*) \/ \d+ 米/.test(stat), stat);
 check("氧气在消耗", (await page.textContent("#dive-o2 em")) !== o2a, `${o2a} → ${await page.textContent("#dive-o2 em")}`);
 await page.screenshot({ path: `${OUT}/07_dive.png` });
 await page.hover('[data-hold="pad-up"]');
@@ -208,9 +208,10 @@ await page.click("#camp-fight");
 await page.waitForTimeout(600);
 check("战报有内容", (await page.textContent("#camp-report")).length > 10);
 check("战报横幅有结论", (await page.textContent("#camp-banner")).length > 0, await page.textContent("#camp-banner"));
-if (await page.isEnabled("#camp-skip")) await page.click("#camp-skip");
+if (await page.isVisible("#camp-skip")) await page.click("#camp-skip");
 await page.waitForTimeout(300);
 check("残血名单出现", (await page.$$(".cww-hp")).length > 0);
+check("战报播完「跳过」自己收起来", !(await page.isVisible("#camp-skip")));
 await page.screenshot({ path: `${OUT}/09_campaign.png` });
 
 // ── 全局 ────────────────────────────────────────────────

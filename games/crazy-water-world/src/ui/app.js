@@ -42,6 +42,40 @@ function nextGoal(state) {
   return { text: `继续推图：下一关是第 ${state.campaign.stage} 关。`, screen: "campaign" };
 }
 
+// ------------------------------------------------------- 减弱动态：显式开关
+// settings.reduceMotion 是唯一事实（存档里），这里只解决「首次进游戏该给什么默认值」：
+// 系统偏好 prefers-reduced-motion 只在老大还没自己按过开关时生效；
+// 按过一次就把选择记在壳层，之后一律听他的。
+const MOTION_CHOICE_KEY = "cww.ui.motionChoice";
+
+function osPrefersReduce() {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function readMotionChoice() {
+  try {
+    return localStorage.getItem(MOTION_CHOICE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeMotionChoice(reduce) {
+  try {
+    localStorage.setItem(MOTION_CHOICE_KEY, reduce ? "reduce" : "full");
+  } catch {
+    /* 隐私模式写不进去就算了，本轮内存里的开关照样好使 */
+  }
+}
+
+function applyMotionDefault(store) {
+  const choice = readMotionChoice();
+  const want = choice === null ? osPrefersReduce() : choice === "reduce";
+  const s = store.get();
+  if (s.settings.reduceMotion === want) return;
+  store.patch({ settings: { ...s.settings, reduceMotion: want } });
+}
+
 // ---------------------------------------------------------------- 外壳
 function buildShell(root, ctx) {
   const save = loadState();
@@ -73,7 +107,16 @@ function buildShell(root, ctx) {
     h("button", { "data-act": "speed", "data-speed": "2", id: "sp-2", text: "2x", title: "两倍速（键 2）" }),
     h("button", { "data-act": "speed", "data-speed": "4", id: "sp-4", text: "4x", title: "四倍速（键 4）" }),
     h("button", { "data-act": "mute", id: "btn-mute", text: "🔊", title: "静音（键 M）" }),
-    h("button", { "data-act": "motion", id: "btn-motion", text: "动效", title: "减弱动态" }),
+    // 减弱动态是个两态开关：按钮上直接写当前状态，不靠高亮猜（键 R）。
+    h("button", {
+      "data-act": "motion",
+      id: "btn-motion",
+      text: "动效 全开",
+      role: "switch",
+      "aria-label": "减弱动态",
+      "aria-pressed": "false",
+      title: "减弱动态（键 R）",
+    }),
   ]);
 
   const ghost = h("div", { class: "cww-ghost", id: "ghost" });
@@ -110,11 +153,17 @@ function buildShell(root, ctx) {
 
   root.append(title, game);
 
+  // 指引 + 潜水警告钉在左面板顶部（sticky）：面板滚多远都看得见下一步该干嘛。
   const goal = h("div", { class: "cww-goal", id: "goal" }, [
     h("span", { id: "goal-text" }),
     h("button", { "data-act": "goal-jump", text: "带我去" }),
   ]);
-  left.append(goal);
+  const diveAlert = h("div", { class: "cww-alert hidden", id: "dive-alert", role: "status" }, [
+    h("span", { id: "dive-alert-text" }),
+    h("button", { "data-act": "dive-back", text: "回水里" }),
+  ]);
+  const sticky = h("div", { class: "cww-sticky", id: "sticky" }, [diveAlert, goal]);
+  left.append(sticky);
 
   ctx.refs = {
     title,
@@ -139,8 +188,11 @@ function buildShell(root, ctx) {
     right,
     bag: right.querySelector("#bag"),
     log: right.querySelector("#log"),
+    sticky,
     goal,
     goalText: goal.querySelector("#goal-text"),
+    diveAlert,
+    diveAlertText: diveAlert.querySelector("#dive-alert-text"),
     dock: Object.fromEntries(ORDER.map((id) => [id, game.querySelector(`#dock-${id}`)])),
     panels: {},
     bagRows: {},
@@ -270,6 +322,8 @@ function onKeyDown(ctx, ev) {
     return;
   }
   if (k === "m") handleAction(ctx, "mute", null, ev);
+  // R 在建造屏是旋转（screen.key 先吃掉），其他屏才轮到减弱动态。
+  if (k === "r") handleAction(ctx, "motion", null, ev);
   if (k === "g") {
     const goal = nextGoal(ctx.state);
     ctx.setScreen(goal.screen);
@@ -286,6 +340,8 @@ function handleAction(ctx, act, el, ev) {
     }
     const fresh = defaultState();
     ctx.store.replace(withFirstHero({ ...fresh, meta: { ...fresh.meta, started: true, screen: "raft" } }));
+    // 整份 state 被换掉了，减弱动态的显式选择要重新盖回去。
+    applyMotionDefault(ctx.store);
     ctx.ui.confirmNew = false;
     ctx.sfx("build");
     ctx.toast("启航。老大，浪不等人。", "good");
@@ -297,6 +353,7 @@ function handleAction(ctx, act, el, ev) {
     // 存档里的 screen 可能停在 "title"（store 的合法值之一），进游戏得落到真屏幕上。
     const screen = SCREEN_BY_ID[base.meta.screen] ? base.meta.screen : "raft";
     ctx.store.replace(withFirstHero({ ...base, meta: { ...base.meta, started: true, screen } }));
+    applyMotionDefault(ctx.store);
     ctx.sfx("build");
     ctx.toast(saved ? "接着漂。木筏还在，恭喜。" : "没找到存档，从头来。");
     return;
@@ -318,11 +375,22 @@ function handleAction(ctx, act, el, ev) {
   if (act === "motion") {
     const reduceMotion = !s.settings.reduceMotion;
     ctx.store.patch({ settings: { ...s.settings, reduceMotion } });
-    ctx.toast(reduceMotion ? "动效已减弱，海面也不晃了。" : "动效恢复。");
+    // 记下这是老大自己按的：下次进游戏就以他的选择为准，不再被系统偏好覆盖。
+    writeMotionChoice(reduceMotion);
+    ctx.sfx("tap");
+    ctx.toast(
+      reduceMotion
+        ? "动效减弱：海面不晃、漂浮物不浮、过渡全掐掉。"
+        : "动效全开：海面又开始晃了，晕的话再按一次。",
+    );
     return;
   }
   if (act === "goal-jump") {
     ctx.setScreen(nextGoal(s).screen);
+    return;
+  }
+  if (act === "dive-back") {
+    ctx.setScreen("dive");
     return;
   }
   const screen = SCREEN_BY_ID[s.meta.screen];
@@ -365,7 +433,11 @@ function updateTopbar(ctx, state, phase) {
   t.speed.forEach((btn, i) => setClass(btn, "on", state.meta.speed === [1, 2, 4][i]));
   setText(t.mute, state.settings.muted ? "🔇" : "🔊");
   setClass(t.mute, "on", state.settings.muted);
-  setClass(t.motion, "on", state.settings.reduceMotion);
+  const reduce = state.settings.reduceMotion;
+  setText(t.motion, reduce ? "动效 减弱" : "动效 全开");
+  setAttr(t.motion, "aria-pressed", reduce ? "true" : "false");
+  setAttr(t.motion, "title", reduce ? "当前：减弱动态。按一下恢复动效（键 R）" : "当前：动效全开。按一下减弱动态（键 R）");
+  setClass(t.motion, "on", reduce);
 }
 
 function meter(el, label, value) {
@@ -412,14 +484,31 @@ function updateScreens(ctx, state) {
     setHidden(ctx.refs.panels[id], id !== wanted);
     setClass(ctx.refs.dock[id], "active", id === wanted);
   }
-  const goal = nextGoal(state);
+
+  // 潜水会话不分屏：离开潜水屏氧气照扣（只是没人给方向），所以这里每帧都推一步，
+  // 并在别的屏挂一条警告条 —— 不能让老大切走后忘了自己还泡在水里。
+  const session = diveScreen.step(ctx, wanted === "dive");
+  const under = !!session?.ok && !session.done;
+  const alerting = under && wanted !== "dive";
+  setHidden(ctx.refs.diveAlert, !alerting);
+  if (alerting) {
+    setText(
+      ctx.refs.diveAlertText,
+      `你还在水下：氧气 ${Math.ceil(Math.max(0, session.oxygen))}%、深度 ${Math.round(session.depth)} 米，氧气还在扣。`,
+    );
+  }
+
+  const goal = nextGoal(ctx.state);
   setText(ctx.refs.goalText, `下一步：${goal.text}`);
-  setHidden(ctx.refs.goal, goal.screen === wanted);
+  const goalHidden = goal.screen === wanted;
+  setHidden(ctx.refs.goal, goalHidden);
+  // 两条都没话说时整块 sticky 头一起收走，别在面板顶上留一条空白。
+  setHidden(ctx.refs.sticky, goalHidden && !alerting);
 
   const screen = SCREEN_BY_ID[wanted];
   if (screen?.update) screen.update(ctx);
   // 潜水时把仓库/手账让出海面，舞台才看得清。
-  setHidden(ctx.refs.right, wanted === "dive" && !!state.explore.dive?.ok);
+  setHidden(ctx.refs.right, wanted === "dive" && !!ctx.state.explore.dive?.ok);
 }
 
 // ---------------------------------------------------------------- 入口
@@ -445,7 +534,8 @@ function createApp(root, store) {
       toast: { text: "", kind: "", until: 0 },
       build: { type: "hq", rot: 0, mode: "place", hover: null, moveId: null, armedId: null, pending: null },
       fish: { cast: null, elapsed: 0, sweep: 1.6, pos: 0, perfect: false, cooldown: 0 },
-      campaign: { stage: 0, report: null },
+      // picked: null = 交给 selectLineup 自动配队；数组 = 老大自己勾的出战名单。
+      campaign: { stage: 0, report: null, picked: null, tickers: [] },
     },
     toast(text, kind = "") {
       ctx.ui.toast = { text, kind, until: ctx.now + TOAST_SEC * 1000 };
@@ -460,6 +550,7 @@ function createApp(root, store) {
   };
   buildShell(root, ctx);
   bindEvents(ctx);
+  applyMotionDefault(store);
   setMuted(store.get().settings.muted);
   ctx.ui.muted = store.get().settings.muted;
   return { root, ctx, last: 0 };
