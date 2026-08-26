@@ -3,10 +3,436 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#8a5a36" />
+    <meta
+      name="description"
+      content="蘑菇屋 · 慢生活：一个向《向往的生活》致敬的网页小游戏。翻土、播种、收获、磨米、喂鸡、做饭、请客人来住几天，把日子慢慢过下去。纯前端离线运行，不联网、不收集任何数据。"
+    />
+    <meta name="author" content="蘑菇屋 · 慢生活" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="蘑菇屋 · 慢生活" />
+    <meta property="og:description" content="翻土、播种、收获、做饭、待客——一座可以慢慢过日子的小村子。" />
+    <meta property="og:locale" content="zh_CN" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='14' rx='13' ry='9' fill='%23c45c3e'/%3E%3Crect x='12' y='18' width='8' height='11' rx='3' fill='%23f4e6c8'/%3E%3C/svg%3E"
+    />
     <title>蘑菇屋 · 慢生活</title>
+    <style>
+      /* 只写 layout.css 里没有的新部件（xw- 前缀）；覆写用 #app 提高优先级，避免和 styles/ 打架。 */
+      .xw-bar {
+        display: block;
+        width: 84%;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.26);
+        overflow: hidden;
+      }
+      .xw-bar > i {
+        display: block;
+        height: 100%;
+        width: 0%;
+        background: var(--gold);
+        transition: width 0.14s linear;
+      }
+      .xw-bar-xp {
+        width: 56px;
+        height: 5px;
+        margin-left: 6px;
+        display: inline-block;
+        vertical-align: middle;
+      }
+      .xw-level {
+        display: inline-flex;
+        align-items: center;
+      }
+
+      #app .plot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        padding: 3px 2px;
+        line-height: 1.15;
+        cursor: pointer;
+      }
+      .xw-plot-name {
+        font-size: 11px;
+      }
+      .xw-plot-time {
+        font-size: 10px;
+        opacity: 0.8;
+        min-height: 11px;
+      }
+      #app .plot.xw-expand {
+        border: 1px dashed rgba(244, 230, 200, 0.55);
+        background: transparent;
+        color: var(--paper);
+      }
+
+      #app .bldg {
+        position: relative;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        cursor: pointer;
+      }
+      #app .bldg.is-open {
+        outline: 3px solid var(--fire);
+        outline-offset: 2px;
+      }
+      .xw-sub {
+        font-size: 10px;
+        opacity: 0.7;
+      }
+      .xw-sub:empty {
+        display: none;
+      }
+      .xw-badge {
+        position: absolute;
+        top: -7px;
+        right: -7px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: 999px;
+        background: var(--fire);
+        color: #fff;
+        font-size: 11px;
+        line-height: 18px;
+        text-align: center;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+      }
+      .xw-badge[hidden] {
+        display: none;
+      }
+      .xw-roof {
+        position: absolute;
+        left: 50%;
+        bottom: -18px;
+        transform: translateX(-50%);
+        font-size: 12px;
+        color: var(--ink);
+        background: rgba(244, 230, 200, 0.8);
+        padding: 1px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .xw-scene-tip {
+        position: absolute;
+        left: 50%;
+        top: 10px;
+        transform: translateX(-50%);
+        font-size: 0.86rem;
+        color: var(--ink);
+        background: rgba(244, 230, 200, 0.78);
+        padding: 3px 12px;
+        border-radius: 999px;
+        pointer-events: none;
+      }
+      .xw-scene-tip:empty {
+        display: none;
+      }
+
+      .xw-toolbar {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: var(--panel);
+        border-radius: var(--radius);
+        padding: 10px 14px;
+        box-shadow: var(--shadow);
+      }
+      .xw-seedrow,
+      .xw-quick {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+      .xw-seedrow.xw-hint {
+        border-radius: 12px;
+      }
+      .xw-label {
+        font-size: 0.85rem;
+        opacity: 0.7;
+        margin-right: 2px;
+      }
+      .xw-keys {
+        margin-left: auto;
+        font-size: 0.8rem;
+      }
+
+      .xw-seed,
+      .xw-topbtn {
+        border: 2px solid transparent;
+        border-radius: 10px;
+        padding: 5px 10px;
+        background: color-mix(in srgb, var(--paper) 84%, var(--wood));
+        color: var(--ink);
+        font-size: 0.88rem;
+        box-shadow: 0 2px 0 rgba(0, 0, 0, 0.1);
+      }
+      .xw-seed:hover:not(:disabled),
+      .xw-topbtn:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--paper) 96%, var(--gold));
+      }
+      .xw-seed:disabled,
+      .xw-topbtn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+      .xw-seed.is-on {
+        border-color: var(--fire);
+        background: var(--gold);
+        box-shadow: 0 0 0 3px rgba(230, 195, 107, 0.4);
+        font-weight: 700;
+      }
+      .xw-seed.off-season {
+        opacity: 0.72;
+      }
+      .xw-seed.is-poor {
+        text-decoration: line-through rgba(196, 92, 62, 0.6);
+      }
+      .xw-seed .k {
+        display: inline-block;
+        min-width: 14px;
+        margin-right: 4px;
+        font-size: 0.72em;
+        opacity: 0.65;
+      }
+      .xw-price {
+        margin-left: 5px;
+        font-size: 0.78em;
+        opacity: 0.7;
+      }
+      .xw-topbtn.is-go {
+        background: var(--gold);
+        border-color: var(--fire);
+        font-weight: 700;
+      }
+      .xw-topbtn.is-on {
+        background: color-mix(in srgb, var(--leaf) 45%, var(--paper));
+      }
+      .topbar .xw-topbtn {
+        background: rgba(0, 0, 0, 0.18);
+        color: var(--paper);
+        box-shadow: none;
+      }
+
+      .xw-h3 {
+        margin: 12px 0 4px;
+        font-size: 0.92rem;
+        opacity: 0.8;
+      }
+      .xw-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 5px 0;
+        border-bottom: 1px dashed rgba(44, 33, 24, 0.14);
+        font-size: 0.9rem;
+      }
+      .xw-inv {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .xw-chip {
+        background: color-mix(in srgb, var(--paper) 80%, var(--wood));
+        border-radius: 999px;
+        padding: 3px 10px;
+        font-size: 0.85rem;
+      }
+      .xw-chip b {
+        margin-left: 5px;
+        color: var(--fire);
+      }
+      .xw-warn {
+        color: var(--fire);
+        font-size: 0.88rem;
+      }
+      .xw-pet-state {
+        margin-left: 8px;
+        font-size: 0.82rem;
+      }
+
+      .xw-job {
+        display: grid;
+        grid-template-columns: 5.5em 1fr 4.5em;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        font-size: 0.88rem;
+      }
+      .xw-job .xw-bar {
+        width: 100%;
+        height: 8px;
+      }
+      .xw-job.done .xw-bar > i {
+        background: var(--leaf);
+      }
+      .xw-job-time {
+        text-align: right;
+        opacity: 0.75;
+        font-size: 0.82rem;
+      }
+
+      .xw-wish {
+        border: 1px solid rgba(44, 33, 24, 0.14);
+        border-radius: 12px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+      }
+      .xw-wish.can {
+        border-color: var(--fire);
+        background: color-mix(in srgb, var(--gold) 22%, transparent);
+      }
+      .xw-wish-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.92rem;
+      }
+      .xw-needs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 6px 0;
+      }
+      .xw-need {
+        font-size: 0.82rem;
+        background: rgba(44, 33, 24, 0.08);
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+      .xw-need.ok {
+        background: color-mix(in srgb, var(--leaf) 40%, transparent);
+      }
+
+      .xw-toast {
+        position: fixed;
+        left: 50%;
+        bottom: 26px;
+        transform: translateX(-50%) translateY(10px);
+        max-width: min(88vw, 420px);
+        padding: 10px 18px;
+        border-radius: 999px;
+        background: rgba(44, 33, 24, 0.93);
+        color: #f4e6c8;
+        font-size: 0.94rem;
+        box-shadow: var(--shadow);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s ease, transform 0.18s ease;
+        z-index: 40;
+      }
+      .xw-toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      .xw-toast.bad {
+        background: rgba(150, 58, 38, 0.94);
+      }
+
+      .xw-tut {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        max-width: 300px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        border-left: 6px solid var(--fire);
+        background: var(--panel);
+        color: var(--ink);
+        box-shadow: var(--shadow);
+        z-index: 45;
+      }
+      .xw-tut[hidden] {
+        display: none;
+      }
+      .xw-tut h3 {
+        margin: 0 0 6px;
+        font-size: 0.98rem;
+      }
+      .xw-tut p {
+        margin: 0 0 10px;
+        font-size: 0.9rem;
+        line-height: 1.6;
+      }
+      .xw-steps {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .xw-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: rgba(44, 33, 24, 0.18);
+      }
+      .xw-dot.on {
+        background: var(--fire);
+      }
+
+      .xw-hint {
+        animation: xw-glow 1.3s ease-in-out infinite;
+      }
+      @keyframes xw-glow {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(196, 92, 62, 0.55);
+        }
+        50% {
+          box-shadow: 0 0 0 9px rgba(196, 92, 62, 0);
+        }
+      }
+
+      .xw-noscript {
+        margin: 18vh auto;
+        max-width: 30em;
+        text-align: center;
+        line-height: 1.8;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .xw-hint,
+        #app .plot.ready {
+          animation: none;
+        }
+        .xw-bar > i,
+        .xw-toast {
+          transition: none;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .xw-keys {
+          display: none;
+        }
+        .xw-tut {
+          right: 10px;
+          left: 10px;
+          bottom: 10px;
+          max-width: none;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>
+    <noscript>
+      <p class="xw-noscript">
+        这座村子需要 JavaScript 才能开门。<br />请在浏览器设置里打开脚本，再回来推那扇蘑菇屋的门。
+      </p>
+    </noscript>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

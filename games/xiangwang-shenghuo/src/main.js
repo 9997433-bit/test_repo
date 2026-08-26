@@ -1,119 +1,305 @@
 import { createStore } from "./core/store.js";
-import { createInitialState, advanceTime } from "./core/engine.js";
+import { createInitialState, createInitialUi, advanceTime, levelFor, TUTORIAL_TOTAL } from "./core/engine.js";
 import { writeSave, readSave } from "./core/save.js";
 import { tickPlots, till, plant, harvest, expandPlot } from "./systems/farm/index.js";
 import { enqueueJob, collectJob, feedAnimal, unlockSlot, tickProduction } from "./systems/production/index.js";
-import { deliverWish, inviteGuest, cook, build, petPlay, tickVillage } from "./systems/village/index.js";
+import { deliverWish, inviteGuest, cook, build, petPlay, tickVillage, refreshWishes } from "./systems/village/index.js";
+import { CROPS, RECIPES } from "./data/index.js";
 import { render } from "./ui/screens.js";
-import { chirp, setMuted } from "./audio/sfx.js";
+import { chirp, fanfare, setMuted, resumeAudio } from "./audio/sfx.js";
 import "./styles/tokens.css";
 import "./styles/layout.css";
 
-const LEVELS = [0, 40, 100, 180, 280, 420, 600, 820, 1100, 1450];
+const TICK_MS = 100;
+const AUTOSAVE_MS = 15_000;
 
-function levelFor(xp) {
-  let lv = 1;
-  for (let i = 0; i < LEVELS.length; i += 1) if (xp >= LEVELS[i]) lv = i + 1;
-  return lv;
+let fxSeq = 0;
+
+/* ---------- reducer 辅助 ---------- */
+
+function withUi(state, patch) {
+  return { ...state, ui: { ...createInitialUi(), ...(state.ui || {}), ...patch } };
 }
 
-function applyResult(state, result) {
-  if (!result) return state;
-  if (result.ok === false) {
-    return { ...state, log: [result.reason, ...state.log].slice(0, 40) };
-  }
-  return result.state || result;
+function withFx(state, kind) {
+  fxSeq += 1;
+  return withUi(state, { fx: { kind, n: fxSeq } });
 }
 
-function reducer(state, action) {
-  const { type, payload } = action;
-  if (type === "meta/tick") {
-    let { state: s } = advanceTime(state, payload.dt);
-    s = tickPlots(s, payload.dt);
-    s = tickProduction(s, payload.dt);
-    s = tickVillage(s);
-    s = { ...s, meta: { ...s.meta, level: levelFor(s.meta.xp) } };
-    return s;
-  }
-  if (type === "farm/till") return applyResult(state, { ok: true, state: till(state, payload) });
-  if (type === "farm/plant") return applyResult(state, plant(state, payload));
-  if (type === "farm/harvest") return applyResult(state, harvest(state, payload));
-  if (type === "farm/expand") return applyResult(state, expandPlot(state));
-  if (type === "prod/enqueue") return applyResult(state, enqueueJob(state, payload));
-  if (type === "prod/collect") return applyResult(state, collectJob(state, payload));
-  if (type === "prod/feed") return applyResult(state, feedAnimal(state, payload));
-  if (type === "prod/unlock") return applyResult(state, unlockSlot(state, payload));
-  if (type === "village/deliver") return applyResult(state, deliverWish(state, payload));
-  if (type === "village/invite") return applyResult(state, inviteGuest(state, payload));
-  if (type === "village/cook") return applyResult(state, cook(state, payload));
-  if (type === "village/build") return applyResult(state, build(state, payload));
-  if (type === "village/pet") return applyResult(state, petPlay(state, payload));
-  if (type === "meta/mute") return { ...state, meta: { ...state.meta, muted: !state.meta.muted } };
-  if (type === "meta/seed") return { ...state, ui: { ...(state.ui || {}), seed: payload.cropId } };
-  return state;
-}
-
-const loaded = typeof localStorage !== "undefined" ? readSave() : null;
-const store = createStore(loaded?.state || createInitialState(), reducer);
-store.dispatch({ type: "meta/tick", payload: { dt: 0 } });
-
-let seed = "rice";
-const root = document.querySelector("#app");
-
-function paint() {
-  const state = store.getState();
-  setMuted(state.meta.muted);
-  render(root, state, {
-    setSeed(id) {
-      seed = id;
-      store.dispatch({ type: "meta/seed", payload: { cropId: id } });
-    },
-    onPlot(plotId) {
-      const plot = store.getState().plots.find((p) => p.id === plotId);
-      if (!plot) return;
-      if (plot.status === "untilled" || plot.status === "wilted") {
-        store.dispatch({ type: "farm/till", payload: { plotId } });
-        chirp("plant");
-      } else if (plot.status === "empty") {
-        store.dispatch({ type: "farm/plant", payload: { plotId, cropId: seed } });
-        chirp("plant");
-      } else if (plot.status === "ready") {
-        store.dispatch({ type: "farm/harvest", payload: { plotId } });
-        chirp("harvest");
-      }
-    },
-    expand() { store.dispatch({ type: "farm/expand", payload: {} }); },
-    deliver(wishId) { store.dispatch({ type: "village/deliver", payload: { wishId } }); chirp("wish"); },
-    invite(guestId) { store.dispatch({ type: "village/invite", payload: { guestId } }); },
-    build(buildingId) { store.dispatch({ type: "village/build", payload: { buildingId } }); },
-    enqueue(buildingId, recipeId) { store.dispatch({ type: "prod/enqueue", payload: { buildingId, recipeId } }); },
-    collect(buildingId) {
-      const jobs = store.getState().jobs.filter((j) => j.buildingId === buildingId && j.status === "done");
-      jobs.forEach((j) => store.dispatch({ type: "prod/collect", payload: { buildingId, slot: j.id } }));
-      chirp("harvest");
-    },
-    unlock(buildingId) { store.dispatch({ type: "prod/unlock", payload: { buildingId } }); },
-    feed(buildingId) { store.dispatch({ type: "prod/feed", payload: { buildingId, slot: 0 } }); },
-    cook() { store.dispatch({ type: "village/cook", payload: { recipeId: "bread", guestId: store.getState().guests[0]?.id } }); chirp("cook"); },
-    pet() {
-      const pet = store.getState().pets.find((p) => !p.readyAt || p.readyAt <= Date.now()) || store.getState().pets[0];
-      store.dispatch({ type: "village/pet", payload: { petId: pet.id } });
-    },
-    toggleMute() { store.dispatch({ type: "meta/mute", payload: {} }); },
-    save() { writeSave(store.getState()); store.dispatch({ type: "meta/tick", payload: { dt: 0 } }); },
+function toast(state, text, tone = "bad", fxKind) {
+  fxSeq += 1;
+  return withUi(state, {
+    toast: { text, tone, at: Date.now() },
+    fx: { kind: fxKind || (tone === "bad" ? "nope" : "ui"), n: fxSeq },
   });
 }
 
-store.subscribe(paint);
+/** 系统返回 { ok:false, reason } 时只飘字，不写进闲话本。 */
+function applyResult(state, result, fxKind) {
+  if (!result) return state;
+  if (result.ok === false) return toast(state, result.reason || "这会儿做不了");
+  return withFx(result.state || result, fxKind);
+}
+
+/** 引导只前进不后退，玩家跳步操作也算完成。 */
+function advanceTutorial(state, minStep) {
+  const step = state.meta.tutorialStep || 0;
+  if (step >= minStep) return state;
+  return { ...state, meta: { ...state.meta, tutorialStep: Math.min(minStep, TUTORIAL_TOTAL) } };
+}
+
+function reducer(state, action) {
+  const { type, payload = {} } = action;
+
+  if (type === "meta/tick") {
+    let s = advanceTime(state, payload.dt).state;
+    s = tickPlots(s, payload.dt);
+    s = tickProduction(s, payload.dt);
+    s = tickVillage(s);
+    const level = levelFor(s.meta.xp);
+    if (level > s.meta.level) {
+      fxSeq += 1;
+      s = {
+        ...s,
+        meta: { ...s.meta, level },
+        log: [`小镇升到 Lv.${level}，图纸本上又亮了几张。`, ...s.log].slice(0, 40),
+        ui: { ...createInitialUi(), ...(s.ui || {}), fx: { kind: "level", n: fxSeq } },
+      };
+    } else if (level !== s.meta.level) {
+      s = { ...s, meta: { ...s.meta, level } };
+    }
+    return s;
+  }
+
+  if (type === "farm/till") {
+    const plot = state.plots.find((p) => p.id === payload.plotId);
+    if (!plot) return state;
+    if (plot.status !== "untilled" && plot.status !== "wilted") return toast(state, "这块地不用再翻了");
+    return advanceTutorial(applyResult(state, { ok: true, state: till(state, payload) }, "till"), 1);
+  }
+  if (type === "farm/plant") {
+    const res = plant(state, payload);
+    return res.ok ? advanceTutorial(applyResult(state, res, "plant"), 2) : applyResult(state, res);
+  }
+  if (type === "farm/harvest") {
+    const res = harvest(state, payload);
+    return res.ok ? advanceTutorial(applyResult(state, res, "harvest"), 3) : applyResult(state, res);
+  }
+  if (type === "farm/expand") return applyResult(state, expandPlot(state), "build");
+
+  if (type === "prod/enqueue") return applyResult(state, enqueueJob(state, payload), "build");
+  if (type === "prod/collect") return applyResult(state, collectJob(state, payload), "collect");
+  if (type === "prod/feed") return applyResult(state, feedAnimal(state, payload), "plant");
+  if (type === "prod/unlock") return applyResult(state, unlockSlot(state, payload), "build");
+
+  if (type === "village/deliver") return applyResult(state, deliverWish(state, payload), "wish");
+  if (type === "village/invite") return applyResult(state, inviteGuest(state, payload), "ui");
+  if (type === "village/cook") return applyResult(state, cook(state, payload), "cook");
+  if (type === "village/build") return applyResult(state, build(state, payload), "build");
+  if (type === "village/pet") return applyResult(state, petPlay(state, payload), "pet");
+
+  // 换心愿：只把单子撕掉，下一 tick 由 refreshWishes 补新的，不给任何奖励。
+  if (type === "village/skip") {
+    const wishes = (state.wishes || []).filter((w) => w.wishId !== payload.wishId);
+    if (wishes.length === (state.wishes || []).length) return state;
+    return withFx(refreshWishes({ ...state, wishes }), "ui");
+  }
+
+  if (type === "meta/mute") {
+    const muted = !state.meta.muted;
+    const next = { ...state, meta: { ...state.meta, muted } };
+    return muted ? next : withFx(next, "ui");
+  }
+  if (type === "meta/seed") return withFx(withUi(state, { seed: payload.cropId }), "ui");
+  if (type === "meta/select") {
+    const next = withFx(withUi(state, { selected: payload.id || "wish" }), "ui");
+    // 只有走到「串门」这一步，进屋才算完成引导；否则乱点不该把教程吞掉。
+    return (state.meta.tutorialStep || 0) === TUTORIAL_TOTAL - 1 ? advanceTutorial(next, TUTORIAL_TOTAL) : next;
+  }
+  if (type === "meta/tutorial") return { ...state, meta: { ...state.meta, tutorialStep: TUTORIAL_TOTAL } };
+  if (type === "meta/toast") return toast(state, payload.text, payload.tone || "good", payload.fx);
+
+  return state;
+}
+
+/* ---------- 启动 ---------- */
+
+const loaded = readSave();
+const store = createStore(loaded?.state || createInitialState(), reducer);
+store.dispatch({ type: "meta/tick", payload: { dt: 0 } });
+if (loaded) {
+  store.dispatch({ type: "meta/toast", payload: { text: "接着上次的日子过。" } });
+}
+
+const root = document.querySelector("#app");
+const seedOf = () => store.getState().ui?.seed || "rice";
+
+const handlers = {
+  setSeed(id) {
+    store.dispatch({ type: "meta/seed", payload: { cropId: id } });
+  },
+  onPlot(plotId) {
+    const plot = store.getState().plots.find((p) => p.id === plotId);
+    if (!plot) return;
+    if (plot.status === "untilled" || plot.status === "wilted") {
+      store.dispatch({ type: "farm/till", payload: { plotId } });
+    } else if (plot.status === "empty") {
+      store.dispatch({ type: "farm/plant", payload: { plotId, cropId: seedOf() } });
+    } else if (plot.status === "ready") {
+      store.dispatch({ type: "farm/harvest", payload: { plotId } });
+    } else {
+      store.dispatch({ type: "meta/toast", payload: { text: "还在长，别催它。", tone: "bad" } });
+    }
+  },
+  expand() {
+    store.dispatch({ type: "farm/expand", payload: {} });
+  },
+  select(id) {
+    store.dispatch({ type: "meta/select", payload: { id } });
+  },
+  deliver(wishId) {
+    store.dispatch({ type: "village/deliver", payload: { wishId } });
+  },
+  skipWish(wishId) {
+    store.dispatch({ type: "village/skip", payload: { wishId } });
+  },
+  invite(guestId) {
+    store.dispatch({ type: "village/invite", payload: { guestId } });
+  },
+  build(buildingId) {
+    store.dispatch({ type: "village/build", payload: { buildingId } });
+  },
+  enqueue(buildingId, recipeId) {
+    store.dispatch({ type: "prod/enqueue", payload: { buildingId, recipeId } });
+  },
+  collect(buildingId) {
+    const done = store.getState().jobs.filter((j) => j.buildingId === buildingId && j.status === "done");
+    if (!done.length) {
+      store.dispatch({ type: "meta/toast", payload: { text: "还没有做好的东西。", tone: "bad" } });
+      return;
+    }
+    done.forEach((j) => store.dispatch({ type: "prod/collect", payload: { buildingId, slot: j.id } }));
+  },
+  collectAll() {
+    const done = store.getState().jobs.filter((j) => j.status === "done");
+    if (!done.length) {
+      store.dispatch({ type: "meta/toast", payload: { text: "各处炉子都空着。", tone: "bad" } });
+      return;
+    }
+    done.forEach((j) => store.dispatch({ type: "prod/collect", payload: { buildingId: j.buildingId, slot: j.id } }));
+  },
+  unlock(buildingId) {
+    store.dispatch({ type: "prod/unlock", payload: { buildingId } });
+  },
+  feed(buildingId) {
+    store.dispatch({ type: "prod/feed", payload: { buildingId, slot: 0 } });
+  },
+  cook(recipeId = "bread") {
+    const state = store.getState();
+    const recipe = RECIPES.find((r) => r.id === recipeId);
+    const guest = (state.guests || [])[0];
+    store.dispatch({ type: "village/cook", payload: { recipeId: recipe?.id || recipeId, guestId: guest?.id } });
+  },
+  pet(petId) {
+    const state = store.getState();
+    const pet =
+      (petId && state.pets.find((p) => p.id === petId)) ||
+      state.pets.find((p) => !p.readyAt || p.readyAt <= Date.now()) ||
+      state.pets[0];
+    if (!pet) return;
+    store.dispatch({ type: "village/pet", payload: { petId: pet.id } });
+  },
+  toggleMute() {
+    store.dispatch({ type: "meta/mute", payload: {} });
+  },
+  save() {
+    const okSave = writeSave(store.getState());
+    store.dispatch({
+      type: "meta/toast",
+      payload: okSave ? { text: "记下了这一天。", fx: "save" } : { text: "这台浏览器不让存档。", tone: "bad" },
+    });
+  },
+  skipTutorial() {
+    store.dispatch({ type: "meta/tutorial", payload: {} });
+  },
+};
+
+/* ---------- 渲染循环 ---------- */
+
+let lastFx = 0;
+function playFx(state) {
+  const fx = state.ui?.fx;
+  if (!fx || fx.n === lastFx) return;
+  lastFx = fx.n;
+  if (fx.kind === "level") fanfare();
+  else chirp(fx.kind);
+}
+
+function paint() {
+  const state = store.getState();
+  setMuted(!!state.meta.muted);
+  playFx(state);
+  render(root, state, handlers);
+}
+
+let dirty = true;
+store.subscribe(() => {
+  dirty = true;
+});
 paint();
 
 let last = performance.now();
+let acc = 0;
 function loop(now) {
-  const dt = Math.min(200, now - last);
+  const dt = Math.min(500, now - last);
   last = now;
-  store.dispatch({ type: "meta/tick", payload: { dt } });
+  acc += dt;
+  if (acc >= TICK_MS) {
+    store.dispatch({ type: "meta/tick", payload: { dt: acc } });
+    acc = 0;
+  }
+  if (dirty) {
+    dirty = false;
+    paint();
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
-setInterval(() => writeSave(store.getState()), 15_000);
+/* ---------- 键盘 / 存档 / 声音 ---------- */
+
+window.addEventListener("keydown", (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const t = ev.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  const key = ev.key;
+  if (key >= "1" && key <= "6") {
+    const crop = CROPS[Number(key) - 1];
+    if (crop) {
+      handlers.setSeed(crop.id);
+      ev.preventDefault();
+    }
+    return;
+  }
+  const lower = key.toLowerCase();
+  if (lower === "s") {
+    handlers.save();
+    ev.preventDefault();
+  } else if (lower === "m") {
+    handlers.toggleMute();
+    ev.preventDefault();
+  } else if (key === "Escape") {
+    handlers.select("wish");
+    ev.preventDefault();
+  }
+});
+
+const wake = () => resumeAudio();
+window.addEventListener("pointerdown", wake, { once: true });
+window.addEventListener("keydown", wake, { once: true });
+
+setInterval(() => writeSave(store.getState()), AUTOSAVE_MS);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") writeSave(store.getState());
+});
+window.addEventListener("pagehide", () => writeSave(store.getState()));
