@@ -90,6 +90,16 @@
     outline = keep;
   }
 
+  function statusRing(ctx, x, yGround, rx, ry, color, s) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, 1.8 * s);
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.ellipse(x, yGround, rx, ry, 0, 0, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   function shadow(ctx, x, yGround, r, tilt) {
     var keep = outline;
     outline = 0;
@@ -373,9 +383,12 @@
     var groundY = y + (c.z * s);
     shadow(ctx, x, groundY, r * 0.85, tilt);
 
+    // Status tints stay light: mixing a warm body colour far towards cyan or
+    // green just desaturates it to grey. The ground markers below carry the
+    // actual readability.
     var body = c.def.color;
-    if (c.slowTimer > 0) body = mix(body, '#7fd8ff', 0.35);
-    if (c.poisonTimer > 0) body = mix(body, '#8ce05a', 0.3);
+    if (c.slowTimer > 0) body = mix(body, '#bfe9ff', 0.2);
+    if (c.poisonTimer > 0) body = mix(body, '#a9ef78', 0.2);
     // Getting hit brightens the body and fades out. A fixed-strength tint (or
     // an overlay blob) just reads as "washed out" under sustained fire.
     if (c.hurtFlash > 0) body = mix(body, '#fff2d0', 0.55 * (c.hurtFlash / HURT_FLASH));
@@ -483,16 +496,21 @@
       ], '#ffd76a');
     }
     ctx.restore();
-
-    if (c.rootTimer > 0) {
-      ctx.strokeStyle = '#7ad06a';
-      ctx.lineWidth = 2 * s;
-      ctx.beginPath();
-      ctx.ellipse(x, groundY, r * 1.1, r * 0.6, 0, 0, TAU);
-      ctx.stroke();
-    }
-
     setOutline(0);
+
+    // Status markers: a ring on the ground per debuff, so several can stack
+    // and still be told apart at low zoom.
+    if (c.slowTimer > 0) statusRing(ctx, x, groundY, r * 1.15, r * 0.62, '#8fd8ff', s);
+    if (c.rootTimer > 0) statusRing(ctx, x, groundY, r * 1.0, r * 0.54, '#7ad06a', s);
+    if (c.poisonTimer > 0) {
+      for (var pb = 0; pb < 3; pb++) {
+        var pa = time * 1.6 + c.id + pb * 2.1;
+        var lift = ((pa % 1.4) / 1.4);
+        ell(ctx, x + Math.sin(pa * 3) * r * 0.5, y - r * 1.4 - lift * r * 1.6,
+          r * 0.15 * (1 - lift * 0.5), r * 0.15 * (1 - lift * 0.5),
+          '#9de86a', 0.75 * (1 - lift));
+      }
+    }
 
     // Health bar (WC3 style: black frame, green fill, red when hurt).
     if (opts && opts.showBars !== false) {
