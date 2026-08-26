@@ -48,4 +48,4 @@ export const EFFECTS = {
   MODIFIER: "modifier",
 };
 
-export const SCHOOLS = ["combo", "brute", "elemental", "collide", "support"];
+/* 流派清单不在这里硬编码：见 `squad.js` 的 SCHOOLS，跟随 `src/data/synergies.js`。 */

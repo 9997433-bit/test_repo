@@ -7,6 +7,7 @@
  *
  * 冒险队从账号存档构建，肉鸽临时队从 run 构建，两条入口互不共享状态。
  */
+import * as DATA from "../data/index.js";
 import { heroDef, heroList } from "../progression/catalog.js";
 import { buildAdventureContext, buildRogueContext } from "../progression/context.js";
 import { ensureProgression, isHeroOwned } from "../progression/save.js";
@@ -21,48 +22,67 @@ import { auraOf, mergeTraitMods, resolveSkill } from "./skills.js";
  */
 export const BOND_TIER_ATK = { 2: 0.08, 3: 0.18, 4: 0.32 };
 
-export const BONDS = {
+/**
+ * 英雄层能消费的羁绊乘区，按「流派 → 人数档」登记。
+ * 流派清单、档位人数与档位名一律来自 `src/data`（`BONDS.schools`，回退 `SYNERGIES`），
+ * 这里只补一份英雄层自己的 mods 词汇——数据表的 `mods` 是战斗层词汇，两者互不覆盖。
+ * 数据表里有、但英雄层还没写风味加成的流派（如预留的 support）仍会拿到档位攻击加成。
+ */
+const BOND_MODS = {
   combo: {
-    name: "连击",
-    tiers: [
-      { count: 2, label: "小羁绊", mods: { comboDamage: 0.06 } },
-      { count: 3, label: "大羁绊", mods: { comboDamage: 0.12, teamCritBonus: 0.03 } },
-      { count: 4, label: "禽王光环", mods: { comboDamage: 0.2, teamCritBonus: 0.06, comboDecayPause: 2 } },
-    ],
+    2: { comboDamage: 0.06 },
+    3: { comboDamage: 0.12, teamCritBonus: 0.03 },
+    4: { comboDamage: 0.2, teamCritBonus: 0.06, comboDecayPause: 2 },
   },
   brute: {
-    name: "直殴",
-    tiers: [
-      { count: 2, label: "小羁绊", mods: {} },
-      { count: 3, label: "大羁绊", mods: { brickDamage: 0.12 } },
-      { count: 4, label: "禽王光环", mods: { brickDamage: 0.25 } },
-    ],
+    2: {},
+    3: { brickDamage: 0.12 },
+    4: { brickDamage: 0.25 },
   },
   elemental: {
-    name: "属性",
-    tiers: [
-      { count: 2, label: "小羁绊", mods: { elementDamage: 0.1 } },
-      { count: 3, label: "大羁绊", mods: { elementDamage: 0.18, statusDuration: 0.2 } },
-      { count: 4, label: "禽王光环", mods: { elementDamage: 0.28, statusDuration: 0.35 } },
-    ],
+    2: { elementDamage: 0.1 },
+    3: { elementDamage: 0.18, statusDuration: 0.2 },
+    4: { elementDamage: 0.28, statusDuration: 0.35 },
   },
   collide: {
-    name: "碰撞",
-    tiers: [
-      { count: 2, label: "小羁绊", mods: { eggRadius: 1 } },
-      { count: 3, label: "大羁绊", mods: { eggRadius: 2, splitChance: 0.1 } },
-      { count: 4, label: "禽王光环", mods: { eggRadius: 2, splitChance: 0.22 } },
-    ],
-  },
-  support: {
-    name: "辅助",
-    tiers: [
-      { count: 2, label: "小羁绊", mods: { supportPower: 0.08 } },
-      { count: 3, label: "大羁绊", mods: { supportPower: 0.16, teamEnergyMul: 0.1 } },
-      { count: 4, label: "禽王光环", mods: { supportPower: 0.25, teamEnergyMul: 0.18 } },
-    ],
+    2: { eggRadius: 1 },
+    3: { eggRadius: 2, splitChance: 0.1 },
+    4: { eggRadius: 2, splitChance: 0.22 },
   },
 };
+
+const TIER_LABELS = { 2: "小羁绊", 3: "大羁绊", 4: "禽王光环" };
+
+/** 羁绊结构的数据源：F3 声明 `BONDS` 为羁绊事实源，缺失时回退到 `SYNERGIES`。 */
+function schoolTable() {
+  const bonds = DATA.BONDS?.schools ?? DATA.BOND_TABLE?.schools;
+  if (bonds && typeof bonds === "object") return bonds;
+  return DATA.SYNERGIES ?? {};
+}
+
+function buildBonds() {
+  const bonds = {};
+  for (const [school, entry] of Object.entries(schoolTable())) {
+    const mods = BOND_MODS[school] ?? {};
+    const tiers = (entry?.tiers ?? [])
+      .map((tier) => ({
+        count: tier.count,
+        label: TIER_LABELS[tier.count] ?? tier.name ?? `${tier.count} 人`,
+        name: tier.name,
+        desc: tier.desc,
+        mods: mods[tier.count] ?? {},
+      }))
+      .sort((a, b) => a.count - b.count);
+    if (!tiers.length) continue;
+    bonds[school] = { name: entry?.name ?? DATA.SCHOOLS?.[school]?.name ?? school, tiers };
+  }
+  return bonds;
+}
+
+export const BONDS = buildBonds();
+
+/** 名册里真实存在的流派清单（数据表口径）。 */
+export const SCHOOLS = Object.keys(BONDS);
 
 const AURA_KEYS = [
   "teamAtkMul",
@@ -77,7 +97,6 @@ const AURA_KEYS = [
   "statusDuration",
   "eggRadius",
   "splitChance",
-  "supportPower",
   "brickDamage",
   "comboDecayPause",
 ];

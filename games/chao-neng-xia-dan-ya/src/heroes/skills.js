@@ -7,7 +7,11 @@
  *
  * `effects()` 只返回声明式效果描述，真正的伤害 / 生成蛋 / 状态施加由
  * `src/combat` 与 `src/physics` 消费，英雄层不越界执行。
+ *
+ * 名册与流派归属一律以 `src/data/heroes.js` 的 18 只英雄表为准：本表只登记「行为」，
+ * 不再重复声明 school，也不为数据表之外的英雄预留条目。
  */
+import * as DATA from "../data/index.js";
 import { EFFECTS, TRIGGERS } from "./constants.js";
 
 /** 技能词条按星级解锁；mods 会在实例化时合并进 `instance.skillMods`。 */
@@ -44,7 +48,6 @@ export const SKILLS = {
   ninja_goose: {
     id: "shuriken_split",
     name: "手里剑分蛋",
-    school: "combo",
     desc: "主蛋命中后追加 2 枚手里剑蛋。",
     trigger: TRIGGERS.HIT,
     oncePerTurn: true,
@@ -73,7 +76,6 @@ export const SKILLS = {
   fallen_crow: {
     id: "fallen_slash",
     name: "堕羽斩",
-    school: "combo",
     desc: "连击 ≥8 时可释放，对当前目标造成高额斩击。",
     trigger: TRIGGERS.COMBO,
     oncePerTurn: true,
@@ -98,7 +100,6 @@ export const SKILLS = {
   dash_duck: {
     id: "dash_crit",
     name: "冲刺暴击",
-    school: "combo",
     desc: "发射瞬间短冲刺，首次撞击必定暴击。",
     trigger: TRIGGERS.LAUNCH,
     effects: (evt, self) => [
@@ -122,7 +123,6 @@ export const SKILLS = {
   dandy_pigeon: {
     id: "dandy_refresh",
     name: "帅气亮相",
-    school: "combo",
     desc: "回合结束为其他英雄回复少量能量。",
     trigger: TRIGGERS.TURN_END,
     effects: (evt, self) => [energy(6 * potency(self), { scope: "others" })],
@@ -140,33 +140,9 @@ export const SKILLS = {
     ],
   },
 
-  lark: {
-    id: "cloud_tempo",
-    name: "云端节拍",
-    school: "combo",
-    desc: "连击达到 5 层后，连击 4 秒内不衰减。",
-    trigger: TRIGGERS.COMBO,
-    oncePerTurn: true,
-    condition: (evt) => (evt?.combo ?? 0) >= 5,
-    effects: (evt, self) => [modifier("comboDecayPause", 4 * potency(self))],
-    ult: {
-      name: "静止之云",
-      cost: 45,
-      desc: "8 秒内连击完全不衰减。",
-      effects: (evt, self) => [modifier("comboDecayPause", 8 * potency(self))],
-    },
-    traits: [
-      trait(2, "longer_hold", "延音", "持续时间 +25%", { potency: 0.25 }),
-      trait(3, "early_tempo", "抢拍", "门槛降到 3 层", { comboThreshold: -2 }),
-      trait(4, "combo_dmg", "共鸣", "每层连击伤害 +1%", { comboDamage: 0.01 }),
-      trait(5, "eternal", "永续", "持续时间再 +50%", { potency: 0.5 }),
-    ],
-  },
-
   sun_bird: {
     id: "solar_burn",
     name: "日轮灼烧",
-    school: "brute",
     desc: "主蛋伤害提升并留下灼烧。",
     trigger: TRIGGERS.HIT,
     condition: (evt) => evt?.primary !== false,
@@ -193,7 +169,6 @@ export const SKILLS = {
   mech_goose: {
     id: "gear_heavy",
     name: "齿轮重蛋",
-    school: "brute",
     desc: "蛋变重，击碎砖块后额外穿透 1 次。",
     trigger: TRIGGERS.LAUNCH,
     effects: (evt, self) => [
@@ -217,7 +192,6 @@ export const SKILLS = {
   drum_chick: {
     id: "war_drum",
     name: "战鼓光环",
-    school: "brute",
     desc: "光环：全队攻击 +12%。",
     trigger: TRIGGERS.AURA,
     aura: { teamAtkMul: 0.12 },
@@ -241,41 +215,9 @@ export const SKILLS = {
     ],
   },
 
-  unlucky_duck: {
-    id: "misfortune_stack",
-    name: "倒霉转运",
-    school: "brute",
-    desc: "每次撞碎砖块，本回合伤害 +8%（可叠加）。",
-    trigger: TRIGGERS.BRICK_BREAK,
-    effects: (evt, self) => [
-      buff("atk", {
-        mul: 0.08 * potency(self),
-        duration: "turn",
-        scope: "self",
-        stack: true,
-        maxStacks: 8 + extraCount(self),
-      }),
-    ],
-    ult: {
-      name: "霉运爆发",
-      cost: 50,
-      desc: "立即结算全部霉运层数，造成等量伤害。",
-      effects: (evt, self) => [
-        damage(0.4 * potency(self), { target: "all", perStack: "misfortune", tag: "misfortune" }),
-      ],
-    },
-    traits: [
-      trait(2, "thicker_skin", "厚脸皮", "每层 +2%", { potency: 0.25 }),
-      trait(3, "more_stacks", "越挫越勇", "上限 +2 层", { count: 2 }),
-      trait(4, "keep_stacks", "记仇", "层数跨回合保留 1 次", { keepStacks: 1 }),
-      trait(5, "jackpot", "触底反弹", "满层时额外 +20% 伤害", { jackpot: 0.2 }),
-    ],
-  },
-
   pep_chick: {
     id: "pep_extra_egg",
     name: "元气加蛋",
-    school: "brute",
     desc: "战斗开始时额外获得 1 枚蛋。",
     trigger: TRIGGERS.BATTLE_START,
     effects: (evt, self) => [modifier("extraEggs", 1 + extraCount(self))],
@@ -296,7 +238,6 @@ export const SKILLS = {
   thunder_chick: {
     id: "shock_bounce",
     name: "感电弹跳",
-    school: "elemental",
     desc: "主蛋带感电，反弹优先追向敌人。",
     trigger: TRIGGERS.LAUNCH,
     effects: (evt, self) => [
@@ -322,7 +263,6 @@ export const SKILLS = {
   hiphop_duck: {
     id: "shock_spread",
     name: "感电扩散",
-    school: "elemental",
     desc: "命中感电目标时，向邻近 2 个目标扩散感电。",
     trigger: TRIGGERS.HIT,
     condition: (evt) => Boolean(evt?.target?.statuses?.shock),
@@ -346,7 +286,6 @@ export const SKILLS = {
   bird_of_paradise: {
     id: "paradise_bolt",
     name: "天堂雷补",
-    school: "elemental",
     desc: "回合结束时对所有带电敌人补一发雷。",
     trigger: TRIGGERS.TURN_END,
     effects: (evt, self) => [
@@ -372,7 +311,6 @@ export const SKILLS = {
   ice_phoenix: {
     id: "frost_egg",
     name: "冰霜之蛋",
-    school: "elemental",
     desc: "主蛋附带冻结。",
     trigger: TRIGGERS.LAUNCH,
     effects: (evt, self) => [
@@ -398,7 +336,6 @@ export const SKILLS = {
   emperor_penguin: {
     id: "ice_floor",
     name: "冰面领域",
-    school: "elemental",
     desc: "光环：延长全队冻结时长，战斗开始生成冰面。",
     trigger: TRIGGERS.BATTLE_START,
     aura: { freezeDurationMul: 0.25 },
@@ -423,7 +360,6 @@ export const SKILLS = {
   shark_eagle: {
     id: "collide_growth",
     name: "碰撞增幅",
-    school: "collide",
     desc: "每次撞钉，蛋半径 +1（本回合内）。",
     trigger: TRIGGERS.PEG_HIT,
     effects: (evt, self) => [
@@ -449,7 +385,6 @@ export const SKILLS = {
   deer_chick: {
     id: "collide_split",
     name: "撞击分裂",
-    school: "collide",
     desc: "撞钉时有机会分裂出 1 枚子蛋。",
     trigger: TRIGGERS.PEG_HIT,
     condition: (evt, self, ctx) => (ctx?.rng?.() ?? 1) < 0.25 * potency(self),
@@ -475,7 +410,6 @@ export const SKILLS = {
   heal_duck: {
     id: "yolk_heal",
     name: "蛋黄治愈",
-    school: "support",
     desc: "每回收一枚蛋，回复 4% 生命。",
     trigger: TRIGGERS.EGG_RECYCLED,
     effects: (evt, self) => [
@@ -501,7 +435,6 @@ export const SKILLS = {
   guard_duck: {
     id: "shell_guard",
     name: "蛋壳护盾",
-    school: "support",
     desc: "战斗开始获得护盾，抵挡一次漏怪伤害。",
     trigger: TRIGGERS.BATTLE_START,
     effects: (evt, self) => [
@@ -527,7 +460,6 @@ export const SKILLS = {
   grace_goose: {
     id: "grace_slow",
     name: "优雅减速",
-    school: "support",
     desc: "光环：敌人移动速度 -15%，冰系伤害 +10%。",
     trigger: TRIGGERS.AURA,
     aura: { enemySlow: 0.15, iceDamageMul: 0.1 },
@@ -552,29 +484,24 @@ export const SKILLS = {
   },
 };
 
-/** 数据表里 `skill` 字段的字符串 → 英雄 id。扩表时补这里即可。 */
-export const SKILL_ALIASES = {
-  dash_crit: "dash_duck",
-  solar_burn: "sun_bird",
-  shock_bounce: "thunder_chick",
-  yolk_heal: "heal_duck",
-  shell_guard: "guard_duck",
-  shuriken_split: "ninja_goose",
-  fallen_slash: "fallen_crow",
-  dandy_refresh: "dandy_pigeon",
-  cloud_tempo: "lark",
-  gear_heavy: "mech_goose",
-  war_drum: "drum_chick",
-  misfortune_stack: "unlucky_duck",
-  pep_extra_egg: "pep_chick",
-  shock_spread: "hiphop_duck",
-  paradise_bolt: "bird_of_paradise",
-  frost_egg: "ice_phoenix",
-  ice_floor: "emperor_penguin",
-  collide_growth: "shark_eagle",
-  collide_split: "deer_chick",
-  grace_slow: "grace_goose",
-};
+/**
+ * 数据表里 `skill` / `ult` 字段的字符串 → 英雄 id。
+ * 直接从 `src/data/skills.js` 的 `owner` 反推，F3 改招牌技能 id 时无需同步维护副本；
+ * 本表登记的行为条目再补一份 id 别名，兼容按行为 id 索引的旧调用方。
+ */
+function buildSkillAliases() {
+  const aliases = {};
+  for (const [heroId, skill] of Object.entries(SKILLS)) {
+    if (skill?.id) aliases[skill.id] = heroId;
+  }
+  for (const skill of Object.values(DATA.SKILLS ?? {})) {
+    const owner = skill?.owner;
+    if (skill?.id && owner && SKILLS[owner]) aliases[skill.id] = owner;
+  }
+  return aliases;
+}
+
+export const SKILL_ALIASES = buildSkillAliases();
 
 /** 数据表补了新英雄但技能未登记时的兜底，保证不会出现「按 Q 没反应」。 */
 export const FALLBACK_SKILL = {

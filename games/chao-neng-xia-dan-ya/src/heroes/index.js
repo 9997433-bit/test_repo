@@ -4,7 +4,6 @@ export {
   DEFAULT_BASE_STATS,
   EFFECTS,
   FIELD_SIZE,
-  SCHOOLS,
   TRIGGERS,
   TRIGGER_LIST,
 } from "./constants.js";
@@ -37,6 +36,7 @@ export {
 export {
   BONDS,
   BOND_TIER_ATK,
+  SCHOOLS,
   activeHero,
   aggregateAuras,
   allHeroIds,
