@@ -13,6 +13,7 @@ import { furnaceArt, hammerArt, ridgeArt } from '../art/furnace.js';
 import { createSparkField } from '../fx/sparks.js';
 import { flyLoot } from '../fx/flyingLoot.js';
 import { reducedMotion, ripple, haptic, pulse } from '../motion.js';
+import { strike as strikeSound, reveal as revealSound, play as playCue } from '../audio.js';
 import { emptyState, openSheet } from '../components/feedback.js';
 import { lootRow } from '../components/resourceBar.js';
 import { weaponCard } from '../components/weaponCard.js';
@@ -183,6 +184,7 @@ export function forgeView(ctx) {
                   onDone: () => ui.refreshChrome()
                 });
                 haptic([8, 24, 12]);
+                playCue('coin');
                 ui.toast.gold('炉边所得，已入囊中');
                 ui.refreshChrome();
                 renderIdle();
@@ -326,6 +328,8 @@ export function forgeView(ctx) {
     if (phase !== 'armed') return;
     strikes += 1;
     haptic([10, 20, 26][strikes - 1] || 14);
+    // 「一锤定音」连着落三锤，声音仍逐锤给，听得出这一炉已经收尾
+    strikeSound(strikes);
 
     if (!silent && !reducedMotion()) {
       pulse(forgeCard, 'is-striking', 340);
@@ -389,6 +393,7 @@ export function forgeView(ctx) {
 
     const flip = () => {
       card.classList.add('is-flipped');
+      revealSound(w.quality);
       if (['legendary', 'mythic'].includes(w.quality)) {
         ui.toast.gold(`${qualityCN(w.quality)}出世 · ${w.name}`);
         if (!reducedMotion()) {

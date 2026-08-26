@@ -59,6 +59,17 @@ const STROKE = {
   eye: 'M2.8 12S6.4 6.2 12 6.2 21.2 12 21.2 12 17.6 17.8 12 17.8 2.8 12 2.8 12Zm9.2-2.6a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2Z',
   sparkle: 'M12 3.2l1.7 5.1 5.1 1.7-5.1 1.7L12 16.8l-1.7-5.1-5.1-1.7 5.1-1.7zM18.6 15.6l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8zM5 14.2l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z',
   recycle: 'M8.6 6.6 12 3.2l3.4 3.4M12 3.2v7.6M17.8 10.4l1.6 4.6-4.6 1.6M19.4 15l-6.6 3.8M6.2 10.4 4.6 15l4.6 1.6M4.6 15l6.6 3.8',
+  sound: 'M4.6 9.6h3.2L12.6 6v12l-4.8-3.6H4.6zM15.6 9.4c1.2 1.4 1.2 3.8 0 5.2M18.2 7.2c2.4 2.6 2.4 7 0 9.6',
+  mute: 'M4.6 9.6h3.2L12.6 6v12l-4.8-3.6H4.6zM16 10l4.4 4M20.4 10 16 14',
+
+  // —— 战斗状态 ——
+  frozen: 'M12 3.4 5.6 7.1v7.4L12 18.2l6.4-3.7V7.1ZM8.8 10.4h6.4M12 7.2v7.6',
+  crack: 'M12 4.4v3.2M12 16.4v3.2M4.4 12h3.2M16.4 12h3.2M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z',
+  arrowDown: 'M12 4.6v11.2M12 15.8l-4-4M12 15.8l4-4M6.4 19.6h11.2',
+  arrowUp: 'M12 19.4V8.2M12 8.2l-4 4M12 8.2l4 4M6.4 4.4h11.2',
+  thorns: 'M12 3.6 5 6v6c0 4 2.8 7.4 7 8.6 4.2-1.2 7-4.6 7-8.6V6ZM12 7.8v8.4M8.6 10.4l6.8 3.2M15.4 10.4l-6.8 3.2',
+  droplet: 'M12 3.6c3.4 4 5.2 6.8 5.2 9.4a5.2 5.2 0 0 1-10.4 0c0-2.6 1.8-5.4 5.2-9.4ZM9.8 13.4h4.4M12 11.2v4.4',
+  wind: 'M3.6 9h9.2a2.6 2.6 0 1 0-2.6-2.6M3.6 13.4h12.6a2.8 2.8 0 1 1-2.8 2.8M4.6 17.8h5.6',
   anvilSmall: 'M3.6 8.8h11.6c1.4 2.4 3.2 3.4 5.2 3.6-1.8 2-4 3-6.6 3H9.4l1 2.2H6l1-2.2H5.4c-1.2 0-1.8-.6-1.8-1.6zM8.4 15.4 7 21.4h10l-1.4-6',
   mask: 'M12 3.6c-4 0-6.6 1.6-6.6 4.4 0 5.2 2.4 12.4 6.6 12.4s6.6-7.2 6.6-12.4c0-2.8-2.6-4.4-6.6-4.4ZM8.6 9.6c.9-.7 2-.7 2.9 0M12.5 9.6c.9-.7 2-.7 2.9 0M10 15.4c1.4.8 2.6.8 4 0'
 };
@@ -88,6 +99,38 @@ export const ELEMENT_ICON = {
   ice: 'snow',
   thunder: 'bolt'
 };
+
+/**
+ * 战斗状态 → 图标 / 中文名 / 好坏。
+ * id 取自 `combat/skills.js` 的 `STATUS_INFO`（灼烧 / 冰缓 / 冻结 / 感电 /
+ * 破绽 / 弱化 / 战意 / 铁壁 / 棘甲 / 淬体 / 疾风），战报里认不出的 id
+ * 由 `statusBadge` 兜底成一个通用徽章，不会画不出来。
+ */
+export const STATUS_META = {
+  burn: { icon: 'flame', name: '灼烧', bad: true, tone: 'fire' },
+  chill: { icon: 'snow', name: '冰缓', bad: true, tone: 'ice' },
+  freeze: { icon: 'frozen', name: '冻结', bad: true, tone: 'ice' },
+  shock: { icon: 'bolt', name: '感电', bad: true, tone: 'thunder' },
+  mark: { icon: 'crack', name: '破绽', bad: true, tone: 'bad' },
+  weaken: { icon: 'arrowDown', name: '弱化', bad: true, tone: 'bad' },
+  atkUp: { icon: 'arrowUp', name: '战意', bad: false, tone: 'gold' },
+  guard: { icon: 'shield', name: '铁壁', bad: false, tone: 'ice' },
+  thorns: { icon: 'thorns', name: '棘甲', bad: false, tone: 'gold' },
+  regen: { icon: 'droplet', name: '淬体', bad: false, tone: 'ok' },
+  haste: { icon: 'wind', name: '疾风', bad: false, tone: 'ok' }
+};
+
+/** 未登记的状态 id 也要有图标可画。 */
+export function statusMeta(id, fallback = {}) {
+  const known = STATUS_META[id];
+  if (known) return known;
+  return {
+    icon: fallback.bad ? 'crack' : 'sparkle',
+    name: fallback.name || id || '状态',
+    bad: Boolean(fallback.bad),
+    tone: fallback.bad ? 'bad' : 'gold'
+  };
+}
 
 export const RESOURCE_ICON = {
   coin: 'coin',

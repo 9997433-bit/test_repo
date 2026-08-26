@@ -184,6 +184,74 @@
   background: linear-gradient(90deg, var(--cinnabar-lit), var(--gold-deep));
 }
 
+/* —— 状态图标 ——
+   高度恒定占位，免得战斗中挂上 / 掉落状态时整排牌跳一下 */
+.bunit__st {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  min-height: 15px;
+  margin-top: 4px;
+}
+
+.bunit__stchip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--st, var(--gold)) 55%, transparent);
+  background: color-mix(in srgb, var(--st, var(--gold)) 16%, rgba(11, 10, 9, 0.9));
+  color: var(--st, var(--gold));
+}
+
+.bunit__stchip .icon {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+
+.bunit__stchip[data-bad="true"] {
+  border-style: dashed;
+}
+
+.bunit__stchip[data-tone="fire"] {
+  --st: var(--el-fire);
+}
+.bunit__stchip[data-tone="ice"] {
+  --st: var(--el-ice);
+}
+.bunit__stchip[data-tone="thunder"] {
+  --st: var(--el-thunder);
+}
+.bunit__stchip[data-tone="gold"] {
+  --st: var(--gold);
+}
+.bunit__stchip[data-tone="ok"] {
+  --st: var(--ok);
+}
+.bunit__stchip[data-tone="bad"] {
+  --st: var(--bad);
+}
+
+.bunit__stturn {
+  position: absolute;
+  right: -3px;
+  bottom: -5px;
+  font-family: var(--font-num);
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1;
+  color: var(--paper);
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+}
+
+.bunit__stchip.is-in {
+  animation: status-pop 280ms var(--ease-snap) both;
+}
+
 .bunit__flash {
   position: absolute;
   inset: 0;
@@ -259,6 +327,11 @@
 .dmgfloat.is-shield,
 .dmgfloat.is-status {
   color: var(--ice);
+  font-size: 11px;
+}
+
+.dmgfloat.is-buff {
+  color: var(--gold-lit);
   font-size: 11px;
 }
 
@@ -519,6 +592,21 @@
   }
 }
 
+@keyframes status-pop {
+  0% {
+    transform: scale(0.2) rotate(-16deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.22) rotate(3deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+
 @keyframes banner-in {
   0% {
     opacity: 0;
@@ -575,6 +663,7 @@
 
 .reduce-motion .bunit,
 .reduce-motion .bunit__flash,
+.reduce-motion .bunit__stchip,
 .reduce-motion .bstage__banner,
 .reduce-motion .dmgfloat,
 .reduce-motion .seal,

@@ -10,6 +10,10 @@ import { weaponCard, weaponDetail } from '../components/weaponCard.js';
 import {
   motionPreference, setMotionPreference, reducedMotion, ripple, haptic
 } from '../motion.js';
+import {
+  audioPreference, setAudioPreference, audioEnabled, audioVolume, setAudioVolume,
+  preview as previewSound, play as playCue
+} from '../audio.js';
 
 const SORTS = [
   { id: 'power', label: '战力', cmp: (a, b) => b.power - a.power },
@@ -181,6 +185,28 @@ export function bagView(ctx) {
       { id: 'full', label: '完整动效' },
       { id: 'reduced', label: '减少动效' }
     ];
+    const soundPrefs = [
+      { id: 'auto', label: '跟随动效' },
+      { id: 'on', label: '开启' },
+      { id: 'off', label: '关闭' }
+    ];
+
+    const volValue = h('span.volrow__val.t-num', { text: `${Math.round(audioVolume() * 100)}%` });
+    const volSlider = h('input.slider', {
+      type: 'range',
+      min: '0',
+      max: '100',
+      step: '5',
+      value: String(Math.round(audioVolume() * 100)),
+      disabled: !audioEnabled(),
+      'aria-label': '音效音量',
+      oninput: (e) => {
+        setAudioVolume(Number(e.currentTarget.value) / 100);
+        volValue.textContent = `${e.currentTarget.value}%`;
+      },
+      onchange: () => playCue('tap')
+    });
+
     settingsCard.append(
       h('.card__inner.section',
         h('.section__head',
@@ -198,6 +224,35 @@ export function bagView(ctx) {
               renderSettings();
             }
           }, p.label))),
+
+        h('.recipe__label', { text: `音效（WebAudio 现场合成，无音频文件）· ${audioEnabled() ? '有声' : '静音'}` }),
+        h('.segmented', soundPrefs.map((p) =>
+          h('button.segmented__item', {
+            type: 'button',
+            'aria-pressed': String(audioPreference() === p.id),
+            onclick: () => {
+              setAudioPreference(p.id);
+              ui.toast.show(`音效：${p.label}`, 'info', audioEnabled() ? 'sound' : 'mute');
+              renderSettings();
+              if (audioEnabled()) previewSound();
+            }
+          }, p.label))),
+        h('.volrow',
+          icon(audioEnabled() ? 'sound' : 'mute'),
+          volSlider,
+          volValue,
+          h('button.btn.btn--ghost.btn--sm', {
+            type: 'button',
+            disabled: !audioEnabled(),
+            text: '试听',
+            onclick: (e) => {
+              ripple(e);
+              previewSound();
+            }
+          })),
+        h('.t-dim', { style: { fontSize: '10.5px' },
+          text: '「跟随动效」在低动效（含系统 prefers-reduced-motion）下自动静音；只想关动画、留声音就选「开启」。' }),
+
         h('.listrow',
           icon('gear'),
           h('.grow',

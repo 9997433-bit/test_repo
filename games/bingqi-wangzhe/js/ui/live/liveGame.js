@@ -33,6 +33,22 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 const fail = (error, extra) => ({ ok: false, error, ...(extra || {}) });
 const isFn = (v) => typeof v === 'function';
 
+/** 按关卡出现顺序析出章节表（去重，保序）。 */
+function chaptersFromStages(stages) {
+  const seen = new Map();
+  for (const s of stages) {
+    const id = s?.chapterId ?? s?.regionId;
+    if (!id || seen.has(id)) continue;
+    seen.set(id, {
+      id,
+      name: s.chapterName ?? s.regionName ?? id,
+      element: s.element ?? 'fire',
+      subtitle: s.chapterSubtitle ?? s.regionSubtitle ?? ''
+    });
+  }
+  return [...seen.values()];
+}
+
 /**
  * 把 data 层的命名空间归一成界面用的形状。
  * 既吃 `import * as data`（全大写常量），也吃已经整理过的 `{ weapons, stages }`。
@@ -49,7 +65,9 @@ export function normalizeData(raw) {
     weaponById: raw.weaponById ?? raw.WEAPON_BY_ID ?? byId(weapons),
     stages,
     stageById: raw.stageById ?? raw.STAGE_BY_ID ?? byId(stages),
-    chapters: raw.chapters ?? raw.CHAPTER_LIST ?? [],
+    // 没给章节表就从关卡里析出来：试炼页按章分组，缺了这张表整页会空着，
+    // 而每一关本来就带着自己属于哪一章。
+    chapters: raw.chapters ?? raw.CHAPTER_LIST ?? chaptersFromStages(stages),
     skills: raw.skills ?? raw.SKILLS ?? [],
     skillById: raw.skillById ?? raw.SKILL_BY_ID ?? {},
     forgeStages: raw.forgeStages ?? raw.FORGE_STAGES ?? ['iron', 'silver', 'gold'],

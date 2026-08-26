@@ -17,6 +17,7 @@ import { createResourceBar } from './components/resourceBar.js';
 import { createTabBar } from './components/tabBar.js';
 import { createToaster } from './components/feedback.js';
 import { syncDocument, onMotionChange } from './motion.js';
+import { unlockAudio } from './audio.js';
 
 import { forgeView } from './views/forge.js';
 import { campaignView } from './views/campaign.js';
@@ -151,6 +152,11 @@ export function mountApp(root, injectedGame) {
   };
   window.addEventListener('hashchange', onHash);
 
+  // AudioContext 只能由手势创建（自动播放策略），第一次按下时开一次就够。
+  const onGesture = () => unlockAudio();
+  window.addEventListener('pointerdown', onGesture, { once: true, capture: true });
+  window.addEventListener('keydown', onGesture, { once: true, capture: true });
+
   let offGame = game.subscribe?.(() => refreshChrome());
 
   /** 换一套 game（mock ↔ 逻辑层），资源条与所有视图重建。 */
@@ -221,6 +227,8 @@ export function mountApp(root, injectedGame) {
       offMotion();
       offGame?.();
       window.removeEventListener('hashchange', onHash);
+      window.removeEventListener('pointerdown', onGesture, { capture: true });
+      window.removeEventListener('keydown', onGesture, { capture: true });
       views.forEach((v) => v.destroy?.());
       views.clear();
       clear(root);
