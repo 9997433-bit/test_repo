@@ -1,7 +1,7 @@
 import { heroById, factionAdvantage } from "../data/heroes.js";
 import { realmPower } from "../data/realms.js";
 import { combatBuildingBonus } from "../mansion/production.js";
-import { artifactLoadout } from "./artifacts.js";
+import { applyTriggers, artifactLoadout } from "./artifacts.js";
 
 const TICK_SECONDS = 0.25;
 const MAX_TICKS = 240;
@@ -143,8 +143,24 @@ function sample(pool, count, rng) {
   return picks;
 }
 
+/**
+ * 记一次法器生效。战报按「法器 × 效果」汇总，战后能直接说明是哪几件法器在起作用；
+ * 返回首条注记，供调用点把署名写进当帧日志。计数只由战况决定，不掷骰，故不影响确定性。
+ */
+function fire(ctx, kind, detail) {
+  const notes = applyTriggers(ctx, { kind, ...detail });
+  for (const note of notes) {
+    const key = `${note.id}:${note.kind}`;
+    const seen = ctx.fired.get(key);
+    if (seen) seen.count += 1;
+    else ctx.fired.set(key, { id: note.id, name: note.name, kind: note.kind, count: 1 });
+  }
+  return notes[0] ?? null;
+}
+
 /** 开场结算：主角光环、玄天盾、瑶光护盾、玄女锦囊与太虚金丹鼎的大招加速。 */
-function applyOpenings(units, loadout) {
+function applyOpenings(ctx) {
+  const { units, loadout } = ctx;
   const allies = living(units, "a");
   let atkAura = 1;
   let ultHaste = loadout.passives.ultHaste;
@@ -154,10 +170,15 @@ function applyOpenings(units, loadout) {
   }
   for (const u of allies) {
     u.atk *= atkAura;
-    if (loadout.startShield) u.shield += u.maxHp * loadout.startShield;
+    if (loadout.shield.pct) u.shield += u.maxHp * loadout.shield.pct;
     if (u.kit.openingShieldPct) u.shield += u.maxHp * u.kit.openingShieldPct;
     u.ultTicks = ticksFor(u.ultSeconds / (1 + ultHaste));
     u.ultTimer = u.ultTicks;
+  }
+  if (allies.length) {
+    fire(ctx, "passive");
+    if (loadout.shield.pct) fire(ctx, "shield");
+    if (loadout.skillMul > 1) fire(ctx, "skillMul");
   }
 }
 
@@ -195,7 +216,10 @@ function applyDamage(ctx, source, target, raw, opts = {}) {
   let amount = opts.trueDamage ? Math.max(0, raw) : Math.max(1, raw - target.def * target.defMul * DEF_SCALE);
 
   const guard = loadout.guard;
-  if (guard && target.side === "a" && target.hp / target.maxHp < guard.threshold) amount *= guard.mul;
+  if (guard && target.side === "a" && target.hp / target.maxHp < guard.threshold) {
+    amount *= guard.mul;
+    fire(ctx, "guard", { target: target.id });
+  }
 
   if (target.shield > 0) {
     const absorbed = Math.min(target.shield, amount);
@@ -206,10 +230,14 @@ function applyDamage(ctx, source, target, raw, opts = {}) {
   if (source && source.side !== target.side) target.lastAttacker = source.id;
 
   if (target.hp <= 0) {
-    if (loadout.revive && target.side === "a" && !target.revived) {
+    // 万魂灯口径：整场共用 charges 次复活（data 未给 reviveCharges 时为 1 次），
+    // 与「阵亡时复活一次」的文案一致，不是每个我方单位各复活一次。
+    if (loadout.revive && target.side === "a" && ctx.revivesLeft > 0) {
+      ctx.revivesLeft -= 1;
       target.revived = true;
       target.hp = target.maxHp * loadout.revive.hpPct;
-      log.push({ t: "revive", target: target.id });
+      const note = fire(ctx, "revive", { target: target.id });
+      log.push({ t: "revive", target: target.id, by: note?.id });
       return { dmg: amount, killed: false, revived: true };
     }
     target.hp = 0;
@@ -221,7 +249,8 @@ function applyDamage(ctx, source, target, raw, opts = {}) {
   if (rescue && target.side === "a" && !ctx.rescued && target.hp / target.maxHp < rescue.threshold) {
     ctx.rescued = true;
     target.hp = Math.min(target.maxHp, target.hp + target.maxHp * rescue.pct);
-    log.push({ t: "rescue", target: target.id });
+    const note = fire(ctx, "rescue", { target: target.id });
+    log.push({ t: "rescue", target: target.id, by: note?.id });
   }
 
   const execute = loadout.execute;
@@ -233,7 +262,8 @@ function applyDamage(ctx, source, target, raw, opts = {}) {
   ) {
     target.hp = 0;
     target.alive = false;
-    log.push({ t: "execute", target: target.id });
+    const note = fire(ctx, "execute", { target: target.id });
+    log.push({ t: "execute", target: target.id, by: note?.id });
     return { dmg: amount, killed: true, execute: true };
   }
 
@@ -250,6 +280,7 @@ function burnPhase(ctx, tick, tSec) {
   if (!burn || tSec < burn.after || tick % ticksFor(1) !== 0) return;
   const src = strongest(living(ctx.units, "a"));
   if (!src) return;
+  fire(ctx, "burn", { at: tSec });
   for (const foe of living(ctx.units, "b")) {
     const r = applyDamage(ctx, src, foe, src.atk * burn.atkPct, { trueDamage: true, reflected: true });
     ctx.log.push({ t: "burn", target: foe.id, dmg: r.dmg });
@@ -309,7 +340,8 @@ function castSkill(ctx, u, target, mul) {
   const stun = ctx.loadout.stun;
   if (stun && u.side === "a" && rng() < stun.chance && target.alive) {
     target.stunTicks = ticksFor(stun.seconds);
-    log.push({ t: "stun", src: u.id, target: target.id });
+    const note = fire(ctx, "stun", { src: u.id, target: target.id });
+    log.push({ t: "stun", src: u.id, target: target.id, by: note?.id });
   }
 }
 
@@ -318,6 +350,7 @@ function basicAttack(ctx, u, target, mul, crit) {
   let raw = u.atk * mul;
   if (loadout.gamble && u.side === "a") {
     raw *= rng() < loadout.gamble.chance ? loadout.gamble.high : loadout.gamble.low;
+    fire(ctx, "gamble", { src: u.id });
   }
   const r = applyDamage(ctx, u, target, raw);
   log.push({ t: "hit", src: u.id, target: target.id, dmg: r.dmg, crit });
@@ -364,6 +397,7 @@ function snapshot(units) {
     maxHp: u.maxHp,
     shield: u.shield,
     alive: u.alive,
+    revived: u.revived,
     boss: u.boss,
   }));
 }
@@ -376,9 +410,17 @@ export function simulate(input) {
     ...heroIds.map((id) => unitFromHero(id, state, "a")).filter(Boolean),
     ...foes.map((f) => unitFromFoe(f, "b")),
   ];
-  applyOpenings(units, loadout);
+  const ctx = {
+    units,
+    loadout,
+    rng,
+    log: [],
+    rescued: false,
+    revivesLeft: loadout.revive?.charges ?? 0,
+    fired: new Map(),
+  };
+  applyOpenings(ctx);
 
-  const ctx = { units, loadout, rng, log: [], rescued: false };
   const frames = [];
   let tick = 0;
   let winner = null;
@@ -412,5 +454,5 @@ export function simulate(input) {
   }
 
   if (!winner) winner = living(units, "a").length >= living(units, "b").length ? "a" : "b";
-  return { winner, ticks: tick, frames, seed };
+  return { winner, ticks: tick, frames, seed, artifacts: [...ctx.fired.values()] };
 }
