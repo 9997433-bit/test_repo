@@ -1,6 +1,8 @@
 // 异掌 · 手套数值表（Fable-3 负责，公式与设计意图见 docs/GDD.md）
 // 纯数据，禁止 import three / DOM。数值单位：米、秒、米/秒。
 
+import { UNLOCK_BY_ID } from "./unlocks.js";
+
 /**
  * @typedef {Object} AwakenModifiers 觉醒 8s 期间叠加在基础值上的修正
  * @property {number} slapPowerMul   扇击击退倍率
@@ -24,7 +26,8 @@
  * @property {number} windup      前摇（按下到判定生效）
  * @property {number} recovery    后摇（判定结束到可行动；打空同样吃满）
  * @property {number} moveSpeedMul 持该掌时移速倍率（重掌更慢）
- * @property {string|null} skillId 主动技 id（详参 skills.js），木棉无主动技
+ * @property {string} skillId     主动技 id（详参 skills.js）。"none" = 无主动技
+ *                                （契约测试要求全字段非空，禁用 null；combat/ui 同用此哨兵）
  * @property {number} skillCooldown 主动技冷却
  * @property {string} unlock      "default" 或 unlocks.js 中的挑战 id
  * @property {AwakenModifiers} awakenModifiers
@@ -45,7 +48,7 @@ export const GLOVES = [
     windup: 0.16,
     recovery: 0.22,
     moveSpeedMul: 1.05,
-    skillId: null, // 设计如此：无主动技，换手感换节奏
+    skillId: "none", // 设计如此：无主动技，换手感换节奏（"none" 哨兵，非 null）
     skillCooldown: 0,
     unlock: "default",
     awakenModifiers: {
@@ -77,7 +80,7 @@ export const GLOVES = [
       slapRangeMul: 1.1,
       slapCooldownMul: 1.0,
       special: "slam_shatter", // 砸地直接击碎整块台面
-      params: { slamTileDamage: 100, slamRadiusMul: 1.25 },
+      params: { slamTileDamage: 130, slamRadiusMul: 1.25 }, // ≥ 满血上限 130（120×1.08），必直碎
     },
   },
   {
@@ -221,12 +224,36 @@ export const GLOVES = [
       slapRangeMul: 1.1,
       slapCooldownMul: 1.0,
       special: "crater_ring", // 落地击碎一圈台面
-      params: { craterTileDamage: 100, craterRadiusMul: 1.2 },
+      params: { craterTileDamage: 130, craterRadiusMul: 1.2 }, // ≥ 满血上限 130，必直碎
     },
   },
 ];
 
 export const GLOVE_BY_ID = Object.fromEntries(GLOVES.map((g) => [g.id, g]));
+
+/**
+ * 手套是否已解锁。数据层唯一判定入口，UI/core 读存档后调这里，不要自己比对。
+ *
+ * @param {string} id 手套 id
+ * @param {Object} [progress] 进度对象，兼容以下任意形状（见 API_CONTRACT §12 SaveV1）：
+ *   - `{ unlocked: ["cotton", "granite", ...] }`  存档的已解锁手套 id 列表
+ *   - `{ unlock_granite: true }` / `{ granite: true }`  扁平旗标（挑战 id 或手套 id）
+ *   - `{ challenges: { unlock_granite: 15 } }`  挑战计数，达到 UNLOCKS.count 即解锁
+ * @returns {boolean} 木棉（unlock:"default"）恒 true；未知 id 恒 false
+ */
+export function isGloveUnlocked(id, progress = {}) {
+  const glove = GLOVE_BY_ID[id];
+  if (!glove) return false;
+  if (glove.unlock === "default") return true;
+  if (!progress || typeof progress !== "object") return false;
+
+  if (Array.isArray(progress.unlocked) && progress.unlocked.includes(id)) return true;
+  if (progress[glove.unlock] === true || progress[id] === true) return true;
+
+  const spec = UNLOCK_BY_ID[glove.unlock];
+  const count = progress.challenges ? progress.challenges[glove.unlock] : undefined;
+  return !!(spec && typeof count === "number" && count >= spec.count);
+}
 
 // 对局常量：与 CONTRACT.md 一字不差，勿改字段名
 export const MATCH = {

@@ -10,10 +10,10 @@ Fable-3 出品。本文只做一件事：把 DESIGN_SEED 定下的核心循环�
 
 | 文件 | 导出 | 内容 |
 | --- | --- | --- |
-| `src/data/gloves.js` | `GLOVES` `GLOVE_BY_ID` `MATCH` | 8 掌 + 契约对局常量 |
+| `src/data/gloves.js` | `GLOVES` `GLOVE_BY_ID` `MATCH` `isGloveUnlocked` | 8 掌 + 契约对局常量 + 解锁判定 |
 | `src/data/tuning.js` | `MOVEMENT` `KNOCKBACK` `METER` `RULES` | 运动 / 击退 / 掌意 / 规则扩展 |
-| `src/data/skills.js` | `SKILLS` `SKILL_IDS` | 7 个主动技参数 |
-| `src/data/tiles.js` | `TILE` | 台面碎裂 |
+| `src/data/skills.js` | `SKILLS` `SKILL_IDS` `SKILL_COMBAT_ALIASES` | 7 个主动技参数 + combat id 过渡映射 |
+| `src/data/tiles.js` | `TILE` | 台面碎裂（方格拓扑，对齐 sim） |
 | `src/data/bots.js` | `BOT_PERSONAS` | 3 种 Bot 人格 |
 | `src/data/unlocks.js` | `UNLOCKS` | 局内解锁挑战 |
 
@@ -96,7 +96,7 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 
 各掌一句话意图：
 
-- **木棉**：默认解锁的「尺子」，所有其他掌都以它为参照上下浮动。无主动技（`skillId: null`）是刻意的——教学期只学移动/扇/跳三件事。
+- **木棉**：默认解锁的「尺子」，所有其他掌都以它为参照上下浮动。无主动技（`skillId: "none"` 哨兵，禁用 null——契约测试要求全字段非空，combat/ui 也按 `"none"` 分支）是刻意的——教学期只学移动/扇/跳三件事。
 - **磐石**：唯一 power 上 15 的掌；一切弱点（前摇/角度/移速/冷却）都是为这个数字付费。
 - **疾风**：裸 power 全场最低（7.5），必须用 `wind_rush` 冲刺中出掌（+3.5 → 11）才有斩杀力——技能表达在位移里。
 - **冰霜**：power 平庸，价值在把对手移速打到 65% 之后的**追身逼边**。
@@ -109,15 +109,17 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 
 | 技能 | 掌 | cd | 关键数字 | 出岛判据 |
 | --- | --- | --- | --- | --- |
-| quake_slam 蓄力砸地 | 磐石 | 7 | 半径 3.2，power 11→16（蓄 0.9s），knockUp 6，台伤 35 | 高度过栏 |
+| quake_slam 蓄力砸地 | 磐石 | 7 | 半径 3.2，power 11→16（蓄 0.9s），knockUp 6，台伤 45 | 高度过栏 |
 | wind_rush 疾冲 | 疾风 | 6 | 8m / 0.45s，途中扇击 +3.5 power，撞人推 5 | 速度过栏 |
 | frost_arc 霜弧 | 冰霜 | 8 | 距 6 / 70°，减速至 65% × 2.2s，power 4 | 不出岛，铺垫 |
 | coil_counter 弹簧反击 | 弹簧 | 9 | 窗口 0.5s，反弹 12 + knockUp 2.5，空放后摇 0.4 | 速度过栏 |
 | phantom_swap 残影换位 | 分身 | 8 | 瞬移 4m，残影 2.5s，Bot 仇恨权重 ×2 | 不出岛，欺诈 |
 | iron_pull 磁引 | 磁掌 | 9 | 锥 9m/40°，拉到面前 1.6m，到位踉跄 0.45s | 不出岛，铺垫 |
-| sky_fall 陨落 | 陨掌 | 11 | 腾空 0.8s 可微调落点，半径 3.6，power 14 + knockUp 5，台伤 30，自硬直 0.5 | 高度过栏 |
+| sky_fall 陨落 | 陨掌 | 11 | 腾空 0.8s 可微调落点，半径 3.6，power 14 + knockUp 5，台伤 40，自硬直 0.5 | 高度过栏 |
 
 冷却梯度 6→11 与技能决定性成正比：位移最短、清场最长。
+
+过渡适配（Round 2）：`src/combat/skills.js` 的处理器键仍是旧 id（groundPound / dashSlap / frostArc / parry / blinkSwap / magnetPull / meteorSlam）。接线层用 `SKILL_COMBAT_ALIASES`（`skills.js` 导出）把 `glove.skillId` 翻译后再交给 combat，否则 combat 会把未知 id 归一成 `"none"`（技能全哑）；combat 迁移到 data id 后删除该表。另注意：sim 的 fallback-combat 不识别 `"none"` 哨兵，主循环必须 data + combat **成对注入**。
 
 ## 7. 掌意与觉醒（`METER` + 各掌 `awakenModifiers`）
 
@@ -129,26 +131,55 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 | 掌 | special | 效果 |
 | --- | --- | --- |
 | 木棉 | combo3 | 连续命中第 3 掌 power ×1.8（有效 17.8，W≈7.5m；2.5s 未命中重置）|
-| 磐石 | slam_shatter | 砸地台伤 35→100（整块直碎），半径 ×1.25 |
+| 磐石 | slam_shatter | 砸地台伤 45→130（≥满血上限，整块直碎），半径 ×1.25 |
 | 疾风 | rush_steer | 疾冲途中可转向一次（≤90°）|
 | 冰霜 | freeze | 霜弧减速改冻结 0.8s |
 | 弹簧 | counter_launch | 反弹附带 knockUp 4.5（弹离地，可越栏）|
 | 分身 | decoy_feint | 残影每 1s 假挥掌，轻推 3 |
 | 磁掌 | dual_pull | 可拉 2 人并黏住 0.6s |
-| 陨掌 | crater_ring | 落点一圈台面直碎（半径 ×1.2，台伤 100）|
+| 陨掌 | crater_ring | 落点一圈台面直碎（半径 ×1.2，台伤 130）|
 
-## 8. 台面碎裂预算（`tiles.js`）
+## 8. 台面碎裂预算（`tiles.js`，Round 2 冻结为 sim 方格拓扑）
 
-结构：台心 `r<6` 永固圆盘 + 3 环带（6–10.5–15–20）× 24 扇区 = **72 块可破坏块**，按象限归入 4 个可破坏区；中缝十字是渲染层裂纹，无碰撞语义。
+Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Round 2 **冻结为 O1 已实现的方格圆盘**（`src/sim/arena.js`），环扇方案废弃，`TILE` 字段全部对齐 sim。
 
-- 每块 HP 100，两级裂纹视觉（66/33），HP≤0 抖动 0.6s 后塌落成洞。**本局不复原**——边线会变（种子差异点 3）。
-- 伤害来源全部是「重击」：有效击退 ≥ `heavyPowerThreshold 12` 的扇击在受击者触地点 −8；受击者以 ≥8 m/s 砸回地面 −10；磐石砸地 −35；陨掌 −30；两者觉醒 −100 直碎。
-- 预算：专注拆台的磐石 ≈ 21s 一块（3 砸 × 7s cd），一局 240s 全场自然损耗约 10–20 块（15–25%），加上觉醒时刻的定点开洞——台面**可感知地变险**，但 `zoneMaxCollapsedFraction 0.75` + 永固台心保证永远有立足与绕行走廊。
-- 洞的判死走 §4 的「脚下无台面」分支：被扇过洞 = 提前出岛。
+结构：半径 20 圆盘铺 2.5m 方格（16×16 网格，中心落盘内的 **208 块**）。`|x| < 1.9` 的两列（32 块）是**中缝**，基准 HP 80（其余 120），天然先塌出一道纵向裂谷；`zone` 按象限分 4 区。每块实际 HP = `max(24, round(基准 × 边缘系数 × 抖动))`——边缘系数从台心 1.0 线性降到盘缘 0.75（边缘更脆），抖动 ±8% 同 seed 确定，满血上限 ≈ **130**。
+
+数据 ↔ sim 常量映射（O1 对照校验；sim 侧改名/改值时回修此表）：
+
+| `TILE` 字段 | sim 常量 | 值 |
+| --- | --- | --- |
+| `tileSize` | `ARENA.tileSize` | 2.5 |
+| `baseHp` / `seamHp` | `ARENA.tileHp` / `ARENA.seamTileHp` | 120 / 80 |
+| `seamHalfWidth` | `ARENA.seamHalfWidth` | 1.9 |
+| `floorY` | `ARENA.floorY` | 0 |
+| `slapDamagePerPower` | `PHYSICS.tileDamagePerPower` | 3 |
+| （重击门槛）`KNOCKBACK.heavyPowerThreshold` | `PHYSICS.heavyTileThreshold` | 12 |
+
+伤害来源（全部走 sim 的 `damageFloor` 单入口）：
+
+- **重扇击**：有效击退 ≥ 12 的命中在受击者位置结算 `(有效击退 − 12 + slapDamageBias 4) × slapDamagePerPower 3`。磐石 15 → 21/掌（普通块 6 掌、中缝 4 掌）；陨掌 12 → 12/掌；觉醒磐石 18 → 30/掌。
+- **技能**：磐石 `quake_slam` 45（3 砸必碎任何普通块，中缝 2 砸）；陨掌 `sky_fall` 40（台心满血块 3–4 砸）。
+- **觉醒**：`slam_shatter` / `crater_ring` 130 ≥ 满血上限，整块直碎。
+
+其余规则：
+
+- 两级裂纹视觉按剩余比例 `crackStages [0.66, 0.33]` 取档（sim 的 `crackOf = 1 − hp/maxHp` 是连续量，渲染负责分档）。
+- **本局不复原**（`regrow: false`，sim 已满足）——边线永久改变（种子差异点 3）。
+- 预算：专注拆台的磐石 ≈ 21s 一块（3 砸 × 7s cd），一局 240s 加上重掌命中的自然损耗约 15–30 块（208 块的 7–15%），另有觉醒时刻定点开洞——台面**可感知地变险**。
+- 洞的判死走 §4 的「脚下无台面」分支（sim `isSupported`）：被扇过洞 = 提前出岛。
+
+尚未接线的设计约束（字段已在 `TILE`，Round 2 由 O1 在 `damageFloor` 实现，均为单点改动）：
+
+- `innerSafeRadius 6`：格中心 `r < 6` 的 16 块台心永不碎（`damageFloor` 里跳过即可），保底立足点；接线前由 `findSpawnSpot` 的扫描兜底重生安全。
+- `collapseDelaySeconds 0.6`：HP≤0 先抖 0.6s 警示再塌。sim 现为瞬时判碎，接线前由渲染做塌落表演。
+- `zoneMaxCollapsedFraction 0.75`：每象限最多塌 75%，保通行走廊。
 
 ## 9. 局内解锁挑战（`unlocks.js`）
 
-木棉默认解锁，其余 7 掌全部**单局内**可判定（事件规格见文件头注释），难度即教学梯度：
+木棉默认解锁，其余 7 掌全部**单局内**可判定（事件规格见文件头注释），难度即教学梯度。
+
+判定唯一入口是数据层的 `isGloveUnlocked(id, progress)`（`gloves.js` 导出、`data/index.js` 转发；UI/core 读完存档调这里，不要自己比对）：`unlock: "default"`（木棉）恒 true，未知 id 恒 false；其余按 `UNLOCKS` 对 `progress` 判定，兼容三种形状——存档的 `{ unlocked: GloveId[] }`、扁平旗标 `{ [unlockId 或 gloveId]: true }`、挑战计数 `{ challenges: { [unlockId]: n } }`（n ≥ 该挑战 `count` 即解锁）。
 
 | 掌 | 挑战 | 教的是 |
 | --- | --- | --- |
@@ -183,7 +214,7 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 | 某掌强弱 | 该掌 `slapPower`（每 ±1 ≈ W ±0.6m）| 先动 power，再动 cd/前摇 |
 | 连段压制感 | `hitstun 0.32` vs 最快 cd 0.5 | hitstun 永远要小于最快 cd |
 | 觉醒太频繁 | `METER.onSlapHit 0.12` | 降 0.01 ≈ 多打一掌 |
-| 拆台太快/太慢 | `TILE.hp 100` 或技能 `tileDamage` | 保持「磐石 3 砸一块」的读感 |
+| 拆台太快/太慢 | `TILE.baseHp 120` 或技能 `tileDamage` | 保持「磐石 3 砸一块」的读感 |
 | Bot 太强/太弱 | `mistakeRate` / `reactionSeconds` | 别动数值表，动人格 |
 
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。

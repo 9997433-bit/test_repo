@@ -12,7 +12,7 @@ export const SKILLS = {
     radius: 3.2,
     knockUp: 6, // 高于护栏，重击不被栏挡
     selfSlowMulWhileCharging: 0.4,
-    tileDamage: 35, // 台面块 HP 100 → 3 砸一块
+    tileDamage: 45, // 台面块基准 HP 120（满血上限 130）→ 3 砸必碎一块
   },
 
   // 疾风：面向疾冲，途中可扇（扇击加冲势）
@@ -76,9 +76,22 @@ export const SKILLS = {
     radius: 3.6,
     power: 14, // 由落点向外径向
     knockUp: 5,
-    tileDamage: 30,
+    tileDamage: 40, // 台心满血块 3–4 砸，边缘块 2–3 砸
     selfLandRecovery: 0.5, // 落地自身硬直，给对手惩罚窗口
   },
 };
 
 export const SKILL_IDS = Object.keys(SKILLS);
+
+// Round 2 过渡适配：src/combat/skills.js 的处理器仍用旧 id（SKILL_HANDLERS 键）。
+// 接线层把 glove.skillId 经此表翻译后再交给 combat，否则 combat 会把
+// 未知 id 归一成 "none"（技能全哑）。combat 迁移到 data id 后删除本表。
+export const SKILL_COMBAT_ALIASES = {
+  quake_slam: "groundPound",
+  wind_rush: "dashSlap",
+  frost_arc: "frostArc",
+  coil_counter: "parry",
+  phantom_swap: "blinkSwap",
+  iron_pull: "magnetPull",
+  sky_fall: "meteorSlam",
+};
