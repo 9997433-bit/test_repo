@@ -2,22 +2,13 @@ import { createInitialState, createInitialUi, normalizeHourMs } from "./engine.j
 
 export const SAVE_KEY = "xwsh.save.v1";
 
-/** 与 farm 的 GREENHOUSE_PLOT_CAP 对齐；core 不许 import systems，所以这里留一份迁移用的本地值。 */
-const LEGACY_GREENHOUSE_CAP = 3;
-const GREENHOUSE_ID = /^g\d+$/;
-
-const inGreenhouse = (plot) => plot?.greenhouse === true || GREENHOUSE_ID.test(String(plot?.id ?? ""));
-
 /**
  * 地块补字段：`wiltAt`/`greenhouse` 缺就补 0 / false。
- * 另外接一次性迁移：Round 1 的温室是「建成即全场免疫」，Round 2 收紧成一块一块买；
- * 盖过温室却一块温室田都没有的老档，按数组序免费补到上限，规则收紧不该倒扣玩家。
+ * 存档还没有 schema 版本号，所以这里**不能**替「盖了温室却没有温室田」的档补温室——
+ * 那和刚在 Round 3 里花钱盖完温室的新档长得一模一样，补了等于白送三块地。
  */
-function hydratePlots(plots, buildings) {
-  const filled = plots.map((p) => ({ wiltAt: 0, greenhouse: false, ...p }));
-  if (!buildings?.greenhouse?.built || filled.some(inGreenhouse)) return filled;
-  let left = LEGACY_GREENHOUSE_CAP;
-  return filled.map((p) => (left-- > 0 ? { ...p, greenhouse: true } : p));
+function hydratePlots(plots) {
+  return plots.map((p) => ({ wiltAt: 0, greenhouse: false, ...p }));
 }
 
 export function serialize(state) {
@@ -49,7 +40,7 @@ export function hydrate(saved, base = createInitialState()) {
     resources: { ...base.resources, ...(saved.resources || {}) },
     inv: { ...(saved.inv && typeof saved.inv === "object" ? saved.inv : base.inv) },
     buildings: { ...base.buildings, ...(saved.buildings || {}) },
-    plots: hydratePlots(arr(saved.plots, base.plots), saved.buildings),
+    plots: hydratePlots(arr(saved.plots, base.plots)),
     jobs: arr(saved.jobs, base.jobs),
     wishes: arr(saved.wishes, base.wishes),
     guests: arr(saved.guests, base.guests),

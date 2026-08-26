@@ -838,10 +838,10 @@ function spawnFloat(refs, ui) {
  * 圈舍盖起来之后再添一只对应的牲口。只是挂点，长什么样交给样式层。
  */
 function renderYard(refs, state) {
-  const npc = (kind, id) => `<i class="xw-npc" data-kind="${kind}"${id ? ` data-id="${esc(id)}"` : ""}></i>`;
+  const npc = (kind, id, extra = "") => `<i class="xw-npc" data-kind="${kind}"${id ? ` data-id="${esc(id)}"` : ""}${extra}></i>`;
   const nodes = [
     ...(state.guests || []).map((g) => npc("guest", g.id)),
-    ...(state.pets || []).map((p) => npc("pet", p.id)),
+    ...(state.pets || []).map((p) => npc("pet", p.id, ` data-pet="${esc(p.kind || "dog")}"`)),
     state.buildings.coop?.built ? npc("chick") : "",
     state.buildings.sheepfold?.built ? npc("sheep") : "",
     state.buildings.barn?.built ? npc("cow") : "",
