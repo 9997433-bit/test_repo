@@ -83,7 +83,8 @@
 | B | R2-O4 HUD文案接线 | 运行中 | `bc-6d654f68-fc2b-5f5a-9bee-36baaff1801b` |
 | C | R2-G2 模拟脚本 | 已完成，simulate + bench 地板已合入 | `bc-ae73f2e8-0ebc-57ea-ad67-2389d991637b` |
 | C | R2-G1 补测 | 已完成，contracts 测试已合入 | `bc-ac408e7a-ec0d-5f7c-8e47-820d6de66ee3` |
-| D | R2-F4 UX 文档 | 续发中 | 待回填 |
+| D | R2-F4 UX 文档 | 已完成，§7 接线表已合入 | `bc-e0a4b102-578b-563e-8b08-69f51c4e2626` |
+| D | R2-F3 经济文档 | 运行中 | `bc-aa28d078-b516-5e60-9633-25cba71c2e61` |
 
 ## 已实现基线（Parent 预置）
 

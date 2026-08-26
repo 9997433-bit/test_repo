@@ -131,25 +131,32 @@
 
 ---
 
-## 7. 待接线清单（按所有者）
+## 7. 待接线清单（按所有者 · Round 2 复核）
 
-**组合根（app.js 所有者）**
+复核基准：`app.js`、`mall/mallView.js`、`events/randomEvents.js` 与各 minigame 的现行代码。优先级定义：**P0** = 阻塞 RUBRIC 验收或读屏可用性；**P1** = 功能已有但与 copy/a11y 键双源漂移，需收敛；**P2** = 收尾。
 
-- `paintHud`：pill 文本改用 `HUD.*` 标签，挂 `A11Y.hud.*` aria-label。
-- `applySettle` / 离线 toast：改用 `OFFLINE.summary`（短离开用 `OFFLINE.short`），封顶时追加 `OFFLINE.cappedNote("8")`；回执面板落地时复用同一组键。
-- `renderMore`：导出/导入/静音/坏档文案换 `SYSTEM.*`。
-- 根容器与 toast 容器挂 `A11Y.app` / `A11Y.toastRegion`。
+### 7.1 本轮已关闭的缺口（events / minigame 所有者落地）
 
-**core 所有者（文案字符串外移，机制不动）**
+- **事件弹窗可达性**：`randomEvents.js` 改用原生 `<dialog>.showModal()`——模态语义与焦点陷阱由平台提供，Esc 经 `cancel` 事件统一走「婉拒」路径；标题/正文挂 `aria-labelledby` / `aria-describedby`；不支持 `<dialog>` 的环境降级为 `role="dialog" aria-modal="true"` + keydown Esc（降级分支只移焦不困焦，属已知限制）。原「Esc + 焦点陷阱」待接项**已关**。
+- **拒绝路径反馈**：事件收尾三路（接受/婉拒/超时错过）均已有专属文案，含少赚金额提示与打扰退避——但字符串落在 `randomEvents.js` 模块内的 `ACCEPT_LINES` / `DECLINE_LINES` / `MISS_LINES` 本地表，`copy.js#EVENTS` 的 `resolve` / `decline` 两键至今零消费。UX 缺口已关，键位归集降级为 P2（见 7.4）。
+- **生鲜键盘（D1）**：`fresh.js` 已实现 ←→ 键控筐（`role="application"` + aria-label + 可见提示行），`fastfood.js` 追加 1–4 数字键出餐。功能缺口**已关**；提示文案未取 `A11Y.minigames.*`，归入 7.3 的漂移收敛。
 
-- `state.js#hydrate` 与 `advanceGoal` 内的硬编码中文换 `OFFLINE`/`GOALS` 键（core import data 层合法，MODULE_CONTRACT §1）。
+### 7.2 仍开放 —— P0
 
-**视图所有者**
+**组合根（app.js 所有者）**——HUD 接线尚未合入，本节全部保持开放：
 
-- `mall/mallView.js`：`goalLine` 改用 `GOALS.line`；锁定 toast 改 `SHOP_LOCKED_HINT`；店卡副文案接 `SHOPS_COPY[id].tagline`。
-- `events/randomEvents.js`：完成 toast 换 `ev.resolve`，拒绝路径补 `ev.decline`；弹窗补 `role="dialog" aria-modal="true"` + Esc + 焦点陷阱（文案取 `A11Y.dialog`）。
-- 各 minigame：玩法提示/胜负 toast 接 `SHOPS_COPY[id].howto/win/fail`；键盘提示接 `A11Y.minigames.*`；`fresh.js` 需实现 ←→ 键控筐（D1 缺口）。
+- `paintHud`：仍硬编码 emoji+文本。改用 `HUD.*` 标签并挂 `A11Y.hud.*` aria-label——读屏目前只读到裸数字，是 D3 缺口。
+- `applySettle` 离线反馈：仍是单句硬编码 toast（`state.js#hydrate` 同）。RUBRIC A7 要求的回执面板（`OFFLINE.title/summary/rateNote/cappedNote/cta`）完全未落地，短离开变体 `OFFLINE.short` 亦未接。
+- 失败反馈接线：`actions.js` 的 `reason` 码机制已就位且码表已扩（新增 `bad-balance`、`level-max`、`shop-crowded` 等），但没有任何视图走 `FAIL[res.reason] ?? res.toast`——§4 三段式（A6/A10）仍只存在于 copy.js。每个视图各一行改动即可接通；`FAIL` 未覆盖的新码由 `?? res.toast` 兜底，无需先补全码表。
 
-**F3（数值）**
+### 7.3 仍开放 —— P1（双源漂移，需收敛）
 
-- `balance.js` 导出 `EVENT_REWARDS` 后，`copy.js#EVENTS` 的内联 `reward` 迁为查表（当前沿基线 60–140 金区间，未改经济）。
+- `mall/mallView.js`：`goalLine` 与锁定 toast 均为本地硬编码，措辞已与 `GOALS.line` / `SHOP_LOCKED_HINT` 漂移；店卡副文案未接 `SHOPS_COPY[id].tagline`；目标行未挂 `A11Y.goal` 读屏前缀。
+- `core/state.js`：`hydrate`（离线 toast、坏档提示）与 `advanceGoal`（达标/超时播报）的硬编码中文未换 `OFFLINE` / `GOALS` / `SYSTEM` 键（core import data 层合法，MODULE_CONTRACT §1）；§6.2 的「`done` → `renewUp` 两连播」未实现，达标目前只播一条。
+- 各 minigame：玩法提示各自硬编码，且比 copy.js 的 `howto` 更准确（fresh/fastfood 的本地版已含键盘说明）；胜负 toast 未接 `SHOPS_COPY[id].win/fail`，键盘提示未取 `A11Y.minigames.*`。**收敛方向：以现行模块内文案为准回写 copy/a11y 键，再让视图消费**——勿用旧键直接覆盖已上线文案。
+- `app.js#renderMore`：导出/坏档提示硬编码未换 `SYSTEM.*`；根容器与 toast 容器未挂 `A11Y.app` / `A11Y.toastRegion`，底部导航未挂 `A11Y.nav.*`。
+
+### 7.4 仍开放 —— P2（收尾）
+
+- 事件收尾文案归集：把 `randomEvents.js` 三张本地表迁入 `copy.js#EVENTS`（形状冻结允许追加键，超时路径需追加 `miss` 键），或正式废弃 `resolve` / `decline` 两键——二选一，消除双源。弹窗 footer 的 Esc 提示同理（`A11Y.dialog.escHint` 未消费）。
+- **F3（数值）**：`balance.js` 本轮已导出 `rollNextGoal` / `PASSIVE_XP`，但 `EVENT_REWARDS` 仍未导出——`copy.js#EVENTS` 的内联 `reward` 继续沿基线 60–140 金区间，导出后迁为查表（不改经济）。
