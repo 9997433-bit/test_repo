@@ -5,30 +5,14 @@ import { fileURLToPath } from 'node:url';
 const FORGE_SAMPLE_SIZE = 384;
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
 const results = [];
-const gaps = new Set();
-
-class SkipTest extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'SkipTest';
-  }
-}
-
-function skip(message) {
-  throw new SkipTest(message);
-}
 
 async function importModule(relativePath, requiredExports = []) {
   const url = new URL(relativePath, import.meta.url);
-  if (!existsSync(fileURLToPath(url))) {
-    skip(`缺少模块 ${relativePath}`);
-  }
+  assert.ok(existsSync(fileURLToPath(url)), `缺少模块 ${relativePath}`);
 
   const module = await import(url.href);
   const missing = requiredExports.filter((name) => typeof module[name] !== 'function');
-  if (missing.length > 0) {
-    skip(`${relativePath} 缺少导出：${missing.join(', ')}`);
-  }
+  assert.deepEqual(missing, [], `${relativePath} 缺少导出：${missing.join(', ')}`);
   return module;
 }
 
@@ -51,21 +35,15 @@ async function probe(name, fn) {
     results.push(result);
     console.error(`[PASS] ${name}`);
   } catch (error) {
-    const status = error instanceof SkipTest ? 'skipped' : 'failed';
     const message = error?.message ?? String(error);
     const result = {
       name,
-      status,
+      status: 'failed',
       durationMs: Number((performance.now() - startedAt).toFixed(2)),
-      [status === 'skipped' ? 'gap' : 'error']: message,
+      error: message,
     };
     results.push(result);
-    if (status === 'skipped') {
-      gaps.add(message);
-      console.error(`[SKIP] ${name}: ${message}`);
-    } else {
-      console.error(`[FAIL] ${name}: ${message}`);
-    }
+    console.error(`[FAIL] ${name}: ${message}`);
   }
 }
 
@@ -101,16 +79,12 @@ function extractForgedWeapon(output, state, previousLength) {
     output,
   ];
   for (const candidate of directCandidates) {
-    if (candidate && typeof candidate === 'object' && ('quality' in candidate || 'rarity' in candidate)) {
+    if (candidate && typeof candidate === 'object' && 'quality' in candidate) {
       return candidate;
     }
   }
   if (state.weapons.length > previousLength) return state.weapons.at(-1);
   return null;
-}
-
-function qualityOf(weapon) {
-  return weapon?.quality ?? weapon?.rarity;
 }
 
 async function sampleForgeDistribution(seed, sampleSize) {
@@ -134,12 +108,19 @@ async function sampleForgeDistribution(seed, sampleSize) {
       },
       rng,
     );
+    assert.equal(
+      output?.ok,
+      true,
+      `第 ${index + 1} 次锻造失败${output?.reason ? `：${output.reason}` : ''}`,
+    );
     const weapon = extractForgedWeapon(output, state, previousLength);
     assert.ok(weapon, `第 ${index + 1} 次锻造未返回兵器，也未写入 state.weapons`);
-    const quality = qualityOf(weapon);
-    assert.equal(typeof quality, 'string', `第 ${index + 1} 次锻造缺少字符串 quality/rarity`);
+    const { quality } = weapon;
+    assert.equal(typeof quality, 'string', `第 ${index + 1} 次锻造缺少字符串 quality`);
     assert.ok(validQualities.has(quality), `未知锻造品质：${quality}`);
     counts[quality] = (counts[quality] ?? 0) + 1;
+    // 品质采样不测试背包容量；移除样本，保留 rng、保底与锻造计数的连续状态。
+    state.weapons.splice(previousLength);
   }
 
   return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
@@ -333,34 +314,25 @@ await probe('锻造品质分布（固定种子）', async () => {
 });
 
 await probe('元素克制倍率', async () => {
-  const engine = await importModule('../js/combat/engine.js');
-  const functionNames = [
-    'elementMultiplier',
-    'getElementMultiplier',
-    'calculateElementMultiplier',
-    'elementModifier',
-    'getElementModifier',
-  ];
-  const exportName = functionNames.find((name) => typeof engine[name] === 'function');
-  if (!exportName) {
-    skip(`../js/combat/engine.js 缺少可测试的元素倍率导出（候选：${functionNames.join(', ')}）`);
-  }
-  const multiplier = engine[exportName];
+  const { elementMultiplier } = await importModule(
+    '../js/combat/index.js',
+    ['elementMultiplier'],
+  );
   for (const [attacker, defender] of [
     ['fire', 'ice'],
     ['ice', 'thunder'],
     ['thunder', 'fire'],
   ]) {
-    assert.equal(multiplier(attacker, defender), 1.35, `${attacker} 克制 ${defender} 应为 1.35`);
-    assert.equal(multiplier(defender, attacker), 0.75, `${defender} 被 ${attacker} 克制应为 0.75`);
-    assert.equal(multiplier(attacker, attacker), 1, `${attacker} 同元素应为 1.0`);
+    assert.equal(elementMultiplier(attacker, defender), 1.35, `${attacker} 克制 ${defender} 应为 1.35`);
+    assert.equal(elementMultiplier(defender, attacker), 0.75, `${defender} 被 ${attacker} 克制应为 0.75`);
+    assert.equal(elementMultiplier(attacker, attacker), 1, `${attacker} 同元素应为 1.0`);
   }
-  return { exportName, advantage: 1.35, disadvantage: 0.75, neutral: 1 };
+  return { exportName: 'elementMultiplier', advantage: 1.35, disadvantage: 0.75, neutral: 1 };
 });
 
 await probe('simulateBattle 同种子结果一致', async () => {
   const { createRng } = await importModule('../js/core/rng.js', ['createRng']);
-  const { simulateBattle } = await importModule('../js/combat/engine.js', ['simulateBattle']);
+  const { simulateBattle } = await importModule('../js/combat/index.js', ['simulateBattle']);
   const seed = 0x0ba771e;
   const run = () => {
     const input = buildBattleInput();
@@ -386,9 +358,11 @@ await probe('离线挂机 8 小时封顶', async () => {
       : typeof stateModule.tickIdle === 'function'
         ? stateModule.tickIdle
         : null;
-  if (!collect) {
-    skip('../js/forge/forge.js 缺少 collectIdle，且 ../js/core/state.js 缺少 tickIdle');
-  }
+  assert.equal(
+    typeof collect,
+    'function',
+    '../js/forge/forge.js 缺少 collectIdle，且 ../js/core/state.js 缺少 tickIdle',
+  );
 
   const now = 2_000_000_000_000;
   const observe = async (offlineHours) => {
@@ -406,9 +380,10 @@ await probe('离线挂机 8 小时封顶', async () => {
     Object.keys(overCap.resourceDelta).length > 0 ? overCap.resourceDelta : overCap.rewards;
   const hasRewardEvidence = Object.values(atCapReward).some((amount) => amount !== 0);
   const hasDurationEvidence = atCap.durationMs !== null && overCap.durationMs !== null;
-  if (!hasRewardEvidence && !hasDurationEvidence) {
-    skip('离线结算未暴露结算时长，且未产生可观察的资源奖励，无法验证 8 小时封顶');
-  }
+  assert.ok(
+    hasRewardEvidence || hasDurationEvidence,
+    '离线结算未暴露结算时长，且未产生可观察的资源奖励，无法验证 8 小时封顶',
+  );
   if (hasRewardEvidence) {
     assert.deepEqual(overCapReward, atCapReward, '离线 12 小时奖励必须与 8 小时奖励一致');
   }
@@ -434,7 +409,7 @@ const summary = {
   totals,
   forgeSampleSize: FORGE_SAMPLE_SIZE,
   tests: results,
-  gaps: [...gaps],
+  gaps: [],
 };
 
 console.log(JSON.stringify(summary, null, 2));
