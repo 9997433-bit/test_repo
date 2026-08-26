@@ -19,8 +19,8 @@
 
 | Round | 状态 | 结论简报 |
 |---|---|---|
-| 1 初始构建与基线探索 | 进行中（云端 VM 并发上限 3，分批派发） | 待汇总 |
-| 2 靶向重构与深度优化 | 未开始 | — |
+| 1 初始构建与基线探索 | 完成 | `.agent_workspace/ROUND1_BRIEF.md` |
+| 2 靶向重构与深度优化 | 进行中（VM 上限 3，分批） | — |
 | 3 SOTA 打磨与最终验收 | 未开始 | — |
 
 ## Round 1 文件所有权（防冲突）
@@ -52,10 +52,33 @@
 | B | O1 引擎 | opus-fast | 已完成，core/mall/app/save 测试已合入 | `bc-297ab17d-7197-5747-bdb6-0e0d697eb554` |
 | B | F3 经济 | fable | 已完成，曲线与赏金表已合入 | `bc-bc009e97-1eff-52c1-8457-1354d0e0f597` |
 | B | F4 叙事 | fable | 已完成，copy/a11y/intro 已合入 | `bc-d59a71a3-ccdc-577d-acf8-1c77b7bb4350` |
-| C | O2 小游戏 | opus-fast | 运行中 | `bc-7ceaa17b-4d09-5c3e-9a3f-def313d419d6` |
+| C | O2 小游戏 | opus-fast | 已完成，五店手感已合入 | `bc-7ceaa17b-4d09-5c3e-9a3f-def313d419d6` |
 | C | O4 伙伴事件 | opus-fast | 已完成，阵容/产线/事件弹窗已合入 | `bc-6dcadcdd-e4ab-550f-a2f1-dfffcedb3679` |
 | C | G1 测试 | gpt-sol | 已完成，47 项单测已合入 | `bc-9174c37f-cbb9-5717-be48-a835c39f9752` |
 | D | G2 性能边界 | gpt-sol | 已完成，bench/boundary 已合入 | `bc-48357c9e-60db-5e13-a07f-7a723f8c31dd` |
+
+## Round 2 文件所有权
+
+| Agent | 模型 | 主攻 | 可写路径 |
+|---|---|---|---|
+| R2-F1 | fable | SOTA 复审 / 量规重打分 | `docs/SOTA_RUBRIC.md`, `docs/ARCHITECTURE.md` |
+| R2-F2 | fable | token 接线清单验收 | `docs/DESIGN_SYSTEM.md`（只文档） |
+| R2-F3 | fable | 数值钳制方案 | `docs/ECONOMY.md`（只文档，公式改走 R2-O1） |
+| R2-F4 | fable | UX 接线验收 | `docs/UX_NARRATIVE.md` |
+| R2-O1 | opus-fast | core 硬化：NaN/等级帽/被动XP/研发前置/驻店上限 | `src/core/**`, `src/app.js`, `src/mall/**` |
+| R2-O2 | opus-fast | 小游戏单测 + 确认 F3 表接管 | `src/minigames/**`, `tests/minigames.test.js` |
+| R2-O3 | opus-fast | `main.css` 接 token/motion，触控 44px | `src/styles/main.css`, `index.html` |
+| R2-O4 | opus-fast | HUD/商场/事件接 copy+a11y | `src/app.js` 仅 HUD 文案、`src/mall/**`、`src/events/**` 文案 |
+| R2-G1 | gpt-sol | 补小游戏与钳制单测 | `tests/**` |
+| R2-G2 | gpt-sol | `scripts/simulate.mjs` + 复测 boundary 危害 | `scripts/**` |
+
+## Round 2 云端批次
+
+| 批次 | Agent | 状态 | bcId |
+|---|---|---|---|
+| A | R2-F1 SOTA 复审 | 运行中 | `bc-12976fc6-5973-5c3d-8929-d5a82b6cf9da` |
+| A | R2-O1 核心硬化 | 运行中 | `bc-296eba5b-282c-5f4c-9873-253fac73aa28` |
+| A | R2-O3 CSS 接线 | 运行中 | `bc-3dc5f228-7843-5491-b82c-b6178be28951` |
 
 ## 已实现基线（Parent 预置）
 
