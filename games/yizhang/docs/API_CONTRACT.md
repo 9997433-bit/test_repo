@@ -1,6 +1,6 @@
-# 异掌 · 公共 API 契约 v2（Round 2 · Fable-1，冻结）
+# 异掌 · 公共 API 契约 v3（Round 3 · Fable-1，冻结）
 
-> 本文把**合并后代码的实际导出面**冻结成基准。Round 1 契约与代码冲突处，本文以代码现状 + `ARCHITECTURE.md` §10 ADR-16…22 的裁定收敛；标注〔R2 必改〕的条目是尚未达标的实现，责任方见 `docs/OWNERSHIP.md`。
+> 本文把**合并后代码的实际导出面**冻结成基准（`ARCHITECTURE.md` §10 ADR-16…24）。v2 标注的〔R2 必改〕已全部落地：一部分改在模块本体（`isGloveUnlocked` 导出、`isMatchOver` 活谓词、人类 id `p0`、事件词表），一部分由生产桥 `src/sim/combat-bridge.js` 在边界收敛（命中形状、事件纪律、技能 id 翻译、朝向差）。本版把桥的职责写进契约（§5），并冻结技能 id 别名表（§3.1）与接线标志语义（§4.0）。
 >
 > **变更规则**：已列出的导出（名字、参数、返回形状）不得改动或删除；追加新导出/新可选字段允许，但必须先在本文登记再写代码。类型用 TS 记法描述形状，实现是纯 JS。
 
@@ -23,6 +23,9 @@ type PlayerId = 'p0' | `b${number}`;   // p0 = 人类；b0..b2 = bot（botCount 
 type GloveId  = 'cotton'|'granite'|'gale'|'frost'|'spring'|'afterimage'|'magnet'|'meteor';
 type Tier     = 'high'|'mid'|'low';
 type Persona  = 'brute'|'fox'|'bully';
+// 技能 id 两套词表（翻译表见 §3.1，ADR-23）
+type SkillDataId    = 'quake_slam'|'wind_rush'|'frost_arc'|'coil_counter'|'phantom_swap'|'iron_pull'|'sky_fall';
+type SkillHandlerId = 'groundPound'|'dashSlap'|'frostArc'|'parry'|'blinkSwap'|'magnetPull'|'meteorSlam';
 
 interface Input {
   moveX: number;          // -1..1，世界系（input 层已按 cameraYaw 换算），√(x²+z²) ≤ 1
@@ -56,7 +59,7 @@ export const GLOVES: GloveDef[];                       // 8 只，顺序即图�
 export const GLOVE_BY_ID: Record<GloveId, GloveDef>;
 export const MATCH: MatchConst;
 export function isGloveUnlocked(gloveId: GloveId, progress?: Record<string, number>): boolean;
-// 〔R2 必改：新增导出〕unlock === 'default' 恒 true（cotton）；
+// unlock === 'default' 恒 true（cotton）；未知 gloveId 恒 false；
 // 否则查 UNLOCK_BY_GLOVE[gloveId]，progress[unlock.id] >= unlock.count 才 true。
 // progress 缺省 {} ⇒ 除 default 外全锁。契约测 tests/glove-data.test.js 以此为准。
 
@@ -68,7 +71,8 @@ interface GloveDef {
   slapPower: number;                // 水平击退冲量基准（m/s）
   slapCooldown: number; windup: number; recovery: number;   // 秒
   moveSpeedMul: number;             // 持掌移速倍率
-  skillId: string | null;           // null = 无主动技（cotton）；与 combat 技能注册表对齐
+  skillId: SkillDataId | 'none';    // 'none' = 无主动技（cotton）。哨兵字符串、禁 null——
+                                    // 契约测试要求全字段非空；与 combat 的翻译见 §3.1
   skillCooldown: number;
   unlock: 'default' | string;       // 字符串 = unlocks.js 的挑战 id（R1 的对象形式已废除）
   awakenModifiers: {                // 觉醒 8s 覆盖，applyAwaken 消费
@@ -86,18 +90,47 @@ interface MatchConst {
 }
 
 // 其余表（同为只读；消费方注明）
-export const SKILLS, SKILL_IDS;                  // skills.js —— combat 消费
+export const SKILLS, SKILL_IDS;                  // skills.js —— 数据 id 词表（§3.1 左列）的详参
 export const BOT_PERSONAS, BOT_PERSONA_BY_ID;    // bots.js —— ai 消费
 export const UNLOCKS, UNLOCK_BY_ID, UNLOCK_BY_GLOVE;  // unlocks.js —— shell/main 消费
 export const MOVEMENT, KNOCKBACK, METER, RULES;  // tuning.js —— 参考值；运动手感的运行时权威是 sim.PHYSICS
 export const TILE;                               // tiles.js —— 仅伤害调参语义；拓扑字段不具约束力（ADR-18）
+// SKILL_COMBAT_ALIASES（skills.js）是 §3.1 别名表的 R2 过渡副本，R3 删除（ADR-23）
 ```
+
+### 3.1 技能 id 别名表（冻结，ADR-23）
+
+数据 id（`GloveDef.skillId`、图鉴、GDD 的公共词表）与 combat handler id（`src/combat/skills.js` 的分派键）是两套词表，之间**只有这一张翻译表**——运行时唯一翻译点是 `src/sim/combat-bridge.js` 的 `SKILL_ALIAS` / `combatSkillId()`：
+
+| 掌 | 数据 id（公共词表） | handler id（combat 分派 / 线上 skillId） |
+| --- | --- | --- |
+| cotton 木棉 | `none`（哨兵，无主动技） | `none`（觉醒三段被动链） |
+| granite 磐石 | `quake_slam` | `groundPound` |
+| gale 疾风 | `wind_rush` | `dashSlap` |
+| frost 冰霜 | `frost_arc` | `frostArc` |
+| spring 弹簧 | `coil_counter` | `parry` |
+| afterimage 分身 | `phantom_swap` | `blinkSwap` |
+| magnet 磁掌 | `iron_pull` | `magnetPull` |
+| meteor 陨掌 | `sky_fall` | `meteorSlam` |
+
+规则：
+
+1. `combatSkillId(id)`：falsy → `'none'`，命中 `SKILL_ALIAS` 取右列，否则原样透传。桥在 `resolveSlap/resolveSkill/applyAwaken` 的入参掌与 `syncGloveTable`（combat 内部掌表）上统一翻译，别处不得再各自换算。
+2. **线上（`skill` 事件与 `HitRecord`）的 `skillId` 是 handler id**（右列，桥返回值优先）。消费方按技能分派表现（VFX / 音效 / 播报）时对右列词表编程。
+3. 重复副本一律删除（R3 必改）：`data/skills.js` 的 `SKILL_COMBAT_ALIASES`（F3）、`core/modules.js` 的 `SKILL_ALIASES / alignSkillIds`（O4）。`combat/skills.js` 内部的宽容归一化（旧别名仍可命中）是防御性细节，不具规范地位、不得新增依赖。
+4. 新掌 / 新技能 = 先在本表登记一行，再写代码。
 
 ## 4. `src/sim`（Opus-1 所有；入口 `src/sim/index.js`）
 
-### 4.0 依赖接线（ADR-19，冻结）
+### 4.0 依赖接线（ADR-19/24，冻结）
 
-`src/sim/deps.js` **静态 import** `../data/index.js` 与 `../combat/index.js`；`installData(mod)` / `installCombat(mod)` / `resetDeps()` 保留仅供测试隔离，`autoWireOptionalDeps` 删除。`getDeps()` 返回 `{ MATCH, GLOVES, GLOVE_BY_ID, combat, usingRealData, usingRealCombat }`——产线两个布尔必须为 true，否则 main 亮降级横幅。
+`src/sim/deps.js` **静态 import** `../data/gloves.js`（运行时权威掌表）与 `./combat-bridge.js`（其内静态 import `../combat/index.js`）——生产路径零动态注入，**import sim 即已接线**。`getDeps()` 返回 `{ MATCH, GLOVES, GLOVE_BY_ID, combat, usingRealData, usingRealCombat }`：
+
+- **`usingRealCombat === true ⇔ 未装替身（combatMod === null）⇔ 生产静态桥在岗**。`installCombat(mod)` 传任何非 null 模块都置 false——即使传真实 `src/combat` 命名空间，因为绕过桥（朝向换算、命中翻译、事件消化）就不是产线路径（ADR-24）。**false 读作「测试替身在场」，不是「combat 缺席」**。
+- `usingRealData` 同理（仅当替身给出非空 `GLOVES` 才为 false）。`installData` 会经 `normalizeGlove` 用真实 cotton 补全替身缺字段，防 sim 吃 NaN。
+- `installData / installCombat / resetDeps` 仅供测试隔离；`resetDeps()` 回到真实模块。用过 install* 的测试必须收尾 `resetDeps()`。
+- 产线与探针的断言姿势：**什么都不装**，直接断言两布尔为 true；为假 = 替身泄漏，main 亮降级横幅。`autoWireOptionalDeps` 已删除。
+- deps 每次 rebuild 会调 `bridge.syncGloveTable(GLOVE_BY_ID)`：combat 内部延迟结算路径与 sim 共用同一张掌表（技能 id 已按 §3.1 翻译）。
 
 ### 4.1 契约四件套 + 附属导出
 
@@ -112,8 +145,9 @@ export function createMatch(opts: {
 
 export function step(state: MatchState, inputs: Partial<Record<PlayerId, Partial<Input>>>, dt: number): MatchState;
 // 就地更新并返回同一引用。dt 缺省/非法用 config.dt；> 1/60 自动切等长子步；上限 0.25。
-// 子步内顺序（冻结）：清 events → combat.tickStatuses → 计时器/重生 → 动作（换掌/冲刺/跳/
-// 扇击前摇/技能）→ 位移积分 → 互推 → 地面/护栏 → 前摇到帧的扇击结算 → 掉落 ko → updateMatch。
+// 顺序（冻结）：清 events（每 step 一次，子步共用缓冲）→ 每子步：combat.tickStatuses（含
+// 延迟命中回执）→ 计时器/重生 → 动作（换掌/冲刺/跳/扇击前摇/技能）→ 位移积分 → 互推
+// → 地面/护栏 → 前摇到帧的扇击结算 → 掉落 ko（y<fallY 或出盘无支撑）→ updateMatch。
 
 export function getView(state: MatchState): MatchView;   // §4.3
 
@@ -126,7 +160,7 @@ export function isMatchOver(state: MatchState): { over: boolean; winnerId?: Play
 - `over ⇔ state.match.over ∨ ∃p: p.kills ≥ config.killsToWin ∨ state.time ≥ config.matchSeconds`。
   调用方直接改 `player.kills`（如契约测试）后**立即**得到 `over: true`。
 - `winnerId/reason`：已缓存则回缓存；否则杀数达标 ⇒ 该玩家（按 players 序取先者）+ `'kills'`；时间到 ⇒ 杀数最多者（平杀比死数少、再平按 players 序）+ `'time'`。本版无 `'draw'`。
-- `step` 内的 `updateMatch` 仍负责把结果写入 `state.match` 并发 `matchOver` 事件——**事件与缓存需要 step，布尔真值不需要**。〔R2 必改：现实现只读 `state.match.over`〕
+- `step` 内的 `updateMatch` 仍负责把结果写入 `state.match` 并发 `matchOver` 事件——**事件与缓存需要 step，布尔真值不需要**。`isMatchOver` 与 `updateMatch` 共用 `decideMatch(state)`（现算、不写 state），保证「直接改 kills 再问」与「跑满 step」两条路答案一致。
 
 附属导出（现有名单冻结，不得删除；节选常用面）：
 
@@ -140,11 +174,15 @@ export function hasFloorUnder(state, x: number, z: number): boolean;
 export const ZERO_INPUT: Input;
 export function applyHits(state, attacker, hits: HitRecord[], source: 'slap'|'skill'): number;
 export { getPlayer, activeGlove, activeGloveId, respawnPlayer };
-export { forwardX, forwardZ };                       // ADR-17 约定的朝向 helper，测试必用
+export { forwardX, forwardZ, rightX, rightZ, yawFromDir, wrapAngle, FACE };
+                                                     // ADR-17 约定的朝向 helper，测试必用；
+                                                     // FACE.combatOffset = π 是桥的换算相位差
 export { PHYSICS, ARENA, SIM_VERSION };              // sim 自有物理/台面常量（不由 data 覆盖）
 export { applyKnockback, statusMods, isSupported, tileAt, crackOf };
+export { decideMatch, leaderOf };                    // isMatchOver / updateMatch 共用的判据
 export { createRngState, nextFloat, nextRange, nextU32 };
-// combat 同名转发：resolveSlap / resolveSkill / tickStatuses / applyAwaken（经 getDeps().combat）
+// combat 同名转发：resolveSlap / resolveSkill / tickStatuses / applyAwaken
+// （经 getDeps().combat，即 §5 的生产桥）
 ```
 
 ### 4.2 MatchState（冻结字段；O1 可加内部字段，需登记）
@@ -230,7 +268,7 @@ interface ViewPlayer {
   activeGloveId: GloveId; gloveName: string; gloveColor: string;   // HUD/render 直用
   switchLockT: number;
   meter: number; awakenedT: number; awakened: boolean;
-  statuses: { id: string; t: number; mag: number|null }[];
+  statuses: { id: string; kind: string; t: number; mag: number|null }[];   // kind === id，双词兼容
   alive: boolean; invulnT: number; respawnT: number;
   kills: number; deaths: number; streak: number;
   grounded: boolean; dashT: number; dashCd: number;
@@ -241,45 +279,61 @@ interface ViewPlayer {
 // 编排层用 core/interp.js lerpView(prev, cur, alpha) 产出插值快照后再交 renderer（ADR-12 修订）。
 ```
 
-## 5. `src/combat`（Opus-3 所有；仅被 sim 经 getDeps().combat 调用，禁反向依赖）
+## 5. `src/combat`（Opus-3 所有）与生产桥 `src/sim/combat-bridge.js`（Opus-1 所有）
+
+分工（冻结）：`src/combat/**` 自带一套内部约定（yaw=0 朝 +Z、命中 `{ id, … }` 且冲量已就地写进目标速度、事件直 push、自带 `cd/busyUntil` 台账）；**sim 只经生产桥调用 combat**，桥把内部约定翻译成本节契约，桥外不可见。**除桥（与 O3 自测）外任何文件不得 import `src/combat`**。
+
+### 5.1 桥的翻译职责（冻结）
+
+1. **朝向**：进 combat 前全体玩家 `yaw += FACE.combatOffset (π)`，返回时还原/换算回 -Z 约定（ADR-17 的唯一 combat 侧换算点）。
+2. **闸门**：sim 独占动作闸门（`attack` 相位机、`slapCd/skillCd` 标量、`switchLockT`、`kbT`）。桥每次调用前清掉 combat 的 `cd/busyUntil`，combat **必须解算**、不得二次拦截 sim 已闸过的调用；combat 的 `beginSlap`/pending 前摇机制不进产线路径（sim 的 windup 相位机是唯一前摇实现）。
+3. **命中**：combat 的 `{ id, impulse, … }` 翻译成 `{ targetId, attackerId, power, impulse, applied: true, skillId }`；`parried` 命中剔除（combat 已把冲量反打回攻击者，不再记一次受击）。
+4. **事件（ADR-22）**：combat push 的事件先进桥的暂存缓冲，翻译成 §10 词表（`awaken / awakenEnd / parry / meteorImpact / ghostSlap`；`tileBreak` 顺带补 `brokenCount / stats` 记账）后由 sim 代发；其余暂存事件丢弃（sim 已发等价事件）。
+5. **字段回写**：combat 自有字段同步到 sim 读的字段（`knockbackT → kbT`、`lastHitAt → lastHitT`）。
+6. **技能 id**：入参掌与 combat 内部掌表（`syncGloveTable`）按 §3.1 翻译，桥是唯一翻译点。
+
+### 5.2 sim 面向的 combat 契约（桥的导出面 = `getDeps().combat`）
 
 ```ts
 export function resolveSlap(state, attacker: PlayerState, glove: GloveDef, now: number): { hits: HitRecord[] };
 // now = state.time。sim 在扇击前摇到帧（attack.phase === 'strike'）调用。
-// 〔R2 必改〕返回必须是 { hits } 对象——裸数组返回已废除；sim 只认 res.hits。
 
 export function resolveSkill(state, attacker: PlayerState, glove: GloveDef, now: number): {
-  ok: boolean; skillId: string; reason?: string;
+  ok: boolean; reason?: string;
+  skillId?: SkillHandlerId;               // 线上词表 = handler id（§3.1）
   cooldown?: number;                      // 缺省用 glove.skillCooldown
-  selfImpulse?: { x: number; y: number; z: number };   // 施法者自身冲量（rush/跳劈类）
-  hits: HitRecord[]; tiles?: { x: number; z: number; amount: number }[];
+  selfImpulse: { x: number; y: number; z: number } | null;
+                                          // 生产桥恒为 null：施法者位移由 combat 状态机就地写速度；
+                                          // sim 保留非 null 时的加冲量路径供测试替身用
+  hits: HitRecord[];
 };
 // sim 在 skill 上升沿调用；ok:false 不进冷却。持续型技能由 tickStatuses 逐帧推进。
 
-export function tickStatuses(state, dt: number): void;
-// 就地递减/到期移除状态、推进持续技能（rush/magnet 拉拽/meteor 落点等）。返回值 sim 忽略。
+export function tickStatuses(state, dt: number): { hits: HitRecord[] };
+// 就地递减/到期移除状态、掌意收支与衰减、满条觉醒、推进持续技能。
+// 返回延迟结算命中（陨掌落地 / 疾风冲刺接触 / 残影假掌），每条必带 attackerId，
+// sim 按 attackerId 逐条记账（v2「返回值 sim 忽略」已修订）。
 
 export function applyAwaken(attacker: PlayerState, glove: GloveDef): GloveDef;
 // awakenedT > 0 时按 glove.awakenModifiers 返回覆盖后的派生副本；否则原样返回。禁止改 GLOVES。
 
 interface HitRecord {
-  targetId: PlayerId;                     // 〔R2 必改〕字段名 targetId（现实现的 id 改名）
+  targetId: PlayerId;
+  attackerId?: PlayerId | null;           // tickStatuses 的延迟命中必填
   applied: boolean;                       // true = combat 已就地写入目标速度，sim 只记账不重复推
   impulse: { x: number; y: number; z: number };
   power: number;                          // 水平冲量模长（事件/音效强度用）
-  kind: 'slap'|'skill'; skillId?: string|null;
-  behind?: boolean;                       // 背身命中（解锁/播报用）
+  skillId?: SkillHandlerId | null;
   hitX?: number; hitZ?: number;
   tile?: { x: number; z: number; amount: number };      // 对地伤害，sim 转 damageTileAt
   statuses?: { id: string; t: number; mag?: number; src?: PlayerId|null }[];
 }
+// 生产桥常态只输出前六个字段（状态/碎地由 combat 就地结算、tileBreak 走事件消化）；
+// 可选字段是 sim.applyHits 的能力面，测试替身可用。v2 的 kind 字段废除（applyHits 的
+// source 参数替代）；behind 背身加成在 combat 内部结算，不出桥。
 ```
 
-**闸门分工（冻结）**：sim 独占动作闸门（`attack` 相位机、`slapCd/skillCd` 标量、`switchLockT`、`kbT`）；combat 被 sim 调用时**必须解算**，其内部冷却台账（`attacker.cd`、`busyUntil`）与 `beginSlap`/pending 前摇机制**不进产线路径**（sim 的 windup 相位机是唯一前摇实现），不得二次拦截 sim 已闸过的调用。
-
-**事件纪律（ADR-22）**：combat 不 `pushEvent`；一切对外表达经返回值由 sim 代发。〔R2 必改：现实现里的 `slapWhiff/slapWindup/slap/skillHit` 直发事件删除〕
-
-台面伤害一律走 sim 的 `damageTileAt(state, x, z, amount)` 或经 `HitRecord.tile` 由 sim 代转；禁止直改 `arena.tiles`。
+台面伤害一律走 sim 的 `damageTileAt(state, x, z, amount)` 或经 `HitRecord.tile` 由 sim 代转；combat 直改 `tile.alive` 的既有路径由桥的 `tileBreak` 消化补齐记账（`creditTileBreak`），**禁止再添第三条路**。
 
 ## 6. `src/ai`（Opus-3 所有；入口 `src/ai/bots.js`）
 
@@ -289,6 +343,8 @@ export function think(view: MatchView, botId: PlayerId, rng: () => number): Inpu
 // 不碰 state.rng）。每个模拟 tick 被调一次；实现必须与调用频率无关（内部自带计时）。
 // 性格取 view 内该 bot 的 persona：brute 直线硬冲高频扇；fox 沿边绕走、卡碎裂边线；
 // bully 优先残血/背身/刚落地目标。产出的 moveX/moveZ 为世界系、yaw 遵守 ADR-17。
+// 编排层实际传入的是经 core/view.js adaptView 整形的超集快照（多 name/color/timeLeft
+// 等字段，yaw 未动）；think 只依赖 §4.3 字段即可，不得依赖超集字段。
 ```
 
 ## 7. `src/render`（Opus-2 所有；three 仅存在于此目录）
@@ -326,7 +382,9 @@ export function createInput(dom: HTMLElement|Document, canvas: HTMLCanvasElement
 
 export function sample(cameraYaw: number): Input;
 // 每模拟步一次。按 §2 公式把摇杆/WASD 换算成世界系 moveX/moveZ；Input.yaw = cameraYaw。
-// 〔R2 必改〕内部换算改用 ADR-17 约定（现存 forward=(cosθ,sinθ) 的私有约定废除）。
+// R2 达标方式：input 内部保留自己的相机方位角，换算收敛在 core/view.js 的
+// cameraYawToSimYaw / simYawToCameraYaw（唯一适配点）；sample 返回的必须是
+// ADR-17 约定下的世界系结果，换算不得散布到其它文件。
 export function setEnabled(enabled: boolean): void;   // false：动作清零、移动归零
 export function getLook(): { yaw: number; pitch: number };   // 相机朝向权威源（ADR-4/17）
 // 句柄追加（冻结命名）：setLook(yaw, pitch)、setSensitivity(v)、setPointerLock(on)、
@@ -364,16 +422,24 @@ type SimEvent = { t: number } & (
   | { type: 'jump';      id: PlayerId; x: number; y: number; z: number }
   | { type: 'dash';      id: PlayerId; x: number; y: number; z: number }
   | { type: 'switch';    id: PlayerId; slot: 0|1; gloveId: GloveId }
-  | { type: 'skill';     id: PlayerId; gloveId: GloveId; skillId: string }
-  | { type: 'awaken';    id: PlayerId; gloveId: GloveId }
-  | { type: 'awakenEnd'; id: PlayerId }
+  | { type: 'skill';     id: PlayerId; gloveId: GloveId; skillId: SkillHandlerId|'none' }
+  | { type: 'awaken';    id: PlayerId; gloveId: GloveId|null }      // combat 触发，经桥代发
+  | { type: 'awakenEnd'; id: PlayerId }                             // 同上
+  | { type: 'parry';     id: PlayerId; targetId: PlayerId; power: number }   // id = 弹反者
+  | { type: 'meteorImpact'; id: PlayerId; x: number; z: number; radius: number }
+  | { type: 'ghostSlap'; id: PlayerId; targetId: PlayerId }         // 残影假掌骗中
   | { type: 'tileCrack'; i: number; x: number; z: number; hp: number; maxHp: number }
   | { type: 'tileBreak'; i: number; x: number; z: number; hp: number; maxHp: number }
   | { type: 'matchOver'; winnerId: PlayerId|null; reason: 'kills'|'time' }
 );
 ```
 
-〔R2 必改〕O4 的事件消费（`main.js handleEvents`）改用上表名字：`ko` 不是 `kill`、`tileCrack/tileBreak` 不是 `chunkCrack/chunkBreak`；`parry/ringout/meteorLand/land` 等不在词表内的分支删除或待登记后再加。
+注：
+
+- `awaken / awakenEnd / parry / meteorImpact / ghostSlap` 由 combat 触发、经桥翻译后 sim 代发（ADR-22）；其余全部 sim 直发。
+- `skill` 事件与 `HitRecord` 的 `skillId` 是 **handler id**（§3.1 右列）。
+- `ko.reason` 现值恒为 `'fell'`（掉落是唯一死法）。
+- O4 经 `core/view.js normalizeEvent` 把本词表整形成 shell 内部形状（`ko → killerId/victimId` 等）——线上词表以本节为准，normalizeEvent 的输出形状不冻结。
 
 ## 11. 事件 → 音效名对照（main.js 持有；SoundName 词表冻结）
 
@@ -390,6 +456,8 @@ type SimEvent = { t: number } & (
 | `awaken` | `awaken` |
 | `matchOver` | `matchEnd` |
 | 局面切换（ui 直接调） | `matchStart` / `ui_click` / `ui_hover` |
+
+未列出的事件（`parry / meteorImpact / ghostSlap / slapStart / awakenEnd`）暂不发声；要加音效先在本表登记。
 
 ## 12. 存档 schema（key = `yizhang-save-v1`，`src/core/storage.js` 独占读写）
 
@@ -446,3 +514,4 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 10. 掌表：8 只手套字段齐全（§3 GloveDef）；`isGloveUnlocked('cotton', {}) === true`，其余无进度时 false。
 11. sim/combat/ai/data 源码静态扫描无 `three`、`document`、`window`、`Math.random`（G2 probe 断言）。
 12. 技能入局：装备 magnet 的玩家对目标放技能并 `step` 若干帧后，两者水平距离必须缩短（真实 combat 接线的回归锚点）。
+13. **接线不变量（ADR-24）**：import `src/sim` 后不做任何 install，`getDeps().usingRealData === true && usingRealCombat === true`；probe 的 wiring 断言以此为准、**不得先 install 再测**。`installCombat(任意非 null 模块)` 后 `usingRealCombat` 必须为 false，`resetDeps()` 后恢复 true。

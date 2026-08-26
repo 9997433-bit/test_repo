@@ -1,6 +1,6 @@
-# 异掌 · 架构总纲（Round 2 · Fable-1 冻结版）
+# 异掌 · 架构总纲（Round 3 · Fable-1 冻结版）
 
-> 状态：**冻结（R2）**。Round 1 十条分支已合入 `cursor/yizhang-db8d`，本文按**合并后的实际代码**重新定基：代码里已成立的实现即基准，Round 1 文档与之冲突处一律以本文 §10 的 ADR-16…22 为准（被推翻的 R1 决策在 ADR 列表中标注「已废除」）。变更流程不变：先改本文与 `docs/API_CONTRACT.md`、在提交信息中声明，再改代码。
+> 状态：**冻结（R3）**。Round 2 十路已合入 `cursor/yizhang-db8d`，本文按**合并后的实际代码**定基：R2 裁定（ADR-16…22）除本文标注「修订于 R3」处外全部沿用，本轮新增 ADR-23（技能 id 词表与别名表）与 ADR-24（接线标志语义）。与旧版文档冲突处一律以本文 §10 的 ADR-16…24 为准。变更流程不变：先改本文与 `docs/API_CONTRACT.md`、在提交信息中声明，再改代码。
 
 ## 0. 一句话架构
 
@@ -25,8 +25,8 @@
          │ createMatch / step / getView / isMatchOver          think(view,botId,rng)
 ┌─ 纯数据层（禁 import three、禁 DOM/window；state 可 structuredClone）─────────────┐
 │                                                                                 │
-│  src/sim/ ──每 tick 调用──► src/combat/（扇击·技能·状态·觉醒数值覆盖）              │
-│     │                          │                                                │
+│  src/sim/ ─每 tick 经 combat-bridge─► src/combat/（扇击·技能·状态·觉醒数值覆盖）     │
+│     │        （静态 import；别名/朝向/命中/事件翻译）│                                │
 │     └──静态 import──► src/data/ ◄──读──────┘   src/ai/bots.js（读 view + data）    │
 │                （GLOVES · MATCH 等只读表，运行期禁止改写）                           │
 └─────────────────────────────────────────────────────────────────────────────────┘
@@ -38,7 +38,7 @@
 | --- | --- | --- |
 | `src/data` | 无（纯常量表） | 一切 |
 | `src/combat` | `data` | three、DOM、`sim`（防环） |
-| `src/sim` | `data`、`combat`（**静态 import**，见 ADR-19） | three、DOM、`ai`、`render` |
+| `src/sim` | `data`（`gloves.js`）、`combat`（**只经 `sim/combat-bridge.js` 静态 import**，见 ADR-19/23） | three、DOM、`ai`、`render` |
 | `src/ai` | `data` | three、DOM、`sim` 内部（只吃 `getView` 快照） |
 | `src/render` | `three`、`data`（识别色等只读表） | `sim` 内部、业务层 |
 | `src/input` | 无业务依赖（DOM API 本体） | three、`sim` |
@@ -68,12 +68,14 @@
 6. shell.updateHud(curView, 'p0')             # 节流 ~30Hz
 ```
 
-`sim.step` 内部子步顺序（`src/sim/step.js`，冻结）：
+`sim.step` 内部顺序（`src/sim/step.js`，冻结）：
 
 ```
-清 events → combat.tickStatuses → 计时器/重生 → 动作处理（换掌/冲刺/跳/扇击前摇/技能）
-→ 位移积分 → 玩家互推 → 地面/护栏解算 → 前摇到帧的扇击结算（combat.resolveSlap）
-→ 掉落判定（y < fallY ⇒ ko）→ updateMatch（胜负缓存 + matchOver 事件）
+清 events（每次 step 一次，所有子步共用事件缓冲）；随后每个子步：
+combat.tickStatuses（状态倒计时·掌意衰减·满条觉醒·返回延迟命中交 sim 记账）
+→ 计时器/重生 → 动作处理（换掌/冲刺/跳/扇击前摇/技能）
+→ 位移积分 → 玩家互推 → 地面/护栏解算 → 前摇到帧的扇击结算（combat.resolveSlap 经桥）
+→ 掉落判定（y < fallY 或出盘无支撑 ⇒ ko）→ updateMatch（胜负缓存 + matchOver 事件）
 ```
 
 要点：
@@ -122,15 +124,15 @@
 
 ### 4.3 掌意与觉醒（awaken meter）
 
-- `meter ∈ 0..1`。来源：打中人 `+0.09`、被打 `+0.06`、击杀 `+0.15`（`PHYSICS.meterPerHitDealt/Taken/Kill`）。空挥不加。
-- `meter >= 1` 当 tick 自动触发：`awakenedT = MATCH.awakenDuration (8)`、`meter = 0`，发 `awaken` 事件。无手动引爆（ADR-7 沿用）。
+- `meter ∈ 0..1`。记账分两处（合并后实况，冻结）：**命中收支归 combat**（`combat/constants.js` 的 `METER`：打中 `+0.06`、被打 `+0.09`、技能命中 `+0.1`、弹反 `+0.18`、非觉醒时每秒衰减 `0.008`），**击杀奖励归 sim**（`PHYSICS.meterPerKill = 0.15`——combat 看不到出局判定）。空挥不加。
+- 满条自动触发：`combat.tickStatuses` 在 `meter >= 1` 且未觉醒时置 `awakenedT = 8`（`AWAKEN.duration`，与 `MATCH.awakenDuration` 同值）、`meter = 0`；`awaken` / `awakenEnd` 事件经 combat-bridge 翻译后由 sim 代发（ADR-22）。无手动引爆（ADR-7 沿用）。
 - 觉醒是**人的状态**：`awakenedT > 0` 时对当前激活掌生效，换掌 buff 跟着走。combat 经 `applyAwaken(attacker, glove)` 取覆盖后的派生副本，**绝不改写 GLOVES**。
-- 死亡：`awakenedT` 清零；重生时 `meter = min(meter, 0.35)`（保留一部分，防雪球）。
+- 重生（`respawnPlayer`）：`awakenedT` 清零、`meter = min(meter, 0.35)`（保留一部分，防雪球）。
 
 ### 4.4 事件流
 
 - `state.events` 每次 `step` 开头清空、步内追加（上限 `PHYSICS.maxEvents = 96`），`pushEvent` 自动盖 `t = state.time` 戳；`getView` 逐条浅拷贝进快照。
-- **sim 是唯一事件发射者（ADR-22）**：combat 通过返回值（命中列表 / 技能结果）让 sim 代发，自己不 push 事件——避免同名不同形的双事件流。分类学冻结在 `API_CONTRACT.md` §10（camelCase：`slap` `hit` `ko` `tileBreak` …）。
+- **sim 是唯一事件发射者（ADR-22，由桥执行）**：动作/命中/出局/碎地/胜负事件由 sim 直发；combat 在解算中 push 的事件先落进 combat-bridge 的暂存缓冲，由桥翻译成 sim 词表（`awaken/awakenEnd/parry/meteorImpact/ghostSlap`，并补 `tileBreak` 记账）后进 `state.events`，其余暂存事件丢弃（sim 已发等价事件）。`state.events` 里永远只有 `API_CONTRACT.md` §10 词表（camelCase：`slap` `hit` `ko` `tileBreak` …）。
 
 ## 5. 移动端与自适应
 
@@ -152,7 +154,7 @@ moveZ = −sx·sin(θ) − sy·cos(θ)          // θ = cameraYaw
 Input.yaw = cameraYaw                    // 期望面朝 = 相机朝向；null = 保持当前朝向
 ```
 
-sim 收到的就是世界系（`moveSpace` 缺省 `'world'`；`'local'` 仅供测试）。**sim 不懂相机**。O4 的 input 层现存的 `forward=(cosθ,sinθ)` 内部换算属 R1 分裂产物，Round 2 必须改为上式；G1 的测试 helpers 同改（R1 helpers 的 `yaw=0 朝 +Z` 已废除）。
+sim 收到的就是世界系（`moveSpace` 缺省 `'world'`；`'local'` 仅供测试）。**sim 不懂相机**。R2 合并后的达标方式是**唯一适配点**而非全量重写：契约面（`Input.yaw`、`view.players[].yaw`、`forwardX/forwardZ`、测试 helpers）一律 -Z 不变；内部基不同的模块各自只在一处换算——combat 内部 `yaw=0 朝 +Z`，唯一换算点是 `sim/combat-bridge.js`（`FACE.combatOffset = π`）；render 内部同为 `+Z` 基，唯一补偿点是 `core/view.js` 的 `toRenderView`（`RENDER_YAW_OFFSET = π`）；input 的相机方位角换算收敛在 `core/view.js` 的 `cameraYawToSimYaw / simYawToCameraYaw`。**除上述三处外任何文件不得再出现朝向换算**。
 
 分工不变：**ui 建 DOM（`data-yz-*` 标记），input 绑事件**。相机朝向状态（yaw/pitch）归 input 所有，导出 `getLook()` / `setLook()`；main 把 `getLook().yaw` 回传给 `sample`，render 读同一 yaw 摆相机。禁止锁敌自动瞄（种子红线）。
 
@@ -166,7 +168,7 @@ DPR 全局封顶 2（main 的 `applyResize` 计算并传 `renderer.resize`）。
 | mid | min(dpr, 1.5) | 贴地模糊假影 | 60% | 简化雾 |
 | low | 1.0 | 圆盘假影 | 30% | 合批简化材质、碎裂用静态贴花 |
 
-自动测档：`core/quality.js` 的 `createQualityProbe` 开局 mid 采样 2s 帧时，结果经 `renderer.setQuality(tier)` 生效；局中只降不升；玩家手动选档（存档 `quality`）后关闭自动逻辑。**探测归 core，执行归 render**——main 的 probe 必须真正调用 render 的 `setQuality`（R2 验收点）。
+自动测档：`core/quality.js` 的 `createQualityProbe` 开局 mid 采样 2s 帧时，结果经 `renderer.setQuality(tier)` 生效；局中只降不升；玩家手动选档（存档 `quality`）后关闭自动逻辑。**探测归 core，执行归 render**——main 的 probe 必须真正调用 render 的 `setQuality`（R2 验收点）。后处理（bloom 等）只允许 high/mid 开，**low 档必须关 bloom**（R3 验收点）。
 
 ### 5.3 后台暂停
 
@@ -200,7 +202,7 @@ DPR 全局封顶 2（main 的 `applyResize` 计算并传 `renderer.resize`）。
 
 ## 10. 决策记录（ADR）
 
-R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「已废除/修订」。**实现一律以最新裁定为准。**
+R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「已废除/修订」；Round 3 的修订与新增（19/21/22 修订，23/24 新增）已并入下表。**实现一律以最新裁定为准。**
 
 1. **render/input/audio 模块级单例**：`createX` 初始化内部单例并返回句柄，模块级函数操作该单例。（沿用）
 2. **Input 坐标系**：input 层完成相机系→世界系换算，sim 不懂相机。（沿用，公式收紧见 ADR-17）
@@ -218,9 +220,11 @@ R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「�
 14. **HUD 节流**：main 以 ~30Hz 调 `updateHud`，内部再脏检查。（沿用，频率按实现修订）
 15. **AI 决策频率**：~~固定 10Hz~~ **放宽**：每 tick 调用是现状，降频是优化选项；`think` 必须与调用频率无关。
 16. **人类玩家 id = `p0`（新，冻结）**：sim 已定 `p0`、bot 为 `b0..b2`——**外壳跟随 sim**。`src/main.js` 的 `SELF_ID`、`core/fallback/sim.js` 的人类 id、render 的 `localId/followId` 缺省值全部改 `p0`。任何层不得再出现 `p1` 作为人类 id。
-17. **yaw = 0 面向 -Z（新，冻结）**：`forward = (-sin yaw, -cos yaw)`，与 three `rotation.y` 一致。相机 yaw、`Input.yaw`、测试 helpers 同一约定；摇杆→世界系换算公式见 §5.1。O4 input 内部换算与 G1 helpers 是仅存的违约方，Round 2 必须改。
+17. **yaw = 0 面向 -Z（冻结；R3 补注）**：`forward = (-sin yaw, -cos yaw)`。相机 yaw、`Input.yaw`、`view.players[].yaw`、测试 helpers 同一约定；摇杆→世界系换算公式见 §5.1。R2 已达标，方式是**唯一适配点**：内部基不同的模块只在 `sim/combat-bridge.js`（combat ±π）、`core/view.js toRenderView`（render +π）、`core/view.js cameraYawToSimYaw`（相机方位角）三处换算，见 §5.1；不得新增第四处。
 18. **台面拓扑 = sim 方格网格（新，冻结）**：`src/sim/arena.js` 的 2.5m 方格圆盘（约 208 块）是唯一拓扑，`view.arena` 的形状即渲染输入。理由：sim 侧支撑/伤害/重生/probe 全链已在此拓扑上通过，render 只需按 `origin/tileSize/cols + tiles[].x,z` 建板即可；而改 sim 迁就 72 扇环要重写 arena/floor/spawn 全部逻辑。**O1 保持、O2 消费、O3 走 `damageTileAt`，禁止发明第四套拓扑。**
-19. **依赖接线 = 静态 import（新，冻结）**：`src/data`、`src/combat` 已落地，`src/sim/deps.js` 改为静态 `import ../data/index.js` 与 `../combat/index.js`（其文件内 TODO(merge) 所述路径）；`installData/installCombat/resetDeps` 保留**仅供测试隔离**，`autoWireOptionalDeps` 删除。main 启动后断言 `getDeps().usingRealData && usingRealCombat`，为假时必须亮降级横幅。main 传给 shell/render 的掌表与 MATCH 一律取自 `sim.getGloves()/getMatchConfig()`，与模拟共用同一张表。
+19. **依赖接线 = 静态桥（修订于 R3）**：`src/sim/deps.js` 静态 `import "../data/gloves.js"`（运行时权威掌表）与 `"./combat-bridge.js"`（其内静态 `import "../combat/index.js"`）——生产路径零动态注入，**import sim 即已接线**。`installData/installCombat/resetDeps` 保留**仅供测试替身**，`autoWireOptionalDeps` 已删除。main 启动断言 `getDeps().usingRealData && usingRealCombat` 为 true（为假 = 替身泄漏，亮降级横幅），传给 shell/render 的掌表与 MATCH 一律取自 `sim.getGloves()/getMatchConfig()`。**R3 必改**：`core/modules.js` 的 `wireSimDeps` 注入路径与 `alignSkillIds` 删除（O4）、`scripts/harness.mjs` 的 `installSimulationDependencies` 不再 install（G2）——向已接线的 sim 再 install 真实模块＝绕过桥，见 ADR-24。
 20. **isMatchOver 即时判定（新，冻结）**：`isMatchOver(state)` 是**纯读的活谓词**，不要求先 `step`：`over ⇔ state.match.over ∨ ∃p: p.kills ≥ killsToWin ∨ state.time ≥ matchSeconds`。调用不改 state、不发事件；`step` 内的 `updateMatch` 仍负责把结果缓存进 `state.match` 并发 `matchOver` 事件——**事件需要 step，布尔真值不需要**。语义细则见 API_CONTRACT §4。
-21. **降级政策：单产线路径（新，冻结）**：产线路径 = 真实模块。`core/fallback/**` 与 sim 内置兜底只在**模块 import 失败/缺席**时于启动期挂载（`loadSiblingModules` 捕获），且必须亮降级横幅；**局中不换件**——真实 sim 已加载后其运行期异常按错误暴露（暂停+提示），不得静默切到占位模拟。所有 fallback 件必须遵守冻结约定（p0、-Z、方格 view 形状），保证换件不换协议。
-22. **sim 是唯一事件发射者（新，冻结）**：事件只从 `sim` 的 `pushEvent` 出，词表见 API_CONTRACT §10（camelCase）。combat 不直接 push 事件；O4 的事件消费改用词表内的名字（`ko` 不是 `kill`，`tileBreak` 不是 `chunkBreak`）。
+21. **降级政策：单产线路径（修订于 R3）**：产线路径 = 真实模块。`core/fallback/**`（O4 降级件）只在**模块 import 失败/缺席**时于启动期挂载（`loadSiblingModules` 捕获），且必须亮降级横幅；**局中不换件**——真实 sim 已加载后其运行期异常按错误暴露（暂停+提示），不得静默切到占位模拟。sim 侧的兜底战斗（`sim/fallback-combat.js`）已在 R2 删除：combat 经桥静态 import，坏了即 sim 整体 import 失败，降级单位是**整个 sim**（换 `core/fallback/sim.js`），不存在「sim 真、combat 假」的中间态。所有 fallback 件必须遵守冻结约定（p0、-Z、方格 view 形状），保证换件不换协议。
+22. **sim 是唯一事件发射者（修订于 R3：由桥执行）**：`state.events` 里只允许 API_CONTRACT §10 词表。combat 解算中 push 的事件被 combat-bridge 的暂存缓冲截获，翻译（`awaken/awakenEnd/parry/meteorImpact/ghostSlap` + `tileBreak` 记账）后由 sim 代发，未登记的暂存事件丢弃。O4 的 `core/view.js normalizeEvent` 是 shell 内部适配（`ko → killerId/victimId` 等），不改变线上词表。
+23. **技能 id：两套词表 + 一张别名表（新，冻结）**：数据 id（`quake_slam / wind_rush / frost_arc / coil_counter / phantom_swap / iron_pull / sky_fall`，木棉为哨兵 `"none"`、禁 null）是公共词表——`GloveDef.skillId`、图鉴、GDD 用它；handler id（`groundPound / dashSlap / frostArc / parry / blinkSwap / magnetPull / meteorSlam`）是 combat 的分派键——`skill` 事件与 `HitRecord.skillId` 携带它。两者之间**只有一张翻译表**：`src/sim/combat-bridge.js` 的 `SKILL_ALIAS`（`combatSkillId()` 是唯一运行时翻译点），全表冻结在 API_CONTRACT §3.1。重复副本 R3 删除：`data/skills.js` 的 `SKILL_COMBAT_ALIASES`（F3）、`core/modules.js` 的 `SKILL_ALIASES + alignSkillIds`（O4）。combat 内部的宽容归一化表（`combat/skills.js`）是防御性实现细节，不具规范地位、不得新增依赖。
+24. **接线标志语义（新，冻结）**：`usingRealCombat === true ⇔ combatMod === null ⇔ 生产静态桥在岗`；`usingRealData` 同理。`installCombat / installData` 传**任何非 null 模块**都会把标志置 false——即使传的是真实 `src/combat` 命名空间，因为绕过桥（朝向换算、命中翻译、事件消化全丢）就不是产线路径。所以「标志为 false」读作**「测试替身在场」**，不是「combat 缺席」。产线与探针的正确姿势是**什么都不装**、直接断言两标志为 true；R2 探针误报 `usingRealCombat: false` 的根因正是先 install 再测。
