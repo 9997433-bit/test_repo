@@ -105,6 +105,8 @@ const PICKUP_R = 5;
 const SHARK_BITE_R = 6;
 const SHARK_AGGRO_R = 22;
 const SURFACE_DEPTH = 8;
+/** 鲨鱼不上浮到这条线以上：浮到 SURFACE_DEPTH 以内就一定咬不到，上浮永远是活路。 */
+const SHARK_MIN_Y = SURFACE_DEPTH + SHARK_BITE_R;
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -265,7 +267,7 @@ function substep(prev, input, dt) {
   const ix = clamp(Number(input.x) || 0, -1, 1);
   const iy = clamp(Number(input.y) || 0, -1, 1);
 
-  next.time = round2(next.time + dt);
+  next.time = next.time + dt;
   next.x = clamp(next.x + (ix * spd + currentAt(next.depth, next.time)) * dt, 0, 100);
   next.depth = clamp(next.depth + iy * spd * dt, 0, next.maxDepth ?? 90);
   next.bestDepth = Math.max(next.bestDepth, next.depth);
@@ -286,9 +288,9 @@ function substep(prev, input, dt) {
       s.y += s.vy * dt * 4;
     }
     if (s.x < 0 || s.x > 100) s.vx *= -1;
-    if (s.y < 10 || s.y > (next.maxDepth ?? 90)) s.vy *= -1;
+    if (s.y < SHARK_MIN_Y || s.y > (next.maxDepth ?? 90)) s.vy *= -1;
     s.x = clamp(s.x, 0, 100);
-    s.y = clamp(s.y, 10, next.maxDepth ?? 90);
+    s.y = clamp(s.y, SHARK_MIN_Y, next.maxDepth ?? 90);
     const after = Math.hypot(s.x - next.x, s.y - next.depth);
     nearest = Math.min(nearest, after);
     if (after < SHARK_BITE_R) {
@@ -432,9 +434,11 @@ export function diveHud(state) {
     zone: s.zone,
     zoneName: s.zoneName,
     oxygen: Math.round(s.oxygen),
+    oxygenMax: s.oxygenMax ?? 100,
     oxygenPct: round2(clamp(s.oxygen / (s.oxygenMax || 100), 0, 1)),
     depth: Math.round(s.depth),
     maxDepth: s.maxDepth,
+    time: round2(s.time || 0),
     loot: (s.loot || []).length,
     nodes: (s.nodes || []).length,
     bubbles: (s.bubbles || []).length,
