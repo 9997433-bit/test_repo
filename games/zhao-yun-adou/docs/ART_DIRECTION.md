@@ -77,7 +77,9 @@
 | `.fx-merge`（挂合并格） | 合并升阶：放大金闪 + 朱砂涟漪扩散 | 渲染层 merge 事件，≈480ms 后移除 | 480ms | 待 JS 接线 |
 | `.fx-awaken`（挂武将格） | 觉醒：金/朱双环冲击波，落笔定身 | 渲染层 hero-awaken 事件，≈700ms 后移除 | 700ms | 待 JS 接线 |
 
-### 5.2 战斗演出层（`fx.css`，CSS 全部就绪，待 JS 挂载）
+### 5.2 战斗演出层（`fx.css`，CSS 全部就绪）
+
+> **并行现状（R2 落地后补记）**：JS 侧在同轮并行提交了 `ui/juice.js` —— 它已把 skill / kill / leak / merge 接成可见反馈，但走的是自己的通道（`zy-float / zy-ring` 类名 + WAAPI 自注入样式 + lane 画布特效），刻意不依赖 `src/styles/**`。`fx.css` 仍是样式层的正式契约：类名/变量与 `juice.shape`、`juice.shake` 一一对应、全部引用 tokens、带 reduced-motion 降级。后续合流方向：`juice.js` 的 DOM 通道改挂本节的 `.fx-*` 类与 `--fx-*` 变量，撤掉自注入样式，让演出层回到唯一事实源。
 
 **挂载点铁律**：diff 渲染层的 `syncAttrs` 会回写 `class`、`morphChildren` 会删多余节点 —— 事后贴进 `#app` 子树的任何元素/类都活不过下一次 patch（≤33ms）。安全挂载点只有两个：
 
@@ -133,7 +135,7 @@ src/styles/
 
 **与渲染层的分工**：`src/styles/**` 拥有 `.cell / .card / .hud / .half / .overlay` 等骨架元件与全部关键帧；渲染层在 `render.js` 内注入 `zy-*` 前缀的微元件样式（品阶点、卡面标签、教程条），只允许引用 tokens.css 变量、不得覆写骨架元件 —— 当前双方已按此运行（`zy-pips` 主动避开了批条区）。
 
-1. **演出层等 JS 挂载**（本轮唯一硬缺口）：`fx.css` 的 `.fx-float / .fx-splash / .fx-quake` 已就绪，JS 侧按 §5.2 建 `#fx-layer`、在 skill / kill / recruit 等事件上生成元素与写 CSS 变量即可上屏；`.fx-merge / .fx-awaken` 仍需渲染层在输出里带 class（按事件 + 时间戳），注意 diff-回写陷阱。
+1. **演出层双轨待合流**：JS 侧 `ui/juice.js` 已并行上屏（自注入 `zy-*` 样式 + 画布特效），`fx.css` 的 `.fx-float / .fx-splash / .fx-quake` 契约同样就绪 —— 两轨视觉语言一致但实现重复，应按 §5.2 的合流方向把 DOM 通道迁到 `fx.css`；`.fx-merge / .fx-awaken` 仍需渲染层在输出里带 class（按事件 + 时间戳），注意 diff-回写陷阱。
 2. **行军道 canvas 内部画风**归 `ui/lane.js`（JS 域）：敌军应为墨团拖尾、路径加飞白、血条改朱砂短批；容器（远山 + 晨雾）已就位。
 3. **字体子集化**（P3，降级后遗留）：离线回退链已落地（§2），断 CDN 不再破相；但 `Ma Shan Zheng` 全量约数 MB、实际用字 <100 个，子集化自托管（预估 <30KB woff2）仍可消除首屏 FOUT 并统一各平台笔书观感。
 4. **红心是纯文本串**（`♥♥♡`），无法逐颗做丢心动画；建议渲染层拆成逐颗 `<span>` 后再加 CSS。
