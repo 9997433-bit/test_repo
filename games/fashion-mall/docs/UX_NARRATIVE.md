@@ -1,4 +1,4 @@
-# 叙事与体验规范（Round 1 / F4 定稿）
+# 叙事与体验规范（Round 1 / F4 定稿 · Round 3 批次 A+B 后接线复核）
 
 本文是文案与新手体验的**可执行规范**：口吻规则、60 秒首胜脚本、失败反馈、无障碍文案、离线回执与限时目标续期的 UX 设计，以及给其他所有者的接线清单。文案实体在 `src/data/copy.js`，读屏文案在 `src/data/a11y.js`；本文只定规则，不复制字符串。
 
@@ -25,15 +25,15 @@
 | 导出块（copy.js） | 内容 | 消费方 | 接线状态 |
 |---|---|---|---|
 | `INTRO` | 开场三幕、按钮、命名 | `ui/intro.js` | **已接线** |
-| `EVENTS` | 6 类突发事件（含 `resolve/decline` 收尾） | `events/randomEvents.js` | 表**已接线**；`resolve/decline` 待接 |
+| `EVENTS` | 6 类突发事件（含 `resolve/decline` 收尾） | `events/randomEvents.js` | **已接线**：收尾读 `resolve`/`decline`，超时与婉拒共用 `decline`（§4 禁则） |
 | `FASHION_CLIENTS` | 服装店 4 位客人 | `minigames/boutique.js` | **已接线** |
-| `HUD` | 资源 pill 标签 | `app.js#paintHud` | 待接线 |
-| `SHOPS_COPY` / `SHOP_LOCKED_HINT` | 五店副文案/玩法/胜负/锁定提示 | `mall/mallView.js`、各 minigame | 待接线 |
-| `OFFLINE` | 离线回执面板 | `app.js#applySettle`、`core/state.js#hydrate` | 待接线 |
-| `GOALS` | 限时目标行 + 续期播报 | `core/state.js#advanceGoal`、`mall/mallView.js#goalLine` | 待接线 |
-| `FAIL` | 按 `actions` reason 码的失败反馈 | 各视图（`FAIL[res.reason] ?? res.toast`） | 待接线 |
-| `SYSTEM` | 存档/静音/坏档提示 | `app.js#renderMore` | 待接线 |
-| `A11Y`（a11y.js） | aria-label / 读屏 / 键盘提示 | 全视图 | `intro` 块已接线，其余待接 |
+| `HUD` | 资源 pill 标签 | `app.js#paintHud` | **已接线**：标签 + `A11Y.hud.*` aria-label 双通道 |
+| `SHOPS_COPY` / `SHOP_LOCKED_HINT` | 五店副文案/玩法/胜负/锁定提示 | `mall/mallView.js`、各 minigame | 部分接线：店卡 `tagline` 与锁定提示已接（mallView）；`howto/win/fail` 仍在各 minigame 本地（7.3） |
+| `OFFLINE` | 离线回执面板 | `app.js#applySettle`、`core/state.js#hydrate` | **已接线**（toast 形态）：`short`/`summary`/`cappedNote` 两处消费，金额先 `formatGold`；面板键（`title/rateNote/sourcesLabel/cta`）待面板化（7.2） |
+| `GOALS` | 限时目标行 + 续期播报 | `core/state.js#advanceGoal`、`mall/mallView.js#goalLine` | **已接线**：`done`/`miss`/`line` 全消费；`renewUp`/`renewDown` 有意不播（§6.2） |
+| `FAIL` | 按 `actions` reason 码的失败反馈 | 各视图（`FAIL[res.reason] ?? res.toast`） | 部分接线：mallView 升级/招聘、mansion 买家具、存档导入已走；roster/labs/minigame 扣费仍直用 `res.toast`（7.2） |
+| `SYSTEM` | 存档/静音/坏档提示 | `app.js#renderMore` | **已接线**（renderMore 全键，含带备份时间戳的 `corruptKept`）；`hydrate` 坏档 toast 仍硬编码（7.3） |
+| `A11Y`（a11y.js） | aria-label / 读屏 / 键盘提示 | 全视图 | `intro`/`hud`/`nav`/`goal`/`dialog`/`app`/`toastRegion` 已接；`minigames`/`offline` 待接 |
 
 形状冻结：`EVENTS` 元素保持 `{ id, title, body, yes, no, reward }`，新增键只允许追加（现渲染器会忽略未知键）；`FASHION_CLIENTS` 保持 `{ need, tags, hint }` 且 `tags` 必须能在服装店 chip 池 + 成衣表中命中「完美改造」分（≥3）。
 
@@ -81,14 +81,15 @@
 - **步进换屏后，焦点交给新屏的 `h2[tabindex="-1"]`**（intro 已实现）：读屏先播标题与幕次，键盘用户按一次 Tab 即达主按钮。
 - 弹窗打开时焦点移入 sheet 内第一个按钮，关闭后**焦点归还触发前的元素**；Tab 在 sheet 内循环（焦点陷阱）。
 - 选中态一律 `aria-pressed` + class `on`（box-shadow 表达），**不占用 outline**——outline 留给 `:focus-visible` 焦点环（DESIGN_SYSTEM §7）。
+- **动作后的重绘不许甩焦点（RUBRIC C2/D2，已落地）**：商场升级/招聘与伙伴培训/派驻改为骨架只建一次、其后原地 diff 文本/禁用态——刚点过的按钮还是原来那个 DOM 节点，焦点自然留在原地。按钮变灰（满级/满员）或整卡重建（签约）时，由 `mallView.js#keepFocus` / `roster.js#restoreFocus` 按「同排可用按钮 → 卡片本身」的候选序把焦点接住，不掉回 body。
 
 ### 5.2 键盘等效
 
 | 场景 | 键位 | 状态 |
 |---|---|---|
 | 开场命名 | 回车 = 提交 | 已实现（intro.js） |
-| 事件弹窗 | Esc = 关闭（等效「拒绝」）、Tab 循环 | 待接线（randomEvents） |
-| 生鲜接货 | ← → 移动菜筐 | 待接线（fresh.js，pointer-only 是 D1 缺口） |
+| 事件弹窗 | Esc = 关闭（等效「婉拒」）、Tab 循环 | 已实现（randomEvents 原生 `<dialog>`，降级分支手动兜） |
+| 生鲜接货 | ← → 移动菜筐 | 已实现（fresh.js；fastfood 另有 1–4 数字键出餐） |
 | 快餐出餐 | Tab 切换餐品、回车出餐 | 原生 button 已可用 |
 | 全局导航 | Tab 顺序 = 视觉顺序 | 原生满足，勿用正 tabindex 破坏 |
 
@@ -121,42 +122,46 @@
 - 离开 < 30 分钟走轻量变体 `OFFLINE.short`（toast 即可），避免「离开 0.1 小时」这类破坏叙事的回执。
 - 封顶文案（`cappedNote`）承担软召回：不指责缺席，用「这座城，需要你回来」把 8 小时上限讲成邀请。
 
+接线现状（Round 3 批次 A+B）：**toast 形态已落地**——`core/state.js#offlineReceipt`（`hydrate` 启动路径）与 `app.js#offlineReceipt`（`applySettle` 运行路径）按「短离开走 `short` / 常规拼 `summary` / 超帽追加 `cappedNote`」消费本块，金额先 `formatGold`、时长先 `toFixed(1)`。回执**面板**形态（`title/rateNote/sourcesLabel/cta` 四键）仍未落地，对应量规 P0-2 的剩余半项（见 7.2）。
+
 ### 6.2 限时目标续期（RUBRIC A5）
 
-续期机制已在 `core/state.js#advanceGoal` 成环（达标升档 / 超时降档），文案层的三条播报规则：
+续期机制已在 `core/state.js#advanceGoal` 成环（达标升档 / 超时降档），播报已全部改走 `GOALS` 键，赏金先 `formatGold`。三条播报规则（Round 3 修订）：
 
-1. **达标**：`GOALS.done`（赏金 + 阅历）紧跟 `GOALS.renewUp`（新档挂牌）——先兑现，再加码，两条 toast 的次序不可颠倒。
+1. **达标**：只播 `GOALS.done`（赏金 + 阅历）一条。`renewUp` **有意不播**——`advanceGoal` 在离线追帧时会循环跨越多档，「done → renewUp」两连每档翻倍刷屏；新档信息由商场目标行挂牌交代（Round 3 简报定案，勿按旧版「两连播」回改）。
 2. **超时**：只播 `GOALS.miss` 一条；降档编号出现在目标行里即可，不重复羞辱。
-3. **目标行**（`GOALS.line`）常驻商场 hero：档位 · 目标额 · 还差 · 剩余时间 · 赏金，全部格式化数值，读屏走 `A11Y.goal` 前缀。
+3. **目标行**（`GOALS.line`）常驻商场 hero：档位 · 目标额 · 还差 · 剩余时间 · 赏金，全部格式化数值，读屏走 `A11Y.goal` 前缀（`mall/mallView.js#goalLine` / `paintGoal` 已落地）。
 
 ---
 
-## 7. 待接线清单（按所有者 · Round 2 复核）
+## 7. 待接线清单（按所有者 · Round 3 批次 A+B 后复核）
 
-复核基准：`app.js`、`mall/mallView.js`、`events/randomEvents.js` 与各 minigame 的现行代码。优先级定义：**P0** = 阻塞 RUBRIC 验收或读屏可用性；**P1** = 功能已有但与 copy/a11y 键双源漂移，需收敛；**P2** = 收尾。
+复核基准：`app.js`、`core/state.js`、`mall/mallView.js`、`home/mansion.js`、`partners/roster.js`、`events/randomEvents.js` 与各 minigame 的现行代码。优先级定义：**P0** = 阻塞 RUBRIC 验收或读屏可用性；**P1** = 功能已有但与 copy/a11y 键双源漂移，需收敛；**P2** = 收尾。
 
-### 7.1 本轮已关闭的缺口（events / minigame 所有者落地）
+### 7.1 已关闭的缺口
 
 - **事件弹窗可达性**：`randomEvents.js` 改用原生 `<dialog>.showModal()`——模态语义与焦点陷阱由平台提供，Esc 经 `cancel` 事件统一走「婉拒」路径；标题/正文挂 `aria-labelledby` / `aria-describedby`；不支持 `<dialog>` 的环境降级为 `role="dialog" aria-modal="true"` + keydown Esc（降级分支只移焦不困焦，属已知限制）。原「Esc + 焦点陷阱」待接项**已关**。
-- **拒绝路径反馈**：事件收尾三路（接受/婉拒/超时错过）均已有专属文案，含少赚金额提示与打扰退避——但字符串落在 `randomEvents.js` 模块内的 `ACCEPT_LINES` / `DECLINE_LINES` / `MISS_LINES` 本地表，`copy.js#EVENTS` 的 `resolve` / `decline` 两键至今零消费。UX 缺口已关，键位归集降级为 P2（见 7.4）。
+- **拒绝路径反馈 + 事件收尾归集**：事件收尾三路（接受/婉拒/超时错过）均有专属文案，含少赚金额提示与打扰退避。`randomEvents.js` 的 `ACCEPT_LINES` / `DECLINE_LINES` / `MISS_LINES` 三张本地表已删，收尾改读 `copy.js#EVENTS` 的 `resolve` / `decline`（漏填回退正文）；超时错过与婉拒结果相同（什么都没损失），按 §4 禁则共用 `decline`，不另设 `miss` 键。弹窗 footer 的 `A11Y.dialog.escHint` 亦已消费。原 P2 归集项**已关**（见 7.4）。
 - **生鲜键盘（D1）**：`fresh.js` 已实现 ←→ 键控筐（`role="application"` + aria-label + 可见提示行），`fastfood.js` 追加 1–4 数字键出餐。功能缺口**已关**；提示文案未取 `A11Y.minigames.*`，归入 7.3 的漂移收敛。
+- **HUD 与全局 ARIA（D3）**：`app.js#paintHud` 改用 `HUD.*` 标签 + `A11Y.hud.*` aria-label 双通道，emoji 降为装饰；根容器、toast 容器与底部导航挂上 `A11Y.app` / `A11Y.toastRegion` / `A11Y.nav.*`。原 7.2 首项**已关**。
+- **商场文案收敛**：`mallView.js` 目标行走 `GOALS.line` 并挂 `A11Y.goal` 读屏前缀，锁定 toast 走 `SHOP_LOCKED_HINT`，店卡副文案接 `SHOPS_COPY[id].tagline`。原 7.3 首项**已关**。
+- **core 播报接 copy（Round 3 批次 A+B，量规 P0-2 部分关）**：`state.js#hydrate` 的离线 toast 经 `offlineReceipt` 消费 `OFFLINE.short/summary/cappedNote`，`advanceGoal` 达标/超时播 `GOALS.done` / `GOALS.miss`，金额一律先 `formatGold` 再进 copy。坏档句仍硬编码（见 7.3）。
+- **豪宅旧价下线（Round 3 批次 A+B，量规 P0-1 关）**：`mansion.js` 私有 `200/bonus` 价目已删，展示价与扣款全走 `actions.buyFurniture` / `furnitureCost`；`buy` 失败走 `FAIL[res.reason] ?? res.toast`，钱不够时追加已 `formatGold` 的「还差 N 金」。
+- **交互重绘保焦点（Round 3 批次 A+B，量规 P0-3 关，C2/D2）**：`mallView` / `roster` 改为骨架只建一次 + 原地 diff，动作后焦点留在原按钮；变灰/换卡时的候选序与 `keepFocus` / `restoreFocus` 两处兜底见 §5.1。
+- **系统文案（更多页）**：`renderMore` 的静音/导出/导入/清空确认全走 `SYSTEM.*`；坏档备注用 `loadCorruptBackup().at` 拿到备份时间戳后走 `SYSTEM.corruptKept`。连同「HUD 与全局 ARIA」条的挂标，原 7.3 renderMore 项**已关**。
 
 ### 7.2 仍开放 —— P0
 
-**组合根（app.js 所有者）**——HUD 接线尚未合入，本节全部保持开放：
-
-- `paintHud`：仍硬编码 emoji+文本。改用 `HUD.*` 标签并挂 `A11Y.hud.*` aria-label——读屏目前只读到裸数字，是 D3 缺口。
-- `applySettle` 离线反馈：仍是单句硬编码 toast（`state.js#hydrate` 同）。RUBRIC A7 要求的回执面板（`OFFLINE.title/summary/rateNote/cappedNote/cta`）完全未落地，短离开变体 `OFFLINE.short` 亦未接。
-- 失败反馈接线：`actions.js` 的 `reason` 码机制已就位且码表已扩（新增 `bad-balance`、`level-max`、`shop-crowded` 等），但没有任何视图走 `FAIL[res.reason] ?? res.toast`——§4 三段式（A6/A10）仍只存在于 copy.js。每个视图各一行改动即可接通；`FAIL` 未覆盖的新码由 `?? res.toast` 兜底，无需先补全码表。
+- 离线回执**面板化**（A7）：toast 文案已接 `OFFLINE` 键（见 §6.1 与 7.1），但回执面板形态仍未落地——`OFFLINE.title/rateNote/sourcesLabel/cta` 四键零消费，`applySettle` 与 `hydrate` 仍以 toast 呈现。对应量规 P0-2 的剩余半项。
+- 失败反馈补全（A6/A10）：`FAIL[res.reason] ?? res.toast` 已在 `mallView.js#runner`（升级/招聘）、`mansion.js#buy`、`app.js` 存档导入三处接通；`roster.js#commit`、`labs.js` 与盲盒/占卜的入场扣费（`payFee`）仍直用 `res.toast`。每处一行改动即可接通；`FAIL` 未覆盖的新码（`bad-balance`、`shop-crowded`…）由 `?? res.toast` 兜底，无需先补全码表。
+- 量规侧仍开的 P0（非文案席位，此处只记账不认领）：**P0-4 取证三件**（C5/C6/D4：内存快照、帧率录制、对比度审计留档）、**P0-5 推进模拟入 `npm test`**（E3）、**P0-6 升级庆祝与 locked 店卡 shake**（A8）、**P0-7 1280 双栏工作台与 legacy token 退役**——清单与验收口径见 `docs/SOTA_RUBRIC.md`。
 
 ### 7.3 仍开放 —— P1（双源漂移，需收敛）
 
-- `mall/mallView.js`：`goalLine` 与锁定 toast 均为本地硬编码，措辞已与 `GOALS.line` / `SHOP_LOCKED_HINT` 漂移；店卡副文案未接 `SHOPS_COPY[id].tagline`；目标行未挂 `A11Y.goal` 读屏前缀。
-- `core/state.js`：`hydrate`（离线 toast、坏档提示）与 `advanceGoal`（达标/超时播报）的硬编码中文未换 `OFFLINE` / `GOALS` / `SYSTEM` 键（core import data 层合法，MODULE_CONTRACT §1）；§6.2 的「`done` → `renewUp` 两连播」未实现，达标目前只播一条。
+- `core/state.js` 坏档句：`hydrate` 的坏档 toast 仍硬编码「旧存档无法识别，已备份原档并开新档」。`SYSTEM.corruptKept` 在此处未接——该键需要备份时间戳，而 `readSaveData` 只返回 `{ data, corrupt }`，不吐 `backupCorrupt` 写入的 `at`；等 `save.js` 在读档路径吐出备份时间再换键（Round 3 简报留给收尾）。「更多」页的坏档备注已带时间戳走 `corruptKept`（见 7.1），两处口径暂不一致。
 - 各 minigame：玩法提示各自硬编码，且比 copy.js 的 `howto` 更准确（fresh/fastfood 的本地版已含键盘说明）；胜负 toast 未接 `SHOPS_COPY[id].win/fail`，键盘提示未取 `A11Y.minigames.*`。**收敛方向：以现行模块内文案为准回写 copy/a11y 键，再让视图消费**——勿用旧键直接覆盖已上线文案。
-- `app.js#renderMore`：导出/坏档提示硬编码未换 `SYSTEM.*`；根容器与 toast 容器未挂 `A11Y.app` / `A11Y.toastRegion`，底部导航未挂 `A11Y.nav.*`。
 
 ### 7.4 仍开放 —— P2（收尾）
 
-- 事件收尾文案归集：把 `randomEvents.js` 三张本地表迁入 `copy.js#EVENTS`（形状冻结允许追加键，超时路径需追加 `miss` 键），或正式废弃 `resolve` / `decline` 两键——二选一，消除双源。弹窗 footer 的 Esc 提示同理（`A11Y.dialog.escHint` 未消费）。
-- **F3（数值）**：`balance.js` 本轮已导出 `rollNextGoal` / `PASSIVE_XP`，但 `EVENT_REWARDS` 仍未导出——`copy.js#EVENTS` 的内联 `reward` 继续沿基线 60–140 金区间，导出后迁为查表（不改经济）。
+- 事件收尾文案归集**已关**：双源已消除，`randomEvents.js` 读 `EVENTS` 的 `resolve` / `decline`，`A11Y.dialog.escHint` 已消费（详见 7.1）；超时与婉拒共用 `decline`，`miss` 键不再需要追加。
+- **F3（数值）**：`balance.js` 已导出 `rollNextGoal` / `PASSIVE_XP`，但 `EVENT_REWARDS` 仍未导出——`copy.js#EVENTS` 的内联 `reward` 继续沿基线 60–140 金区间，导出后迁为查表（不改经济）。
