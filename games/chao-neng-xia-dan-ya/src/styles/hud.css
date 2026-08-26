@@ -119,20 +119,8 @@
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--yolk-500) 65%, transparent));
 }
 
-/* 连击全屏闪光层：JS 重挂 .is-on 播放一次（keyframes 见 fx.css） */
-.fx-combo-flash {
-  position: absolute;
-  inset: 0;
-  z-index: var(--z-flash);
-  pointer-events: none;
-  opacity: 0;
-  background: radial-gradient(
-    58% 46% at 50% 44%,
-    color-mix(in srgb, var(--yolk-100) 85%, transparent) 0%,
-    color-mix(in srgb, var(--yolk-500) 40%, transparent) 42%,
-    transparent 72%
-  );
-}
+/* 连击全屏闪光层 .fx-combo-flash：基础样式与绑定都在 fx.css
+   （游戏 index.html 不加载本文件，juice 类必须在 fx.css 自洽） */
 
 /* ============ 英雄坞 .hero-dock（舞台下方常驻）============ */
 .hero-dock {
@@ -425,31 +413,6 @@
 }
 
 /* ============ 飘字 .fx-float ============
-   JS 设 --fx-x/--fx-y（相对 .stage-frame 的 px）与 --fx-color，
-   播放 kf-float-up 后自删；暴击加 .fx-float--crit */
-.fx-float {
-  position: absolute;
-  left: var(--fx-x, 50%);
-  top: var(--fx-y, 50%);
-  z-index: var(--z-flash);
-  transform: translate(-50%, -50%);
-  font-family: var(--font-num);
-  font-variant-numeric: tabular-nums;
-  font-size: 1.05rem;
-  font-weight: 900;
-  color: var(--fx-color, var(--ink));
-  text-shadow:
-    0 2px 3px rgba(5, 2, 12, 0.85),
-    0 0 10px color-mix(in srgb, var(--fx-color, var(--ink)) 45%, transparent);
-  pointer-events: none;
-  will-change: transform, opacity;
-}
-
-.fx-float--crit {
-  font-size: 1.6rem;
-  -webkit-text-stroke: 1px rgba(5, 2, 12, 0.5);
-}
-
-.fx-float--heal {
-  --fx-color: var(--ok);
-}
+   基础样式与绑定都在 fx.css（同 .fx-combo-flash，juice 类须在 fx.css 自洽）。
+   用法：JS 设 --fx-x/--fx-y 与 --fx-color，播放 kf-float-up 后
+   animationend 自删；暴击加 .fx-float--crit，治疗加 .fx-float--heal。 */

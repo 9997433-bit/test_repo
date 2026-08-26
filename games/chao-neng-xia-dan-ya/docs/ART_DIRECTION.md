@@ -71,7 +71,7 @@
 | 状态（JS 切换） | `.is-*` / `.has-*` | `.is-selected` `.is-active` `.is-locked` `.is-dead` `.is-low` `.is-ready` `.is-fever` `.is-bump` `.is-on` `.is-boss` `.has-item` |
 | 枚举（JS 赋值） | `data-*` | `data-element="fire|ice|thunder"`、`data-school="combo|brute|elemental|collide|support"`、`data-rarity="1..5"`、`data-grade="S|A|B|C"`、`data-tier="0..3"` |
 | 数值（JS 赋值） | 内联自定义属性 | `--value`(条 0..1)、`--energy`(0..1)、`--i`(入场序号)、`--fx-x/--fx-y/--fx-color`(飘字) |
-| 动效工具 | `fx-` 前缀 | `.fx-enter` `.fx-pop-in` `.fx-shake-sm/md/lg` `.fx-float` `.fx-combo-flash` |
+| 动效工具 | `fx-` 前缀 | `.fx-enter` `.fx-pop-in` `.fx-shake-sm/md/lg` `.fx-hitstop(-lg)` `.fx-float` `.fx-combo-flash` |
 | 工具类 | `u-` 前缀 + `.sr-only` | `.u-hidden` `.u-dim` `.u-center` |
 
 ### 组件清单（现成可用）
@@ -125,7 +125,31 @@
 - 数值更新只改内联自定义属性（`--value/--energy`），布局零重排。
 - 连击层级：`data-tier` 0=灰(1–4) / 1=金(5–9) / 2=热橙(10–19) / 3=粉(20+)，满 20 加 `.is-fever`。
 
+### 5.1 Round 2 现网 DOM 对照与 juice 接线（给 Opus-4）
+
+上表是设计系统的理想契约；O4 实际落地的战斗 DOM（`src/ui/screens/battle.js` + `ui.css`）类名不同。
+**juice 类已按现网类名在 `fx.css` 补齐并自洽（不依赖 hud.css）**，接线只需 JS 挂/摘类：
+
+现网结构：`.screen.screen-battle > .battle-canvas + .hud-top + .aim-hint + .hud-dock(.hero-slot.active/.ready…) + .ult-btn(.ready) + .combo-badge(.on/.hot)`
+
+| juice | 挂点（现网） | 触发源（combat 反馈事件） | 类 / 做法 |
+| --- | --- | --- | --- |
+| 命中停顿 | `.battle-canvas` | `kind:"hitstop"`：0.03s 暴击 / 0.09s 技能 / 0.12s 爆蛋（`core/battle.js` 的 `battle.hitStop` 已做逻辑冻结） | 冻结之外重挂 `.fx-hitstop`（duration<0.09）或 `.fx-hitstop-lg`（≥0.09），亮度脉冲让停顿可读，播完移除 |
+| 震屏 | `.battle-canvas`（HUD 不抖，读数可读） | `kind:"shake"`：intensity <0.8 / <1.2 / ≥1.2 | 重挂 `.fx-shake-sm/md/lg`；与 `render.js` 内置 `battle.shakeAmt` canvas 抖动**二选一，勿叠加** |
+| 连击弹跳 | `.combo-badge` | 每次连击 +1 | 重挂 `.is-bump`；20 连加 `.is-fever`（流光渐变字，压过 `.hot`） |
+| 连击闪光 | `.fx-combo-flash` 常驻插入 `.screen-battle` | 每 5 连 / 爆蛋时刻 | 重挂 `.is-on` 播一次；元素反应可内联 `--flash-c: var(--el-fire/-ice/-thunder)` 换色 |
+| 飘字 | `.fx-float` 插入 `.screen-battle` | `kind:"floater"` | 设 `--fx-x/--fx-y/--fx-color`，`animationend` 自删；暴击加 `--crit` |
+| 准星色 | `.battle-canvas` 内 Canvas 绘制 | 瞄准态 `battle.prediction.hitsEnemy` | 取 `--aim-*` tokens 同值 hex，见 §6.3 |
+
+设置映射（O4 在壳层接线，写一次全局生效）：
+
+- `settings.reduceMotion === true` → `<html data-reduced-motion="on">`（false 时移除或设 `"off"`）。
+- `settings.shake === false` → `<html data-screen-shake="off">`，只禁 `.fx-shake-*` 位移，闪光/弹跳/飘字保留。
+- 两通道相互独立；`core/battle.js` 内部对 `shakeAmt`/粒子的现有 gate 保持不变。
+
 ## 6. 动效原则
+
+### 6.1 时长 / 缓动令牌
 
 | 令牌 | 值 | 用途 |
 | --- | --- | --- |
@@ -134,17 +158,38 @@
 | `--dur-3` 260ms | 入场/连击弹跳 | `--ease-pop`（回弹） |
 | `--dur-4` 480ms | 结算盖章/大转场 | `--ease-pop` |
 
-- **只允许动 `transform` / `opacity` / `background-position` / `filter`**，禁止动 width/height/top/left（60fps 红线）。
-- 连击反馈链：命中 → `.combo__count.is-bump` 弹跳 → 每 5 连 `.fx-combo-flash.is-on` 全屏蛋黄闪 → 20 连 `.is-fever` 流光。
-- 震屏三档 `.fx-shake-sm/md/lg`（命中/爆炸/BOSS），只挂 `.stage-frame`。
-- 命中停顿 30ms 由 JS 控制主循环，CSS 不参与。
+### 6.2 硬性规则与战斗反馈链
 
-### reduce-motion 双通道（必须遵守）
+- **只允许动 `transform` / `opacity` / `background-position` / `filter`**，禁止动 width/height/top/left（60fps 红线）。
+- 连击反馈链：命中 → 徽章弹跳 `.is-bump`（设计系统 `.combo__count` / 现网 `.combo-badge`）→ 每 5 连 `.fx-combo-flash.is-on` 全屏蛋黄闪 → 20 连 `.is-fever` 流光。
+- 震屏三档 `.fx-shake-sm/md/lg`：combat `shake` 事件 intensity <0.8 / <1.2 / ≥1.2；挂 `.stage-frame`（设计系统）或 `.battle-canvas`（现网，HUD 不抖）。
+- 命中停顿分两层：逻辑冻结由 JS 主循环承担（`battle.hitStop`：0.03s 暴击 / 0.09s 技能 / 0.12s 爆蛋）；视觉层重挂 `.fx-hitstop`（<0.09s 档，160ms 亮度脉冲）或 `.fx-hitstop-lg`（≥0.09s 档，300ms）。视觉脉冲刻意比冻结长，停顿才可读。
+- 与 ui.css 同元素同属性冲突时（ui.css 在 fx.css 之后加载），fx.css 用双写类名抬特异性（如 `.combo-badge.is-bump.is-bump`），禁止 `!important`（reduce-motion 全局覆盖除外）。
+
+### 6.3 准星与弹道配色（Canvas 契约）
+
+Token 在 `tokens.css`，Canvas（`src/ui/render.js`）读不到 var 时硬编码同值 hex：
+
+| Token | 值 | 用途（现网配方） |
+| --- | --- | --- |
+| `--aim-idle` | `#f6f0e6` | 未锁敌：预测虚线 `rgba(246,240,230,.6)`、端点圆全色 |
+| `--aim-lock` | `#ff6b9d`（=`--neon-pink`） | 锁敌：虚线 `rgba(255,107,157,.95)`、端点圆与命中准星圈全色 |
+| `--aim-fan` | `#ffd447`（=`--yolk-500`） | 发射角度扇形，alpha 0.16 铺底 |
+| `--aim-power-lo` | `#ffd447` | 力度条渐变低段（条底） |
+| `--aim-power-hi` | `#ff4d6d`（=`--danger`） | 力度条渐变满力段（条顶） |
+
+- 锁敌/未锁敌是三重编码：色相（粉↔暖白）+ 明度（95%↔60%）+ 形状（准星圈与十字刻度只在锁敌时画）。禁止只换色。
+- 虚线规格：`setLineDash([7,9])` 3px，`lineDashOffset` 随时间滚动示意弹道方向；端点圆呼吸 alpha 0.3–0.9。
+- reduce-motion 时 Canvas 侧同样收敛：虚线停止滚动、端点停止呼吸（读 `settings.reduceMotion`，JS 侧执行）。
+
+### 6.4 reduce-motion 双通道（必须遵守）
 
 1. 系统通道：`@media (prefers-reduced-motion: reduce)` 自动生效。
 2. 游戏内设置：JS 在 `<html>` 上切 `data-reduced-motion="on|off"`，随存档持久化；`"off"` 可覆盖系统偏好（玩家显式要动效）。
 
-生效时：所有动画压到 1ms 播完（保终态）、全屏闪光与卡面流光 `display:none`、震屏禁用；辉光、边框、配色等静态反馈全部保留，信息不丢失。
+生效时：所有动画压到 1ms 播完（保终态）、全屏闪光与卡面流光 `display:none`、震屏与停顿脉冲 `animation:none`、连击徽章弹跳/流光停成静态渐变字；辉光、边框、配色等静态反馈全部保留，信息不丢失。
+
+另有独立的「屏幕震动」开关通道：`settings.shake === false` → `<html data-screen-shake="off">`，只禁 `.fx-shake-*` 位移（停顿亮度脉冲、闪光、弹跳不受影响）。
 
 ## 7. 无障碍
 
@@ -165,20 +210,26 @@
 7. 弹道预测线：`setLineDash([4,10])`、`rgba(255,212,71,.85)`、3px。
 8. 残影：同形状 alpha 0.25/0.5 两帧拖尾。
 
-## 9. 加载序与文件职责（勿改挂载）
+## 9. 加载序与文件职责
 
-`index.html` 只挂 3 个文件：`tokens.css → layout.css → fx.css`。
-`layout.css` 顶部 `@import` 聚合 `base.css → components.css → hud.css`。
-最终生效序：tokens → base → components → hud → layout → fx（fx 必须最末，reduce-motion 覆盖在其底部）。
+两套挂载并存（Round 2 实测）：
 
-| 文件 | 职责 |
-| --- | --- |
-| `tokens.css` | 全部设计令牌（含旧脚手架别名 `--bg/--panel/--yolk/…` 勿删） |
-| `base.css` | reset、夜市底景、排版、焦点环、滚动条、工具类 |
-| `components.css` | 按钮/卡片/芯片/条/星级/页签/列表/弹窗/toast |
-| `hud.css` | 战斗 HUD 全件 |
-| `layout.css` | 应用壳、招牌、屏幕、舞台框、结算屏、响应式 |
-| `fx.css` | 全部 `@keyframes`、动画绑定、入场工具、reduce-motion |
+- **游戏** `index.html`：`tokens.css → base.css → fx.css → ui.css`（O4 的 `src/ui/ui.css` 最末）。`components/hud/layout` 未被游戏加载。
+- **样板** `gallery.html`：`tokens.css → layout.css(@import base → components → hud) → fx.css`。
+
+由此产生两条铁律：
+
+1. **juice 类必须在 `fx.css` 自洽**（基础样式 + 关键帧 + 绑定都在 fx.css，勿依赖 hud.css）——`.fx-combo-flash`、`.fx-float`、`.fx-hitstop`、`.fx-shake-*` 均已如此。
+2. ui.css 后加载：reduce-motion 全局覆盖靠 `!important` 仍然压得住（含 ui.css 自己的 `pulse` 动画）；其余同元素冲突用双写类名抬特异性（见 §6.2）。
+
+| 文件 | 职责 | 游戏加载 |
+| --- | --- | --- |
+| `tokens.css` | 全部设计令牌（含旧脚手架别名 `--bg/--panel/--yolk/…` 勿删；准星 `--aim-*`） | ✓ |
+| `base.css` | reset、夜市底景、排版、焦点环、滚动条、工具类 | ✓ |
+| `fx.css` | 全部 `@keyframes`、动画绑定、战斗 juice（自洽）、入场工具、reduce-motion / 关震屏通道 | ✓ |
+| `components.css` | 按钮/卡片/芯片/条/星级/页签/列表/弹窗/toast | 仅 gallery |
+| `hud.css` | 战斗 HUD 设计系统全件（现网 HUD 由 ui.css 实现，对照迁移用） | 仅 gallery |
+| `layout.css` | 应用壳、招牌、屏幕、舞台框、结算屏、响应式 | 仅 gallery |
 
 ## 10. 禁止事项
 
