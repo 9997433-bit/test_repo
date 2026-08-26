@@ -28,6 +28,11 @@ export function createStepper(opts = {}) {
     reset() {
       acc = 0;
     },
+    /** 回填未消化的时间余量：读档后续跑不会因为丢掉半步而错开一帧。 */
+    setPending(value) {
+      acc = Number.isFinite(value) && value > 0 ? Math.min(value, step) : 0;
+      return acc;
+    },
     advance(dt, fn) {
       const d = clampDt(dt, maxDt);
       if (d <= 0) return 0;

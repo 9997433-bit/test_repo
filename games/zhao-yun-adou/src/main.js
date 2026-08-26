@@ -15,7 +15,16 @@ const api = createGame({ seed: readSeed() });
 const ui = { selected: -1, selectedCell: -1, hover: -1, toast: "", shake: false };
 
 /** 调试与自动化测试入口：控制台/e2e 脚本可直接读写这局的 api 与 ui 状态。 */
-if (typeof window !== "undefined") window.__zhaoyun = { api, ui };
+if (typeof window !== "undefined") {
+  window.__zhaoyun = {
+    api,
+    ui,
+    /** 可精确续跑的档：带 rng 游标、结算标记与每侧敌人号段。 */
+    save: () => api.serialize({ replay: true }),
+    /** 读档并刷新界面；不写 state.log，存档—读档—存档仍能逐字节对上。 */
+    restore: (snap) => api.load(snap, { log: false }),
+  };
+}
 
 function readSeed() {
   try {
@@ -86,6 +95,12 @@ api.bus.on("resume", () => clearToast());
 api.bus.on("start", () => {
   clearSelection();
   clearToast();
+});
+api.bus.on("load", () => {
+  // 读档换掉了整份 state：选中态指向的是上一局的手牌/棋格，必须丢掉。
+  clearSelection();
+  clearToast();
+  markDirty();
 });
 
 /* ------------------------------------------------------- 增量渲染（核心） */
