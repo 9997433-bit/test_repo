@@ -196,11 +196,14 @@ function syncPlot(node: PlotNode, state: GameState, plot: Plot, selected: boolea
   const guarded = activeSpirit(state)?.wiltGuard === true;
   const button = node.el;
 
+  // data-wet / data-fert / data-stage / .is-selected 是样式层约定的状态钩子
+  // （docs/VISUAL.md §状态钩子），土色、花晕与选中印都靠它们驱动。
   setAttr(button, "data-stage", plot.stage);
   setAttr(button, "data-flower", def?.id ?? "");
   setAttr(button, "data-rarity", def ? String(def.rarity) : "0");
+  setAttr(button, "data-wet", def && need > 0 && filled >= need ? "1" : "0");
+  setAttr(button, "data-fert", plot.fertilized && plot.stage !== "empty" ? "1" : "0");
   setAttr(button, "data-thirsty", thirsty ? "1" : "0");
-  setAttr(button, "data-fertilized", plot.fertilized ? "1" : "0");
   setAttr(button, "data-selected", selected ? "1" : "0");
   setAttr(button, "data-watered", String(plot.watered));
   setAttr(button, "data-water-need", String(need));

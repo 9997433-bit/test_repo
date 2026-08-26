@@ -10,7 +10,6 @@ const PLOT_CSS = `
   -webkit-appearance: none;
   border: 0;
   padding: 0;
-  overflow: hidden;
   isolation: isolate;
   --bloom: #cbb79a;
   --accent: #8a7350;
@@ -24,7 +23,15 @@ const PLOT_CSS = `
   --reach: 0%;
   --leaf-op: 0;
 }
-.garden .plot.is-selected { outline-offset: 2px; }
+
+/*
+ * 与 src/styles/** 的状态钩子协作（契约见 docs/VISUAL.md §状态钩子）：
+ * 视图照常写出 data-wet / data-fert / data-stage / .is-selected，好让土色、
+ * 花晕与选中印生效；但那边用 ::before 画的「单滴水」和 .meta::before 的「肥」
+ * 前缀，在这里已由逐颗水滴与右上角标签取代，重复出现反而挤在一起，故关掉。
+ */
+.garden .plot[data-plot-id][data-stage][data-wet]::before { content: none; }
+.garden .plot[data-plot-id][data-stage][data-fert] .meta::before { content: none; }
 
 .plot-soil {
   position: absolute;
@@ -63,7 +70,7 @@ const PLOT_CSS = `
 
 .plot-glow {
   position: absolute;
-  inset: -12%;
+  inset: 0;
   z-index: 1;
   opacity: 0;
   pointer-events: none;
