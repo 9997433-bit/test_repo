@@ -22,8 +22,8 @@ SOTA 验收条：
 | Round | 状态 | 结论简报 |
 |-------|------|----------|
 | 1 初始构建与基线探索 | 完成 | 见下方《Round 1 结论简报》 |
-| 2 靶向重构与深度优化 | 进行中 | — |
-| 3 SOTA 打磨与最终验收 | 未开始 | — |
+| 2 靶向重构与深度优化 | 完成 | 见下方《Round 2 结论简报》 |
+| 3 SOTA 打磨与最终验收 | 进行中 | — |
 
 ---
 
@@ -81,3 +81,41 @@ SOTA 验收条：
 6. 测试跟上新系统；保持 `tsc` + `npm test` 全绿。
 
 **工作纪律（Round 2 强制）**：只在 `games/my-garden-world/` 工作；**禁止** `git checkout` 把 `/workspace` 切到别的分支；需要隔离请用 `git worktree`；提交推送到 `agent/my-garden-world`。
+
+---
+
+## 《Round 2 结论简报》
+
+相对 Round 1：玩法缺口从「装扮不可见 / 花灵无形 / 无离线」推进到「庭院可赏、花灵可请、离线可结算」。主支 `agent/my-garden-world` 现 **140 测全绿**，tsc 干净。云端 Fable-1 平行实现留在 `cursor/fable1-round2-sota-563e`，**不要整支合并**（会与主支双实现打架）。
+
+### 演进对比
+
+| 项 | Round 1 | Round 2 |
+|----|---------|---------|
+| 装扮 | 只进库存 | 程序化 SVG 入景 + 挂牌聚焦 + 夜灯 |
+| 花灵 | 纯数值 | SVG 形象、HUD 印、驻园灵玉、四季底噪 |
+| 评分 | 易满 100 | 凡/雅/精/神，神品极稀 |
+| 订单 | 可连刷同款 | 在场+刚离场去重；数据层已有 weight |
+| 时间 | 切后台冻结 | 墙钟补算封顶 2h，盛放不枯、订单顺延 |
+| 存档 | 1.5s 硬写 | 去抖 + 隐藏刷盘 + schema v2 回填 |
+| 口碑 | spirit bonus 死字段 | 接入 moodBonus |
+| 邻访 | 无 | UX 设计稿 + 番外折 API，**尚未可玩** |
+
+### 潜在边界风险
+
+- `pickWeighted` 与花种 `hue`/`role` **尚未接入** `spawnOrders` / `scoreArrangement`（GDD Round 3 清单）。
+- `root.dataset.theme` 未写，主题令牌未真正切换。
+- 邻家花园与锚位摆放只在文档；`renderSideStory` 无人调用。
+- 两套离线/陈设实现曾并行，主支以 `engine/offline.ts` + `scene/decor-art.ts` 为准。
+- 旧档 `lastSeenAt` 以加载为准，不会补发；测试曾依赖「不回填」语义，已改。
+
+### SOTA 验收差距（Round 3 必须收敛）
+
+1. **可玩邻家花园**：访邻、帮浇、摘花、回园小结（见 UX.md 六）。
+2. **摆放模式**：锚位 tap-tap，购买即可见可调。
+3. **接线**：`pickWeighted`、色系/章法评分、`dataset.theme`、番外折。
+4. 音量持久化；教程后一次性提示。
+5. README / GDD / UX / VISUAL / SOTA_AUDIT 与代码对齐。
+6. 全量 `tsc` + `npm test` + 构建；交叉核验无回归。
+
+**Round 3 纪律**：只推 `agent/my-garden-world`；禁止切走 `/workspace`；禁止再开平行实现分支往主支硬并。
