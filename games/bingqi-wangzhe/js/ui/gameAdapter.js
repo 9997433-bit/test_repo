@@ -48,12 +48,27 @@ export function hasCoreRuntime(injected) {
  * @returns {{core:boolean,data:boolean,forge:boolean,combat:boolean,ready:boolean}}
  */
 export function inspectCapabilities(injected) {
+  const dataApi = pick(injected, 'data');
+  const forgeApi = pick(injected, 'forge');
+  const combatApi = pick(injected, 'combat');
   const core = hasCoreRuntime(injected);
-  const data = Array.isArray(pick(injected, 'data')?.weapons);
-  const forge = isFn(pick(injected, 'forge')?.forgeWeapon);
-  const combat = isFn(pick(injected, 'combat')?.simulateBattle);
+  const data = Array.isArray(dataApi?.weapons) && Array.isArray(dataApi?.stages);
+  const forge = ['previewForge', 'forgeWeapon', 'enhanceWeapon', 'dismantleWeapon', 'collectIdle']
+    .every((k) => isFn(forgeApi?.[k]));
+  const combat = ['estimatePower', 'simulateBattle', 'generateArenaOpponents']
+    .every((k) => isFn(combatApi?.[k]));
   return { core, data, forge, combat, ready: core && data && forge && combat };
 }
+
+/**
+ * UI 需要、但冻结契约里没有的动词（关卡挑战、竞技对战、上阵、羁绊…）。
+ * 全量接入后它们必须由 Round 2 的编排层显式提供，否则宁可返回「待接入」，
+ * 也不能悄悄落回 mock —— 那会让 core 的存档和 mock 的兵器各说各话。
+ */
+const ORCHESTRATION_VERBS = [
+  'challengeStage', 'arenaFight', 'setLineup', 'clearSlot',
+  'bonds', 'peekIdle', 'weapons', 'weapon', 'campaign', 'arena', 'enhanceCost'
+];
 
 const LABELS = { core: '核心', data: '数据', forge: '锻造', combat: '战斗' };
 
@@ -111,8 +126,22 @@ export function createUiGame(injected, mockOptions = {}) {
   const stateOf = () => injected.state;
   const withState = (fn) => (...args) => fn(stateOf(), ...args);
 
+  // 逻辑层没提供的编排动词一律显式失败，绝不静默回落到 mock。
+  const guards = {};
+  ORCHESTRATION_VERBS.forEach((verb) => {
+    if (isFn(injected[verb])) {
+      guards[verb] = (...args) => injected[verb](...args);
+      return;
+    }
+    guards[verb] = () => {
+      console.warn(`[bqwz/ui] 逻辑层缺少 ${verb}()，该操作已停用（不回落 mock）`);
+      return { ok: false, error: `「${verb}」尚未接入` };
+    };
+  });
+
   return {
     ...base,
+    ...guards,
 
     get state() {
       return stateOf();
