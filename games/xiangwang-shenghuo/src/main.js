@@ -98,11 +98,16 @@ function reducer(state, action) {
   if (type === "village/build") return applyResult(state, build(state, payload), "build");
   if (type === "village/pet") return applyResult(state, petPlay(state, payload), "pet");
 
-  // 换心愿：只把单子撕掉，下一 tick 由 refreshWishes 补新的，不给任何奖励。
+  // 换心愿：撕掉单子，立刻请 refreshWishes 补一张，不给任何奖励。
+  // refreshWishes 只按 meta.day 取模选池子，同一天连换会一直拿到同一张，
+  // 所以这里临时把日子往后推 rerolls 天来换个抽签位，补完再把日子放回去。
   if (type === "village/skip") {
     const wishes = (state.wishes || []).filter((w) => w.wishId !== payload.wishId);
     if (wishes.length === (state.wishes || []).length) return state;
-    return withFx(refreshWishes({ ...state, wishes }), "ui");
+    const rerolls = (state.ui?.rerolls || 0) + 1;
+    const rolled = refreshWishes({ ...state, wishes, meta: { ...state.meta, day: state.meta.day + rerolls } });
+    const next = { ...rolled, meta: { ...rolled.meta, day: state.meta.day } };
+    return withFx(withUi(next, { rerolls }), "ui");
   }
 
   if (type === "meta/mute") {

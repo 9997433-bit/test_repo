@@ -7,6 +7,8 @@ let ctx = null;
 let master = null;
 let muted = false;
 let broken = false;
+/** 没有用户手势之前不建 AudioContext：浏览器只会给一个挂起的空壳。 */
+let armed = false;
 
 /** kind -> [基频, 波形, 时长秒, 音量] */
 const VOICES = {
@@ -54,6 +56,7 @@ export function isMuted() {
 
 /** 首次交互后调用：自动播放策略要求用户手势才能开声。 */
 export function resumeAudio() {
+  armed = true;
   if (muted) return;
   const c = ac();
   if (c && c.state === "suspended") c.resume().catch(() => {});
@@ -76,7 +79,7 @@ function tone(freq, type, dur, gain, delay = 0) {
 }
 
 export function chirp(kind = "ui") {
-  if (muted) return;
+  if (muted || !armed) return;
   const c = ac();
   if (!c) return;
   if (c.state === "suspended") c.resume().catch(() => {});
@@ -89,7 +92,7 @@ export function chirp(kind = "ui") {
 
 /** 升级时的一小段上行音阶。 */
 export function fanfare() {
-  if (muted) return;
+  if (muted || !armed) return;
   if (!ac()) return;
   [523.25, 659.25, 783.99].forEach((f, i) => tone(f, "sine", 0.28, 0.045, i * 0.11));
 }

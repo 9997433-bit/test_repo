@@ -62,7 +62,7 @@ export function createInitialState() {
 
 /** 纯视图状态：选中的种子、打开的房子、飘字、音效信号。存档会带上，缺失时补默认值。 */
 export function createInitialUi() {
-  return { seed: "rice", selected: "wish", toast: null, fx: null };
+  return { seed: "rice", selected: "wish", toast: null, fx: null, rerolls: 0 };
 }
 
 export function advanceTime(state, dtMs) {
