@@ -3,8 +3,9 @@
 export const SEASONS = ["spring", "summer", "autumn", "winter"];
 
 /**
- * unlockLevel：数据契约，farm 系统在 Round 2 接入（plant 时校验 meta.level）。
+ * unlockLevel：farm.canPlant / plant 已按 meta.level 校验（Round 2 落地）。
  * 数值口径见 docs/GDD.md「种植」表：原粮出售利 ≈ 13–33 金/分钟，链路作物偏低、鲜食作物偏高。
+ * 白菜跨春（耐寒菜）：开局在春天，Lv.1 心愿池的「一棵白菜」必须当季可完成（GDD 铁律随附）。
  * @type {Crop[]}
  */
 export const CROPS = [
@@ -12,7 +13,7 @@ export const CROPS = [
   { id: "soy", name: "大豆", seasons: ["spring", "autumn"], growMs: 20_000, seedCost: 10, yieldId: "soybean", yieldQty: 2, xp: 7, unlockLevel: 1 },
   { id: "wheat", name: "小麦", seasons: ["spring", "autumn"], growMs: 16_000, seedCost: 7, yieldId: "wheat", yieldQty: 2, xp: 5, unlockLevel: 1 },
   { id: "corn", name: "玉米", seasons: ["summer"], growMs: 22_000, seedCost: 9, yieldId: "corn", yieldQty: 3, xp: 8, unlockLevel: 3 },
-  { id: "cabbage", name: "白菜", seasons: ["autumn", "winter"], growMs: 14_000, seedCost: 6, yieldId: "cabbage", yieldQty: 2, xp: 4, unlockLevel: 1 },
+  { id: "cabbage", name: "白菜", seasons: ["spring", "autumn", "winter"], growMs: 14_000, seedCost: 6, yieldId: "cabbage", yieldQty: 2, xp: 4, unlockLevel: 1 },
   { id: "tomato", name: "番茄", seasons: ["summer"], growMs: 16_000, seedCost: 8, yieldId: "tomato", yieldQty: 3, xp: 6, unlockLevel: 2 },
   { id: "strawberry", name: "草莓", seasons: ["spring"], growMs: 24_000, seedCost: 14, yieldId: "strawberry", yieldQty: 3, xp: 10, unlockLevel: 3 },
   { id: "cane", name: "甘蔗", seasons: ["summer", "autumn"], growMs: 26_000, seedCost: 12, yieldId: "cane", yieldQty: 2, xp: 9, unlockLevel: 4 },

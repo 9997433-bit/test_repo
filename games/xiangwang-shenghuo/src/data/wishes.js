@@ -1,12 +1,14 @@
 /**
- * 心愿池。奖励口径见 docs/GDD.md「心愿屋」：
- * coin ≈ 需求基准价合计 × 1.0–1.4（多物品 1.6–1.8，w_veg 为开局引导特例）；xp ≈ coin × 0.4–0.45。
- * minLevel：数据契约，refreshWishes 在 Round 2 按 minLevel ≤ 等级 ≤ maxLevel 过滤；
- * 前 9 条为既有条目，顺序与 id 不可变（refreshWishes 按下标取单）。
+ * 心愿池。奖励口径见 docs/GDD.md「心愿屋」铁律 5（Round 2 收紧，全表无特例）：
+ * coin ∈ 需求基准价合计 × [1.0, 1.8]（单品目标 1.0–1.45，多物品/引导 1.6–1.8）；
+ * xp ∈ coin × [0.35, 0.6]。w_veg 已从 2.33× 校准到 1.67×。
+ * minLevel/maxLevel：village.wishCandidates 已双向过滤（Round 2 落地）；
+ * Lv.1 池 = 晒谷/一棵白菜/泡豆子/两把麦子，全部出自 Lv.1 春季可种作物（白菜含春，见 crops.js）。
+ * 前 9 条为既有条目，顺序与 id 不可变（refreshWishes 按下标取单），扩充只许追加。
  */
 export const WISH_POOL = [
   { id: "w_paddy", name: "晒谷", needs: { paddy: 2 }, coin: 18, xp: 10, minLevel: 1, maxLevel: 99 },
-  { id: "w_veg", name: "一棵白菜", needs: { cabbage: 1 }, coin: 14, xp: 8, minLevel: 1, maxLevel: 99 },
+  { id: "w_veg", name: "一棵白菜", needs: { cabbage: 1 }, coin: 10, xp: 5, minLevel: 1, maxLevel: 99 },
   { id: "w_rice", name: "黄米饭", needs: { rice: 2 }, coin: 28, xp: 12, minLevel: 2, maxLevel: 99 },
   { id: "w_egg", name: "荷包蛋", needs: { egg: 2 }, coin: 36, xp: 16, minLevel: 3, maxLevel: 99 },
   { id: "w_tofu", name: "嫩豆腐", needs: { tofu: 1 }, coin: 32, xp: 14, minLevel: 2, maxLevel: 99 },
@@ -37,6 +39,38 @@ export const WISH_POOL = [
   { id: "w_hotpot", name: "全村的暖锅", needs: { hotpot: 1 }, coin: 118, xp: 47, minLevel: 8, maxLevel: 99 },
   { id: "w_feast", name: "招待远客", needs: { bread: 1, milk: 1, tomato_egg: 1 }, coin: 162, xp: 65, minLevel: 6, maxLevel: 99 },
 ];
+
+/* --------------------------------------------- 心愿屋节奏与掉落（数值事实源，Round 2 校准） */
+
+/** 心愿补位间隔：120 游戏分钟 = 2 游戏时（灯哥在座 ×0.85 ≈ 102 分钟）。API_CONTRACT §5.1/§9。 */
+export const WISH_REFRESH_MIN = 120;
+
+/**
+ * 工具基础掉率（Round 2：0.35 → 0.25，Opus-3 接线）。
+ * 量算见 GDD「工具经济」：通关约交 70–90 单，0.25 + 保底后有效掉率 ≈ 0.29，
+ * 期望 23–29 件，对上全程工具汇 ≈ 28 件（锹 10 / 锯 12 / 斧 6）；
+ * 0.35 会多掉三成、后期刷爆，且旧权重给斧 0.35 远超其 6 件总需求。
+ */
+export const WISH_TOOL_DROP = 0.25;
+
+/** 珍珠掉率：终局节日广场（3）+ 珍珠风铃（1）≈ 需 4 颗，全程期望 3–4 颗，保持紧俏。 */
+export const WISH_PEARL_DROP = 0.04;
+
+/** 掉落权重按全程需求比（锹 10 : 锯 12 : 斧 6，锯含温室田改造 ×3；锹的溢出由开田吸收）。 */
+export const TOOL_DROP_WEIGHTS = [
+  ["shovel", 0.4],
+  ["saw", 0.35],
+  ["axe", 0.25],
+];
+
+/**
+ * 保底 = 正规工具来源，取代「开局白送斧锯」的 UI 权宜：
+ * 1) 新档前 3 次交单按序必掉 斧 → 锯 → 锹（解锁 L2 磨坊 / L3 饲料厂 / L3 鸡舍）；
+ * 2) 此后连续 TOOL_PITY_DROUGHT 次未掉工具，下一单必掉（按权重取）。
+ * 配套开局资源 锹×1 / 斧×0 / 锯×0（engine 契约，Opus-4）。
+ */
+export const TOOL_PITY_ORDER = ["axe", "saw", "shovel"];
+export const TOOL_PITY_DROUGHT = 6;
 
 /** 覆盖所有可进背包/心愿需求/资源栏的 id；家具名在 furniture.js 内。 */
 export const ITEM_NAMES = {

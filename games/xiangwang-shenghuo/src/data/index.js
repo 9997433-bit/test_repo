@@ -7,3 +7,4 @@ export * from "./wishes.js";
 export * from "./items.js";
 export * from "./dishes.js";
 export * from "./furniture.js";
+export * from "./levels.js";
