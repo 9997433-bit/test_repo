@@ -27,3 +27,7 @@ export const ENEMIES = [
   // —— 终局（飞升）——
   { id: "dijiang", name: "帝江浑沌", classId: "mo", hp: 2300, atk: 84, element: "earth", lore: "六足四翼，浑敦无面目，是识歌舞——天山之神，终局之卷。" },
 ];
+
+export function enemyById(id) {
+  return ENEMIES.find((e) => e.id === id) ?? ENEMIES[0];
+}

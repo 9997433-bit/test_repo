@@ -22,3 +22,23 @@ export const STAGES = [
   { id: "west_wasteland", name: "西荒风穴", enemyId: "qiongqi", tier: "mahayana", reward: { xp: 1250, qiPills: 170 } },
   { id: "tianshan_chaos", name: "天山浑沌", enemyId: "dijiang", tier: "ascension", reward: { xp: 1500, qiPills: 200 } },
 ];
+
+export function stageById(id) {
+  return STAGES.find((s) => s.id === id) ?? STAGES[0];
+}
+
+export function stageIndex(id) {
+  return STAGES.findIndex((s) => s.id === id);
+}
+
+export function nextStage(id) {
+  const i = stageIndex(id);
+  return i >= 0 && i < STAGES.length - 1 ? STAGES[i + 1] : null;
+}
+
+export function isStageUnlocked(save, stageId) {
+  const i = stageIndex(stageId);
+  if (i <= 0) return true;
+  const prev = STAGES[i - 1];
+  return (save.cleared || []).includes(prev.id);
+}

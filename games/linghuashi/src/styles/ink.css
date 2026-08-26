@@ -228,6 +228,8 @@ button:active, .seal:active {
   box-shadow: inset 0 1px 2px rgba(26, 18, 11, 0.2);
   position: relative;
   overflow: hidden;
+  margin: 6px 0;
+  border-radius: 1px;
 }
 .bar > i {
   display: block;
