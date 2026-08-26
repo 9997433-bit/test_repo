@@ -17,6 +17,7 @@ const { over, winnerId, reason } = isMatchOver(state);
 - `inputs` 缺省视为零输入；`yaw` 传 `null`/缺省表示保持当前朝向（Bot 不给输入不会被扭头）。
 - `step` 的 `dt` 大于 1/60 会自动切子步，60Hz 与 30Hz 结果一致。
 - `state` 全是纯数据，`structuredClone(state)` 后继续 `step` 结果完全一致。
+- 对局结束后 `step` 不会自己停，`isMatchOver(state).over` 为真时由主循环决定收尾（结算界面/继续演出）。
 
 ### Input
 

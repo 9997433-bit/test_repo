@@ -416,6 +416,8 @@ describe("碎地", () => {
     expect(before.alive).toBe(false);
     expect(hasFloorUnder(s, before.x, before.z)).toBe(false);
     expect(s.arena.brokenCount).toBe(1);
+    expect(s.stats.tilesBroken).toBe(1);
+    expect(s.events.some((e) => e.type === "tileBreak" && e.i === before.i)).toBe(true);
   });
 
   it("站在洞上会掉下去并算死", () => {

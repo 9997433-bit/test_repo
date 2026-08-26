@@ -1,7 +1,7 @@
 // 主推进：一次 step 可能切成多个 <=1/60 的子步，保证不同帧率下手感一致。
 
-import { damageTile } from "./arena.js";
 import { PHYSICS } from "./constants.js";
+import { damageFloor } from "./floor.js";
 import { getDeps } from "./deps.js";
 import {
   applyKnockback,
@@ -200,19 +200,7 @@ export function applyHits(state, attacker, hits, source) {
       for (const s of hit.statuses) target.statuses.push({ ...s });
     }
 
-    if (hit.tile) {
-      const r = damageTile(state.arena, hit.tile.x, hit.tile.z, hit.tile.amount);
-      if (r) {
-        pushEvent(state, {
-          type: r.broken ? "tileBreak" : "tileCrack",
-          i: r.tile.i,
-          x: r.tile.x,
-          z: r.tile.z,
-          hp: r.tile.hp,
-        });
-        if (r.broken) state.stats.tilesBroken++;
-      }
-    }
+    if (hit.tile) damageFloor(state, hit.tile.x, hit.tile.z, hit.tile.amount);
 
     attacker.hitsDealt++;
     state.stats.hits++;

@@ -1,8 +1,9 @@
 // 异掌 · 模拟入口。ZERO import of three / DOM。
 // 契约四件套：createMatch / step / getView / isMatchOver。
 
-import { damageTile, isSupported, tileAt } from "./arena.js";
+import { isSupported } from "./arena.js";
 import { getDeps } from "./deps.js";
+import { damageFloor } from "./floor.js";
 
 export { createMatch, getPlayer, activeGlove, activeGloveId, respawnPlayer } from "./state.js";
 export { step, applyHits, ZERO_INPUT } from "./step.js";
@@ -47,9 +48,9 @@ export function getGloves() {
   return getDeps().GLOVES.map((g) => ({ ...g }));
 }
 
-/** 台面伤害入口，combat / 测试都走这里 */
+/** 台面伤害入口，combat / 技能 / 测试都走这里（会发事件、计 stats） */
 export function damageTileAt(state, x, z, amount) {
-  return damageTile(state.arena, x, z, amount);
+  return damageFloor(state, x, z, amount);
 }
 
 /** 脚下有没有台 */
