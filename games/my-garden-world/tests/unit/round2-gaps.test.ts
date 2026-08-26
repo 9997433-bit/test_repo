@@ -1,22 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DECORATIONS } from "../../src/data/decorations";
 import { FLOWERS } from "../../src/data/flowers";
 import { SPIRITS } from "../../src/data/spirits";
 import { TUTORIAL } from "../../src/data/story";
-import { loadState, saveState } from "../../src/engine/save";
-import { startLoop } from "../../src/engine/loop";
+import { applyOfflineCatchUp } from "../../src/engine/offline";
+import {
+  SAVE_DEBOUNCE_MS,
+  flushSave,
+  hasPendingSave,
+  loadState,
+  migrate,
+  resetSaveScheduler,
+  saveState,
+  scheduleSave,
+} from "../../src/engine/save";
 import { createInitialState } from "../../src/engine/state";
+import { decorArt, decorSlot } from "../../src/scene/decor-art";
 import { createGardenView } from "../../src/scene/garden-view";
+import { backfillUnlocks } from "../../src/systems/economy";
 import { refreshSpirits } from "../../src/systems/spirits";
 import { ensureTutorialOrder, spawnOrders } from "../../src/systems/orders";
-import { craft } from "../../src/systems/workshop";
+import { ARRANGEMENT_TIERS, arrangementTier, craft } from "../../src/systems/workshop";
 
 const SAVE_KEY = "my-garden-world:save:v1";
 
 beforeEach(() => {
+  resetSaveScheduler();
   localStorage.clear();
 });
 
 afterEach(() => {
+  resetSaveScheduler();
   vi.useRealTimers();
   vi.restoreAllMocks();
   localStorage.clear();
@@ -32,52 +46,107 @@ describe("offline progress prerequisites", () => {
     expect(loadState().now).toBe(67_890);
   });
 
-  it.skip("settles bounded offline progress when a production settlement API is added", () => {
-    // No offline settlement function is exported yet. Keeping this explicit avoids
-    // pretending that save/load timestamp persistence advances the simulation.
+  it("caps catch-up time while advancing water and protecting order deadlines", () => {
+    const state = createInitialState(0);
+    state.water = 0;
+    state.orders = [
+      {
+        uid: "offline-order",
+        templateId: "offline-template",
+        kind: "resident",
+        title: "离线订单",
+        hint: "",
+        dueAt: 30_000,
+        coin: 10,
+        exp: 5,
+        waterReward: 1,
+      },
+    ];
+
+    const report = applyOfflineCatchUp(state, 60_000, 16_000);
+
+    expect(report).toMatchObject({
+      elapsedMs: 60_000,
+      appliedMs: 16_000,
+      capped: true,
+      water: 2,
+    });
+    expect(state.now).toBe(16_000);
+    expect(state.lastSeenAt).toBe(60_000);
+    expect(state.orders[0]?.dueAt).toBe(46_000);
   });
 });
 
 describe("save cadence", () => {
-  it("coalesces animation frames into one periodic save after 1.5 seconds", () => {
-    vi.useFakeTimers({
-      toFake: ["performance", "requestAnimationFrame", "cancelAnimationFrame"],
-    });
+  it("debounces a burst and writes the latest state once the quiet window ends", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
     const state = createInitialState(0);
     const setItem = vi.spyOn(Storage.prototype, "setItem");
-    const stop = startLoop(() => state, () => undefined);
 
-    vi.advanceTimersByTime(1_499);
+    scheduleSave(state);
+    expect(hasPendingSave()).toBe(true);
+    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS / 2);
+    state.coins = 123;
+    scheduleSave(state);
+
+    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS - 1);
     expect(setItem).not.toHaveBeenCalled();
     expect(localStorage.getItem(SAVE_KEY)).toBeNull();
 
-    vi.advanceTimersByTime(32);
+    vi.advanceTimersByTime(1);
     expect(setItem).toHaveBeenCalledTimes(1);
     expect(JSON.parse(localStorage.getItem(SAVE_KEY) ?? "{}")).toMatchObject({
       schemaVersion: state.schemaVersion,
+      coins: 123,
     });
+    expect(hasPendingSave()).toBe(false);
+  });
 
-    stop();
+  it("flushes a pending save immediately and cancels its timer", () => {
+    vi.useFakeTimers();
+    const state = createInitialState(0);
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+    scheduleSave(state);
+    state.fragments = 9;
+
+    expect(flushSave()).toBe(true);
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY) ?? "{}").fragments).toBe(9);
+    expect(hasPendingSave()).toBe(false);
+
+    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS * 2);
+    expect(setItem).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("arrangement quality labels", () => {
-  it("labels scores below 85 as 小景 and scores from 85 as 精品", () => {
-    const lowState = createInitialState(100);
-    lowState.inventory = { daisy: 2 };
-    const low = craft(lowState, "clay", ["daisy", "daisy"]);
+  it("selects every quality tier at its inclusive score boundary", () => {
+    expect(ARRANGEMENT_TIERS.map((tier) => tier.id)).toEqual([
+      "divine",
+      "fine",
+      "elegant",
+      "common",
+    ]);
+    expect(arrangementTier(0).id).toBe("common");
+    expect(arrangementTier(59).id).toBe("common");
+    expect(arrangementTier(60).id).toBe("elegant");
+    expect(arrangementTier(74).id).toBe("elegant");
+    expect(arrangementTier(75).id).toBe("fine");
+    expect(arrangementTier(91).id).toBe("fine");
+    expect(arrangementTier(92).id).toBe("divine");
+    expect(arrangementTier(100).id).toBe("divine");
+  });
 
-    expect(low).not.toBeNull();
-    expect(low?.score).toBeLessThan(85);
-    expect(low?.name).toContain("小景");
+  it("includes the calculated tier in a crafted arrangement name", () => {
+    const state = createInitialState(200);
+    state.inventory = { daisy: 1, peach: 1 };
 
-    const highState = createInitialState(200);
-    highState.inventory = { daisy: 1, peach: 1 };
-    const high = craft(highState, "clay", ["daisy", "peach"]);
+    const art = craft(state, "clay", ["daisy", "peach"]);
 
-    expect(high).not.toBeNull();
-    expect(high?.score).toBeGreaterThanOrEqual(85);
-    expect(high?.name).toContain("精品");
+    expect(art).not.toBeNull();
+    expect(art?.name).toContain(arrangementTier(art?.score ?? 0).name);
   });
 });
 
@@ -109,9 +178,15 @@ describe("order deduplication boundaries", () => {
     expect(state.orders).toEqual(originalOrders);
   });
 
-  it.skip("deduplicates ordinary order templates when a production dedupe API is added", () => {
-    // spawnOrders currently permits repeated templates; there is no separate
-    // normalizer/deduper to exercise without enforcing a not-yet-shipped policy.
+  it("deduplicates ordinary templates even when random selection repeats", () => {
+    const state = createInitialState();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+
+    spawnOrders(state);
+
+    const templateIds = state.orders.map((order) => order.templateId);
+    expect(templateIds).toHaveLength(3);
+    expect(new Set(templateIds).size).toBe(templateIds.length);
   });
 });
 
@@ -131,14 +206,64 @@ describe("unlock backfill", () => {
     expect(new Set(state.unlockedSpirits).size).toBe(state.unlockedSpirits.length);
   });
 
-  it.skip("backfills level-eligible flowers when a production flower backfill API is added", () => {
-    // addExp only handles levels crossed during the current call. There is no
-    // exported migration/refresh function for old saves missing earlier flowers.
-    expect(FLOWERS.length).toBeGreaterThan(0);
+  it("backfills level-eligible flowers during migration without duplicates", () => {
+    const level = 7;
+    const migrated = migrate(
+      {
+        level,
+        unlockedFlowers: ["daisy", "daisy", "dream-rose", "removed-flower"],
+      },
+      50_000,
+    );
+    const eligible = FLOWERS.filter((flower) => flower.unlockLevel <= level).map(
+      (flower) => flower.id,
+    );
+
+    expect(migrated.unlockedFlowers).toEqual(expect.arrayContaining(eligible));
+    expect(migrated.unlockedFlowers).toContain("dream-rose");
+    expect(migrated.unlockedFlowers).not.toContain("removed-flower");
+    expect(new Set(migrated.unlockedFlowers).size).toBe(migrated.unlockedFlowers.length);
+  });
+
+  it("backfills a live state's missed flowers idempotently", () => {
+    const state = createInitialState();
+    state.level = 7;
+    state.unlockedFlowers = ["daisy"];
+    const eligible = FLOWERS.filter((flower) => flower.unlockLevel <= state.level).map(
+      (flower) => flower.id,
+    );
+
+    const gained = backfillUnlocks(state);
+
+    expect(gained.length).toBeGreaterThan(0);
+    expect(state.unlockedFlowers).toEqual(expect.arrayContaining(eligible));
+    expect(backfillUnlocks(state)).toEqual([]);
+    expect(new Set(state.unlockedFlowers).size).toBe(state.unlockedFlowers.length);
   });
 });
 
 describe("decor rendering", () => {
+  it("provides bounded scene placement and SVG art for every catalog decoration", () => {
+    for (const decor of DECORATIONS) {
+      const slot = decorSlot(decor.id);
+      const svg = decorArt(decor.id, decor.glyph);
+
+      expect(slot.x).toBeGreaterThanOrEqual(0);
+      expect(slot.x).toBeLessThanOrEqual(100);
+      expect(slot.y).toBeGreaterThanOrEqual(0);
+      expect(slot.y).toBeLessThanOrEqual(100);
+      expect(slot.w).toBeGreaterThan(0);
+      expect(["far", "near"]).toContain(slot.depth);
+      expect(svg.startsWith("<svg")).toBe(true);
+      expect(svg.endsWith("</svg>")).toBe(true);
+    }
+  });
+
+  it("renders deterministic fallback art and placement for legacy decor ids", () => {
+    expect(decorSlot("legacy-statue")).toEqual(decorSlot("legacy-statue"));
+    expect(decorArt("legacy-statue", "旧")).toContain(">旧</text>");
+  });
+
   it("renders known and legacy decor entries without duplicating them on stable updates", () => {
     const root = document.createElement("main");
     const view = createGardenView(root, () => undefined);
@@ -147,12 +272,17 @@ describe("decor rendering", () => {
 
     view.update(state, null, null);
     const firstNodes = [...root.querySelectorAll<HTMLElement>(".decor-chip")];
+    const firstSceneNodes = [...root.querySelectorAll<HTMLElement>(".decor-scene .decor-item")];
 
     expect(firstNodes.map((node) => node.textContent)).toEqual(["灯 纱灯", "legacy-statue"]);
+    expect(firstSceneNodes).toHaveLength(2);
+    expect(firstSceneNodes.every((node) => node.querySelector("svg") !== null)).toBe(true);
 
     view.update(state, null, null);
     const stableNodes = [...root.querySelectorAll<HTMLElement>(".decor-chip")];
+    const stableSceneNodes = [...root.querySelectorAll<HTMLElement>(".decor-scene .decor-item")];
     expect(stableNodes).toEqual(firstNodes);
+    expect(stableSceneNodes).toEqual(firstSceneNodes);
     expect(stableNodes).toHaveLength(2);
   });
 
@@ -168,5 +298,7 @@ describe("decor rendering", () => {
 
     const chips = [...root.querySelectorAll<HTMLElement>(".decor-chip")];
     expect(chips.map((node) => node.textContent)).toEqual(["铃 檐下风铃"]);
+    expect(root.querySelector<HTMLElement>('.decor-item[data-decor="chimes"] svg')).not.toBeNull();
+    expect(root.querySelector('.decor-item[data-decor="lantern"]')).toBeNull();
   });
 });
