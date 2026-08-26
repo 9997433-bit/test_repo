@@ -234,7 +234,8 @@ describe("arrangement scoring", () => {
       }
     }
 
-    expect(scoreArrangement(FLOWERS.map((flower) => flower.id), "bronze", "spring")).toBe(100);
+    // 七色俱全的花海会因斑杂与重样章法被折价，不应挤进神品线。
+    expect(scoreArrangement(FLOWERS.map((flower) => flower.id), "bronze", "spring")).toBeLessThan(92);
   });
 });
 

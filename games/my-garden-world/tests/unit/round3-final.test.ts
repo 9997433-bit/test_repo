@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { THEMES } from "../../src/data/decorations";
 import { SIDE_STORIES, TUTORIAL } from "../../src/data/story";
+import {
+  generateNeighborPlots,
+  helpWater,
+  neighborGarden,
+  pickNeighborFlower,
+} from "../../src/engine/neighbors";
 import { loadState, resetSaveScheduler, saveState } from "../../src/engine/save";
 import { createInitialState, type GameState } from "../../src/engine/state";
 import { decorSlot } from "../../src/scene/decor-art";
-import { applyTheme, placeDecor } from "../../src/systems/decorate";
+import {
+  anchorOf,
+  applyTheme,
+  placeAt,
+  placeDecor,
+  stowDecor,
+} from "../../src/systems/decorate";
 import { scoreBreakdown } from "../../src/systems/workshop";
 
 type UnknownRecord = Record<string, unknown>;
@@ -46,7 +58,7 @@ afterEach(() => {
 });
 
 describe("Round 3 optional feature contracts", () => {
-  it("preserves the neighbor entry points until a social-state API is available", () => {
+  it("preserves the neighbor entry points and persists social state when available", () => {
     const state = createInitialState(1_000);
     const social = record(state).social;
 
@@ -67,6 +79,48 @@ describe("Round 3 optional feature contracts", () => {
 
     expect(saveState(state)).toBe(true);
     expect(record(loadState()).social).toEqual(social);
+  });
+
+  it("generates a deterministic useful neighbor garden and persists daily interactions", () => {
+    const first = generateNeighborPlots("sister", 7);
+    const repeated = generateNeighborPlots("sister", 7);
+    expect(repeated).toEqual(first);
+    expect(first.length).toBeGreaterThanOrEqual(4);
+    expect(first.length).toBeLessThanOrEqual(8);
+    expect(first.some((plot) => plot.stage === "bloom")).toBe(true);
+    expect(first.some((plot) => plot.thirsty)).toBe(true);
+
+    const state = createInitialState(10_000);
+    state.level = 5;
+    const garden = neighborGarden(state, "sister");
+    expect(garden).not.toBeNull();
+    if (!garden) return;
+
+    const thirsty = garden.plots.find((plot) => plot.thirsty);
+    const blooming = garden.plots.find((plot) => plot.stage === "bloom");
+    expect(thirsty).toBeDefined();
+    expect(blooming).toBeDefined();
+    if (!thirsty || !blooming) return;
+
+    const homeWater = state.water;
+    const exp = state.exp;
+    expect(helpWater(state, "sister", thirsty.idx)).toBe(true);
+    expect(state.water).toBe(homeWater);
+    expect(state.exp).toBe(exp + 2);
+    expect(state.social.friendship.sister).toBe(1);
+    expect(helpWater(state, "sister", thirsty.idx)).toBe(false);
+    expect(neighborGarden(state, "sister")?.plots[thirsty.idx]).toMatchObject({
+      watered: true,
+      thirsty: false,
+    });
+
+    const picked = pickNeighborFlower(state, "sister", blooming.idx);
+    expect(picked).toBe(blooming.flowerId);
+    expect(picked ? state.inventory[picked] : undefined).toBe(1);
+    expect(pickNeighborFlower(state, "sister", blooming.idx)).toBeNull();
+
+    expect(saveState(state)).toBe(true);
+    expect(loadState().social).toEqual(state.social);
   });
 
   it("persists legacy decor placement and validates anchors when that API is present", () => {
@@ -94,6 +148,34 @@ describe("Round 3 optional feature contracts", () => {
 
     expect(saveState(state)).toBe(true);
     expect(placedIds(loadState())).toEqual(["lantern"]);
+  });
+
+  it("swaps, stows, and restores anchor placements without losing ownership", () => {
+    const state = createInitialState(2_500);
+    state.level = 20;
+    state.fragments = 1_000;
+    expect(placeDecor(state, "lantern")).toBe(true);
+    expect(placeDecor(state, "chimes")).toBe(true);
+
+    const lanternStart = anchorOf(state, "lantern");
+    const chimesStart = anchorOf(state, "chimes");
+    expect(lanternStart).not.toBeNull();
+    expect(chimesStart).not.toBeNull();
+    expect(chimesStart).not.toBe(lanternStart);
+    if (!lanternStart || !chimesStart) return;
+
+    expect(placeAt(state, "chimes", lanternStart)).toBe(true);
+    expect(anchorOf(state, "chimes")).toBe(lanternStart);
+    expect(anchorOf(state, "lantern")).toBe(chimesStart);
+    expect(stowDecor(state, "lantern")).toBe(true);
+    expect(anchorOf(state, "lantern")).toBeNull();
+    expect(placedIds(state)).toEqual(["lantern", "chimes"]);
+
+    expect(saveState(state)).toBe(true);
+    const loaded = loadState();
+    expect(anchorOf(loaded, "chimes")).toBe(lanternStart);
+    expect(anchorOf(loaded, "lantern")).toBeNull();
+    expect(placedIds(loaded)).toEqual(["lantern", "chimes"]);
   });
 
   it("uses the hue palette curve once wired and records the legacy curve until then", () => {

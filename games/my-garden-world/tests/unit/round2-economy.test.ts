@@ -96,7 +96,8 @@ describe("arrangement quality tiers", () => {
     expect(scoreArrangement(springQuad, "bronze", "spring")).toBeGreaterThan(
       scoreArrangement(legendaryMixed, "bronze", "spring"),
     );
-    expect(arrangementTier(scoreArrangement(springQuad, "bronze", "spring")).id).toBe("divine");
+    // 同粉色系的碧桃/牡丹相邻且无衬花，新章法应是精品而非神品。
+    expect(arrangementTier(scoreArrangement(springQuad, "bronze", "spring")).id).toBe("fine");
   });
 
   it("keeps the breakdown consistent with the published score", () => {
