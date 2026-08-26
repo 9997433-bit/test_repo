@@ -42,9 +42,9 @@
 | Fable-2 美术 UX | `claude-fable-5-thinking-xhigh` | 已完成 · 样式已合入 `4a179c5` | `bc-125afe7c-6e8b-5522-8db7-07d2a703a011` |
 | Fable-3 玩法数值 | `claude-fable-5-thinking-xhigh` | 运行中 | `bc-7e78105a-effd-503e-a29c-f4c48c3ea52f` |
 | Fable-4 SOTA 验收 | `claude-fable-5-thinking-xhigh` | 已完成 · 文档已合入 `1e55e1a` | `bc-d1bb33dd-c25c-5103-9de4-9285c4985e6b` |
-| Opus-1 世界引擎 | `claude-opus-5-thinking-high-fast` | 运行中 | `bc-5d5e9cd8-6b71-5918-96d9-fcfe2b9add83` |
+| Opus-1 世界引擎 | `claude-opus-5-thinking-high-fast` | 已完成 · 已合并 `cursor/opus1-world-engine-dd83` | `bc-5d5e9cd8-6b71-5918-96d9-fcfe2b9add83` |
 | Opus-2 探索三线 | `claude-opus-5-thinking-high-fast` | 运行中 | `bc-dd4b6069-cc81-5cfe-9a9a-ef5553e2be73` |
-| Opus-3 英雄战斗 | `claude-opus-5-thinking-high-fast` | 排队待派 | — |
+| Opus-3 英雄战斗 | `claude-opus-5-thinking-high-fast` | 运行中 | `bc-ffd6ff3f-b4e7-59c3-a910-2050fe40d192` |
 | Opus-4 UI 主循环 | `claude-opus-5-thinking-high-fast` | 排队待派 | — |
 | GPT-sol-1 单测探针 | `gpt-5.6-sol-xhigh-fast` | 排队待派 | — |
 | GPT-sol-2 基准压力 | `gpt-5.6-sol-xhigh-fast` | 排队待派 | — |
