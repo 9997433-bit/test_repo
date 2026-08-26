@@ -1,14 +1,39 @@
-import { FLOWERS, FLOWER_MAP } from "../data/flowers";
+import { FLOWERS, FLOWER_MAP, type GrowthStage } from "../data/flowers";
 import { DECORATIONS, THEMES } from "../data/decorations";
 import { SPIRITS } from "../data/spirits";
+import { emit } from "../engine/events";
+import {
+  helpWater,
+  neighborDef,
+  neighborGarden,
+  neighborRoster,
+  pickNeighborFlower,
+  pressingOrders,
+  visitSummary,
+  visitTally,
+  type NeighborPlot,
+  type NeighborStage,
+} from "../engine/neighbors";
 import type { GameState, ActiveOrder } from "../engine/state";
 import { seasonLabel } from "../engine/time";
+import { plotArt } from "../scene/flower-art";
 import { orderParts, orderReady, qualifyingArrangements } from "../systems/orders";
 import { SPIRIT_VISUALS, spiritPortrait } from "../systems/spirits";
 import { scoreArrangement, VASES } from "../systems/workshop";
 import { totalInventory } from "../systems/economy";
+import { renderSideStory } from "./tutorial";
 
-export type PanelId = "seed" | "order" | "workshop" | "decor" | "spirit" | "bag" | null;
+/** app.ts 认得的面板集合。 */
+export type CorePanelId = "seed" | "order" | "workshop" | "decor" | "spirit" | "bag";
+export type PanelId = CorePanelId | null;
+/**
+ * 访邻面板另立 id，不并入 `PanelId`：app.ts 的 `panelSig` 对 `PanelId` 做穷举 switch，
+ * 联合里多一个成员它就编译不过（TS2366），而 app.ts 不在本轮可改文件内。
+ * dock 接线时把 app 的 `panel` 变量换成 `AnyPanelId`、switch 补一个 case 即可，
+ * `renderPanel` 这侧已经认得 "visit"。
+ */
+export const VISIT_PANEL = "visit";
+export type AnyPanelId = PanelId | typeof VISIT_PANEL;
 
 export interface PanelSelection {
   workshopPick: string[];
@@ -37,10 +62,10 @@ const KIND_ZH: Record<ActiveOrder["kind"], string> = {
   group: "盛会",
 };
 
-function head(title: string, onClose: () => void): HTMLElement {
+function head(title: string, onClose: () => void, titleId = "sheet-title"): HTMLElement {
   const h = document.createElement("header");
   h.className = "sheet-head";
-  h.innerHTML = `<h3 id="sheet-title">${title}</h3>`;
+  h.innerHTML = `<h3 id="${titleId}">${title}</h3>`;
   const close = document.createElement("button");
   close.type = "button";
   close.className = "sheet-close";
@@ -342,22 +367,292 @@ function renderBag(sheet: HTMLElement, state: GameState): void {
   sheet.append(list, stats);
 }
 
-const TITLES: Record<Exclude<PanelId, null>, string> = {
+// ---------------------------------------------------------------------------
+// 邻家花园（访邻）· docs/UX.md 六
+// 玩法与数值都归 engine/neighbors.ts（园子生成、每日余量、交情、痕迹）；
+// 这里只做两页渲染：邻居名录 ⇄ 某一家的园子，外加番外折的触发时机。
+// ---------------------------------------------------------------------------
+
+const VISIT_TITLE_ID = "visit-title";
+const VISIT_SHEET_CLASS = "visit-sheet";
+const SEAL_STYLE =
+  "display:inline-grid;place-items:center;width:22px;height:22px;border-radius:5px;" +
+  "background:linear-gradient(155deg,var(--accent-hi,#d98b6a),var(--seal-red,#a6321f));" +
+  "color:#f8ead2;font-family:var(--font-display);font-size:13px;transform:rotate(-4deg)";
+
+/** 串门期间停留的邻居；null 表示停在邻居名录。 */
+let visitFocus: string | null = null;
+/** 邻家园里手上的活，语义同 dock 工具。 */
+let visitTool: "water" | "pick" = "water";
+/** 进园那一刻的战果基线，回园小结按差值报账。 */
+let visitEntryTally = { water: 0, pick: 0 };
+
+function heartRow(n: number): string {
+  return `${"❤".repeat(n)}${"♡".repeat(Math.max(0, 5 - n))}`;
+}
+
+function storyHost(sheet: HTMLElement): HTMLElement {
+  return sheet.closest<HTMLElement>(".app") ?? document.body;
+}
+
+/** 邻家的三段生长映射到自家花卉图形的阶段，圃面观感与自家一致。 */
+const ART_STAGE: Record<NeighborStage, GrowthStage> = { empty: "empty", growing: "bud", bloom: "bloom" };
+
+function plotStatus(plot: NeighborPlot): string {
+  if (plot.picked) return "借花笺 · 已摘";
+  if (plot.watered) return "已浇 · 谢过了";
+  if (plot.stage === "empty") return "空圃";
+  if (plot.stage === "bloom") return "盛放 · 可摘";
+  return plot.thirsty ? "含苞 · 缺水" : "含苞";
+}
+
+function renderNeighborList(sheet: HTMLElement, state: GameState, rerender: () => void): void {
+  const roster = neighborRoster(state);
+  const tip = document.createElement("p");
+  tip.className = "muted";
+  tip.textContent = `帮邻居浇水攒交情，看中的花借一枝回来。今日还可帮浇 ${state.social.waterLeft} 瓢、借 ${state.social.pickLeft} 枝。`;
+
+  const grid = document.createElement("div");
+  grid.className = "grid neighbors";
+  for (const entry of roster) {
+    const { def } = entry;
+    const spent = entry.unlocked && entry.waterLeft === 0 && entry.pickLeft === 0;
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `card neighbor-card${entry.unlocked ? "" : " owned"}`;
+    card.dataset.neighbor = def.id;
+    card.disabled = !entry.unlocked;
+    card.setAttribute(
+      "aria-label",
+      entry.unlocked
+        ? `串门去${def.name}的园子，交情 ${entry.hearts} 颗心，今日可浇 ${entry.waterLeft} 瓢、可摘 ${entry.pickLeft} 枝`
+        : `${def.name}，${def.unlockLevel} 阶后来往`,
+    );
+    card.innerHTML =
+      `<h4><span aria-hidden="true" style="${SEAL_STYLE}">${def.seal}</span>${def.name} <small>${heartRow(entry.hearts)}</small></h4>` +
+      `<div class="muted">${entry.unlocked ? def.greeting : `${def.unlockLevel} 阶后来往`}</div>` +
+      `<div class="muted">${entry.unlocked ? (spent ? "今日已叨扰，明日再来" : `可浇 ${entry.waterLeft} · 可摘 ${entry.pickLeft}`) : "隔篱只见花影"}</div>`;
+    card.addEventListener("click", () => {
+      visitFocus = def.id;
+      visitTool = "water";
+      visitEntryTally = visitTally(state, def.id);
+      rerender();
+      // 首次串门弹一折番外；守卫在 renderSideStory 内，重复调用安静返回 false
+      renderSideStory(storyHost(sheet), state, "fence");
+    });
+    grid.append(card);
+  }
+  sheet.append(tip, grid);
+}
+
+function renderNeighborGarden(sheet: HTMLElement, state: GameState, neighborId: string, rerender: () => void): void {
+  const garden = neighborGarden(state, neighborId);
+  if (!garden) {
+    visitFocus = null;
+    renderNeighborList(sheet, state, rerender);
+    return;
+  }
+  const { def, plots } = garden;
+  const canWater = garden.thirsty > 0 && garden.waterLeft > 0;
+  const canPick = garden.pickable > 0 && garden.pickLeft > 0;
+  if (visitTool === "pick" && !canPick) visitTool = "water";
+
+  const goHome = (): void => {
+    const summary = visitSummary(state, def.id, visitEntryTally);
+    if (summary) emit({ type: "toast", text: summary, tone: "ok" });
+    visitFocus = null;
+    rerender();
+  };
+
+  const banner = document.createElement("div");
+  banner.className = "visit-banner";
+  banner.style.cssText = "display:flex;align-items:center;gap:10px;margin:2px 0 10px";
+  banner.innerHTML =
+    `<span aria-hidden="true" style="${SEAL_STYLE};width:34px;height:34px;font-size:19px;flex:0 0 auto">${def.seal}</span>` +
+    `<span><strong>${def.name}的园子 <small>${heartRow(garden.hearts)}</small></strong>` +
+    `<div class="muted">${garden.greeting}</div></span>`;
+  const home = document.createElement("button");
+  home.type = "button";
+  home.className = "visit-home";
+  home.textContent = "回自家园";
+  home.setAttribute("aria-label", "回自家园子");
+  home.style.marginLeft = "auto";
+  home.addEventListener("click", goHome);
+  banner.append(home);
+  sheet.append(banner);
+
+  // 家里有客急等交花时提一句，别让串门耽误了自家的单
+  if (pressingOrders(state) > 0) {
+    const hurry = document.createElement("p");
+    hurry.className = "muted visit-hurry";
+    hurry.style.color = "var(--vermilion)";
+    hurry.textContent = "家里有客急等交花，串门莫久留。";
+    sheet.append(hurry);
+  }
+
+  const tools = document.createElement("div");
+  tools.className = "bag-row visit-tools";
+  const toolSpec = [
+    { id: "water" as const, label: `帮浇水（余 ${garden.waterLeft}）`, on: canWater, off: `${def.name}园里今日水足` },
+    { id: "pick" as const, label: `摘一枝（余 ${garden.pickLeft}）`, on: canPick, off: "花还没开，改日再摘" },
+  ];
+  for (const t of toolSpec) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = `chip visit-tool${visitTool === t.id ? " is-on" : ""}`;
+    b.dataset.tool = t.id;
+    b.disabled = !t.on;
+    b.setAttribute("aria-pressed", String(visitTool === t.id));
+    b.setAttribute("aria-label", t.on ? t.label : `${t.label}，${t.off}`);
+    b.textContent = t.label;
+    b.addEventListener("click", () => {
+      visitTool = t.id;
+      rerender();
+    });
+    tools.append(b);
+  }
+  sheet.append(tools);
+  if (!canWater || !canPick) {
+    const note = document.createElement("p");
+    note.className = "muted visit-note";
+    note.textContent = toolSpec
+      .filter((t) => !t.on)
+      .map((t) => t.off)
+      .join(" · ");
+    sheet.append(note);
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "grid neighbor-garden";
+  for (const plot of plots) {
+    const flower = plot.flowerId ? FLOWER_MAP[plot.flowerId] : undefined;
+    const done = plot.watered || plot.picked;
+    const actionable = visitTool === "water" ? plot.thirsty && canWater : plot.stage === "bloom" && !plot.picked && canPick;
+    const status = plotStatus(plot);
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = `card visit-plot${done ? " owned" : ""}${actionable ? " is-on" : ""}`;
+    cell.dataset.plotIdx = String(plot.idx);
+    cell.disabled = !actionable;
+    cell.setAttribute("aria-label", `${def.name}家花圃${plot.idx + 1}：${flower?.name ?? "空圃"}，${status}`);
+    const art = document.createElement("span");
+    art.setAttribute("aria-hidden", "true");
+    art.style.cssText = "display:block;height:58px";
+    art.innerHTML = plotArt(flower, ART_STAGE[plot.stage]);
+    art.firstElementChild?.setAttribute("style", "width:100%;height:100%");
+    const cap = document.createElement("span");
+    cap.innerHTML = `<h4>${flower?.name ?? "空圃"}</h4><div class="muted">${status}</div>`;
+    cell.append(art, cap);
+    cell.addEventListener("click", () => {
+      // 先记下手上的活：摘掉最后一枝后重绘会把工具切回浇水
+      const tool = visitTool;
+      const ok = tool === "water" ? helpWater(state, def.id, plot.idx) : pickNeighborFlower(state, def.id, plot.idx) !== null;
+      rerender();
+      if (ok && tool === "pick") renderSideStory(storyHost(sheet), state, "borrow");
+    });
+    grid.append(cell);
+  }
+  sheet.append(grid);
+}
+
+/** 访邻面板：邻居名录 ⇄ 某一家的园子，两页共用一张花笺。 */
+export function renderVisit(sheet: HTMLElement, state: GameState, onClose: () => void): void {
+  const def = visitFocus ? neighborDef(visitFocus) : undefined;
+  if (visitFocus && !def) visitFocus = null;
+  sheet.replaceChildren();
+  sheet.setAttribute("aria-labelledby", VISIT_TITLE_ID);
+  const rerender = (): void => renderVisit(sheet, state, onClose);
+  sheet.append(head(def ? `${def.name}的园子` : TITLES.visit, onClose, VISIT_TITLE_ID));
+  if (def) renderNeighborGarden(sheet, state, def.id, rerender);
+  else renderNeighborList(sheet, state, rerender);
+}
+
+// ---------- 访邻浮层：dock 按钮落地前的入口（见 ui/hud.ts） ----------
+
+let detachVisitSheet: (() => void) | null = null;
+
+export function visitSheetEl(root: HTMLElement): HTMLElement | null {
+  return root.querySelector<HTMLElement>(`.${VISIT_SHEET_CLASS}`);
+}
+
+export function closeVisitSheet(root: HTMLElement): void {
+  detachVisitSheet?.();
+  detachVisitSheet = null;
+  visitSheetEl(root)?.remove();
+  visitFocus = null;
+}
+
+/**
+ * 把访邻面板作为浮层挂在 `.app` 上（而不是 app.ts 的 `.sheets` 容器里）：
+ * 那个容器每帧由 app 按自己的 panel 状态重建，浮层挂进去会被抹掉。
+ * 样式仍复用 `.sheet` 花笺，与 dock 面板同一套观感。
+ */
+export function openVisitSheet(root: HTMLElement, state: GameState): HTMLElement {
+  closeVisitSheet(root);
+  // 借 dock 面板自己的收起按钮请它让位——app 的 panel 状态不归本模块管
+  root.querySelector<HTMLButtonElement>(".sheets .sheet-close")?.click();
+  const sheet = document.createElement("section");
+  sheet.className = `sheet ${VISIT_SHEET_CLASS}`;
+  sheet.setAttribute("role", "region");
+  renderVisit(sheet, state, () => closeVisitSheet(root));
+  root.append(sheet);
+
+  // Esc：园中先退回名录，名录再退出串门（与 UX.md 五「只收最上面一层」一致）
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key !== "Escape") return;
+    if (visitFocus) {
+      visitFocus = null;
+      renderVisit(sheet, state, () => closeVisitSheet(root));
+    } else {
+      closeVisitSheet(root);
+    }
+  };
+  // 去点 dock 就等于回自家园，两张花笺不叠着
+  const onDock = (e: Event): void => {
+    if ((e.target as HTMLElement | null)?.closest?.(".dock")) closeVisitSheet(root);
+  };
+  document.addEventListener("keydown", onKey);
+  root.addEventListener("pointerdown", onDock);
+  detachVisitSheet = (): void => {
+    document.removeEventListener("keydown", onKey);
+    root.removeEventListener("pointerdown", onDock);
+  };
+  return sheet;
+}
+
+/** 开则收、收则开；返回开启后的状态。 */
+export function toggleVisitSheet(root: HTMLElement, state: GameState): boolean {
+  if (visitSheetEl(root)) {
+    closeVisitSheet(root);
+    return false;
+  }
+  openVisitSheet(root, state);
+  return true;
+}
+
+const TITLES: Record<Exclude<AnyPanelId, null>, string> = {
   seed: "花种匣",
   order: "花坊订单",
   workshop: "花艺作坊",
   decor: "庭院装扮",
   spirit: "花灵",
   bag: "花材库存",
+  visit: "邻家花园",
 };
 
-export function renderPanel(host: HTMLElement, id: PanelId, state: GameState, sel: PanelSelection, h: PanelHandlers): void {
+export function renderPanel(host: HTMLElement, id: AnyPanelId, state: GameState, sel: PanelSelection, h: PanelHandlers): void {
   host.replaceChildren();
   if (!id) return;
   const sheet = document.createElement("section");
   sheet.className = "sheet";
   sheet.setAttribute("role", "region");
   sheet.setAttribute("aria-labelledby", "sheet-title");
+  if (id === VISIT_PANEL) {
+    // 访邻自带页头（名录 / 某家园子两页轮换）
+    renderVisit(sheet, state, h.close);
+    host.append(sheet);
+    return;
+  }
   sheet.append(head(TITLES[id], h.close));
   if (id === "seed") renderSeed(sheet, state, sel, h);
   if (id === "order") renderOrder(sheet, state, sel, h);
