@@ -4,12 +4,21 @@
  * GDD：同流派 2 人激活小羁绊，3 人激活大羁绊，4 人以上激活「禽王光环」。
  * 种族另有一层弱羁绊，同样按 2 / 3 / 4 分档。
  *
- * 羁绊表优先读取 `src/data` 导出的 BONDS（Fable-3 负责数值），
- * 数据表缺失时回退到本文件的默认表，保证战斗层可独立运行与单测。
+ * 流派数值以 `src/data` 的 `SYNERGIES` 为准（Fable-3 负责平衡），
+ * 兼容历史契约 `BONDS` / `BOND_TABLE`，两者都缺时回退到本文件的默认表，
+ * 保证战斗层可脱离数据层独立运行与单测。种族羁绊数据层暂无对应表
+ * （`RACE_TECH` 是图鉴收集向的账号科技，不是上场人数羁绊），仍用默认表。
+ *
+ * 数据表的 mod 用的是设计语汇（teamAtkPct / eggBurstMult / stacksToProc…），
+ * 战斗管线只认 `MOD_SPEC` 的扁平修正键，所以中间有一层显式翻译：
+ * - 能落到战斗管线的键 → 翻成 MOD_SPEC 键，进 `mods`
+ * - 物理 / 经济域的键（弹性、钉生蛋、回收返能…）→ 原样进 `raw`，由对应层自取
+ * - 布尔开关 → 进 `flags`
  */
 
 import * as DATA from "../data/index.js";
-import { RACE, SCHOOL } from "./constants.js";
+import { HEROES, SCHOOLS, SYNERGIES } from "../data/index.js";
+import { ELEMENTS, RACE, RACE_ALIAS, SCHOOL } from "./constants.js";
 import { mergeMods, neutralMods } from "./modifiers.js";
 
 /** 激活档位：0 未激活 / 1 小羁绊 / 2 大羁绊 / 3 禽王光环。 */
@@ -106,24 +115,100 @@ export const DEFAULT_RACE_BONDS = {
   },
 };
 
-function dataTable(key) {
-  const bonds = DATA.BONDS ?? DATA.BOND_TABLE ?? null;
-  const table = bonds?.[key];
-  return table && typeof table === "object" ? table : null;
+/**
+ * 数据表 mod 键 → 战斗层修正键的翻译表。
+ * 键名与 `src/data/synergies.js` 顶部的约定一一对应；未列出的键不进 `mods`。
+ */
+const SYNERGY_MOD_MAP = {
+  teamAtkPct: (v) => ({ atkMult: 1 + v }),
+  mainEggMult: (v) => ({ mainEggMult: v }),
+  pierce: (v) => ({ pierce: v }),
+  comboWindowBonusSec: (v) => ({ comboWindowBonus: v }),
+  comboCritDmgPerStack: (v) => ({ comboCritDmgPerStack: v }),
+  critChanceAt10: (v) => ({ critChanceAt10: v }),
+  eggBurstMult: (v) => ({ burstDamageMult: v }),
+  burstKeepStacksPct: (v) => ({ burstKeepStacksPct: v }),
+  elementDmgPct: (v) => ({ elementDamageMult: 1 + v }),
+  reactionMult: (v) => ({ reactionMult: v }),
+  stacksToProc: (v) => ({ elementThresholdDelta: v - ELEMENTS.STACK_MAX }),
+  energyOnReaction: (v) => ({ energyOnReaction: v }),
+  dmgPerBouncePct: (v) => ({ collisionDamageBonus: v }),
+  bounceDmgCapPct: (v) => ({ collisionDamageCap: v }),
+};
+
+/** 把一档数据表 mod 拆成 { mods, flags, raw } 三份。 */
+export function translateSynergyMod(mod) {
+  const mods = {};
+  const flags = {};
+  const raw = {};
+  for (const [key, value] of Object.entries(mod ?? {})) {
+    if (typeof value === "boolean") {
+      flags[key] = value;
+      continue;
+    }
+    const translate = SYNERGY_MOD_MAP[key];
+    if (translate && typeof value === "number" && Number.isFinite(value)) Object.assign(mods, translate(value));
+    else raw[key] = value;
+  }
+  return { mods, flags, raw };
 }
 
-/** 当前生效的流派羁绊表：优先 src/data，其次内置默认表。 */
+/** 把 `SYNERGIES`（按 count 分档）翻成本模块的档位表（按 2/3/4 顺序索引）。 */
+export function synergyBondTable(synergies = SYNERGIES) {
+  const out = {};
+  for (const [key, entry] of Object.entries(synergies ?? {})) {
+    const source = Array.isArray(entry?.tiers) ? entry.tiers : [];
+    if (!source.length) continue;
+    const tiers = BOND_THRESHOLDS.map((count) => {
+      const tier = source.find((t) => t?.count === count);
+      if (!tier) return null;
+      const { mods, flags, raw } = translateSynergyMod(tier.mod);
+      return { name: tier.name ?? `${key} ${count}`, desc: tier.desc ?? "", mods, flags, raw };
+    });
+    out[key] = {
+      name: SCHOOLS?.[key]?.name ?? entry.name ?? key,
+      // 数据表第 3 档本身就叫「禽王光环·X」，不再额外叠一层通用光环
+      crownIncluded: tiers[2] != null,
+      tiers,
+    };
+  }
+  return out;
+}
+
+/**
+ * 历史数据契约：早期约定 src/data 导出 `BONDS` / `BOND_TABLE`。
+ * 用计算属性访问命名空间，既保留兼容，又不会让打包器对「不存在的具名导出」报警。
+ */
+const LEGACY_BOND_KEYS = ["BONDS", "BOND_TABLE"];
+
+function legacyBondTable(kind) {
+  for (const key of LEGACY_BOND_KEYS) {
+    const bag = DATA[key];
+    if (!bag || typeof bag !== "object") continue;
+    const table = bag[`${kind}s`] ?? bag[kind];
+    if (table && typeof table === "object") return table;
+  }
+  return null;
+}
+
+const DATA_SCHOOL_BONDS = synergyBondTable();
+
+/**
+ * 当前生效的流派羁绊表。
+ * 默认表打底（保留数据层没有的 support 流派），数据表按流派逐个覆盖。
+ */
 export function schoolBondTable() {
-  return dataTable("schools") ?? dataTable("school") ?? DEFAULT_SCHOOL_BONDS;
+  const fromData = (Object.keys(DATA_SCHOOL_BONDS).length ? DATA_SCHOOL_BONDS : null) ?? legacyBondTable("school");
+  return fromData ? { ...DEFAULT_SCHOOL_BONDS, ...fromData } : DEFAULT_SCHOOL_BONDS;
 }
 
 /** 当前生效的种族羁绊表。 */
 export function raceBondTable() {
-  return dataTable("races") ?? dataTable("race") ?? DEFAULT_RACE_BONDS;
+  return legacyBondTable("race") ?? DEFAULT_RACE_BONDS;
 }
 
 /** 把英雄 id / 英雄对象统一解析成英雄对象。 */
-export function resolveHero(entry, heroes = DATA.HEROES ?? {}) {
+export function resolveHero(entry, heroes = HEROES ?? {}) {
   if (!entry) return null;
   if (typeof entry === "string") return heroes[entry] ?? { id: entry };
   if (typeof entry === "object") {
@@ -142,14 +227,38 @@ export function bondTier(count) {
   return tier;
 }
 
-function countBy(heroes, key) {
+function countBy(heroes, key, alias = null) {
   const counts = new Map();
   for (const hero of heroes) {
-    const value = hero?.[key];
-    if (!value) continue;
+    const raw = hero?.[key];
+    if (!raw) continue;
+    const value = alias?.[raw] ?? raw;
     counts.set(value, (counts.get(value) ?? 0) + 1);
   }
   return counts;
+}
+
+/**
+ * 低档到高档依次生效，同名键由高档覆盖（数据表 `synergies.js` 的约定）。
+ * 注意这里是「覆盖」不是「连乘」：同一流派的 ×1.25 / ×1.4 只取 ×1.4，
+ * 跨流派 / 跨种族的相乘交给 `mergeMods` 完成。
+ */
+function stackTiers(entry, tier) {
+  const mods = {};
+  const flags = {};
+  const raw = {};
+  const stack = [];
+  let top = null;
+  for (let i = 0; i < tier; i += 1) {
+    const detail = entry.tiers?.[i];
+    if (!detail) continue;
+    Object.assign(mods, detail.mods);
+    Object.assign(flags, detail.flags);
+    Object.assign(raw, detail.raw);
+    if (detail.name) stack.push(detail.name);
+    top = detail;
+  }
+  return { mods, flags, raw, stack, top };
 }
 
 function activate(table, counts, kind) {
@@ -158,19 +267,46 @@ function activate(table, counts, kind) {
     const tier = bondTier(count);
     if (tier === BOND_TIER.NONE) continue;
     const entry = table[key];
-    const detail = entry?.tiers?.[tier - 1];
+    // 表里没有的流派 / 种族不硬造一个空羁绊，免得 HUD 显示「无效果」的条目
+    if (!entry) continue;
+    const { mods, flags, raw, stack, top } = stackTiers(entry, tier);
     out.push({
       kind,
       key,
       count,
       tier,
-      group: entry?.name ?? key,
-      name: detail?.name ?? `${entry?.name ?? key} ${BOND_THRESHOLDS[tier - 1]}`,
-      desc: detail?.desc ?? "",
-      mods: detail?.mods ? { ...detail.mods } : {},
+      group: entry.name ?? key,
+      name: top?.name ?? `${entry.name ?? key} ${BOND_THRESHOLDS[tier - 1]}`,
+      desc: top?.desc ?? "",
+      stack,
+      mods,
+      flags,
+      raw,
+      crownIncluded: entry.crownIncluded === true,
     });
   }
   return out.sort((a, b) => b.tier - a.tier || b.count - a.count || String(a.key).localeCompare(String(b.key)));
+}
+
+/** 布尔开关按「任一激活即生效」合并。 */
+function mergeFlags(bonds) {
+  const out = {};
+  for (const bond of bonds) {
+    for (const [key, value] of Object.entries(bond.flags ?? {})) out[key] = out[key] === true || value === true;
+  }
+  return out;
+}
+
+/** 战斗层不消费的数值（物理 / 经济域）按「取最高档」合并，语义与数据表一致。 */
+function mergeRaw(bonds) {
+  const out = {};
+  for (const bond of bonds) {
+    for (const [key, value] of Object.entries(bond.raw ?? {})) {
+      if (typeof value !== "number" || !Number.isFinite(value)) out[key] = value;
+      else out[key] = typeof out[key] === "number" ? Math.max(out[key], value) : value;
+    }
+  }
+  return out;
 }
 
 /**
@@ -180,21 +316,26 @@ function activate(table, counts, kind) {
  * @param {object} [options]
  * @param {object} [options.heroes] 覆盖英雄表（默认读 src/data）
  * @param {boolean} [options.races] 是否结算种族羁绊，默认 true
- * @returns {{ active: object[], schools: object[], races: object[], crown: object|null, counts: object, mods: object }}
+ * @returns {{
+ *   active: object[], schools: object[], races: object[], crown: object|null,
+ *   counts: object, mods: object, flags: object, raw: object
+ * }}
  */
 export function computeBonds(team = [], options = {}) {
-  const heroes = options.heroes ?? DATA.HEROES ?? {};
+  const heroes = options.heroes ?? HEROES ?? {};
   const withRaces = options.races !== false;
   const roster = (Array.isArray(team) ? team : []).map((e) => resolveHero(e, heroes)).filter(Boolean);
 
   const schoolCounts = countBy(roster, "school");
-  const raceCounts = withRaces ? countBy(roster, "race") : new Map();
+  const raceCounts = withRaces ? countBy(roster, "race", RACE_ALIAS) : new Map();
 
   const schools = activate(schoolBondTable(), schoolCounts, "school");
   const races = withRaces ? activate(raceBondTable(), raceCounts, "race") : [];
 
-  const crown = schools.some((b) => b.tier >= BOND_TIER.CROWN)
-    ? { kind: "aura", key: CROWN_AURA.id, count: 4, tier: BOND_TIER.CROWN, group: CROWN_AURA.name, name: CROWN_AURA.name, desc: CROWN_AURA.desc, mods: { ...CROWN_AURA.mods } }
+  const atCrown = schools.filter((b) => b.tier >= BOND_TIER.CROWN);
+  // 数据表的 4 人档自带「禽王光环·X」，只有内置表才需要额外补一层通用光环
+  const crown = atCrown.length && !atCrown.some((b) => b.crownIncluded)
+    ? { kind: "aura", key: CROWN_AURA.id, count: 4, tier: BOND_TIER.CROWN, group: CROWN_AURA.name, name: CROWN_AURA.name, desc: CROWN_AURA.desc, stack: [CROWN_AURA.name], mods: { ...CROWN_AURA.mods }, flags: {}, raw: {}, crownIncluded: true }
     : null;
 
   const active = [...schools, ...races, ...(crown ? [crown] : [])];
@@ -211,6 +352,8 @@ export function computeBonds(team = [], options = {}) {
       size: roster.length,
     },
     mods,
+    flags: mergeFlags(active),
+    raw: mergeRaw(active),
   };
 }
 

@@ -120,7 +120,9 @@ export function applyEffects(state, effects = [], now = state?.time ?? 0) {
       }
       case EFFECT.COMBO: {
         if (fx.op === "burst") {
-          next.combo = { ...next.combo, value: 0, lastHitAt: now, bursts: (next.combo.bursts ?? 0) + 1, burstUntil: now + (fx.duration || COMBO.BURST_DURATION) };
+          // value = 引爆后保留的层数，默认清零；连击流 4 人羁绊会留一部分
+          const kept = Math.max(0, Math.floor(fx.value ?? 0));
+          next.combo = { ...next.combo, value: kept, lastHitAt: now, bursts: (next.combo.bursts ?? 0) + 1, burstUntil: now + (fx.duration || COMBO.BURST_DURATION) };
           next.stats = { ...next.stats, bursts: (next.stats?.bursts ?? 0) + 1 };
         } else if (fx.op === "reset") {
           next.combo = { ...next.combo, value: 0, lastHitAt: now };
