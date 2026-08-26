@@ -198,7 +198,8 @@ export function tickWorld(state, dt) {
       let batches = recipe.perSec * eff * weather;
       for (const [key, need] of recipe.in) batches = Math.min(batches, (resources[key] || 0) / need);
       if (!(batches > 0)) continue;
-      for (const [key, need] of recipe.in) resources[key] -= need * batches;
+      // 吃满库存时 need×batches 可能被浮点顶出 1 ULP，钳一下免得仓库出现 -1e-18。
+      for (const [key, need] of recipe.in) resources[key] = Math.max(0, resources[key] - need * batches);
       for (const [key, made] of recipe.out) resources[key] = (resources[key] || 0) + made * batches;
     }
   }
