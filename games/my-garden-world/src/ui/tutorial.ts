@@ -36,16 +36,40 @@ export function coachTargetId(state: GameState): string | null {
 /** goal 折的开场折子只看一次（内存态；刷新后重看无妨）。 */
 const introSeen = new Set<string>();
 
+/** 仅最后一折（纯剧情尾声）允许按 Esc 收起教程；goal 折不可跳过。 */
+let escBound = false;
+let escTarget: { state: GameState; onNext: () => void } | null = null;
+
+function bindEsc(state: GameState, onNext: () => void): void {
+  escTarget = { state, onNext };
+  if (escBound) return;
+  escBound = true;
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !escTarget) return;
+    const { state: s, onNext: next } = escTarget;
+    if (s.tutorialDone || s.tutorialStep !== TUTORIAL.length - 1) return;
+    if (currentBeat(s.tutorialStep)?.goal) return;
+    escTarget = null;
+    next();
+  });
+}
+
 export function renderTutorial(host: HTMLElement, state: GameState, onNext: () => void): void {
   host.querySelector(".modal.tutorial")?.remove();
   host.querySelector(".coach")?.remove();
-  if (state.tutorialDone) return;
+  if (state.tutorialDone) {
+    escTarget = null;
+    return;
+  }
   const beat = currentBeat(state.tutorialStep);
   if (!beat) {
     state.tutorialDone = true;
+    escTarget = null;
     return;
   }
+  bindEsc(state, onNext);
   const stepLabel = `第${cn(state.tutorialStep + 1)}折 · 共${cn(TUTORIAL.length)}折`;
+  const isLast = state.tutorialStep === TUTORIAL.length - 1;
 
   if (beat.goal && introSeen.has(beat.id)) {
     const coach = document.createElement("div");
@@ -67,6 +91,7 @@ export function renderTutorial(host: HTMLElement, state: GameState, onNext: () =
     ${beat.objective ? `<p class="objective">◌ 目标 · ${beat.objective}</p>` : ""}
     <p>${beat.body}</p>
     <button type="button" class="cta">${beat.cta}</button>
+    ${isLast ? `<div class="muted esc-hint">按 Esc 键亦可收起</div>` : ""}
   </div>`;
   const btn = box.querySelector("button");
   btn?.addEventListener("click", () => {

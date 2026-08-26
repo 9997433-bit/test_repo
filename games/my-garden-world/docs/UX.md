@@ -13,7 +13,7 @@
 | 三 | `water` | 引一瓢水 | `water` | `watered` | 洒水 |
 | 四 | `harvest` | 剪一枝花 | `harvest` | `harvest` | 收获、施肥 |
 | 五 | `order` | 接头一单 | `order` | `orderDone` | 订单、库存 |
-| 六 | `open` | 自此看花 | 无 | 点按收起 | 花艺、装扮、花灵、扩建 |
+| 六 | `open` | 自此看花 | 无 | 点按或 Esc 收起 | 花艺、装扮、花灵、扩建 |
 
 设计要点：
 
@@ -21,6 +21,7 @@
 - **dock 渐进解锁**：教程期间 dock 按钮按当前折的 `allow` 列表累积点亮（音效/重整常开），当前目标按钮带金圈呼吸高亮（`coach-target`），玩家一眼可见下一步在哪。
 - 推进是**事件驱动**的（planted/watered/harvest/orderDone），不轮询、不锁存也不会回退——完成动作瞬间进入下一折。
 - **保底订单**：第五折若列表中没有雏菊订单，`ensureTutorialOrder` 会补一张长时限的「邻家阿姊」单，防止随机订单让新手卡关。
+- **键盘 Esc**：仅最后一折生效，按下即收起教程开园（折子上有「按 Esc 键亦可收起」提示）；前五折按 Esc 无效，goal 门槛不可跳过。
 
 ### 与 app.ts 的接口契约
 
@@ -84,6 +85,7 @@
 
 ## 五、键盘与读屏
 
+- `Esc`：教程最后一折收起开园（唯一键盘捷径，前五折无效）。
 - 花圃是 `<button>`，天然可 Tab 聚焦、Enter/Space 触发当前工具；每块地的 `aria-label` 播报中文状态（「花圃3：碧桃，含苞，进度百分之60，缺水」）。
 - 工具按钮带 `aria-pressed`，教程折子为 `role="dialog"` 且自动聚焦 cta，toast 区为 `aria-live="polite"`。
 - `prefers-reduced-motion` 下粒子、摇曳与脉冲全部停用。
