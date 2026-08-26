@@ -316,7 +316,11 @@ function updateMatch(state) {
   pushEvent(state, { type: "matchOver", winnerId: m.winnerId, reason: m.reason });
 }
 
-/** 出盘：水平半径超过 arenaRadius + 0.2 且脚下没台，就是掉出去了 */
+/**
+ * 出盘：水平半径超过 arenaRadius + 0.2 且脚下没台，就是掉出去了。
+ * 一掉到台面高度以下就判，不等 y < fallY——`tests/match-lifecycle` 要的是
+ * 「越缘即开始重生计时」，掉到 -8 再判会让重生晚整整 0.8s。
+ */
 function isOffDisk(state, p) {
   if (p.grounded) return false;
   if (p.y > state.arena.floorY) return false;
