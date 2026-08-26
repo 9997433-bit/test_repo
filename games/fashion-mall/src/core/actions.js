@@ -2,7 +2,14 @@ import * as BALANCE from "../data/balance.js";
 import { SHOPS, PARTNERS, FURNITURE, RESEARCH_NODES, OUTFITS } from "../data/balance.js";
 import { grantGold, grantXp, syncUnlocks, tryLevelUp, fromSaveData } from "./state.js";
 import { importSave } from "./save.js";
-import { partnerInfo } from "./economy.js";
+import { partnerInfo, partnersAt } from "./economy.js";
+import {
+  PARTNERS_PER_SHOP_MAX,
+  PARTNER_LEVEL_MAX,
+  SHOP_LEVEL_MAX,
+  partnerLevel,
+  shopLevel,
+} from "./limits.js";
 
 /**
  * 动作层：唯一允许写 state 的入口（settle/tick 管线除外）。
@@ -31,14 +38,28 @@ function fromBalance(name, fallback, ...args) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-export function shopUpgradeCost(level) {
-  const lv = Math.max(1, Math.trunc(Number(level) || 1));
-  return Math.floor(fromBalance("shopUpgradeCost", 80 * 1.45 ** (lv - 1), lv));
+function shopOf(ref) {
+  return typeof ref === "string" ? SHOP_BY_ID.get(ref) : ref || null;
 }
 
-export function shopHireCost(staff) {
+/**
+ * 成本一律走 balance 曲线（ECONOMY §5）：升级/招聘都 ∝ shop.base，
+ * 因此签名带上店铺；等级先钳到帽内，成本不会随手改存档飞到 Infinity。
+ */
+export function shopUpgradeCost(shopRef, level) {
+  const shop = shopOf(shopRef);
+  const lv = shopLevel(level);
+  const fallback = 80 * 1.45 ** (lv - 1);
+  if (!shop) return Math.floor(fallback);
+  return Math.floor(fromBalance("shopUpgradeCost", fallback, shop, lv));
+}
+
+export function shopHireCost(shopRef, staff) {
+  const shop = shopOf(shopRef);
   const n = Math.max(0, Math.trunc(Number(staff) || 0));
-  return Math.floor(fromBalance("shopHireCost", 50 * 1.5 ** n, n));
+  const fallback = 50 * 1.5 ** n;
+  if (!shop) return Math.floor(fallback);
+  return Math.floor(fromBalance("hireCost", fallback, shop, n));
 }
 
 export function furnitureCost(item) {
@@ -46,7 +67,7 @@ export function furnitureCost(item) {
 }
 
 export function partnerTrainCost(level) {
-  const lv = Math.max(1, Math.trunc(Number(level) || 1));
+  const lv = partnerLevel(level);
   return Math.floor(fromBalance("partnerTrainCost", 40 * lv, lv));
 }
 
@@ -54,6 +75,7 @@ export const PARTNER_SHARD_COST = 3;
 
 function spend(state, cost, toast) {
   if (!Number.isFinite(cost) || cost < 0) return fail("bad-cost", "价格异常");
+  if (!Number.isFinite(state.gold)) return fail("bad-balance", "账目异常，稍后再试");
   if (state.gold < cost) return fail("insufficient-gold", toast || "现金不够");
   state.gold -= cost;
   return null;
@@ -64,7 +86,11 @@ export function upgradeShop(state, shopId) {
   const slot = state.shops?.[shopId];
   if (!shop || !slot) return fail("unknown-shop", "没有这家店");
   if (!slot.unlocked) return fail("locked", `主角升到 ${shop.unlockLevel} 级后收购${shop.name}`);
-  const cost = shopUpgradeCost(slot.level);
+  slot.level = shopLevel(slot.level);
+  if (slot.level >= SHOP_LEVEL_MAX) {
+    return fail("level-max", `${shop.name} 已是 Lv.${SHOP_LEVEL_MAX} 满级`);
+  }
+  const cost = shopUpgradeCost(shop, slot.level);
   const denied = spend(state, cost, "现金不够装修");
   if (denied) return denied;
   slot.level += 1;
@@ -77,7 +103,7 @@ export function hireStaff(state, shopId) {
   if (!shop || !slot) return fail("unknown-shop", "没有这家店");
   if (!slot.unlocked) return fail("locked", `主角升到 ${shop.unlockLevel} 级后收购${shop.name}`);
   if (slot.staff >= shop.staffSlots) return fail("slots-full", "工位已满");
-  const cost = shopHireCost(slot.staff);
+  const cost = shopHireCost(shop, slot.staff);
   const denied = spend(state, cost, "发不起工资");
   if (denied) return denied;
   slot.staff += 1;
@@ -99,10 +125,26 @@ export function buyFurniture(state, furnitureId) {
   return ok(`${item.name} 已入宅，离线加成 +${Math.round(item.bonus * 100)}%`);
 }
 
+/**
+ * 前置口径：节点自带 `requires` 时以它为准，否则按 RESEARCH_NODES 顺序取上一条。
+ * 视图里的顺序提示只是提示，真正的门在这里——绕过 UI 也开不出后面的产线。
+ */
+export function researchPrereqs(node) {
+  if (Array.isArray(node?.requires)) {
+    return node.requires.map((id) => RESEARCH_BY_ID.get(id)).filter(Boolean);
+  }
+  const index = RESEARCH_NODES.indexOf(node);
+  return index > 0 ? [RESEARCH_NODES[index - 1]] : [];
+}
+
 export function buyResearch(state, nodeId) {
   const node = RESEARCH_BY_ID.get(nodeId);
   if (!node) return fail("unknown-node", "没有这个研发项");
   if (state.researchDone.includes(node.id)) return fail("done", "已研发");
+  const missing = researchPrereqs(node).filter((n) => !state.researchDone.includes(n.id));
+  if (missing.length) {
+    return fail("missing-prereq", `产线要按顺序上：先把《${missing[0].name}》投产`);
+  }
   const denied = spend(state, node.cost, "研发预算不够");
   if (denied) return denied;
   state.researchDone.push(node.id);
@@ -130,6 +172,10 @@ export function trainPartner(state, partnerId) {
   const p = findPartner(state, partnerId);
   if (!p) return fail("unknown-partner", "查无此人");
   if (!p.owned) return fail("not-owned", "先签约再培训");
+  p.level = partnerLevel(p.level);
+  if (p.level >= PARTNER_LEVEL_MAX) {
+    return fail("level-max", `${partnerInfo(p)?.name || "伙伴"} 已是 Lv.${PARTNER_LEVEL_MAX} 满级`);
+  }
   const cost = partnerTrainCost(p.level);
   const denied = spend(state, cost, "培训费不足");
   if (denied) return denied;
@@ -144,6 +190,14 @@ export function assignPartner(state, partnerId, shopId) {
   if (!p.owned) return fail("not-owned", "先签约再派驻");
   if (shopId !== null && !state.shops?.[shopId]) return fail("unknown-shop", "没有这家店");
   if (shopId !== null && !state.shops[shopId].unlocked) return fail("locked", "这家店还没开");
+  // 一店最多 N 位：没有人数帽时最优解永远是「全员堆同一家店」，其他店成摆设。
+  if (shopId !== null && p.assigned !== shopId) {
+    const here = partnersAt(state, shopId).filter((x) => x.id !== p.id);
+    if (here.length >= PARTNERS_PER_SHOP_MAX) {
+      const shopName = SHOP_BY_ID.get(shopId)?.name || "这家店";
+      return fail("shop-crowded", `${shopName}最多驻 ${PARTNERS_PER_SHOP_MAX} 位伙伴，先撤回一位`);
+    }
+  }
   p.assigned = shopId;
   syncUnlocks(state);
   const shop = SHOP_BY_ID.get(shopId);
