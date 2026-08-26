@@ -505,14 +505,15 @@ function slotBoardHtml(board) {
 }
 
 function slotRuleNote(rule) {
-  if (!rule.shared) return "攻击／防御／通用各有独立槽位，佩满同类后需先卸下一件。";
-  const evict =
-    rule.evicted === "oldest"
-      ? "会顶掉最早佩上的一件"
-      : rule.evicted === "newest"
-        ? "会顶掉最近佩上的一件"
-        : "会顶掉其中一件";
-  return `${rule.total} 格通槽由攻击／防御／通用共用：佩满后再佩戴，${evict}（按钮上会写明顶下谁）。`;
+  const order = rule.evicted === "newest" ? "最近佩上的" : "最早佩上的";
+  if (rule.shared) {
+    return `${rule.total} 格通槽由攻击／防御／通用共用：佩满后再佩戴，会顶掉${order}一件（按钮上会写明顶下谁）。`;
+  }
+  const caps = SLOTS.map((s) => `${SLOT_LABEL[s]} ${rule.caps[s]}`).join(" · ");
+  const deep = SLOTS.some((s) => (rule.caps[s] ?? 0) > 1);
+  return `各槽独立：${caps}，共 ${rule.total} 格。同槽佩满后再佩戴，会顶掉该槽${
+    deep ? order : "原有的"
+  }一件，别的槽位不受牵连（按钮上会写明顶下谁）。`;
 }
 
 export function artifactsView(state) {

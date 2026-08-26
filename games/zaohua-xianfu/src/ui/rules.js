@@ -57,14 +57,23 @@ function probeTotal() {
   return state.equipped.length;
 }
 
-/** 攻击槽塞满后再挂一件防御：挤掉旧件即为共用槽，挤掉的位置即淘汰口径。 */
+/**
+ * 一类槽位塞满后再挂一件：
+ * 挂同类看顶掉谁（最早还是最近），挂别类看旧件还在不在（在＝各槽独立）。
+ */
 function probeEviction(caps) {
+  const slot = SLOTS[0];
+  const cap = Math.max(1, caps[slot]);
   let state = probeBase();
-  for (const id of slotIds(SLOTS[0]).slice(0, Math.max(1, caps[SLOTS[0]]))) state = equipOnce(state, id);
-  const before = state.equipped;
-  const after = equipOnce(state, slotIds(SLOTS[1])[0]).equipped;
-  const goneAt = before.findIndex((id) => !after.includes(id));
-  return { shared: goneAt >= 0, evicted: goneAt < 0 ? null : goneAt === 0 ? "oldest" : "newest" };
+  for (const id of slotIds(slot).slice(0, cap)) state = equipOnce(state, id);
+  const filled = state.equipped;
+  const sameAfter = equipOnce(state, slotIds(slot)[cap]).equipped;
+  const crossAfter = equipOnce(state, slotIds(SLOTS[1])[0]).equipped;
+  const sameGone = filled.findIndex((id) => !sameAfter.includes(id));
+  return {
+    shared: filled.some((id) => !crossAfter.includes(id)),
+    evicted: sameGone < 0 ? null : sameGone === 0 ? "oldest" : "newest",
+  };
 }
 
 let slotRuleCache = null;
