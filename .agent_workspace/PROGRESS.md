@@ -129,8 +129,8 @@
 | 角色 | 状态 | cloud agent id |
 | --- | --- | --- |
 | Fable-1 最终冻结 | 已完成 · 已合并 `cursor/fable1-r3-docs-settle-n1n3n6-ae3c` | `bc-851a1860-8b82-5a56-a8b8-2afb308aae3c` |
-| Fable-2 夜幕单源 | 运行中 | `bc-f98042e4-39b2-520a-9bd2-a93a81a088c3` |
-| Fable-3 事件居民 | 运行中 | `bc-13289e90-e12b-5ce4-9413-6009d810472c` |
+| Fable-2 夜幕单源 | 已完成 · 已合并 `cursor/fable2-night-single-source-88c3` | `bc-f98042e4-39b2-520a-9bd2-a93a81a088c3` |
+| Fable-3 事件居民 | 已完成 · 已合入 `9468e32`/`9562878`/`5611a96`（B30 墙 + 事件/居民表） | `bc-13289e90-e12b-5ce4-9413-6009d810472c` |
 | Fable-4 终验 | 已完成 · 文档已合入 `faf3af6` | `bc-228a10a2-038e-5d71-9efb-9b0467d7042f` |
 | Opus-1 量子巡检 | 已完成 · 已合并 `cursor/r3-opus1-quantum-patrol-and-save-normalize-18ac` | `bc-d42ff8c8-646c-5173-bf98-e1ccb3d318ac` |
 | Opus-2 海区收口 | 运行中 | `bc-12ca2af4-5d0b-5170-bb85-3304022144e7` |
