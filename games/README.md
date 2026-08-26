@@ -18,7 +18,7 @@
 | 兵器王者 | https://9997433-bit.github.io/test_repo/bingqi-wangzhe/ |
 | 灵画师 | 源码在 `games/linghuashi/`，发布后走 `/linghuashi/` |
 | 超能下蛋鸭 | 源码在 `games/chao-neng-xia-dan-ya/`，发布后走 `/chao-neng-xia-dan-ya/` |
-| 我的花园世界 | 源码在 `games/my-garden-world/`，本地 `npm run dev` 走 :5173 |
+| 我的花园世界 | https://9997433-bit.github.io/test_repo/my-garden-world/ |
 
 ```bash
 cd games/my-garden-world && npm install && npm run dev        # :5173

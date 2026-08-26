@@ -1,6 +1,6 @@
 # Project Pages lives at https://9997433-bit.github.io/test_repo/
 # Each game is published under one extra path segment so they never share a root.
-# This job only rebuilds zhao-yun-adou/ and the catalog; it never deletes sibling games.
+# Jobs only replace their own subdirectory plus the catalog; sibling games stay put.
 name: pages
 
 on:
@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - "games/zhao-yun-adou/**"
+      - "games/my-garden-world/**"
       - "pages/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -62,4 +63,52 @@ jobs:
             exit 0
           fi
           git commit -m "deploy: zhao-yun-adou to /zhao-yun-adou/"
+          git push origin HEAD:gh-pages
+
+  deploy-my-garden-world:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/games/my-garden-world/package-lock.json
+
+      - name: Build 我的花园世界
+        working-directory: src/games/my-garden-world
+        run: |
+          npm ci
+          npm run build
+
+      - name: Stage subdirectory + catalog
+        run: |
+          rm -rf site/my-garden-world
+          mkdir -p site/my-garden-world
+          cp -a src/games/my-garden-world/dist/. site/my-garden-world/
+          cp src/pages/index.html site/index.html
+          touch site/.nojekyll
+
+      - name: Publish gh-pages
+        working-directory: site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No Pages changes."
+            exit 0
+          fi
+          git commit -m "deploy: my-garden-world to /my-garden-world/"
           git push origin HEAD:gh-pages
