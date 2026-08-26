@@ -4,6 +4,9 @@ export const HOUR_MS_DEFAULT = 6_000;
 export const DAY_HOURS = 24;
 export const DAYS_PER_SEASON = 7;
 
+/** 离线折算上限：8 真实小时（farm 内同名常量与此对齐）。 */
+export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
+
 /** 升级所需累计经验，索引 i 对应 Lv.(i+1) */
 export const LEVELS = [0, 40, 100, 180, 280, 420, 600, 820, 1100, 1450];
 
@@ -62,7 +65,21 @@ export function createInitialState() {
 
 /** 纯视图状态：选中的种子、打开的房子、飘字、音效信号。存档会带上，缺失时补默认值。 */
 export function createInitialUi() {
-  return { seed: "rice", selected: "wish", toast: null, fx: null, rerolls: 0 };
+  return {
+    seed: "rice",
+    selected: "wish",
+    toast: null,
+    fx: null,
+    rerolls: 0,
+    sellId: null,
+    sellQty: 1,
+    serveTo: null,
+  };
+}
+
+/** 不落盘的换算：把「第几日 + 日内分钟」摊平成一条游戏分钟数轴。 */
+export function absGameMinutes(meta = {}) {
+  return ((meta.day || 1) - 1) * DAY_HOURS * 60 + (meta.gameMinutes || 0);
 }
 
 export function advanceTime(state, dtMs) {

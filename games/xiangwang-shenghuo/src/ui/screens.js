@@ -1,11 +1,31 @@
-import { CROPS, ITEM_NAMES, GUESTS, BUILDINGS, RECIPES, ANIMALS } from "../data/index.js";
+import { CROPS, ITEM_NAMES, GUESTS, BUILDINGS, RECIPES, ANIMALS, FURNITURE } from "../data/index.js";
 import { recipesByBuilding, recipeById } from "../data/recipes.js";
+import { dishByRecipe } from "../data/dishes.js";
+import { priceOf, stallPrice, STALL_MARKUP } from "../data/items.js";
 import { levelProgress, TUTORIAL_TOTAL } from "../core/engine.js";
+import { furnitureWarmth, isPlaced, placedFurniture } from "../core/furniture.js";
 
 const seasonName = { spring: "春", summer: "夏", autumn: "秋", winter: "冬" };
 const RES_KEYS = new Set(["coin", "pearl", "shovel", "axe", "saw"]);
 const SEED_KEYS = 6;
 const TOAST_MS = 2600;
+
+/** 地块状态一律说人话，别让 wilted / untilled 漏到台面上。 */
+const PLOT_LABEL = {
+  untilled: "荒地",
+  empty: "空地",
+  growing: "长着",
+  ready: "熟了",
+  wilted: "枯地",
+};
+const PLOT_TIP = {
+  untilled: "点一下翻土",
+  empty: "点一下播种",
+  growing: "长着呢，别催它",
+  ready: "点一下收获",
+  wilted: "枯了，点一下重新翻土",
+};
+const ROOM_NAME = { hall: "堂屋", kitchen: "灶间", yard: "院子", guestroom: "客房" };
 
 /** 新手引导四步：翻土 → 播种 → 收获 → 进屋看看 */
 export const TUTORIAL = [
@@ -167,6 +187,7 @@ function mount(root) {
     if (act === "seed") call(h.setSeed, id);
     else if (act === "plot") call(h.onPlot, id);
     else if (act === "expand") call(h.expand);
+    else if (act === "harvestall") call(h.harvestAll);
     else if (act === "select") call(h.select, id);
     else if (act === "deliver") call(h.deliver, id);
     else if (act === "skipwish") call(h.skipWish, id);
@@ -178,6 +199,12 @@ function mount(root) {
     else if (act === "unlock") call(h.unlock, b);
     else if (act === "feed") call(h.feed, b);
     else if (act === "cook") call(h.cook, id);
+    else if (act === "serve") call(h.serve, id);
+    else if (act === "sellpick") call(h.pickSell, id);
+    else if (act === "sellstep") call(h.sellQty, Number(id));
+    else if (act === "sellmax") call(h.sellMax);
+    else if (act === "sell") call(h.sell, id, b === "max" ? "max" : Number(b) || undefined);
+    else if (act === "place") call(h.place, id);
     else if (act === "pet") call(h.pet, id);
     else if (act === "mute") call(h.toggleMute);
     else if (act === "save") call(h.save);
@@ -260,15 +287,14 @@ function renderFields(refs, state, tutHint, now, progress, times) {
   const html = state.plots
     .map((p) => {
       const crop = CROPS.find((c) => c.id === p.cropId);
-      const name =
-        p.status === "growing" || p.status === "ready" ? crop?.name || "作物" : p.status === "empty" ? "空地" : p.status === "untilled" ? "荒地" : "枯地";
+      const status = PLOT_LABEL[p.status] || "地块";
+      const name = p.status === "growing" || p.status === "ready" ? crop?.name || "作物" : status;
       const hint =
         (hintTill && (p.status === "untilled" || p.status === "wilted")) ||
         (hintPlant && p.status === "empty") ||
         (hintHarvest && p.status === "ready");
-      const title =
-        p.status === "untilled" || p.status === "wilted" ? "点一下翻土" : p.status === "empty" ? "点一下播种" : p.status === "ready" ? "点一下收获" : "长着呢";
-      return `<button class="plot ${p.status}${hint ? " xw-hint" : ""}" data-act="plot" data-id="${p.id}" title="${title}">
+      const title = PLOT_TIP[p.status] || "看看这块地";
+      return `<button class="plot ${p.status}${hint ? " xw-hint" : ""}" data-act="plot" data-id="${p.id}" title="${esc(`${name}·${status}`)} — ${esc(title)}" aria-label="${esc(`${name}，${status}`)}">
         <span class="xw-plot-name">${esc(name)}${p.greenhouse ? "🏠" : ""}</span>
         <span class="xw-plot-time" data-time="${p.id}"></span>
         ${bar(p.id, 0)}
@@ -282,7 +308,16 @@ function renderFields(refs, state, tutHint, now, progress, times) {
 
   for (const p of state.plots) {
     progress.set(p.id, plotProgress(p, now) * 100);
-    times.set(p.id, p.status === "growing" ? secs(p.doneAt - now) : p.status === "ready" ? "可收" : "");
+    times.set(
+      p.id,
+      p.status === "growing"
+        ? secs(p.doneAt - now)
+        : p.status === "ready"
+          ? "可收"
+          : p.status === "wilted"
+            ? "要重翻"
+            : "",
+    );
   }
 }
 
@@ -340,6 +375,7 @@ function renderToolbar(refs, state, ui, tutHint, now) {
 
   const readyPets = (state.pets || []).filter((p) => !p.readyAt || p.readyAt <= now).length;
   const doneAll = (state.jobs || []).filter((j) => j.status === "done").length;
+  const ripe = state.plots.filter((p) => p.status === "ready").length;
   const needPop = Math.min(2 + state.plots.length, state.resources.popCap);
   const expandOk = state.resources.pop >= needPop && state.resources.coin >= 40 && state.resources.shovel >= 1;
   const html = `
@@ -347,10 +383,11 @@ function renderToolbar(refs, state, ui, tutHint, now) {
       <span class="xw-label">种子</span>${seeds}
     </div>
     <div class="xw-quick">
+      <button class="xw-topbtn${ripe ? " is-go" : ""}" data-act="harvestall" title="H 键：把熟了的地一次收完"${ripe ? "" : " disabled"}>全部收获${ripe ? `（${ripe}）` : ""}</button>
       <button class="xw-topbtn${expandOk ? "" : " is-poor"}" data-act="expand" title="40 金币 · 铁锹×1 · 人手 ${state.resources.pop}/${needPop}">开垦新地（40金 · 锹1 · 人手${needPop}）</button>
       <button class="xw-topbtn" data-act="pet" title="摸一摸换 3 枚金币">${readyPets ? `逗逗宠物（${readyPets}）` : "宠物在打盹"}</button>
       <button class="xw-topbtn" data-act="collectall"${doneAll ? "" : " disabled"}>收走做好的${doneAll ? `（${doneAll}）` : ""}</button>
-      <span class="ghost xw-keys">键盘：1-6 选种子 · S 记下这一天 · M 静音 · Esc 关面板</span>
+      <span class="ghost xw-keys">键盘：1-6 选种子 · H 全部收获 · S 记下这一天 · M 静音 · Esc 关面板</span>
     </div>`;
   setHtml(refs.toolbar, html);
 }
@@ -384,29 +421,18 @@ function renderSide(refs, state) {
 function renderDetail(refs, state, ui, now, progress, times) {
   const id = ui.selected || "wish";
   let html;
-  if (id === "mushroom") html = detailMushroom(state, now, progress, times);
+  if (id === "mushroom") html = detailMushroom(state, now, times);
   else if (id === "wish") html = detailWish(state);
   else if (id === "__build") html = detailBuildList(state);
+  else if (id === "kitchen") html = detailKitchen(state, ui, now, progress, times);
+  else if (id === "stall") html = detailStall(state, ui);
   else html = detailBuilding(state, id, now, progress, times);
   setHtml(refs.detail, html);
 }
 
-function detailMushroom(state, now, progress, times) {
+function detailMushroom(state, now, times) {
   const kitchen = state.buildings.kitchen?.built;
-  const recipes = recipesByBuilding("kitchen");
   const guests = (state.guests || []).map((g) => GUESTS.find((x) => x.id === g.id)).filter(Boolean);
-  const cookRows = recipes
-    .map((r) => {
-      const lack = missingInputs(state, r.inputs);
-      const gate = state.meta.level < r.unlockLevel;
-      return `<div class="xw-line">
-        <span><b>${esc(r.name)}</b><span class="ghost"> 需 ${esc(costEntries(r.inputs))}</span></span>
-        <button class="xw-topbtn" data-act="cook" data-id="${r.id}"${lack.length || gate || !kitchen ? " disabled" : ""}>
-          ${gate ? `Lv.${r.unlockLevel}` : lack.length ? `差 ${esc(lack.join("、"))}` : "开火"}
-        </button>
-      </div>`;
-    })
-    .join("");
   const petRows = (state.pets || [])
     .map((p) => {
       const rest = (p.readyAt || 0) - now;
@@ -420,11 +446,158 @@ function detailMushroom(state, now, progress, times) {
     .join("");
   return `<h2>蘑菇屋</h2>
     <p class="ghost">窗开着。灶上还温着一壶水。</p>
-    <h3 class="xw-h3">灶台${kitchen ? "" : "<span class='ghost'>（还没盖厨房）</span>"}</h3>
-    ${cookRows || "<p class='ghost'>暂时没有能做的菜。</p>"}
+    <h3 class="xw-h3">灶台</h3>
+    ${
+      kitchen
+        ? `<div class="row"><button class="xw-topbtn is-go" data-act="select" data-id="kitchen">去厨房挑一道菜</button></div>`
+        : `<p class="ghost">厨房还没盖起来，只能就着凉水啃干粮。</p>`
+    }
     <h3 class="xw-h3">院子里的两位</h3>
     ${petRows}
-    <p class="ghost">住客：${guests.length ? guests.map((g) => esc(g.name)).join("、") : "还没有客人"}</p>`;
+    <p class="ghost">住客：${guests.length ? guests.map((g) => esc(g.name)).join("、") : "还没有客人"}</p>
+    ${furnitureSection(state)}`;
+}
+
+/* ---------- 屋里的家具 ---------- */
+
+function furnitureSection(state) {
+  const placed = placedFurniture(state);
+  const floor = furnitureWarmth(state);
+  const rooms = new Map();
+  for (const f of FURNITURE) {
+    if (!rooms.has(f.room)) rooms.set(f.room, []);
+    rooms.get(f.room).push(f);
+  }
+  const blocks = [...rooms.entries()]
+    .map(([room, list]) => {
+      const rows = list
+        .map((f) => {
+          const on = isPlaced(state, f.id);
+          const gate = state.meta.level < f.unlockLevel;
+          const lack = missingCost(state, f.cost);
+          const why = on ? "已摆上" : gate ? `等 Lv.${f.unlockLevel}` : lack.length ? `差 ${lack.join("、")}` : "摆上";
+          return `<div class="xw-line${on ? " is-done" : ""}">
+            <span><b>${esc(f.name)}</b><span class="ghost"> 温馨+${f.warmth} · ${esc(costEntries(f.cost))}</span>
+              <span class="ghost xw-furni-desc">${esc(f.desc)}</span></span>
+            <button class="xw-topbtn${on ? " is-on" : ""}" data-act="place" data-id="${f.id}"${on || gate || lack.length ? " disabled" : ""}>${esc(why)}</button>
+          </div>`;
+        })
+        .join("");
+      return `<h4 class="xw-h4">${esc(ROOM_NAME[room] || room)}</h4>${rows}`;
+    })
+    .join("");
+  return `<h3 class="xw-h3">屋里摆什么 <span class="ghost">已摆 ${placed.length}/${FURNITURE.length}${floor ? ` · 温馨保底 ${floor}` : ""}</span></h3>
+    <p class="ghost">摆上就一直在，跨日的冷清也磨不掉这点底子。</p>
+    ${blocks}`;
+}
+
+/* ---------- 厨房：挑一道菜，端给谁 ---------- */
+
+function detailKitchen(state, ui, now, progress, times) {
+  const def = BUILDINGS.find((b) => b.id === "kitchen");
+  if (!state.buildings.kitchen?.built) return unbuiltPanel(state, def);
+
+  const seated = (state.guests || []).map((g) => GUESTS.find((x) => x.id === g.id)).filter(Boolean);
+  const picked = seated.some((g) => g.id === ui.serveTo) ? ui.serveTo : null;
+  const guestRow = seated.length
+    ? seated
+        .map(
+          (g) =>
+            `<button class="xw-topbtn${picked === g.id ? " is-on" : ""}" data-act="serve" data-id="${g.id}" title="爱吃${esc(itemName(g.favorite))}">${picked === g.id ? "✓ " : ""}${esc(g.name)}</button>`,
+        )
+        .join("")
+    : `<span class="ghost">屋里还没客人，做出来先自己吃。</span>`;
+
+  const rows = recipesByBuilding("kitchen")
+    .map((r) => {
+      const dish = dishByRecipe(r.id);
+      const gate = state.meta.level < r.unlockLevel;
+      const lack = missingInputs(state, r.inputs);
+      const fan = seated.find((g) => g.favorite === r.outputId);
+      const target = picked ? seated.find((g) => g.id === picked) : fan || seated[0];
+      const loved = target && target.favorite === r.outputId;
+      const needs = Object.entries(r.inputs)
+        .map(([id, n]) => {
+          const have = state.inv[id] || 0;
+          return `<span class="xw-need${have >= n ? " ok" : ""}">${esc(itemName(id))} ${have}/${n}</span>`;
+        })
+        .join("");
+      return `<div class="xw-dish${!gate && !lack.length ? " can" : ""}">
+        <div class="xw-wish-top">
+          <b>${esc(r.name)}${loved ? `<span class="xw-love">${esc(target.name)}的最爱</span>` : ""}</b>
+          <span class="ghost">温馨+${dish ? dish.warmth : 6} · 幸福+${dish ? dish.happiness : 3}</span>
+        </div>
+        <div class="ghost xw-dish-desc">${esc(dish ? dish.desc : `一道${r.name}。`)}</div>
+        <div class="xw-needs">${needs}</div>
+        <div class="row">
+          <button class="xw-topbtn${!gate && !lack.length ? " is-go" : ""}" data-act="cook" data-id="${r.id}"${gate || lack.length ? " disabled" : ""}>${gate ? `等 Lv.${r.unlockLevel}` : lack.length ? `差 ${esc(lack.join("、"))}` : "开火"}</button>
+          <span class="ghost">出锅 ${esc(itemName(r.outputId))}×${r.outputQty}</span>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  const jobs = (state.jobs || []).filter((j) => j.buildingId === "kitchen" && j.status !== "collected");
+  const jobRows = jobs.length
+    ? `<h3 class="xw-h3">灶上还压着的锅</h3>${renderJobRows(jobs, now, progress, times)}
+       <div class="row"><button class="xw-topbtn is-go" data-act="collect" data-b="kitchen">收走做好的</button></div>`
+    : "";
+
+  return `<h2>厨房</h2>
+    <p class="ghost">菜谱摊在案板上。做出来的菜会进背包，屋里也跟着暖一点。</p>
+    <h3 class="xw-h3">端给谁</h3>
+    <div class="row">${guestRow}</div>
+    <h3 class="xw-h3">今天做点什么</h3>
+    ${rows}
+    ${jobRows}`;
+}
+
+/* ---------- 摊位：把吃不完的挑出去卖 ---------- */
+
+function detailStall(state, ui) {
+  const def = BUILDINGS.find((b) => b.id === "stall");
+  if (!state.buildings.stall?.built) return unbuiltPanel(state, def);
+
+  const entries = Object.entries(state.inv || {}).filter(([, n]) => n > 0);
+  const sellable = entries.filter(([id]) => priceOf(id) > 0).sort((a, b) => priceOf(b[0]) - priceOf(a[0]));
+  const worthless = entries.filter(([id]) => !priceOf(id));
+
+  const sellId = sellable.some(([id]) => id === ui.sellId) ? ui.sellId : null;
+  const stock = sellId ? state.inv[sellId] : 0;
+  const qty = Math.max(1, Math.min(stock || 1, ui.sellQty || 1));
+
+  const rows = sellable
+    .map(
+      ([id, n]) =>
+        `<button class="xw-shelf${sellId === id ? " is-on" : ""}" data-act="sellpick" data-id="${id}" title="单价 ${stallPrice(id, 1)} 金">
+          <span>${esc(itemName(id))}<b>×${n}</b></span>
+          <span class="ghost">${stallPrice(id, 1)} 金/个</span>
+        </button>`,
+    )
+    .join("");
+
+  const deal = sellId
+    ? `<div class="xw-deal">
+        <span><b>${esc(itemName(sellId))}</b><span class="ghost"> 库存 ${stock}</span></span>
+        <div class="row">
+          <button class="xw-topbtn" data-act="sellstep" data-id="-1"${qty <= 1 ? " disabled" : ""}>−</button>
+          <span class="xw-qty">${qty}</span>
+          <button class="xw-topbtn" data-act="sellstep" data-id="1"${qty >= stock ? " disabled" : ""}>+</button>
+          <button class="xw-topbtn" data-act="sellmax"${qty >= stock ? " disabled" : ""}>全都要</button>
+          <button class="xw-topbtn is-go" data-act="sell" data-id="${sellId}">卖出 ${qty} 件 · 约 ${stallPrice(sellId, qty)} 金</button>
+        </div>
+      </div>`
+    : `<p class="ghost">先在货架上点一样东西，再定数量。</p>`;
+
+  return `<h2>摊位</h2>
+    <p class="ghost">摊上价钱是基准价的 ${Math.round(STALL_MARKUP * 100)}%${
+      (state.guests || []).some((g) => GUESTS.find((x) => x.id === g.id)?.buff?.target === "stall")
+        ? "，茶婆婆在场还能再抬一点"
+        : ""
+    }。</p>
+    <div class="xw-shelves">${rows || "<span class='ghost'>筐里没有能卖的东西。</span>"}</div>
+    ${deal}
+    ${worthless.length ? `<p class="ghost">没人收：${worthless.map(([id]) => esc(itemName(id))).join("、")}</p>` : ""}`;
 }
 
 function detailWish(state) {
@@ -470,25 +643,32 @@ function detailBuildList(state) {
   return `<h2>图纸本</h2><p class="ghost">村子能长成什么样，都画在这儿了。</p>${rows}`;
 }
 
-function detailBuilding(state, id, now, progress, times) {
-  const def = BUILDINGS.find((b) => b.id === id);
+function unbuiltPanel(state, def) {
   if (!def) return `<h2>这儿还是一片空地</h2><p class="ghost">点村里的房子看看。</p>`;
-  const built = state.buildings[id]?.built;
-  if (!built) {
-    const gate = state.meta.level < def.unlockLevel;
-    const lack = missingCost(state, def.cost);
-    return `<h2>${esc(def.name)}</h2>
-      <p class="ghost">还只是块地基。造价 ${esc(costEntries(def.cost) || "免费")}，需要 Lv.${def.unlockLevel}。</p>
-      ${lack.length ? `<p class="xw-warn">还差：${esc(lack.join("、"))}</p>` : ""}
-      <div class="row"><button class="xw-topbtn is-go" data-act="build" data-id="${id}"${gate || lack.length ? " disabled" : ""}>${gate ? `等 Lv.${def.unlockLevel}` : "盖起来"}</button></div>`;
-  }
+  const gate = state.meta.level < def.unlockLevel;
+  const lack = missingCost(state, def.cost);
+  return `<h2>${esc(def.name)}</h2>
+    <p class="ghost">还只是块地基。造价 ${esc(costEntries(def.cost) || "免费")}，需要 Lv.${def.unlockLevel}。</p>
+    ${lack.length ? `<p class="xw-warn">还差：${esc(lack.join("、"))}</p>` : ""}
+    <div class="row"><button class="xw-topbtn is-go" data-act="build" data-id="${def.id}"${gate || lack.length ? " disabled" : ""}>${gate ? `等 Lv.${def.unlockLevel}` : "盖起来"}</button></div>`;
+}
 
-  const slots = state.buildings[id]?.slotCount || def.slots || 2;
-  const jobs = (state.jobs || []).filter((j) => j.buildingId === id && j.status !== "collected");
-  const animal = ANIMALS.find((a) => a.buildingId === id);
-  const recipes = recipesByBuilding(id);
+const KIND_NOTE = {
+  cap: "村子又住得下四口人了。",
+  pop: "多了一户人家，田里就多一双手。",
+  pets: "小花和小团有地方撒欢，摸一摸多给两枚金币。",
+  farm: "玻璃罩子一扣，地里就不认季节了。",
+  guest: "多出两个客位，来串门的能多住几位。",
+  freight: "码头空着，等以后的大买卖。",
+  festival: "广场铺好了，就等一场热闹。",
+};
 
-  const jobRows = jobs
+function detailPlainBuilding(def) {
+  return `<h2>${esc(def.name)}</h2><p class="ghost">${esc(KIND_NOTE[def.kind] || "盖好了，安安静静立在村里。")}</p>`;
+}
+
+function renderJobRows(jobs, now, progress, times) {
+  return jobs
     .map((j) => {
       const total = jobTotalMs(j);
       const left = j.doneAt - now;
@@ -501,6 +681,20 @@ function detailBuilding(state, id, now, progress, times) {
       </div>`;
     })
     .join("");
+}
+
+function detailBuilding(state, id, now, progress, times) {
+  const def = BUILDINGS.find((b) => b.id === id);
+  if (!def || !state.buildings[id]?.built) return unbuiltPanel(state, def);
+
+  const jobs = (state.jobs || []).filter((j) => j.buildingId === id && j.status !== "collected");
+  const animal = ANIMALS.find((a) => a.buildingId === id);
+  const recipes = recipesByBuilding(id);
+  // 社区、民居这类房子没有工位也没有配方，别给它们摆一副空炉子。
+  if (!def.slots && !animal && !recipes.length && !jobs.length) return detailPlainBuilding(def);
+
+  const slots = state.buildings[id]?.slotCount || def.slots || 2;
+  const jobRows = renderJobRows(jobs, now, progress, times);
 
   const recipeRows = recipes
     .map((r) => {
