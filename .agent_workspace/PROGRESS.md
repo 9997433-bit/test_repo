@@ -96,9 +96,9 @@
 | A | R3-G1 全盘核验脚本 | gpt-sol | 已完成，verify.mjs 已合入 | `bc-7b0e529c-bafa-57f9-8efd-17ca835ec897` |
 | B | R3-O2 README验收 | opus-fast | 已完成，README 已合入并校正为 92 测 | `bc-5844b91c-68e7-5806-84a9-ab220c537967` |
 | B | R3-O3 焦点保持 | opus-fast | 已完成，mallView/roster 原地更新已合入 | `bc-cb76042f-15ce-50d3-9710-b8ac7d719c2a` |
-| C | R3-O4 升级庆祝 | opus-fast | 派发中 | — |
-| C | R3-G2 推进模拟入测 | gpt-sol | 派发中 | — |
-| C | R3-F4 UX 文档冻结 | fable | 派发中 | — |
+| C | R3-O4 升级庆祝 | opus-fast | 运行中 | `bc-a3042ee9-eff2-5c1b-baf4-22d0d114a7d2` |
+| C | R3-G2 推进模拟入测 | gpt-sol | 运行中 | `bc-a52b9afe-113b-576c-aead-1a3d22d58b9f` |
+| C | R3-F4 UX 文档冻结 | fable | 运行中 | `bc-211ebb49-e9ec-54df-b845-c0b8705d31c9` |
 
 ## 已实现基线（Parent 预置）
 
