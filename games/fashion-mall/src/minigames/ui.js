@@ -59,8 +59,7 @@ const CSS = `
 .mg-basket > i::before { content: ""; position: absolute; inset: 3px 6px auto; height: 4px; border-radius: var(--radius-pill); background: rgba(255,255,255,0.55); }
 .mg-basket.catching > i { animation: mg-squash 180ms var(--ease-out); }
 @keyframes mg-squash { 0% { transform: scaleY(0.72) scaleX(1.1); } 100% { transform: none; } }
-.mg-over { position: absolute; inset: 0; display: grid; place-content: center; gap: 6px; padding: 14px; text-align: center; background: rgba(255,253,251,0.9); animation: var(--anim-pop-in); }
-.mg-over strong { font-size: var(--text-2xl); color: var(--text-gold); font-variant-numeric: tabular-nums; }
+.mg-stage.resting { filter: saturate(0.5); opacity: 0.72; }
 
 .mg-box { text-align: center; font-size: 62px; line-height: 1.1; padding: 6px 0; }
 .mg-box.rolling { animation: fm-shake 420ms var(--ease-in-out) 2; }

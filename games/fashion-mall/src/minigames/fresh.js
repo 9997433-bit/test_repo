@@ -45,6 +45,7 @@ export function renderFresh(root, state, back, ctx) {
       </div>
       <div class="mg-fx" data-fx></div>
       <p class="mg-note" data-note></p>
+      <div data-result></div>
     </section>`;
 
   const stage = root.querySelector("[data-stage]");
@@ -52,6 +53,7 @@ export function renderFresh(root, state, back, ctx) {
   const clock = root.querySelector("[data-clock]");
   const fx = root.querySelector("[data-fx]");
   const note = root.querySelector("[data-note]");
+  const resultBox = root.querySelector("[data-result]");
   root.querySelector("[data-back]").onclick = () => view.back();
 
   let width = stage.clientWidth || 360;
@@ -217,25 +219,27 @@ export function renderFresh(root, state, back, ctx) {
     }
     view.toast(`${reason}：上架 ${good} 件，+${pay.gold} 金`);
 
-    const sheet = document.createElement("div");
-    sheet.className = "mg-over";
-    sheet.innerHTML = `
-      <div>${reason}</div>
-      <strong>+${pay.gold} 金</strong>
-      <div class="mg-note">接到 ${good} 件 · 最长连接 ${bestCombo}（收货价 ×${pay.bonus.toFixed(2)}）· 变质 ${rotten} · 漏接 ${missed} · 阅历 +${pay.xp}</div>
-      <div class="mg-actions">
-        <button class="btn" type="button" data-again>再抢一轮</button>
-        <button class="btn ghost" type="button" data-leave>返回商场</button>
+    // 结算面板放在舞台外：舞台只有 210px 高且 overflow:hidden，塞进去按钮会被裁掉点不到。
+    stage.classList.add("resting");
+    resultBox.innerHTML = `
+      <div class="mg-prize ${good > 0 ? "tier-sr" : ""}">
+        <span class="name">${reason}</span>
+        <strong style="display:block;font-size:var(--text-2xl);color:var(--text-gold)">+${pay.gold} 金</strong>
+        <span class="gain">接到 ${good} 件 · 最长连接 ${bestCombo}（收货价 ×${pay.bonus.toFixed(2)}）· 变质 ${rotten} · 漏接 ${missed} · 阅历 +${pay.xp}</span>
+        <div class="mg-actions">
+          <button class="btn" type="button" data-again>再抢一轮</button>
+          <button class="btn ghost" type="button" data-leave>返回商场</button>
+        </div>
       </div>`;
-    stage.append(sheet);
-    sheet.querySelector("[data-again]").onclick = () => start();
-    sheet.querySelector("[data-leave]").onclick = () => view.back();
-    sheet.querySelector("[data-again]").focus({ preventScroll: true });
+    resultBox.querySelector("[data-again]").onclick = () => start();
+    resultBox.querySelector("[data-leave]").onclick = () => view.back();
+    resultBox.querySelector("[data-again]").focus({ preventScroll: true });
   }
 
   function start() {
     clearItems();
-    stage.querySelector(".mg-over")?.remove();
+    resultBox.innerHTML = "";
+    stage.classList.remove("resting");
     measure();
     timeLeft = table.roundSeconds;
     spawnAcc = 0;
