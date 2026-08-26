@@ -4,6 +4,27 @@ export const HOUR_MS_DEFAULT = 6_000;
 export const DAY_HOURS = 24;
 export const DAYS_PER_SEASON = 7;
 
+/** 升级所需累计经验，索引 i 对应 Lv.(i+1) */
+export const LEVELS = [0, 40, 100, 180, 280, 420, 600, 820, 1100, 1450];
+
+/** 新手引导：翻土 → 播种 → 收获 → 进屋看看 */
+export const TUTORIAL_TOTAL = 4;
+
+export function levelFor(xp) {
+  let lv = 1;
+  for (let i = 0; i < LEVELS.length; i += 1) if (xp >= LEVELS[i]) lv = i + 1;
+  return lv;
+}
+
+export function levelProgress(xp) {
+  const level = levelFor(xp);
+  const base = LEVELS[level - 1] ?? 0;
+  const next = LEVELS[level] ?? null;
+  if (next === null) return { level, base, next: null, pct: 100 };
+  const pct = Math.max(0, Math.min(100, ((xp - base) / (next - base)) * 100));
+  return { level, base, next, pct };
+}
+
 export function createInitialState() {
   return {
     meta: {
@@ -17,7 +38,7 @@ export function createInitialState() {
       muted: false,
       tutorialStep: 0,
     },
-    resources: { coin: 80, pearl: 0, happiness: 40, warmth: 20, pop: 2, popCap: 4, shovel: 1, axe: 0, saw: 0 },
+    resources: { coin: 80, pearl: 0, happiness: 40, warmth: 20, pop: 2, popCap: 4, shovel: 2, axe: 1, saw: 1 },
     inv: { chili: 2 },
     plots: [
       { id: "p1", status: "empty", cropId: null, plantedAt: 0, doneAt: 0, greenhouse: false },
@@ -35,7 +56,13 @@ export function createInitialState() {
       { id: "tuan", name: "小团", kind: "cat", readyAt: 0 },
     ],
     log: ["蘑菇屋的门开了一条缝。风里有柴火和泥土的味道。"],
+    ui: createInitialUi(),
   };
+}
+
+/** 纯视图状态：选中的种子、打开的房子、飘字、音效信号。存档会带上，缺失时补默认值。 */
+export function createInitialUi() {
+  return { seed: "rice", selected: "wish", toast: null, fx: null, rerolls: 0 };
 }
 
 export function advanceTime(state, dtMs) {
