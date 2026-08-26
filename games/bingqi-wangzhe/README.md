@@ -12,6 +12,12 @@ python3 -m http.server 4173 --directory games/bingqi-wangzhe
 
 浏览器打开 `http://127.0.0.1:4173/`，看到「炉火初燃」一闪即入工坊。
 
+线上独立路径（与其他游戏隔离）：
+
+https://9997433-bit.github.io/test_repo/bingqi-wangzhe/
+
+仓库 Pages 根地址只做游戏目录，不会把本游戏摊在站点根上。
+
 > 必须走 http(s)，不能用 `file://` —— ES Module 与相对路径在 file 协议下会被 CORS 拦截。
 
 无构建、无依赖、无 `npm install`：改完源码直接刷新。
