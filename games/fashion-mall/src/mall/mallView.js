@@ -9,6 +9,8 @@ import { esc } from "../ui/dom.js";
 import { sfx } from "../core/audio.js";
 
 const COUNTDOWN_MS = 1000;
+/** 飘字与 --anim-coin 的 --dur-drama 对齐，留一点余量再摘节点。 */
+const FLOAT_MS = 700;
 
 /** 只在文本真的变了才落笔，升级/招聘与每秒刷新都不产生多余的 DOM 变更。 */
 function paintText(node, text) {
@@ -26,6 +28,37 @@ function setShown(node, shown) {
   if (!node || node.hidden === !shown) return;
   node.hidden = !shown;
   node.style.display = shown ? "" : "none";
+}
+
+/**
+ * 未解锁店卡的摇一摇（DESIGN_SYSTEM §9.2）。连点也要能重播，所以先摘类再强制回流；
+ * 动画结束自己摘掉，卡片本身不重建，焦点留在原处。
+ */
+function shakeCard(card) {
+  if (!card) return;
+  card.classList.remove("shake");
+  void card.offsetWidth;
+  card.classList.add("shake");
+  if (card._shakeBound) return;
+  // 卡片自己还挂着入场的 fm-pop-in，只认摇一摇那条 animationend 才不会提前摘类。
+  card._shakeBound = true;
+  card.addEventListener("animationend", (e) => {
+    if (e.animationName === "fm-shake") card.classList.remove("shake");
+  });
+}
+
+/**
+ * 升级 / 招聘成功的飘字（`--anim-coin`，与小游戏 `.mg-float` 同一套动效 token）。
+ * 宿主是升级行本身，飘字绝对定位、不参与 flex 排布，也就不会挤动刚点过的按钮。
+ */
+function floatOnRow(row, text) {
+  if (!row || !text) return;
+  const node = document.createElement("span");
+  node.className = "mall-float";
+  node.setAttribute("aria-hidden", "true");
+  node.textContent = text;
+  row.append(node);
+  setTimeout(() => node.remove(), FLOAT_MS);
 }
 
 /** 数值一律先格式化再交给 copy：GOALS.line 只拼句子，不做数学。 */
@@ -89,6 +122,7 @@ export function renderMall(root, state, ctx = {}) {
       <div data-status></div>`;
     card.onclick = () => {
       if (!state.shops[shop.id].unlocked) {
+        shakeCard(card);
         return toast(SHOP_LOCKED_HINT(String(shop.unlockLevel), shop.name));
       }
       sfx.tap();
@@ -132,8 +166,18 @@ export function renderMall(root, state, ctx = {}) {
       up: row.querySelector('[data-act="up"]'),
       hire: row.querySelector('[data-act="hire"]'),
     };
-    entry.up.onclick = runner(shop, entry.up, () => upgradeShop(state, shop.id));
-    entry.hire.onclick = runner(shop, entry.hire, () => hireStaff(state, shop.id));
+    entry.up.onclick = runner(
+      shop,
+      entry.up,
+      () => upgradeShop(state, shop.id),
+      () => `Lv.${state.shops[shop.id].level} ↑`,
+    );
+    entry.hire.onclick = runner(
+      shop,
+      entry.hire,
+      () => hireStaff(state, shop.id),
+      () => `👩 +1`,
+    );
     rows.set(shop.id, entry);
     box.append(row);
   }
@@ -185,7 +229,7 @@ export function renderMall(root, state, ctx = {}) {
     (alt || cards.get(shopId)?.card)?.focus({ preventScroll: true });
   }
 
-  function runner(shop, btn, action) {
+  function runner(shop, btn, action, fxText) {
     return () => {
       const res = action();
       if (!res.ok) return toast(FAIL[res.reason] ?? res.toast);
@@ -193,6 +237,7 @@ export function renderMall(root, state, ctx = {}) {
       persist(state);
       toast(res.toast);
       paintAll();
+      floatOnRow(rows.get(shop.id)?.row, fxText?.());
       keepFocus(shop.id, btn);
     };
   }

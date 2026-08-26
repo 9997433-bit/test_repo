@@ -24,6 +24,8 @@ import { sfx } from "./core/audio.js";
 const PERSIST_MS = 4000;
 const EVENT_MS = 28000;
 const TOAST_MS = 2600;
+/** 庆祝类名的挂载时长：星光是无限循环动画，只能靠计时器摘。 */
+const LEVELUP_MS = 1600;
 /** 短于半小时的离开走 OFFLINE.short 轻量变体（UX_NARRATIVE §6.1）。 */
 const OFFLINE_SHORT_HOURS = 0.5;
 
@@ -36,8 +38,10 @@ let tab = "mall";
 let shopId = null;
 let disposeView = null;
 let toastTimer = null;
+let levelupTimer = null;
 let sincePersist = 0;
 let sinceEvent = 0;
+let lastLevel = state.level;
 
 const SHOP_VIEWS = {
   fastfood: renderFastfood,
@@ -103,6 +107,28 @@ function paintHud() {
     `⭐ ${HUD.level} ${state.level}`,
     A11Y.hud.level(state.level),
   );
+}
+
+/**
+ * 主角升级庆祝：等级 pill 弹一次并挂星光。先摘类再强制回流，连升两级也能重播；
+ * 动画本身在 prefers-reduced-motion 下由 main.css 关掉，这里的类名照挂不误。
+ */
+function celebrateLevelUp() {
+  const pill = app.querySelector("#pill-level");
+  if (!pill) return;
+  pill.classList.remove("levelup");
+  void pill.offsetWidth;
+  pill.classList.add("levelup");
+  clearTimeout(levelupTimer);
+  levelupTimer = setTimeout(() => pill.classList.remove("levelup"), LEVELUP_MS);
+}
+
+/** 等级只在上升时庆祝；导入存档回退等级时只同步基线，不补放动画。 */
+function checkLevelUp() {
+  if (state.level === lastLevel) return;
+  const leveled = state.level > lastLevel;
+  lastLevel = state.level;
+  if (leveled) celebrateLevelUp();
 }
 
 function paintNav() {
@@ -252,6 +278,8 @@ function paint() {
   if (typeof disposeView !== "function") disposeView = null;
 
   if (pending || state.toast) showToast(pending || state.toast);
+  // 动作触发的升级（阅历、事件、导入档）走的是 repaint 而不是 tick 泵，这里兜住。
+  checkLevelUp();
 }
 
 /** 离店回执：金额 > 时长 > 封顶（UX_NARRATIVE §6.1），切后台几分钟只报一句轻的。 */
@@ -282,6 +310,7 @@ const pump = setInterval(() => {
   applySettle(now);
   const elapsed = Math.max(0, now - before);
   paintHud();
+  checkLevelUp();
   if (state.toast) showToast(state.toast);
 
   sincePersist += elapsed;
@@ -308,6 +337,7 @@ document.addEventListener("visibilitychange", () => {
   if (!state.introDone) return;
   applySettle();
   paintHud();
+  checkLevelUp();
 });
 
 window.addEventListener("pagehide", () => {
