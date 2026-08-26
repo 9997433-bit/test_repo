@@ -1,4 +1,4 @@
-import { createStore } from "./core/store.js";
+import { createStore, addInv } from "./core/store.js";
 import { createInitialState, createInitialUi, advanceTime, levelFor, TUTORIAL_TOTAL } from "./core/engine.js";
 import { writeSave, readSave } from "./core/save.js";
 import { tickPlots, till, plant, harvest, expandPlot } from "./systems/farm/index.js";
@@ -48,7 +48,27 @@ function advanceTutorial(state, minStep) {
   return { ...state, meta: { ...state.meta, tutorialStep: Math.min(minStep, TUTORIAL_TOTAL) } };
 }
 
-function reducer(state, action) {
+/**
+ * production 的 collectJob 只认配方单，喂牲口生成的 job（kind:"livestock"）
+ * 没有配方，会让它抛错。这里按 job 自己带的 productId/qty/xp 兜底收取；
+ * 等 production 认了这种活，上面的 collectJob 就不会再抛，这段自然走不到。
+ */
+function collectLivestock(state, { buildingId, slot }) {
+  const ofBuilding = (state.jobs || []).filter((j) => j.buildingId === buildingId);
+  const job = typeof slot === "string" ? (state.jobs || []).find((j) => j.id === slot) : ofBuilding[slot];
+  if (!job) return { ok: false, reason: "没有这单活", state };
+  if (job.status !== "done") return { ok: false, reason: "还在忙", state };
+  if (job.kind !== "livestock" || !job.productId) return { ok: false, reason: "这单活收不上来", state };
+  let next = addInv(state, job.productId, job.qty || 1);
+  next = {
+    ...next,
+    meta: { ...next.meta, xp: next.meta.xp + (job.xp || 0) },
+    jobs: next.jobs.filter((j) => j.id !== job.id),
+  };
+  return { ok: true, state: next };
+}
+
+function applyAction(state, action) {
   const { type, payload = {} } = action;
 
   if (type === "meta/tick") {
@@ -88,7 +108,15 @@ function reducer(state, action) {
   if (type === "farm/expand") return applyResult(state, expandPlot(state), "build");
 
   if (type === "prod/enqueue") return applyResult(state, enqueueJob(state, payload), "build");
-  if (type === "prod/collect") return applyResult(state, collectJob(state, payload), "collect");
+  if (type === "prod/collect") {
+    let result;
+    try {
+      result = collectJob(state, payload);
+    } catch {
+      result = collectLivestock(state, payload);
+    }
+    return applyResult(state, result, "collect");
+  }
   if (type === "prod/feed") return applyResult(state, feedAnimal(state, payload), "plant");
   if (type === "prod/unlock") return applyResult(state, unlockSlot(state, payload), "build");
 
@@ -125,6 +153,21 @@ function reducer(state, action) {
   if (type === "meta/toast") return toast(state, payload.text, payload.tone || "good", payload.fx);
 
   return state;
+}
+
+/** 单个动作出错不该让整个村子停摆：记一次日志，飘个字，继续过日子。 */
+const reported = new Set();
+function reducer(state, action) {
+  try {
+    return applyAction(state, action);
+  } catch (err) {
+    if (!reported.has(action.type)) {
+      reported.add(action.type);
+      console.error(`[蘑菇屋] ${action.type} 出错：`, err);
+    }
+    if (action.type === "meta/tick") return state;
+    return toast(state, "刚才那下没成，先干点别的。");
+  }
 }
 
 /* ---------- 启动 ---------- */
