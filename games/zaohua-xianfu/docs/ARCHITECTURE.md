@@ -1,12 +1,14 @@
 # 造化仙府 · 架构（v1.2 · Round 2 复审版）
 
-> 复审基线：HEAD `9a8b443`。含两批 Round 2 提交：`21a7ff8`（离线结算 / 存档加固 /
+> 复审基线：HEAD `923d026`。含数批 Round 2 提交：`21a7ff8`（离线结算 / 存档加固 /
 > reducer 守卫合并）与其后的 `07dae75`（离线效率接线、槽型、兽潮税）、`12ff624`/
 > `97b32e2`（applyTriggers 接线、万魂灯口径）、`dbd7c96`（修业口径落地）、`893d94f`
-> （GDD 拍板）、`9a8b443`（UI 槽位口径）等。已对照 `.agent_workspace/ROUND1_BRIEF.md`
+> （GDD 拍板）、`9a8b443`/`f777a31`（UI 槽位口径与可点性）、`41048af`（万魂灯移通用
+> 槽 + GDD 对齐已实装槽型/兽潮税）等。已对照 `.agent_workspace/ROUND1_BRIEF.md`
 > 遗留清单逐项**运行时复核**（34 项单测、probe、bench 全绿），并更新第 9 节登记簿。
-> ⚠ 本轮发现两处**实现与 GDD 各自拍板、方向相反**的冲突（AD-8 槽型方案、AD-12 兽潮
-> 税基），见 §9 与 §9.1 P0。
+> 本轮曾发现两处**实现与 GDD 各自拍板、方向相反**的冲突（AD-8 槽型方案、AD-12 兽潮
+> 税基），已在轮内由 `41048af` 定案收敛（均取实现侧口径，GDD 改述 + 万魂灯移槽保住
+> 校准锚点）；残余文档同步项见 §9 对应条目。
 > v1.1（Round 1 复审版，基线 `419f9d7`）的立案编号全部保留，只追加不删除。
 > 本文与 `API_CONTRACT.md` 共同构成实现的唯一架构契约；发现实现与文档冲突时，先在
 > 第 9 节「架构债登记簿」立案，再由模块所有者修代码或修文档，禁止静默漂移。
@@ -94,7 +96,7 @@ state = {
   party:     heroId[],                    // ≤ 6，惯例 party[0] 为主角 mc-*
   ownedArtifacts: artifactId[],
   equipped:  artifactId[],                // ≤ 4：1 攻 + 1 防 + 2 通，同槽 FIFO
-                                          // （⚠方案与 GDD 拍板冲突，见 AD-8）
+                                          // （GDD 已对齐此口径 `41048af`，见 AD-8）
   realm:     { index: 0..9, layer: ≥1, exp: ≥0, heartDemon: ≥0 },
   tower:     { floor: ≥1, best: ≥0 },
   wave:      { wave: ≥1, best: ≥0 },
@@ -272,7 +274,8 @@ seed 来源（store 层，非 simulate 责任）：`(now ^ (floor×9973)) >>> 0`
 
 ## 9. 架构债登记簿（可执行修订清单）
 
-复审中逐项核对实现后立案；Round 2 已对照 HEAD（`9a8b443`）**运行时复核**一遍
+复审中逐项核对实现后立案；Round 2 已对照 HEAD（`9a8b443` 全量运行时复核 +
+`41048af`..`923d026` 增量批次逐提交核对，34 项单测在 `923d026` 上重跑全绿）更新
 「状态」列：已修项打勾并给出落地证据，仍开项更新为 HEAD 证据。编号只追加不删除，
 修复后保留条目供审计。每项含证据、影响、修订动作与所有者
 （所有权表见 `/.agent_workspace/PROGRESS.md`）。本文档只立案不改码。
@@ -286,11 +289,11 @@ seed 来源（store 层，非 simulate 责任）：`(now ^ (floor×9973)) >>> 0`
 | AD-5 | `passives.ultHaste` 无效：技能节奏被固定「每 5 tick」覆盖 | 基线 `battle.js` 覆写 `skill` 变量；运行时验证：装备太虚金丹鼎与否同 seed 逐帧全等 | 高：红品法器「太虚金丹鼎」与九天玄女技能均为摆设 | 大招独立计时器 + 开场按 `1+ultHaste` 压缩周期 | Opus-3 | ✅已修（`c57957e`，HEAD 运行时复验：装备 taixu 同 seed 结果已不同） |
 | AD-6 | 存档损坏静默回退，未记 `saveCorrupt` | Round 1：`core/save.js` catch 后返回 null，无事件/日志 | 低：玩家丢档无感知 | 读档区分状态并播事件 | Opus-1 | ✅已修（`readSave` 状态机 empty/ok/corrupt/unsupported/unavailable；坏档 `backupCorrupt` 备份到旁路键 `zaohua-xianfu-v1:corrupt`；bus 播 `saveCorrupt`。残留：`main.js` 仅 console.warn，未进府报 log） |
 | AD-7 | 切后台无补结算 | Round 1：`engine.js` 无 `visibilitychange` 钩子 | 中：挂机游戏切标签页即停产 | 复用 4.4 流程补结算 | Opus-1 | ✅已修（新 `RESUME` action：engine 帧间墙钟跳变 >5s 自动 dispatch；`main.js` 挂 `visibilitychange`（hidden→`flush`，visible→`RESUME`）与 `pagehide`→`flush`） |
-| AD-8 | 法器槽位未实施：`EQUIP_ARTIFACT` 忽略 `slot`，4 件 FIFO，可 4 件攻击法器同佩 | HEAD 复核：**机制已落地**（`07dae75`：`core/state.js#equipArtifact` 按数据表槽型落位 attack×1/defend×1/util×2、同槽 FIFO 顶掉最早、`normalizeEquipped` 读档收敛；测试改写为槽型断言、UI 按同槽淘汰口径展示 `9a8b443`）。**但方案与 GDD 拍板相反**：GDD「槽型口径」（`893d94f`，更晚提交）拍板为 攻×1/防×1/通×1/**万用×1**，明言基准四件套（七星灯+万魂灯双防+论道图+朱雀弓）「必须仍可同时佩戴」——运行时复验：现实现下依序佩戴四件套只剩 3 件（七星灯被万魂灯同槽顶掉），**进度墙校准锚点被破坏** | 高：实现/测试/UI 与 GDD 各自拍板且互斥；仿真锚点失效牵连整张进度墙 | 二次定案唯一方案：a) 实现改为 GDD 的万用槽制（并按 GDD 的重放式存档迁移）；b) GDD 改认 1/1/2 制并重标进度墙。定案后改另一侧 + 测试 | Fable-3 + Opus-1 + GPT-sol-1 **二次定案** | ⚠部分收敛（FIFO 已废、槽型已生效；槽型方案冲突新开，Round 2 复核发现） |
-| AD-9 | 大量法器无获取途径 | HEAD 复核：`ARTIFACT_DROPS` 已补全 18 节点（塔 5..40 共 11、潮 5..20 共 7，正好覆盖 20 件中非初始的 18 件）；store 的 `dropTable(via)` 改读该表派生发放（`893d94f` + `07dae75`），回归测断言按 data 表发放 | 已消解 | — | Fable-3 + Opus-1 | ✅已修（单一事实源接线完成。残留：`data/artifacts.js` 表头注释仍写「store 现存硬编码…本轮改读本表后删除」，已过时待清理） |
+| AD-8 | 法器槽位未实施：`EQUIP_ARTIFACT` 忽略 `slot`，4 件 FIFO，可 4 件攻击法器同佩 | HEAD 复核：**机制已落地**（`07dae75`：`core/state.js#equipArtifact` 按数据表槽型落位 attack×1/defend×1/util×2、同槽 FIFO 顶掉最早、`normalizeEquipped` 读档收敛；测试改写为槽型断言、UI 按同槽淘汰口径展示 `9a8b443`）。轮内曾开出方案冲突：GDD `893d94f` 拍板 攻/防/通/**万用** 制且要求双防基准四件套可同佩，与实现互斥。**二次定案已落**（`41048af`）：GDD 改认 1/1/2 制（改述 `equipArtifact`/`normalizeEquipped` 口径），数据侧把**万魂灯 defend→util**（复活属命数容错不占防位）——移槽后基准四件套（七星灯防+万魂灯通+论道图通+朱雀弓攻）恰好占满四槽合法，`simulate` 不读 slot 故进度墙数值不受影响，**校准锚点保住**；UI 随槽容量试算决定可点性（`f777a31`） | 定案前：高（实现/测试/UI 与 GDD 互斥）；定案后余项：低（跨文档残文） | 已定案（b 路线 + 万魂灯移槽），无需改实现。残留：`docs/ACCEPTANCE.md` G5.4 与 `docs/SOTA_CHECKLIST.md` R2-1 仍按定案前状态记「未过/相撞」（`923d026` 的复核基线是 `893d94f`，早于定案提交），待其所有者按 1/1/2 口径改写销案 | Fable-3 + Opus-1 + GPT-sol-1 | ✅已修+已定案（`41048af`；残留仅 ACCEPTANCE/SOTA 文档同步） |
+| AD-9 | 大量法器无获取途径 | HEAD 复核：`ARTIFACT_DROPS` 已补全 18 节点（塔 5..40 共 11、潮 5..20 共 7，正好覆盖 20 件中非初始的 18 件）；store 的 `dropTable(via)` 改读该表派生发放（`893d94f` + `07dae75`），回归测断言按 data 表发放 | 已消解 | — | Fable-3 + Opus-1 | ✅已修（单一事实源接线完成；表头注释已改为「已闭环」口径 `41048af`，过时残文清理完毕） |
 | AD-10 | 英雄技能与数据表描述不符：猪八戒嘲讽、玉面公主降命中、玄女大招冷却、后羿后排增伤 | 基线 `battle.js` 对照 `data/heroes.js` skillDesc | 中：文案欺骗玩家 | KITS 技能表实现嘲讽（taunt 3s）、致盲（miss 12%）、teamUltHaste 20%、后排 ×1.35 | Opus-3 | ✅已修（`c57957e` KITS 表） |
 | AD-11 | mansion 等级上限 12 硬编码在 reducer | HEAD 复核：非 mansion 上限已改读 `data/buildings.js#mansionCap` ✓；但 `MANSION_MAX_LEVEL=12` 现复制**两处**（`core/state.js` 与 `mansion/buildings.js` 各一份，store 读前者），比 Round 1 多了一份副本 | 低 | 保留单一常数源（建议 `mansion/buildings.js`），`core/state` 转引 | Opus-1 | 部分修复（cap 接线 ✓，常数反向漂移成双份） |
-| AD-12 | 兽潮败战税基两套口径 | HEAD 复核发现**双方相向而行**：实现（`07dae75`，Opus-1）走 **a 路线**——`core/store.js#waveLossTax` 只没收「未收取产出」（挂机匣 pending 全失 + ≤2s 未入账尾巴作废），库存分毫不动，府报同口径，`tests/regressions.test.js` 已锁定（运行时复验：herb 库存 100 保持、pending 清空）；而 GDD「败仗税口径」小节（`893d94f`，**更晚**提交，Fable-3）拍板 **b 路线**库存三成、声称「现实现即为准」（写下时实现已是 a）、并明文废弃 a 路线且要求把府报改成库存措辞。另：`combat/wave.js#waveReward` 败战分支的 `loseTax`（库存 30%）已成**死代码**（store 不再调用） | 高：GDD 与实现/测试直接矛盾，兽潮节的「推潮前先花掉资源」策略文案误导玩家 | 唯一定案：a) 保留现实现，重写 GDD 败仗税小节与兽潮节文案、删 `waveReward.loseTax` 死代码；b) 采 GDD，实现回退库存税并改测试与府报。任一方向都须同步三处（GDD/实现/测试） | Fable-3 + Opus-1 + GPT-sol-1 **二次定案** | ⚠未收敛（Round 2 反向重开：实现 a、GDD 拍板 b） |
+| AD-12 | 兽潮败战税基两套口径 | HEAD 复核：实现（`07dae75`，Opus-1）走 **a 路线**——`core/store.js#waveLossTax` 只没收「未收取产出」（挂机匣 pending 全失 + ≤2s 未入账尾巴作废），库存分毫不动，府报同口径，`tests/regressions.test.js` 已锁定（运行时复验：herb 库存 100 保持、pending 清空）。轮内曾开出反向冲突：GDD `893d94f` 拍板 **b 路线**库存三成并声称「现实现即为准」（写下时实现已是 a——声明失真）。**二次定案已落**（`41048af`）：GDD 败仗税小节与兽潮节改述 a 路线（「以挂机匣为赌注、先收匣再推潮」并给出废弃抄家税的决策理由），资源表删去「兽潮败仗折损」消耗项——GDD/实现/测试/府报四方同口径 | 定案前：高（GDD 与实现/测试直接矛盾）；定案后余项：低（死代码 + 跨文档残文） | 已定案（a 路线），无需改实现。残留：① `combat/wave.js#waveReward` 败战 `loseTax` 分支（库存 30%）仍是**死代码**待删（机制所有者收口，GDD 已明文点名）；② `docs/ACCEPTANCE.md` G5.2 与 `docs/SOTA_CHECKLIST.md` R2-2 仍记旧口径「三方分裂/未过」（复核基线早于定案），待按 a 路线改写销案 | Fable-3 + Opus-1 + GPT-sol-1 | ✅已定案（`41048af`；残留 loseTax 死代码删除 + ACCEPTANCE/SOTA 文档同步） |
 | AD-13 | `START_TOWER` / `START_WAVE` 无守卫：未选阵营、空阵容、已有未结算战斗时均可发起并覆盖旧结果 | HEAD 复核：`!meta.faction || !party.length` 静默守卫已加 ✓；`combat == null` 覆盖守卫仍缺——运行时复验：连发两次 START_TOWER，第二次 seed 顶掉第一次（旧战斗作废无奖励） | 低-中：误触丢奖励 | 补 `combat == null` 守卫，违反则 pushLog 拒绝（不改 action 名） | Opus-1 | 部分修复（阵营/空阵容 ✓，覆盖守卫仍开） |
 | AD-14 | schema 版本不符直接弃档，无迁移链 | HEAD 复核：`readSave` 对 unsupported 返回 null 弃档；新增缓解——坏档/旧档先 `backupCorrupt` 备份旁路键再回退 | 低（v1 期）→ 高（升 v2 时） | 建 `migrations = { 1: v1→v2, ... }`，逐级迁移；升版时可从旁路键找回 | Opus-1 | 未修（已缓解：旁路备份到位，迁移链仍缺） |
 | AD-15 | 招募 UI 价格文案与真实费用不符；reducer 不限制跨阵营招募 | HEAD 复核：RECRUIT 已加 `hero.faction !== meta.faction` 静默守卫 ✓；UI 经 `recruitCost(hero)` 渲染真实价格（`8 仙玉 + 40 灵石` 级差生效）✓ | 低 | — | Opus-4 + Fable-3 | ✅已修（残留：`recruitCost` 落在 `ui/util.js`，是 §2.2 禁止的 UI 公式副本，应下沉 domain/data 并让 store 同源） |
@@ -304,21 +307,23 @@ seed 来源（store 层，非 simulate 责任）：`(now ^ (floor×9973)) >>> 0`
 
 ### 9.1 修订优先级建议（Round 2 版）
 
-- **P0（定案冲突——实现与 GDD 各自拍板且互斥，必须先唯一定案再改另一侧）**：
-  AD-12（兽潮税：实现走 a「未收取产出」且测试锁定，GDD 更晚拍板 b「库存三成」且
-  声称从实——声明失真）、AD-8 余项（槽型：实现/测试/UI 走 1 攻/1 防/2 通同槽淘汰，
-  GDD 拍板 攻/防/通/万用且基准四件套双防必须可同佩——现实现下装不下，校准锚点破坏）
+- **P0（本轮已清零）**：轮内曾开出的两处定案冲突（AD-8 槽型、AD-12 兽潮税）均已由
+  `41048af` 唯一定案收敛（取实现侧口径、GDD 改述、万魂灯移槽保锚点），不再阻塞。
 - **P1（设计一致性/正确性）**：AD-17 接线（`scriptureXpAward` 零调用方，仿 AD-18
   一处接线即可）、AD-13 余项（覆盖守卫）、AD-21（RECRUIT 注入）
 - **P2（健壮性/体验/清理）**：AD-14、AD-16、AD-22、AD-11 余项（常数双份）、
-  AD-15 残留（recruitCost 下沉）、`waveReward.loseTax` 死代码与 `ARTIFACT_DROPS`
-  过时注释（随 AD-12/AD-9 定案清理）
-- **已完成（Round 2 勾销）**：AD-1、AD-2、AD-3、AD-4、AD-6、AD-7、AD-9、AD-15、
-  AD-18、AD-19、AD-20（消解）；**Round 1 已完成**：AD-5、AD-10
+  AD-15 残留（recruitCost 下沉）、AD-12 残留（`waveReward.loseTax` 死代码删除，
+  GDD 已明文点名待机制所有者收口）
+- **P3（跨文档同步——非本文档管辖，此处仅登记）**：`docs/ACCEPTANCE.md` G5.2/G5.4
+  与 `docs/SOTA_CHECKLIST.md` R2-1/R2-2 仍按定案前状态记「未过/相撞」（`923d026`
+  的复核基线 `893d94f` 早于 `41048af`），待其所有者按已定案口径改写销案
+- **已完成（Round 2 勾销）**：AD-1、AD-2、AD-3、AD-4、AD-6、AD-7、AD-8（含轮内
+  二次定案）、AD-9、AD-12（定案收敛）、AD-15、AD-18、AD-19、AD-20（消解）；
+  **Round 1 已完成**：AD-5、AD-10
 
 每项修复必须附带回归单测（GPT-sol-1 在 `tests/` 补探针），并保持
 `npm test` / `npm run probe` / `npm run bench` 全绿（`docs/ACCEPTANCE.md`；本轮复核
 时三者均绿，34 项单测通过）。
 注意：Round 1 固化待修行为的「法器 FIFO 逐出」断言已随 AD-8 改写为槽型断言（简报
-第 10 条完成）；现行「败仗只失未收取产出」「1/1/2 槽容量」两组断言锁定的是**与
-GDD 拍板相悖的实现**——AD-12 / AD-8 二次定案若倒向 GDD，须连测试一并改写。
+第 10 条完成）；「败仗只失未收取产出」「1/1/2 槽容量」两组断言锁定的口径已随
+`41048af` 获得 GDD 背书，测试与设计自此同源，无需再改写。
