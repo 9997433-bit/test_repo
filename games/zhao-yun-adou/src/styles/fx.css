@@ -1,0 +1,265 @@
+/* ============================================================
+   战斗演出层（juice）：飘字 / 泼墨 / 技能震屏
+   ------------------------------------------------------------
+   接线契约（CSS 侧已就绪，JS 侧照此挂载即可，见 ART_DIRECTION §5）：
+
+   1. 挂载点必须躲开 diff。渲染层的 morphChildren 会回写 #app 子树的
+      class 并删多余节点，任何事后贴上去的元素/类都活不过下一次 patch
+      （≤33ms）。安全挂载点只有两个：
+        · #fx-layer —— body 下与 #app 平级的固定层，diff 永不触碰；
+          飘字与泼墨都生成在这里，坐标用 getBoundingClientRect 换算。
+        · #app 根节点自身 —— diff 只重写其子树，根节点的 class 安全；
+          震屏类 .fx-quake 挂这里，由 CSS 选到 .arena 去抖。
+   2. 定位/强度一律走 CSS 变量（--fx-x/--fx-y/--fx-size/--fx-shake），
+      JS 只写内联变量与 color，不写行内动画。
+   3. 形状类名与 skills.js 的 juice.shape 一字不差：
+      sweep / rain / ring / arc / aura / dash。
+   4. 冻结容错铁律沿袭 motion.css：最强帧一律放在 0%。
+   5. 属性白名单：transform / opacity + 小面积短时长 text-shadow；
+      渐变、mask、clip-path 只允许静态使用，禁止参与动画。
+   ============================================================ */
+
+/* —— 演出层容器：与 #app 平级，全屏、透事件、裁掉飞出屏幕的墨点 —— */
+
+#fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-fx);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* —— 飘字：伤害 / 馒头 / 招式名 ——
+   默认朱砂（伤害警示）；.gold 奖励、.ink 中性、.brush 招式名大字。
+   三层纸色描边保证压在墨团上仍可读。JS 设 --fx-x/--fx-y（在 #fx-layer
+   里用 px，在棋格里用 %），播完由 JS 移除元素。
+   居中用 translate 独立属性，不与关键帧里的 transform 打架。 */
+
+.fx-float {
+  position: absolute;
+  left: var(--fx-x, 50%);
+  top: var(--fx-y, 40%);
+  translate: -50% -100%;
+  z-index: var(--z-float);
+  pointer-events: none;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  font-size: clamp(12px, 2.4vw, 15px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--cinnabar);
+  text-shadow:
+    0 0 3px var(--paper-bright),
+    0 0 6px var(--paper-bright),
+    0 0 10px var(--paper-bright);
+  animation: ink-rise var(--dur-float) ease-out both;
+}
+
+.fx-float.gold {
+  color: var(--gold-ink);
+}
+
+.fx-float.ink {
+  color: var(--ink);
+}
+
+/* 招式名：楷书大字，飘得更久，像一笔题跋 */
+.fx-float.brush {
+  font-family: var(--font-brush);
+  font-weight: 400;
+  font-size: clamp(20px, 4.6vw, 30px);
+  letter-spacing: 0.08em;
+  animation-duration: calc(var(--dur-float) * 1.4);
+}
+
+@keyframes ink-rise {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1.12);
+  }
+  70% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(5px, -34px) scale(0.94) rotate(3deg);
+  }
+}
+
+/* —— 泼墨：技能主视觉 ——
+   一团不规则墨渍 + 六粒溅出的墨点，全部 currentColor：
+   JS 只需 el.style.color = juice.color，整团随主色自动染色。
+   基础形（默认）即「泼墨」；六个形状类微调拉伸/换底纹，对应
+   juice.shape。绽开→晕散全靠 transform/opacity。 */
+
+.fx-splash {
+  position: absolute;
+  left: var(--fx-x, 50%);
+  top: var(--fx-y, 42%);
+  width: var(--fx-size, 190px);
+  height: var(--fx-size, 190px);
+  translate: -50% -50%;
+  pointer-events: none;
+  color: var(--ink);
+  background-image:
+    /* 主墨团：两枚错位椭圆叠出手泼的不规则轮廓 */
+    radial-gradient(46% 40% at 50% 53%, currentColor 62%, transparent 67%),
+    radial-gradient(34% 42% at 41% 40%, currentColor 60%, transparent 66%),
+    /* 溅出的墨点 */
+    radial-gradient(6% 5% at 82% 30%, currentColor 90%, transparent 100%),
+    radial-gradient(4% 6% at 18% 24%, currentColor 90%, transparent 100%),
+    radial-gradient(5% 4% at 88% 66%, currentColor 90%, transparent 100%),
+    radial-gradient(3.5% 5% at 12% 72%, currentColor 90%, transparent 100%),
+    radial-gradient(4% 3.5% at 64% 9%, currentColor 90%, transparent 100%),
+    radial-gradient(3% 4% at 30% 91%, currentColor 90%, transparent 100%);
+  background-repeat: no-repeat;
+  animation: splash-bloom var(--dur-splash) var(--ease-brush) both;
+}
+
+@keyframes splash-bloom {
+  0% {
+    opacity: 0.9;
+    transform: scale(calc(var(--fx-sx, 1) * 0.88), calc(var(--fx-sy, 1) * 0.88))
+      rotate(var(--fx-rot, 0deg));
+  }
+  28% {
+    opacity: 0.8;
+    transform: scale(var(--fx-sx, 1), var(--fx-sy, 1)) rotate(var(--fx-rot, 0deg));
+  }
+  100% {
+    opacity: 0;
+    transform: scale(calc(var(--fx-sx, 1) * 1.14), calc(var(--fx-sy, 1) * 1.14))
+      rotate(var(--fx-rot, 0deg));
+  }
+}
+
+/* sweep 枪扫 / dash 铁骑：横向拉长的墨痕，微倾 */
+.fx-splash.sweep {
+  --fx-sx: 2.1;
+  --fx-sy: 0.55;
+  --fx-rot: -6deg;
+}
+
+.fx-splash.dash {
+  --fx-sx: 2.4;
+  --fx-sy: 0.4;
+  --fx-rot: -2deg;
+}
+
+/* ring 爆喝：双层空心冲击环 */
+.fx-splash.ring {
+  background-image:
+    radial-gradient(closest-side, transparent 48%, currentColor 54% 62%, transparent 67%),
+    radial-gradient(closest-side, transparent 66%, currentColor 70% 72%, transparent 76%);
+}
+
+/* arc 刀弧：冲击环裁掉下半，旋成一记斜劈 */
+.fx-splash.arc {
+  --fx-sx: 1.5;
+  --fx-sy: 1.1;
+  --fx-rot: -14deg;
+  background-image:
+    radial-gradient(closest-side, transparent 46%, currentColor 52% 64%, transparent 69%);
+  clip-path: polygon(0 0, 100% 0, 100% 54%, 0 54%);
+}
+
+/* rain 箭雨：斜落墨线，径向蒙版收成一片雨幕（蒙版静态，不参与动画） */
+.fx-splash.rain {
+  --fx-sx: 1.15;
+  --fx-sy: 1.5;
+  background-image: repeating-linear-gradient(
+    112deg,
+    transparent 0 9px,
+    currentColor 9px 11px,
+    transparent 11px 24px
+  );
+  -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 78%);
+  mask-image: radial-gradient(closest-side, #000 55%, transparent 78%);
+}
+
+/* aura 仁德：柔和光晕，更慢、更轻，不炸屏 */
+.fx-splash.aura {
+  background-image: radial-gradient(closest-side, currentColor 0%, transparent 70%);
+  animation: aura-swell calc(var(--dur-splash) * 1.9) ease-out both;
+}
+
+@keyframes aura-swell {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+  40% {
+    opacity: 0.38;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.28);
+  }
+}
+
+/* —— 技能震屏 ——
+   JS 把 .fx-quake 加在 #app 根节点（diff 不会动根节点的 class），
+   CSS 只抖 .arena：不碰 .overlay 的 fixed 定位，也不晃 HUD 文字。
+   #fx-layer 可同时加同名类，让泼墨跟着战场一起抖。
+   强度 = juice.shake（0~1）：内联 --fx-shake 或用 .q1/.q2/.q3 档位。
+   连续释放时 JS 需先移除类、强制 reflow 再加回，动画才会重播。 */
+
+#app.fx-quake .arena,
+#fx-layer.fx-quake {
+  animation: fx-quake var(--dur-quake) var(--ease-snap) both;
+}
+
+.fx-quake.q1 {
+  --fx-shake: 0.3;
+}
+
+.fx-quake.q2 {
+  --fx-shake: 0.6;
+}
+
+.fx-quake.q3 {
+  --fx-shake: 1;
+}
+
+@keyframes fx-quake {
+  0% {
+    transform: translate(calc(var(--fx-shake, 0.6) * -8px), calc(var(--fx-shake, 0.6) * 2px))
+      rotate(calc(var(--fx-shake, 0.6) * -0.4deg));
+  }
+  20% {
+    transform: translate(calc(var(--fx-shake, 0.6) * 7px), calc(var(--fx-shake, 0.6) * -2px))
+      rotate(calc(var(--fx-shake, 0.6) * 0.35deg));
+  }
+  40% {
+    transform: translate(calc(var(--fx-shake, 0.6) * -5px), calc(var(--fx-shake, 0.6) * 1px));
+  }
+  60% {
+    transform: translate(calc(var(--fx-shake, 0.6) * 4px), calc(var(--fx-shake, 0.6) * -1px));
+  }
+  80% {
+    transform: translate(calc(var(--fx-shake, 0.6) * -2px), 0);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* —— 无障碍：偏好减弱动效时，演出层比 motion.css 的全局降级更进一步 ——
+   飘字改为静止全显（信息保留，由 JS 到时移除）；泼墨与震屏直接取消。 */
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-float {
+    animation: none !important;
+  }
+
+  .fx-splash {
+    animation: none !important;
+    opacity: 0;
+  }
+
+  #app.fx-quake .arena,
+  #fx-layer.fx-quake {
+    animation: none !important;
+  }
+}

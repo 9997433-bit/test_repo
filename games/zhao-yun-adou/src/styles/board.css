@@ -1,0 +1,259 @@
+/* ============================================================
+   战场：半区（阵营着色）、阿斗、行军道（远山+雾）、阵图棋盘
+   ============================================================ */
+
+.arena {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.half {
+  position: relative;
+  padding: 10px;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-m);
+  background: linear-gradient(180deg, rgba(251, 245, 230, 0.55), rgba(243, 234, 214, 0.25));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 252, 244, 0.45),
+    1px 2px 0 rgba(var(--ink-rgb), 0.05);
+}
+
+/* 敌方半区：染一层青灰，山雨欲来 */
+.half.ai {
+  background:
+    linear-gradient(180deg, rgba(var(--ai-steel-rgb), 0.1), rgba(var(--ai-steel-rgb), 0.03)),
+    linear-gradient(180deg, rgba(251, 245, 230, 0.4), rgba(243, 234, 214, 0.2));
+  border-color: rgba(var(--ai-steel-rgb), 0.28);
+}
+
+/* 我方半区：内衬一道金线，主场感 */
+.half.player {
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--gold-rgb), 0.28),
+    inset 0 0 0 2px rgba(255, 252, 244, 0.4),
+    1px 2px 0 rgba(var(--ink-rgb), 0.05);
+}
+
+/* —— 阿斗 —— */
+
+.adou {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 4px;
+  font-family: var(--font-brush);
+  font-size: 44px;
+  line-height: 1;
+  color: var(--ink-strong);
+  text-shadow:
+    0 0 1px rgba(var(--ink-rgb), 0.4),
+    0 2px 8px rgba(var(--ink-rgb), 0.16);
+}
+
+/* 主角光环：斗字背后一圈泥金晕 */
+.adou::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 66px;
+  height: 66px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(var(--gold-rgb), 0.3),
+    rgba(var(--gold-rgb), 0.1) 55%,
+    transparent 72%
+  );
+  z-index: -1;
+}
+
+.half.ai .adou::before {
+  background: radial-gradient(
+    closest-side,
+    rgba(var(--ai-steel-rgb), 0.22),
+    rgba(var(--ai-steel-rgb), 0.08) 55%,
+    transparent 72%
+  );
+}
+
+.adou small {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+/* —— 行军道 —— */
+
+.field {
+  display: grid;
+  grid-template-columns: 148px 1fr;
+  gap: 8px;
+  min-height: 168px;
+}
+
+.lane {
+  position: relative;
+  min-height: 150px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--ink-rgb), 0.14);
+  border-radius: var(--radius-m);
+  background-color: rgba(251, 245, 230, 0.4);
+  /* 顶部晨雾 + 底部远山两叠；canvas 透明，山影从画布后透出 */
+  background-image:
+    linear-gradient(180deg, rgba(251, 245, 230, 0.85), rgba(251, 245, 230, 0) 34%),
+    var(--tex-hills);
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 52%;
+  background-position: center top, center bottom;
+  box-shadow: inset 0 1px 4px rgba(var(--ink-rgb), 0.09);
+}
+
+.half.ai .lane {
+  background-color: rgba(var(--ai-steel-rgb), 0.06);
+}
+
+.lane canvas {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+/* —— 阵图棋盘 —— */
+
+.grid {
+  display: grid;
+  /* minmax(0, 96px)：小屏均匀收缩，大屏封顶不膘 */
+  grid-template-columns: repeat(5, minmax(0, 96px));
+  justify-content: center;
+  align-content: center;
+  gap: 5px;
+  padding: 6px;
+  border-radius: var(--radius-m);
+  background: rgba(var(--ink-rgb), 0.035);
+  box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.07);
+}
+
+.cell {
+  position: relative;
+  isolation: isolate;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-brush);
+  font-size: clamp(22px, 5.6vw, 30px);
+  line-height: 1;
+  color: var(--ink-soft);
+  text-shadow: 0 0 1px currentColor; /* 洇墨 */
+  background-color: rgba(255, 252, 244, 0.5);
+  background-image: linear-gradient(155deg, rgba(255, 253, 247, 0.5), rgba(238, 226, 198, 0.28));
+  border: 1px solid rgba(var(--ink-rgb), 0.16);
+  border-radius: var(--radius-cut);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.5),
+    inset 0 -1px 2px rgba(var(--ink-rgb), 0.05);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.half.ai .cell {
+  cursor: default;
+}
+
+/* 触控契约：我方棋盘上的触摸全部让给拖拽/落子，浏览器不得拿去滚动或缩放。
+   main.js 的 decorate() 会内联写一遍同样的值，这里是不依赖 JS 时序的兜底 ——
+   首帧渲染完成前、或 decorate 因异常没跑到时，拖拽在触屏上依然成立。 */
+#grid-player,
+#grid-player .cell {
+  touch-action: none;
+}
+
+/* 锁格：麻绳纹封条，锁字隐约可见（提示铲子目标） */
+.cell.locked {
+  color: rgba(var(--ink-rgb), 0.24);
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  text-shadow: none;
+  background-color: rgba(var(--ink-rgb), 0.03);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(var(--ink-rgb), 0.05) 0 5px,
+    transparent 5px 10px
+  );
+  border: 1px dashed rgba(var(--ink-rgb), 0.2);
+  box-shadow: inset 0 0 10px rgba(var(--ink-rgb), 0.06);
+  cursor: default;
+}
+
+/* 落点：朱砂框（脉动节律在 motion.css） */
+.cell.drop {
+  outline: 2px solid var(--cinnabar);
+  outline-offset: -2px;
+  border-color: rgba(var(--cinnabar-rgb), 0.5);
+  box-shadow:
+    inset 0 0 14px rgba(var(--cinnabar-rgb), 0.16),
+    0 0 0 4px rgba(var(--cinnabar-rgb), 0.12);
+}
+
+/* 选中源格（合并起手）：常亮朱砂 + 微抬，与脉动的候选落点区分 */
+.cell.selected {
+  outline: 2px solid var(--cinnabar);
+  outline-offset: -2px;
+  border-color: rgba(var(--cinnabar-rgb), 0.55);
+  box-shadow:
+    inset 0 0 14px rgba(var(--cinnabar-rgb), 0.18),
+    0 0 0 4px rgba(var(--cinnabar-rgb), 0.14);
+  transform: translateY(-1px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .half.player .cell:not(.locked):hover {
+    border-color: rgba(var(--ink-rgb), 0.34);
+    background-color: rgba(255, 252, 244, 0.78);
+  }
+}
+
+@media (max-width: 720px) {
+  .field {
+    grid-template-columns: 1fr;
+  }
+
+  .lane {
+    min-height: 128px;
+  }
+
+  .lane canvas {
+    height: 128px; /* JS 每帧读 clientHeight，路径按比例自适应 */
+  }
+}
+
+@media (max-width: 560px) {
+  .arena {
+    gap: 8px;
+  }
+
+  .half {
+    padding: 8px;
+  }
+
+  .adou {
+    font-size: 38px;
+  }
+
+  .grid {
+    gap: 4px;
+    padding: 5px;
+  }
+}
