@@ -258,6 +258,150 @@ async function runProbe(id, title, probe) {
   }
 }
 
+async function canonicalInitialBuildingIds(modules) {
+  if (typeof modules.state?.createInitialState !== "function") {
+    return {
+      pass: false,
+      info: {
+        productionApi: "state.createInitialState",
+        reason: "createInitialState 不存在，无法验证建筑 id",
+      },
+    };
+  }
+
+  const state = await modules.state.createInitialState();
+  const buildings = state?.city?.buildings ?? state?.buildings;
+  const ids = buildings && typeof buildings === "object" ? Object.keys(buildings) : [];
+  const hasLumber = Object.hasOwn(buildings ?? {}, "lumber");
+  const hasLumberyard = Object.hasOwn(buildings ?? {}, "lumberyard");
+  const pass = hasLumber && !hasLumberyard;
+  return {
+    pass,
+    info: {
+      productionApi: "state.createInitialState",
+      buildingIds: ids,
+      hasLumber,
+      hasLumberyard,
+      reason: pass
+        ? "初始状态使用规范建筑 id lumber"
+        : hasLumberyard
+          ? "初始状态仍使用旧建筑 id lumberyard，应迁移为 lumber"
+          : "初始状态缺少规范建筑 id lumber",
+    },
+  };
+}
+
+async function bridgeProjectView(modules) {
+  const specifier = "../js/bridge/view.js";
+  const url = new URL(specifier, import.meta.url);
+  if (!existsSync(url)) {
+    return {
+      status: "skip",
+      info: {
+        module: specifier,
+        reason: "js/bridge/view.js 尚不存在",
+      },
+    };
+  }
+
+  const namespace = await import(url);
+  if (typeof namespace.projectView !== "function") {
+    return {
+      pass: false,
+      info: {
+        module: specifier,
+        export: "projectView",
+        reason: "桥接模块存在，但未导出 projectView 函数",
+      },
+    };
+  }
+
+  const state = await freshState(modules.state);
+  const projected = await namespace.projectView(state);
+  const pass = Boolean(projected && typeof projected === "object");
+  return {
+    pass,
+    info: {
+      module: specifier,
+      export: "projectView",
+      returnedObject: pass,
+      reason: pass ? "projectView 已动态导入并成功投影视图" : "projectView 未返回对象",
+    },
+  };
+}
+
+function moraleValue(state) {
+  return [
+    state?.people?.morale,
+    state?.morale,
+    state?.population?.morale,
+    state?.city?.morale,
+  ].find(Number.isFinite);
+}
+
+async function sustainedFourHundredTicks(modules) {
+  let state = await freshState(modules.state);
+  const systems = [];
+  for (const role of ["climate", "economy", "city", "population"]) {
+    const api = findFunction(modules[role], tickNames[role]);
+    if (api) systems.push({ role, ...api });
+  }
+  if (systems.length === 0) {
+    return {
+      pass: false,
+      info: {
+        ticks: 0,
+        productionApis: [],
+        reason: "未找到生产 tick API，无法执行 400 tick 探针",
+      },
+    };
+  }
+
+  const bus = { emit() {}, on: () => () => {} };
+  for (let tick = 0; tick < 400; tick += 1) {
+    state.meta ??= {};
+    state.meta.tick = tick;
+    state.meta.day = Math.floor(tick / 16) + 1;
+    const context = {
+      tick,
+      dt: 0.25,
+      tickMs: 250,
+      state,
+      bus,
+      rng: () => 0.5,
+    };
+    for (const system of systems) {
+      state = absorbResult(state, await invokeTick(system, state, context));
+      context.state = state;
+    }
+    state.meta ??= {};
+    state.meta.tick = tick + 1;
+    state.meta.day = Math.floor((tick + 1) / 16) + 1;
+  }
+
+  const morale = moraleValue(state);
+  const resources =
+    state.resources && typeof state.resources === "object" ? state.resources : null;
+  const invalidResources = resources
+    ? Object.entries(resources)
+        .filter(([, value]) => !Number.isFinite(value) || value < 0)
+        .map(([key, value]) => ({ key, value }))
+    : [{ key: "resources", value: null }];
+  const pass = Number.isFinite(morale) && invalidResources.length === 0;
+  return {
+    pass,
+    info: {
+      ticks: 400,
+      productionApis: systems.map(({ role, name }) => `${role}.${name}`),
+      morale: Number.isFinite(morale) ? morale : null,
+      moraleFinite: Number.isFinite(morale),
+      resources,
+      invalidResources,
+      gameOver: state.flags?.gameOver ?? null,
+    },
+  };
+}
+
 async function zeroResourceTick(modules) {
   let state = await freshState(modules.state);
   zeroResources(state);
@@ -456,6 +600,7 @@ async function zeroTokenRecruit(modules) {
     };
   }
 
+  const ticketsBefore = state.heroes?.tickets ?? null;
   const result = await api.fn(state);
   state = absorbResult(state, result);
   const after = rosterLength(state);
@@ -472,7 +617,10 @@ async function zeroTokenRecruit(modules) {
       productionApi: `recruitment.${api.name}`,
       rosterBefore: before,
       rosterAfter: after,
+      ticketsBefore,
+      ticketsAfter: state.heroes?.tickets ?? null,
       accepted,
+      reason: result?.reason ?? null,
     },
   };
 }
@@ -620,6 +768,21 @@ async function main() {
   );
   const modules = Object.fromEntries(loaded.map((entry) => [entry.role, entry.namespace]));
   const probes = [];
+  probes.push(
+    await runProbe("canonical-initial-building-ids", "初始建筑使用 lumber 而非 lumberyard", () =>
+      canonicalInitialBuildingIds(modules),
+    ),
+  );
+  probes.push(
+    await runProbe("bridge-project-view", "动态导入桥接 projectView", () =>
+      bridgeProjectView(modules),
+    ),
+  );
+  probes.push(
+    await runProbe("four-hundred-ticks", "连续 400 tick 后民心有限且资源非负", () =>
+      sustainedFourHundredTicks(modules),
+    ),
+  );
   probes.push(await runProbe("zero-resources-tick", "全资源 0 仍能 tick", () => zeroResourceTick(modules)));
   probes.push(await runProbe("building-cap", "火炉 30 级、建筑试图超帽", () => buildingCap(modules)));
   probes.push(await runProbe("huge-cold-wave", "寒潮天数异常大", () => hugeColdWave(modules)));

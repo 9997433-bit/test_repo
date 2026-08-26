@@ -48,61 +48,38 @@ function firstFunction(module, names) {
   return null;
 }
 
-function resultSaysRejected(result) {
-  return (
-    result === false ||
-    result === null ||
-    result?.ok === false ||
-    result?.success === false ||
-    result?.paid === false
+function makeEconomyState() {
+  return {
+    meta: { tick: 0, day: 1 },
+    resources: { food: 100, wood: 100, coal: 100, iron: 100 },
+    climate: { temp: 4, blizzardDaysLeft: 0, nextBlizzardIn: 7, furnaceLit: true },
+    city: {
+      furnaceLevel: 1,
+      buildings: {
+        furnace: { level: 1, workers: 0, constructing: false, progress: 0 },
+        lumber: { level: 1, workers: 0, constructing: false, progress: 0 },
+      },
+    },
+    people: { pop: 12, popCap: 24, morale: 70, sick: 0, hungry: 0 },
+    heroes: { roster: [] },
+    flags: {},
+    log: [],
+  };
+}
+
+function assertValidResources(assert, resources) {
+  assert.ok(
+    Object.values(resources).every((amount) => Number.isFinite(amount) && amount >= 0),
+    "production economy produced a negative or invalid resource",
   );
-}
-
-async function callSpend(spend, initial, cost) {
-  const attempts = [
-    () => {
-      const resources = structuredClone(initial);
-      return { value: spend.fn(resources, structuredClone(cost)), holder: resources };
-    },
-    () => {
-      const state = { resources: structuredClone(initial) };
-      return { value: spend.fn(state, structuredClone(cost)), holder: state };
-    },
-    () => {
-      const request = { resources: structuredClone(initial), cost: structuredClone(cost) };
-      return { value: spend.fn(request), holder: request };
-    },
-  ];
-  const errors = [];
-  for (const attempt of attempts) {
-    try {
-      const called = attempt();
-      called.value = await called.value;
-      if (resultSaysRejected(called.value)) return called;
-    } catch (error) {
-      errors.push(error);
-    }
-  }
-  const detail = errors.map((error) => error?.message ?? String(error)).join("; ");
-  throw new Error(`${spend.name} did not expose a recognizable rejected transaction${detail ? `: ${detail}` : ""}`);
-}
-
-function resourcesAfter(call) {
-  if (call.value?.resources) return call.value.resources;
-  if (call.value?.state?.resources) return call.value.state.resources;
-  if (call.holder?.resources) return call.holder.resources;
-  return call.holder;
 }
 
 export async function register({ assert, test }) {
   const production = await importFirst();
   const fixture = fixtureEconomy();
-  const spend = firstFunction(production.module, [
-    "trySpend",
-    "spendResources",
-    "payCost",
-    "deductResources",
-  ]);
+  const tickEconomy = firstFunction(production.module, ["tickEconomy"]);
+  const pay = firstFunction(production.module, ["pay"]);
+  const canAfford = firstFunction(production.module, ["canAfford"]);
 
   test(
     "economy/self-contained: unaffordable cost does not deduct",
@@ -140,27 +117,70 @@ export async function register({ assert, test }) {
   );
 
   test(
-    "economy/production: rejected payment is atomic and non-negative",
+    "economy/production: canAfford reads resources from state",
     async () => {
-      if (!spend) {
-        const fallback = fixture.trySpend({ food: 2, wood: 5 }, { food: 3 });
-        assert.equal(fallback.ok, false);
+      if (!canAfford) {
+        assert.equal(fixture.canAfford({ food: 2, wood: 5 }, { food: 3 }), false);
         return;
       }
-      const initial = { food: 2, wood: 5, coal: 1, iron: 0 };
-      const call = await callSpend(spend, initial, { food: 3, wood: 1 });
-      const after = resourcesAfter(call);
-      assert.deepEqual(after, initial, `${spend.name} deducted an unaffordable cost`);
+      const state = { resources: { food: 2, wood: 5, coal: 1, iron: 0 } };
+      assert.equal(await canAfford.fn(state, { food: 3, wood: 1 }), false);
+      assert.equal(await canAfford.fn(state, { food: 2, wood: 5 }), true);
+    },
+    {
+      pending: !canAfford,
+      reason: !production.module
+        ? "production economy module is not available; pure fixture exercised"
+        : "production canAfford export is missing; pure fixture exercised",
+    },
+  );
+
+  test(
+    "economy/production: pay is atomic and non-negative",
+    async () => {
+      if (!pay) {
+        assert.equal(fixture.trySpend({ food: 2, wood: 5 }, { food: 3 }).ok, false);
+        return;
+      }
+      const state = { resources: { food: 2, wood: 5, coal: 1, iron: 0 } };
+      const before = structuredClone(state.resources);
+      assert.equal(await pay.fn(state, { food: 3, wood: 1 }), false);
+      assert.deepEqual(state.resources, before, "pay deducted an unaffordable cost");
+      assert.equal(await pay.fn(state, { food: 2, wood: 1 }), true);
+      assert.deepEqual(state.resources, { food: 0, wood: 4, coal: 1, iron: 0 });
+      assertValidResources(assert, state.resources);
+    },
+    {
+      pending: !pay,
+      reason: !production.module
+        ? "production economy module is not available; pure fixture exercised"
+        : "production pay export is missing; pure fixture exercised",
+    },
+  );
+
+  test(
+    "economy/production: tickEconomy keeps resources finite and non-negative",
+    async () => {
+      if (!tickEconomy) {
+        assertValidResources(
+          assert,
+          fixture.addWithCapacity({ food: 90, wood: 20 }, { food: 20, wood: 1 }, 100),
+        );
+        return;
+      }
+      const state = makeEconomyState();
+      assert.equal(await tickEconomy.fn(state), state);
+      assertValidResources(assert, state.resources);
       assert.ok(
-        Object.values(after).every((amount) => Number.isFinite(amount) && amount >= 0),
-        `${spend.name} produced a negative or invalid resource`,
+        Object.values(state.economy?.net ?? {}).every(Number.isFinite),
+        "tickEconomy produced a non-finite net rate",
       );
     },
     {
-      pending: !spend,
+      pending: !tickEconomy,
       reason: !production.module
         ? "production economy module is not available; pure fixture exercised"
-        : "production economy transaction export is missing; pure fixture exercised",
+        : "production tickEconomy export is missing; pure fixture exercised",
     },
   );
 }

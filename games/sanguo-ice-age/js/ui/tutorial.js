@@ -3,7 +3,7 @@
  * 目标既可以是 DOM 选择器，也可以是场景里的建筑（由渲染器给出屏幕包围盒）。
  */
 
-const DONE_KEY = "sanguo-ice-age-tutorial-v1";
+const DONE_KEY = "sanguo-ice-age-tutorial-v2";
 
 const STEPS = [
   {
@@ -27,6 +27,11 @@ const STEPS = [
     text: "伐木场、猎人小屋、煤矿、铁矿需要<b>派驻工人</b>才会产出。闲置丁口可在建筑面板里增减，工人越多产量越高，但也吃得更多。",
   },
   {
+    sel: "#quest-tray",
+    title: "功业簿",
+    text: "左上角的<b>功业簿</b>会列出当前该做的事与进度。条目亮起「可领取」时点<b>领赏</b>，物资、招募令与武将经验会直接入库。点「全部 →」可查看整条功业链。",
+  },
+  {
     sel: '[data-open="recruit"]',
     title: "招贤纳士",
     text: "花费招募令延请魏蜀吴群武将。品质越高战力越强，<b>同阵营出征</b>还有额外加成。重复武将会自动转为等级提升。",
@@ -34,7 +39,12 @@ const STEPS = [
   {
     sel: '[data-open="expedition"]',
     title: "出征讨伐",
-    text: "点将、点兵、出征。步兵克骑兵、骑兵克弓兵、弓兵克步兵；吴克蜀、蜀克魏、魏克吴。得胜可缴获大量物资与招募令。",
+    text: "点将、<b>分派步骑弓</b>、出征。步兵克骑兵、骑兵克弓兵、弓兵克步兵；吴克蜀、蜀克魏、魏克吴。战报会列出本战生效的<b>克制乘区</b>；负伤的兵员转为伤兵，在医馆将养后归队。",
+  },
+  {
+    sel: "#hud-tools",
+    title: "存档随身",
+    text: "顶栏的<b>导出</b>把当前存档存成一份 JSON 文件，<b>导入</b>可随时读回——换机器、留后手、或在城破之后从旧档东山再起。",
   },
   {
     sel: "#speed-bar",
@@ -45,6 +55,7 @@ const STEPS = [
 
 export function createTutorial({ getBuildingRect, onDone } = {}) {
   const host = document.getElementById("tutorial-root");
+  let steps = STEPS;
   let idx = 0;
   let active = false;
   let ring = null;
@@ -74,6 +85,15 @@ export function createTutorial({ getBuildingRect, onDone } = {}) {
     });
   }
 
+  /** 尚未出现的界面（如任务托盘无数据时隐藏）不该占一步引导。 */
+  function usable(step) {
+    if (!step.sel) return true;
+    const node = document.querySelector(step.sel);
+    if (!node || node.hidden) return false;
+    const r = node.getBoundingClientRect();
+    return r.width > 4 && r.height > 4;
+  }
+
   function targetRect(step) {
     if (step.sel) {
       const node = document.querySelector(step.sel);
@@ -91,7 +111,7 @@ export function createTutorial({ getBuildingRect, onDone } = {}) {
 
   function place() {
     if (!active) return;
-    const step = STEPS[idx];
+    const step = steps[idx];
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     let r = targetRect(step);
@@ -117,13 +137,13 @@ export function createTutorial({ getBuildingRect, onDone } = {}) {
   }
 
   function render() {
-    const step = STEPS[idx];
-    card.querySelector(".tut__step").textContent = `第 ${idx + 1} / ${STEPS.length} 步`;
+    const step = steps[idx];
+    card.querySelector(".tut__step").textContent = `第 ${idx + 1} / ${steps.length} 步`;
     card.querySelector(".tut__title").textContent = step.title;
     card.querySelector(".tut__text").innerHTML = step.text;
     card.querySelector('[data-tut="next"]').textContent =
-      idx === STEPS.length - 1 ? "开始治城" : "下一步";
-    card.querySelector(".tut__dots").innerHTML = STEPS.map(
+      idx === steps.length - 1 ? "开始治城" : "下一步";
+    card.querySelector(".tut__dots").innerHTML = steps.map(
       (_, i) => `<i class="${i === idx ? "is-on" : ""}"></i>`
     ).join("");
     place();
@@ -137,6 +157,8 @@ export function createTutorial({ getBuildingRect, onDone } = {}) {
   function start(force) {
     if (!force && localStorage.getItem(DONE_KEY) === "1") return false;
     if (!ring) build();
+    steps = STEPS.filter(usable);
+    if (!steps.length) steps = STEPS;
     idx = 0;
     active = true;
     host.hidden = false;
@@ -147,7 +169,7 @@ export function createTutorial({ getBuildingRect, onDone } = {}) {
   }
 
   function next() {
-    if (idx >= STEPS.length - 1) return finish();
+    if (idx >= steps.length - 1) return finish();
     idx++;
     render();
   }

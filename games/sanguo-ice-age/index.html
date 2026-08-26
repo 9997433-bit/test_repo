@@ -65,6 +65,16 @@
       </div>
     </div>
 
+    <div class="hud-top__tools" id="hud-tools" role="group" aria-label="存档">
+      <button class="tool-btn" id="btn-export" title="导出存档为文件">
+        <span class="tool-btn__ico">⤓</span><span class="tool-btn__txt">导出</span>
+      </button>
+      <button class="tool-btn" id="btn-import" title="从文件导入存档">
+        <span class="tool-btn__ico">⤒</span><span class="tool-btn__txt">导入</span>
+      </button>
+      <input type="file" id="save-file-input" accept=".json,.txt,.sav,application/json,text/plain" hidden />
+    </div>
+
     <div class="hud-top__speed" id="speed-bar" role="group" aria-label="时间流速">
       <button class="spd" data-speed="0" title="暂停（空格）"><span>⏸</span></button>
       <button class="spd is-on" data-speed="1" title="常速（1）">1x</button>
@@ -98,6 +108,19 @@
 
       <button class="scene__recenter" id="btn-recenter" title="回正视角">◎</button>
     </section>
+
+    <!-- 任务托盘：绝对定位在舞台之上，不参与 .stage 的网格分列 -->
+    <aside class="quest-tray" id="quest-tray" data-nodrag hidden>
+      <header class="quest-tray__head">
+        <button class="quest-tray__toggle" id="quest-tray-toggle" aria-expanded="true" title="收起 / 展开">
+          <span class="quest-tray__caret">▾</span>
+          <span class="quest-tray__title">功业簿</span>
+        </button>
+        <span class="quest-tray__count" id="quest-tray-count">0</span>
+        <button class="link-btn" id="quest-tray-all" data-open="quests">全部 →</button>
+      </header>
+      <ol class="quest-tray__list" id="quest-tray-list"></ol>
+    </aside>
 
     <aside class="sidebar" id="sidebar">
       <div class="side-card side-card--heroes">
@@ -142,6 +165,27 @@
   <div class="modal-root" id="modal-root" hidden></div>
   <div class="toast-root" id="toast-root" aria-live="polite"></div>
   <div class="tutorial-root" id="tutorial-root" hidden></div>
+
+  <!-- 气候 / 危机氛围罩：只消费 tokens.css 的 --clime-veil / --crisis-vignette -->
+  <div class="clime-veil" id="clime-veil" aria-hidden="true"></div>
+  <div class="crisis-veil" id="crisis-veil" aria-hidden="true"></div>
+
+  <!-- 失败幕 -->
+  <div class="gameover" id="gameover-root" role="alertdialog" aria-labelledby="gameover-title" hidden>
+    <div class="gameover__frost" aria-hidden="true"></div>
+    <div class="gameover__card">
+      <div class="gameover__glyph" aria-hidden="true">❄</div>
+      <h2 class="gameover__title" id="gameover-title">城池陷落</h2>
+      <p class="gameover__reason" id="gameover-reason">民心崩溃</p>
+      <p class="gameover__desc" id="gameover-desc"></p>
+      <div class="gameover__stats" id="gameover-stats"></div>
+      <div class="gameover__acts">
+        <button class="btn btn--ghost" id="btn-gameover-export">导出存档</button>
+        <button class="btn btn--primary" id="btn-restart">东山再起</button>
+      </div>
+      <p class="gameover__hint">「东山再起」将重开一局；旧档可先导出留存。</p>
+    </div>
+  </div>
 
   <div class="boot" id="boot">
     <div class="boot__flame">🔥</div>

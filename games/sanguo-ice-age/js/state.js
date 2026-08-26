@@ -11,6 +11,7 @@ import {
   START,
   START_HERO_IDS,
   BUILDING_IDS,
+  resolveBuildingId,
   LOG_MAX,
   TICKS_PER_DAY,
 } from "./config.js";
@@ -47,7 +48,9 @@ function createHeroEntry(id) {
  */
 export function createInitialState(seed = 1) {
   const buildings = {};
-  for (const id of BUILDING_IDS) buildings[id] = createBuilding(0);
+  for (const id of BUILDING_IDS) {
+    buildings[id] = createBuilding(Math.max(0, Math.floor(START.buildings?.[id] ?? 0)));
+  }
 
   const roster = START_HERO_IDS.map(createHeroEntry);
 
@@ -107,6 +110,50 @@ export function ensureBuilding(state, id) {
   if (!state?.city?.buildings) return null;
   if (!state.city.buildings[id]) state.city.buildings[id] = createBuilding(0);
   return state.city.buildings[id];
+}
+
+/** 把任意（可能残缺的）槽位数据补成完整建筑槽位。 */
+function normalizeBuildingSlot(slot) {
+  const b = createBuilding(0);
+  if (!isPlainObject(slot)) return b;
+  const num = (v, fallback) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : fallback);
+  b.level = Math.floor(num(slot.level, 0));
+  b.workers = num(slot.workers, 0);
+  b.progress = Math.min(1, num(slot.progress, 0));
+  b.constructing = slot.constructing === true;
+  // 保留数据表 / 系统层挂在槽位上的额外字段（如 up、queue）。
+  for (const [k, v] of Object.entries(slot)) {
+    if (!(k in b)) b[k] = v;
+  }
+  return b;
+}
+
+/** 同一建筑的两份槽位（旧 id + 新 id）合成一份：取进度更靠前的那份。 */
+function mergeBuildingSlots(a, b) {
+  const lead = b.level > a.level || (b.level === a.level && b.progress > a.progress) ? b : a;
+  const other = lead === a ? b : a;
+  return {
+    ...other,
+    ...lead,
+    workers: Math.max(a.workers, b.workers),
+    constructing: a.constructing || b.constructing,
+  };
+}
+
+/**
+ * 把建筑表里的旧 id 迁到权威 id（lumberyard→lumber 等）并补全槽位字段。
+ * 新旧 id 同时存在时合并，旧 id 不再保留。
+ * @returns {Record<string, ReturnType<typeof createBuilding>>}
+ */
+export function migrateBuildingIds(buildings) {
+  const out = {};
+  if (!isPlainObject(buildings)) return out;
+  for (const [rawId, slot] of Object.entries(buildings)) {
+    const id = resolveBuildingId(rawId);
+    const next = normalizeBuildingSlot(slot);
+    out[id] = out[id] ? mergeBuildingSlots(out[id], next) : next;
+  }
+  return out;
 }
 
 /** 由 tick 推导天数（第 1 天开始）。 */
@@ -246,9 +293,12 @@ export function assertState(state) {
 
   if (isPlainObject(state.flags)) {
     if (typeof state.flags.tutorialStep !== "number") errors.push("flags.tutorialStep 应为数字");
-    for (const k of ["gameOver", "victory"]) {
-      if (typeof state.flags[k] !== "boolean") errors.push(`flags.${k} 应为布尔值`);
+    // gameOver 兼容两种写法：false / true，或失败原因字符串（"morale" / "extinct"）。
+    const over = state.flags.gameOver;
+    if (typeof over !== "boolean" && !(typeof over === "string" && over !== "")) {
+      errors.push("flags.gameOver 应为布尔值或非空的失败原因字符串");
     }
+    if (typeof state.flags.victory !== "boolean") errors.push("flags.victory 应为布尔值");
   }
 
   if (Array.isArray(state.log)) {
@@ -291,6 +341,7 @@ export function normalizeState(raw) {
   const merged = mergeDefaults(createInitialState(seed), raw);
   merged.log = Array.isArray(raw.log) ? raw.log.slice(-LOG_MAX) : [];
   merged.meta.version = STATE_VERSION;
+  merged.city.buildings = migrateBuildingIds(merged.city.buildings);
   for (const id of BUILDING_IDS) ensureBuilding(merged, id);
   return merged;
 }

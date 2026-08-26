@@ -5,13 +5,29 @@
  * 之类的轻量状态，避免整块重绘打断用户操作。
  */
 
-import { RES_META, FACTION_META, QUALITY_META, TROOP_META, fmt } from "./hud.js";
+import {
+  RES_META, FACTION_META, QUALITY_META, TROOP_META, TROOP_ORDER, QUEST_STATUS_META,
+  fmt, readArmy, readQuests, makeTroopMix,
+} from "./hud.js";
 
 const root = () => document.getElementById("modal-root");
 
 const SIGIL = {
-  furnace: "🔥", recruit: "🏮", expedition: "⚔️", academy: "📜", report: "📯",
+  furnace: "🔥", recruit: "🏮", expedition: "⚔️", academy: "📜", report: "📯", quests: "🎯",
 };
+
+/** 战报里可能出现的乘区键 → 中文名。 */
+const COUNTER_LABELS = {
+  troop: "兵种克制", troopAdvantage: "兵种克制",
+  faction: "阵营克制", factionAdvantage: "阵营克制",
+  morale: "民心", wall: "城墙守备", hero: "武将加成",
+  same: "同阵营", terrain: "地利", tech: "典籍", skill: "技能",
+  atkMul: "同阵营·攻", defMul: "同阵营·防", hpMul: "同阵营·兵力",
+};
+
+function escText(s) {
+  return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
 
 function el(html) {
   const t = document.createElement("template");
@@ -42,7 +58,7 @@ function stars(n) {
   return "★".repeat(n) + "☆".repeat(Math.max(0, 5 - n));
 }
 
-export function createPanels({ game, hud }) {
+export function createPanels({ game, hud, onClaimQuest } = {}) {
   let current = null;      // { kind, tick }
   let onCloseCb = null;
 
@@ -402,20 +418,71 @@ export function createPanels({ game, hud }) {
   /* ============================================================
      讨伐
      ============================================================ */
-  const warPick = { targetId: null, heroIds: [], troops: null };
+  const warPick = { targetId: null, heroIds: [], troops: null, mix: null };
+
+  /** 伤兵格：分兵种已知时写在滑条右侧，只有总数时留给下方的整条提示。 */
+  function woundCell(army, t) {
+    if (!army.woundedByType || !army.wounded[t]) return "";
+    return `<em class="troop-slider__hurt">伤 ${fmt(army.wounded[t])}</em>`;
+  }
+
+  /** 三兵种编成的 HTML；只有 state.army 存在时才走这条分支。 */
+  function troopMixBody(army) {
+    const rows = TROOP_ORDER.map((t) => {
+      const meta = TROOP_META[t];
+      const avail = army.troops[t];
+      const val = warPick.mix[t];
+      return `<div class="troop-slider">
+        <span class="troop-slider__k">${meta.icon} ${meta.name}</span>
+        <input type="range" min="0" max="${Math.max(1, avail)}" step="1" value="${val}"
+          data-mix="${t}" aria-label="${meta.name}出征人数" ${avail > 0 ? "" : "disabled"} />
+        <span class="troop-slider__v" data-mixnum="${t}">${fmt(val)}<small> / ${fmt(avail)}</small>${woundCell(army, t)}</span>
+      </div>`;
+    }).join("");
+    const breakdown = army.woundedByType
+      ? `（${TROOP_ORDER.filter((t) => army.wounded[t]).map((t) => `${TROOP_META[t].name} ${fmt(army.wounded[t])}`).join(" · ")}）`
+      : "";
+    return `<div class="troop-mix">
+      ${rows}
+      <div class="troop-mix__foot">
+        <span class="troop-mix__total" data-mixtotal>${fmt(warPick.troops)}<small> 合计出征</small></span>
+        <button class="btn btn--sm" data-mixpreset="all">全征</button>
+        <button class="btn btn--sm" data-mixpreset="half">减半</button>
+        <button class="btn btn--sm" data-mixpreset="none">清零</button>
+      </div>
+    </div>
+    ${army.woundedTotal
+      ? `<div class="wound-note"><span>🩹 伤兵 <b>${fmt(army.woundedTotal)}</b> 人${breakdown}正在医馆将养，痊愈后自动归队，不计入出征兵力。</span></div>`
+      : ""}`;
+  }
 
   function openExpedition() {
     const st = game.state;
     const targets = game.targets();
     const heroes = st.heroes || [];
-    const maxTroops = Math.floor(st.troops ?? 0);
+    const army = readArmy(st);
+    const maxTroops = army ? army.total : Math.floor(st.troops ?? 0);
 
     if (!targets.some((t) => t.id === warPick.targetId)) {
       warPick.targetId = targets.find((t) => !t.cleared)?.id ?? targets[0]?.id ?? null;
     }
     warPick.heroIds = warPick.heroIds.filter((id) => heroes.some((h) => h.id === id));
-    if (warPick.troops == null || warPick.troops > maxTroops) {
-      warPick.troops = Math.max(0, Math.min(maxTroops, Math.round(maxTroops * 0.6)));
+    if (army) {
+      const mix = warPick.mix || {};
+      warPick.mix = {};
+      for (const t of TROOP_ORDER) {
+        const avail = army.troops[t];
+        const prev = mix[t];
+        warPick.mix[t] = prev == null
+          ? Math.round(avail * 0.6)
+          : Math.max(0, Math.min(avail, Math.round(prev)));
+      }
+      warPick.troops = TROOP_ORDER.reduce((s, t) => s + warPick.mix[t], 0);
+    } else {
+      warPick.mix = null;
+      if (warPick.troops == null || warPick.troops > maxTroops) {
+        warPick.troops = Math.max(0, Math.min(maxTroops, Math.round(maxTroops * 0.6)));
+      }
     }
 
     const target = targets.find((t) => t.id === warPick.targetId);
@@ -458,10 +525,11 @@ export function createPanels({ game, hud }) {
             </div>
 
             <div class="section-title">点兵</div>
+            ${army ? troopMixBody(army) : `
             <div class="troop-row">
               <input type="range" min="0" max="${Math.max(1, maxTroops)}" step="1" value="${warPick.troops}" data-troops />
               <span class="troop-num" data-troopnum>${fmt(warPick.troops)}<small> / ${fmt(maxTroops)} 兵</small></span>
-            </div>
+            </div>`}
             <div class="notice notice--ice" style="margin-top:10px">
               <span>⚔</span>
               <span>兵种克制：步兵克骑兵 · 骑兵克弓兵 · 弓兵克步兵。阵营克制：吴克蜀 · 蜀克魏 · 魏克吴。伤亡的兵员需在兵营重新征募。</span>
@@ -488,7 +556,39 @@ export function createPanels({ game, hud }) {
       updateOdds();
     });
 
+    /** 三兵种滑条：只改数字与胜算，不整块重绘，避免打断拖动。 */
+    function syncMix() {
+      if (!army) return;
+      warPick.troops = TROOP_ORDER.reduce((s, t) => s + warPick.mix[t], 0);
+      for (const t of TROOP_ORDER) {
+        const cell = c.panel.querySelector(`[data-mixnum="${t}"]`);
+        if (!cell) continue;
+        cell.innerHTML = `${fmt(warPick.mix[t])}<small> / ${fmt(army.troops[t])}</small>${woundCell(army, t)}`;
+      }
+      const total = c.panel.querySelector("[data-mixtotal]");
+      if (total) total.innerHTML = `${fmt(warPick.troops)}<small> 合计出征</small>`;
+      updateOdds();
+    }
+
+    for (const input of c.panel.querySelectorAll("[data-mix]")) {
+      input.addEventListener("input", () => {
+        warPick.mix[input.dataset.mix] = Number(input.value) || 0;
+        syncMix();
+      });
+    }
+
     c.panel.addEventListener("click", (e) => {
+      const preset = e.target.closest("[data-mixpreset]");
+      if (preset && army) {
+        const mode = preset.dataset.mixpreset;
+        for (const t of TROOP_ORDER) {
+          const avail = army.troops[t];
+          warPick.mix[t] = mode === "all" ? avail : mode === "half" ? Math.floor(avail / 2) : 0;
+          const input = c.panel.querySelector(`[data-mix="${t}"]`);
+          if (input) input.value = String(warPick.mix[t]);
+        }
+        return syncMix();
+      }
       const t = e.target.closest("[data-target]");
       if (t) {
         warPick.targetId = t.dataset.target;
@@ -507,14 +607,27 @@ export function createPanels({ game, hud }) {
       if (!a) return;
       if (a.dataset.act === "close") return close();
       if (a.dataset.act === "march") {
-        const r = game.battle(warPick.targetId, warPick.heroIds, warPick.troops);
+        const r = game.battle(warPick.targetId, warPick.heroIds, marchTroops());
         if (!r.ok) return hud.toast(r.reason, "warn");
-        openReport(r.report);
+        // 战报只有摘要，克制乘区藏在 combat 的原始 result 里，一并带上。
+        openReport(r.report ? { result: r.result, ...r.report } : r);
       }
     });
 
+    /** 有分兵结构时交出编成对象（Number() 仍等于合计），否则沿用旧的标量兵力。 */
+    function marchTroops() {
+      return army ? makeTroopMix(warPick.mix) : warPick.troops;
+    }
+
     function updateOdds() {
-      const pv = game.previewBattle(warPick.targetId, warPick.heroIds, warPick.troops);
+      let pv;
+      try {
+        pv = game.previewBattle(warPick.targetId, warPick.heroIds, marchTroops());
+      } catch (err) {
+        console.warn("[sanguo] 胜算预览失败", err);
+        pv = { ok: false, reason: "胜算暂不可算" };
+      }
+      if (!pv || typeof pv !== "object") pv = { ok: false, reason: "胜算暂不可算" };
       const bar = c.panel.querySelector("[data-oddsbar]");
       const val = c.panel.querySelector("[data-oddsval]");
       const btn = c.panel.querySelector('[data-act="march"]');
@@ -544,21 +657,102 @@ export function createPanels({ game, hud }) {
   /* ============================================================
      战报
      ============================================================ */
+  /** 战报里的乘区：优先读 result 自带的，读不到再从常见字段里拼。 */
+  function readCounters(rep) {
+    const out = [];
+    const push = (label, mul, note) => {
+      const v = Number(mul);
+      if (!label || !Number.isFinite(v) || v <= 0) return;
+      out.push({ label: String(label), mul: v, note: note || "" });
+    };
+    // report 与 combat 的原始 result 都可能带乘区，两处都扫。
+    const scopes = [rep, rep?.result].filter((s) => s && typeof s === "object");
+    for (const scope of scopes) {
+      const src = scope.counters ?? scope.multipliers ?? scope.mul ?? null;
+      if (Array.isArray(src)) {
+        for (const item of src) {
+          push(item?.label ?? COUNTER_LABELS[item?.key] ?? item?.key, item?.mul ?? item?.value ?? item?.multiplier, item?.note);
+        }
+      } else if (src && typeof src === "object") {
+        for (const [k, v] of Object.entries(src)) push(COUNTER_LABELS[k] || k, v);
+      }
+    }
+    if (!out.length) {
+      for (const scope of scopes) {
+        push("兵种克制", scope.troopAdvantage ?? scope.troopMul);
+        push("阵营克制", scope.factionAdvantage ?? scope.factionMul);
+        const fb = scope.attacker?.factionBonus ?? scope.factionBonus;
+        if (fb && typeof fb === "object") {
+          push(COUNTER_LABELS.atkMul, fb.atkMul);
+          push(COUNTER_LABELS.defMul, fb.defMul);
+          push(COUNTER_LABELS.hpMul, fb.hpMul);
+        }
+      }
+    }
+    const seen = new Set();
+    return out.filter((c) => {
+      if (Math.abs(c.mul - 1) <= 0.0005) return false;
+      const key = `${c.label}|${c.mul}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function counterSection(rep) {
+    const list = readCounters(rep);
+    if (!list.length) return "";
+    return `<div class="section-title">克制乘区</div>
+      <div class="counters">
+        ${list.map((c) => `<span class="counter ${c.mul > 1 ? "is-up" : "is-down"}" title="${escText(c.note)}">
+          ${escText(c.label)} <b>×${c.mul.toFixed(2)}</b></span>`).join("")}
+      </div>`;
+  }
+
+  /** 回合流水：字符串（内置内核）与结构化日志（systems/combat.js）都能显示。 */
+  function roundLines(rep) {
+    const raw = Array.isArray(rep?.rounds) ? rep.rounds : Array.isArray(rep?.log) ? rep.log : [];
+    return raw
+      .map((r) => {
+        if (typeof r === "string") return r;
+        if (!r || typeof r !== "object") return "";
+        const parts = [];
+        if (r.attackerDamage) parts.push(`我军斩敌 <span class="dmg">${fmt(r.attackerDamage)}</span>`);
+        if (r.defenderDamage) parts.push(`我军折损 <span class="dis">${fmt(r.defenderDamage)}</span>`);
+        if (Array.isArray(r.events) && r.events.length) {
+          parts.push(`<span class="adv">${r.events.map((e) => escText(e?.skill || e?.type || "")).filter(Boolean).join(" · ")}</span>`);
+        }
+        if (r.note) parts.push(escText(r.note));
+        return parts.join("，") || "两军对峙";
+      })
+      .filter(Boolean);
+  }
+
   function openReport(rep) {
+    const wounded = Number(rep?.woundedTotal ?? rep?.wounded?.total ?? 0) ||
+      (rep?.wounded && typeof rep.wounded === "object"
+        ? TROOP_ORDER.reduce((s, t) => s + (Number(rep.wounded[t]) || 0), 0)
+        : 0);
+    const losses = Number(rep?.lossesTotal ?? 0) ||
+      (rep?.losses && typeof rep.losses === "object"
+        ? TROOP_ORDER.reduce((s, t) => s + (Number(rep.losses[t]) || 0), 0)
+        : Number(rep?.losses) || 0);
     const c = shell({
       kind: "report",
       title: rep.win ? "凯旋" : "败绩",
-      sub: `讨伐 ${rep.targetName} · 第 ${rep.day} 日`,
+      sub: `讨伐 ${escText(rep.targetName ?? rep.target?.name ?? "流寇")} · 第 ${rep.day ?? "—"} 日`,
       sigil: SIGIL.report,
       body: `
         <div class="report__banner ${rep.win ? "win" : "lose"}">
           <div class="report__verdict">${rep.win ? "大 捷" : "失 利"}</div>
-          <div class="report__line">${rep.summary}</div>
+          <div class="report__line">${rep.summary ?? `鏖战 ${rep.rounds?.length ?? rep.rounds ?? 0} 合`}</div>
         </div>
+
+        ${counterSection(rep)}
 
         <div class="section-title">战况</div>
         <div class="rounds">
-          ${rep.rounds.map((r, i) => `<div class="round" style="animation-delay:${i * 60}ms">
+          ${roundLines(rep).map((r, i) => `<div class="round" style="animation-delay:${i * 60}ms">
             <span class="round__n">第${i + 1}合</span>
             <span class="round__txt">${r}</span>
           </div>`).join("")}
@@ -566,9 +760,10 @@ export function createPanels({ game, hud }) {
 
         <div class="section-title">${rep.win ? "缴获" : "损失"}</div>
         <div class="spoils">
-          ${Object.entries(rep.loot || {}).map(([k, v]) => `<span class="spoil">${(RES_META[k] || { icon: "🎖" }).icon} ${fmt(v)}</span>`).join("")}
+          ${Object.entries(rep.loot || rep.rewards?.resources || {}).map(([k, v]) => `<span class="spoil">${(RES_META[k] || { icon: "🎖" }).icon} ${fmt(v)}</span>`).join("")}
           ${rep.ticket ? `<span class="spoil">🏮 招募令 ${rep.ticket}</span>` : ""}
-          <span class="spoil" style="color:var(--bad);border-color:rgba(255,122,107,.3);background:rgba(255,122,107,.08)">☠ 阵亡 ${fmt(rep.losses)} 兵</span>
+          <span class="spoil" style="color:var(--bad);border-color:rgba(255,122,107,.3);background:rgba(255,122,107,.08)">☠ 阵亡 ${fmt(losses)} 兵</span>
+          ${wounded ? `<span class="spoil" style="color:var(--warn);border-color:rgba(255,203,92,.32);background:rgba(255,203,92,.08)">🩹 伤兵 ${fmt(wounded)} 兵</span>` : ""}
           ${rep.exp ? `<span class="spoil">⭑ 武将经验 +${rep.exp}</span>` : ""}
         </div>`,
       foot: `
@@ -635,6 +830,87 @@ export function createPanels({ game, hud }) {
   }
 
   /* ============================================================
+     功业簿（任务）
+     ============================================================ */
+  function claim(id, name) {
+    const fn = onClaimQuest || (typeof game.claimQuest === "function" ? (qid) => game.claimQuest(qid) : null);
+    if (!fn) {
+      hud.toast("任务奖励尚未接通", "warn");
+      return false;
+    }
+    let r;
+    try {
+      r = fn(id);
+    } catch (err) {
+      console.warn("[sanguo] 领取任务出错", err);
+      hud.toast("领取失败", "bad");
+      return false;
+    }
+    if (r && r.ok === false) {
+      hud.toast(r.reason || "尚不可领取", "warn");
+      return false;
+    }
+    hud.toast(`功业已录：${name || id}`, "good");
+    return true;
+  }
+
+  function questCard(q) {
+    const meta = QUEST_STATUS_META[q.status];
+    const pct = Math.round(q.ratio * 100);
+    const ready = q.status === "ready";
+    return `<li class="quest ${meta.cls}">
+      <div class="quest__top">
+        <span class="quest__name">${escText(q.name)}</span>
+        <span class="quest__tag">${meta.name}</span>
+      </div>
+      ${q.desc ? `<p class="quest__desc">${escText(q.desc)}</p>` : ""}
+      <div class="quest__bar"><i style="width:${pct}%"></i></div>
+      <div class="quest__foot">
+        <span class="quest__num">${q.target > 0 ? `${fmt(q.current)} / ${fmt(q.target)}` : `${pct}%`}</span>
+        ${q.status === "claimed"
+          ? '<span class="quest__tag">✓ 已录</span>'
+          : `<button class="btn btn--sm ${ready ? "btn--primary" : ""}" data-claim="${escText(q.id)}"
+               data-quest-name="${escText(q.name)}" ${ready ? "" : "disabled"}>领赏</button>`}
+      </div>
+      ${q.rewards.length
+        ? `<div class="quest__rewards">${q.rewards.map((r) => `<span class="quest__reward">${r.icon} ${escText(r.label)} ${escText(r.value)}</span>`).join("")}</div>`
+        : ""}
+    </li>`;
+  }
+
+  function openQuests() {
+    const quests = readQuests(game.state);
+    const order = { ready: 0, active: 1, locked: 2, claimed: 3 };
+    const sorted = quests.slice().sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || b.ratio - a.ratio);
+    const readyCount = quests.filter((q) => q.status === "ready").length;
+    const doneCount = quests.filter((q) => q.status === "claimed").length;
+
+    const c = shell({
+      kind: "quests",
+      title: "功业簿",
+      sub: "开荒有序 · 完成即领，奖励直入府库",
+      sigil: SIGIL.quests,
+      wide: true,
+      body: quests.length
+        ? `<div class="notice notice--ice" style="margin-bottom:14px">
+             <span>🎯</span>
+             <span>共 <b>${quests.length}</b> 条功业，<b>${doneCount}</b> 条已录，<b>${readyCount}</b> 条待领。
+             达成条件后按钮亮起，点「领赏」入账。</span>
+           </div>
+           <ol class="quest-grid" style="list-style:none;margin:0;padding:0">${sorted.map(questCard).join("")}</ol>`
+        : '<div class="empty"><span class="empty__ico">🎐</span>功业簿尚未开卷。<br/>任务系统接通后，此处会列出开荒指引。</div>',
+      foot: `<span class="foot-note">奖励含物资 / 招募令 / 武将经验</span>
+        <button class="btn btn--ghost" data-act="close">关闭</button>`,
+    });
+
+    c.panel.addEventListener("click", (e) => {
+      if (e.target.closest('[data-act="close"]')) return close();
+      const btn = e.target.closest("[data-claim]");
+      if (btn && claim(btn.dataset.claim, btn.dataset.questName)) openQuests();
+    });
+  }
+
+  /* ============================================================
      出口
      ============================================================ */
   function open(kind, payload) {
@@ -643,6 +919,7 @@ export function createPanels({ game, hud }) {
       case "recruit": return openRecruit();
       case "expedition": return openExpedition();
       case "academy": return openAcademy();
+      case "quests": return openQuests();
       case "building": return openBuilding(payload);
       case "report": return openReport(payload);
       default: return openBuilding(kind);

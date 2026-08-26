@@ -1,6 +1,16 @@
 /**
  * 主线任务链（fable-balance）
  *
+ * 开局对齐（与 config.START 一致）：food 320 / wood 420 / coal 140 / iron 60。
+ *   q01/q02 的要求（lumber 1 级 + hunter 1 级，合计 food 35 / wood 75）
+ *   开局资源可直接完成，无需等产出。
+ *
+ * require.id 约束：type 为 'build' 时，id 必须存在于 data/buildings.js 的
+ *   BUILDINGS 权威集合（furnace / lumber / hunter / coal_mine / iron_mine /
+ *   house / warehouse / kitchen / barracks_inf / barracks_arch / barracks_cav /
+ *   hospital / academy / tavern / wall / embassy / clinic），
+ *   禁止使用 sawmill、lumberyard 等别名或不存在的 id。
+ *
  * require.type 语义（供任务系统实现）：
  * - 'build'   → 建筑 require.id 达到 require.value 级；
  * - 'recruit' → 累计招募武将 require.value 名；

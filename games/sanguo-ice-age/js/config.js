@@ -70,6 +70,8 @@ export const LOOP = {
 export const START = {
   resources: { food: 320, wood: 420, coal: 140, iron: 60 },
   furnaceLevel: 1,
+  /** 开局已建成的建筑等级（键取自 BUILDING_IDS，缺省为 0 级未建造）。 */
+  buildings: { lumber: 1, hunter: 1, house: 1 },
   pop: 12,
   popCap: 24,
   army: { infantry: 12, cavalry: 0, archer: 0, wounded: 0 },
@@ -79,18 +81,57 @@ export const START = {
 /** 开局赠送的橙将占位 id；heroes 数据表就位后用同名 id 关联。 */
 export const START_HERO_IDS = ["liubei", "zhangfei", "huatuo"];
 
-/** 城建槽位 id（不含火炉，火炉单独存 city.furnaceLevel）。数据表可扩展。 */
+/**
+ * 城建槽位 id（不含火炉，火炉单独存 city.furnaceLevel）。
+ * 与 js/data/buildings.js 的 id 一一对应，是全项目的权威命名。
+ */
 export const BUILDING_IDS = [
-  "lumberyard",
+  "lumber",
   "hunter",
-  "coalmine",
-  "ironmine",
+  "coal_mine",
+  "iron_mine",
+  "house",
+  "warehouse",
   "kitchen",
-  "clinic",
-  "warmhouse",
-  "barracks",
+  "barracks_inf",
+  "barracks_arch",
+  "barracks_cav",
+  "hospital",
   "academy",
+  "tavern",
+  "wall",
+  "embassy",
+  "clinic",
 ];
+
+/**
+ * 旧命名 → 权威 id。读档时用于迁移历史存档，
+ * 也供仍在用旧 id 的模块（systems/city.js 的 ID_ALIASES 等）查表。
+ */
+export const BUILDING_ID_ALIASES = {
+  lumberyard: "lumber",
+  lumberCamp: "lumber",
+  hunterHut: "hunter",
+  coalmine: "coal_mine",
+  coalMine: "coal_mine",
+  ironmine: "iron_mine",
+  ironMine: "iron_mine",
+  warmhouse: "house",
+  storage: "warehouse",
+  storehouse: "warehouse",
+  barracks: "barracks_inf",
+  barracksInf: "barracks_inf",
+  barracksArch: "barracks_arch",
+  barracksCav: "barracks_cav",
+  infirmary: "hospital",
+  recruit: "tavern",
+  recruitHall: "tavern",
+};
+
+/** 把任意（可能是旧的）建筑 id 解析为权威 id；无别名时原样返回。 */
+export function resolveBuildingId(id) {
+  return BUILDING_ID_ALIASES[id] ?? id;
+}
 
 /** 事件日志保留条数，超出丢最旧的。 */
 export const LOG_MAX = 200;

@@ -29,52 +29,32 @@ function firstFunction(module, names) {
   return null;
 }
 
-function extractTemperature(value) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  for (const key of ["temperature", "temp", "currentTemp", "effectiveTemperature"]) {
-    if (typeof value?.[key] === "number" && Number.isFinite(value[key])) return value[key];
-  }
-  return null;
-}
-
-async function callTemperature(calculator, blizzard) {
-  const weather = {
-    baseTemp: 4,
-    baseTemperature: 4,
-    blizzard,
-    isBlizzard: blizzard,
-    coldSnap: blizzard,
-    furnaceLevel: 0,
-    furnace: { level: 0, active: true },
+function makeClimateState(blizzard = false) {
+  return {
+    meta: { tick: 0, day: 1 },
+    resources: { food: 100, wood: 100, coal: 100, iron: 100 },
+    climate: {
+      temp: 4,
+      blizzardDaysLeft: blizzard ? 1 : 0,
+      nextBlizzardIn: 7,
+      furnaceLit: false,
+    },
+    city: {
+      furnaceLevel: 0,
+      buildings: {},
+      warmthBuildings: 0,
+    },
+    people: { pop: 12, popCap: 24, morale: 70, sick: 0, hungry: 0 },
+    heroes: { roster: [] },
+    flags: {},
+    log: [],
   };
-  const attempts = [
-    () => calculator.fn(structuredClone(weather)),
-    () => calculator.fn(4, { blizzard, isBlizzard: blizzard, furnaceLevel: 0 }),
-    () => calculator.fn(4, 0, blizzard),
-  ];
-  const errors = [];
-  for (const attempt of attempts) {
-    try {
-      const temperature = extractTemperature(await attempt());
-      if (temperature !== null) return temperature;
-    } catch (error) {
-      errors.push(error);
-    }
-  }
-  const detail = errors.map((error) => error?.message ?? String(error)).join("; ");
-  throw new Error(
-    `${calculator.name} did not return a recognizable temperature${detail ? `: ${detail}` : ""}`,
-  );
 }
 
 export async function register({ assert, test }) {
   const production = await importFirst();
-  const calculator = firstFunction(production.module, [
-    "calculateTemperature",
-    "computeTemperature",
-    "deriveTemperature",
-    "getEffectiveTemperature",
-  ]);
+  const tickClimate = firstFunction(production.module, ["tickClimate"]);
+  const cityTemperature = firstFunction(production.module, ["cityTemperature"]);
 
   test(
     "climate/self-contained: blizzard applies a fourteen-degree cold snap",
@@ -103,24 +83,58 @@ export async function register({ assert, test }) {
   );
 
   test(
-    "climate/production: blizzard is colder than calm weather",
+    "climate/production: cityTemperature makes blizzards colder",
     async () => {
-      if (!calculator) {
+      if (!cityTemperature) {
         assert.ok(
           fixtureClimate.temperature({ blizzard: true }) <
             fixtureClimate.temperature({ blizzard: false }),
         );
         return;
       }
-      const calm = await callTemperature(calculator, false);
-      const storm = await callTemperature(calculator, true);
-      assert.ok(storm < calm, `${calculator.name} returned calm=${calm}, blizzard=${storm}`);
+      const calm = await cityTemperature.fn(makeClimateState(false));
+      const storm = await cityTemperature.fn(makeClimateState(true));
+      assert.ok(Number.isFinite(calm));
+      assert.ok(Number.isFinite(storm));
+      assert.ok(storm < calm, `cityTemperature returned calm=${calm}, blizzard=${storm}`);
     },
     {
-      pending: !calculator,
+      pending: !cityTemperature,
       reason: !production.module
         ? "production climate module is not available; pure fixture exercised"
-        : "production temperature export is missing; pure fixture exercised",
+        : "production cityTemperature export is missing; pure fixture exercised",
+    },
+  );
+
+  test(
+    "climate/production: tickClimate keeps temperature and fuel finite",
+    async () => {
+      if (!tickClimate) {
+        assert.ok(Number.isFinite(fixtureClimate.temperature()));
+        return;
+      }
+      const state = makeClimateState(false);
+      state.city.furnaceLevel = 1;
+      state.city.buildings.furnace = {
+        level: 1,
+        workers: 0,
+        constructing: false,
+        progress: 0,
+      };
+      state.climate.furnaceLit = true;
+      assert.equal(await tickClimate.fn(state), state);
+      assert.ok(Number.isFinite(state.climate.temp));
+      assert.ok(Number.isFinite(state.climate.targetTemp));
+      assert.ok(
+        Object.values(state.resources).every((amount) => Number.isFinite(amount) && amount >= 0),
+        "tickClimate produced a negative or invalid resource",
+      );
+    },
+    {
+      pending: !tickClimate,
+      reason: !production.module
+        ? "production climate module is not available; pure fixture exercised"
+        : "production tickClimate export is missing; pure fixture exercised",
     },
   );
 }

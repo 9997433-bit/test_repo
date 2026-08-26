@@ -19,12 +19,16 @@ function pick(arr) { return arr[(Math.random() * arr.length) | 0]; }
 /**
  * 站位不能落在建筑体内：往镜头方向（gx、gy 同时增大）让出一个「檐前空地」。
  * 深度 = gx+gy，因此偏移后城民会排在该建筑之后绘制，不会被屋顶吃掉。
+ *
+ * 让出的距离由节点自带的 `apron` 决定（渲染层按地块尺寸算），
+ * 缺省值兼容没带该字段的旧节点。
  */
 const APRON = 0.92;
 function apronOf(node, spread = 0.42) {
+  const off = Number.isFinite(node?.apron) ? node.apron : APRON;
   return {
-    tx: node.gx + APRON + rnd(-spread, spread),
-    ty: node.gy + APRON + rnd(-spread, spread),
+    tx: node.gx + off + rnd(-spread, spread),
+    ty: node.gy + off + rnd(-spread, spread),
   };
 }
 
@@ -39,8 +43,32 @@ export function createVillagerCrowd() {
 
   let nodeSig = "";
 
+  /** 某个节点上已经派了几个人（`self` 不计入，方便给它重新找位子）。 */
+  function staffOf(node, field, self) {
+    let n = 0;
+    for (const p of people) if (p !== self && p[field] === node) n++;
+    return n;
+  }
+
+  /**
+   * 挑人最少的节点。
+   * 纯随机分配在十几座建筑上会留下一半空档——新解锁的兵营、太学、驿馆
+   * 常年没人走过檐前，看着像没建成，所以这里按人头摊平。
+   */
+  function leastStaffed(list, field, self) {
+    let best = null;
+    let bestN = Infinity;
+    for (const n of list) {
+      const c = staffOf(n, field, self);
+      if (c < bestN) { bestN = c; best = n; }
+    }
+    return best || pick(list);
+  }
+
   function setNodes(list, hearthNode) {
-    const clean = list.filter((n) => Number.isFinite(n.gx) && Number.isFinite(n.gy));
+    const clean = (Array.isArray(list) ? list : []).filter(
+      (n) => Number.isFinite(n?.gx) && Number.isFinite(n?.gy),
+    );
     // 渲染器每帧都会重建节点数组；内容没变就不要打断城民正在走的路
     const sig = clean.map((n) => `${n.key}:${n.gx},${n.gy},${n.role}`).join("|");
     if (sig === nodeSig) return;
@@ -52,10 +80,23 @@ export function createVillagerCrowd() {
     if (!homes.length) homes = [hearth];
     if (!works.length) works = [hearth];
     for (const p of people) retarget(p, true);
+    rebalance();
+  }
+
+  /** 新建筑落成后，把扎堆的工位分一个人过去。 */
+  function rebalance() {
+    for (let pass = 0; pass < people.length; pass++) {
+      const empty = works.find((n) => staffOf(n, "work", null) === 0);
+      if (!empty) break;
+      const donor = people.find((p) => staffOf(p.work, "work", p) >= 1);
+      if (!donor) break;
+      donor.work = empty;
+      if (donor.state === "toWork") retarget(donor, true);
+    }
   }
 
   function spawn() {
-    const home = pick(homes);
+    const home = leastStaffed(homes, "home", null);
     const coat = pick(COATS);
     const start = apronOf(home, 0.7);
     const p = {
@@ -70,7 +111,7 @@ export function createVillagerCrowd() {
       skin: Math.random() < 0.5 ? "#e8cba9" : "#dcbd97",
       hat: Math.random() < 0.45,
       home,
-      work: pick(works),
+      work: leastStaffed(works, "work", null),
       carry: null,
       bob: Math.random() * TAU,
       facing: 1,
@@ -83,8 +124,10 @@ export function createVillagerCrowd() {
 
   function setCount(n) {
     const want = Math.max(4, Math.min(16, Math.round(n) || 8));
+    if (want === people.length) return;
     while (people.length < want) spawn();
     while (people.length > want) people.pop();
+    rebalance();
   }
 
   function retarget(p, immediate) {
@@ -92,12 +135,12 @@ export function createVillagerCrowd() {
     // 节点数组可能被整体替换，按 key 重新绑定，避免丢失原有的家 / 工位
     p.home = homes.find((n) => n.key === p.home?.key) || p.home;
     p.work = works.find((n) => n.key === p.work?.key) || p.work;
-    if (!p.home || !homes.includes(p.home)) p.home = pick(homes);
-    if (!p.work || !works.includes(p.work)) p.work = pick(works);
+    if (!p.home || !homes.includes(p.home)) p.home = leastStaffed(homes, "home", p);
+    if (!p.work || !works.includes(p.work)) p.work = leastStaffed(works, "work", p);
     if (p.state === "toHearth") {
-      // 火炉四周围一圈取暖，而不是全挤在一点
+      // 火炉四周围一圈取暖，而不是全挤在一点；半径要绕开炉台，由渲染层给
       const a = rnd(0, TAU);
-      const r = rnd(1.15, 1.9);
+      const r = rnd(hearth.r0 ?? 1.15, hearth.r1 ?? 1.9);
       p.tx = hearth.gx + Math.cos(a) * r;
       p.ty = hearth.gy + Math.sin(a) * r * 0.9 + 0.35;
     } else {

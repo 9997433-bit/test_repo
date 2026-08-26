@@ -472,3 +472,46 @@ squads 引用的 heroUid 存在、`JSON roundtrip` 深等、同种子重放哈�
 2. `START` 的开局资源（320/420/140/60、pop 12、赠步兵 12、heroTickets 3）与 DESIGN §6.4 教学节拍（150/120/0/0、pop 20、无兵、无券）冲突：开局即有煤铁与士兵会废掉「首寒潮升炉」与「练兵」两条教学线。以 DESIGN §6.4 为准；若 engine 坚持券制招募，需同步改写 DESIGN §8.2 造价条目并重算 §16 平衡基线。
 3. `START_HERO_IDS`（liubei/zhangfei/huatuo）与 DESIGN §8.1 的 16 人名册不符：开局仅赠 `liaohua`（蓝）；刘备/张飞/华佗不在首发名册，如需加入须走名册扩表流程（数据行 + 品质配平），不得作为开局橙将赠送。
 4. `LOOP/TICK_SEC/LOG_MAX/LOG_LEVELS` 与本文兼容，采纳并视为合同一部分（`LOG_MAX=200` 与 §3 events.log 上限一致；`LOG_LEVELS` 供事件志上色，与 bus `toast.kind` 三值并存不混用）。
+
+---
+
+## 17. 整合（Round 2 增补；细则见 `docs/INTEGRATION.md`）
+
+> 作者：fable-integration（Round 2）。Round 1 交付的实际代码与本文 §3/§4/§16 蓝图
+> 存在偏离；Round 2 以**已交付并通过测试的代码**为基线做归一，裁决细则全部落在
+> `docs/INTEGRATION.md`（下称 INTEGRATION）。**两文冲突时以 INTEGRATION 为准**，
+> 本章只记录让位关系与合同修订点，不重复条款。
+
+### 17.1 对本文蓝图的修订
+
+1. **状态树（替代 §3）**：权威状态树以 `js/state.js` 的 `createInitialState` 实际
+   产出为准（`meta / resources / climate / city.buildings{} / people / army /
+   heroes / quests / stats / war / research / flags / log`），§3 的
+   `v/rngState/buildings 顶层/population.assigned` 等蓝图字段不再执行。
+   Round 2 唯一一次 schema 变更（`SAVE_VERSION` 1→2：army 嵌套化、quests 形状
+   统一、新增 stats/war/research、武将 id snake_case 迁移）见 INTEGRATION §1.3。
+2. **建筑 id（替代 §16.1）**：权威集合为 `data/buildings.js` 的 17 个
+   snake_case id（`lumber/coal_mine/iron_mine/warehouse/barracks_inf/...`），
+   §3/§16 的 14 建筑 camelCase 方案作废。旧 id 经 `config.BUILDING_ID_ALIASES`
+   与 `systems/city.js ID_ALIASES` **仅在读档迁移与 defOf 兜底**中出现。
+3. **tick 流水线（收敛 §4.2）**：当前落地为 5 段固定顺序
+   `climate → city → economy → population → quests`（INTEGRATION §4）；
+   §4.2 的 9 系统蓝图（morale/construction/military/events/progress 独立成段）
+   保留为远期方向，本轮 morale/construction 已并入 population/city，combat 为
+   动作驱动、无 tick 段。
+4. **actions/selectors（落点变更，§6/§7 职责不变）**：`actions.js`、
+   `selectors.js` 的职责由 **`js/bridge/actions.js`**（动作表见 INTEGRATION §5）
+   与 **`js/bridge/view.js` 的 `projectView(state)`**（字段对照见 INTEGRATION §3）
+   承接；`tests/probes.mjs` 的 `bridge-project-view` 探针按该路径验收。
+   「UI 严禁直接改 state、失败必返回 reason 并由 UI toast」两条原则不变且升级为
+   硬约束（INTEGRATION §8）。
+5. **存档（补充 §9）**：唯一键 `config.SAVE_KEY`、唯一通道 `engine/save.js`；
+   Round 1 期间 main.js 内置内核私建的 `${SAVE_KEY}-ui` 键只删不写、不迁移。
+6. **双核退役**：main.js 的 FALLBACK CORE（内置扁平内核 + probeBridge 桥探测 +
+   防御性动态 import）整体删除，systems/engine/data 改为静态 import；
+   退役清单见 INTEGRATION §1.4。
+
+### 17.2 验收口径
+
+`node tests/runner.mjs` / `tests/probes.mjs` / `tests/bench.mjs` 全绿，且
+`bridge-project-view` 探针由 skip 转 pass；其余验收沿用 DESIGN §17。

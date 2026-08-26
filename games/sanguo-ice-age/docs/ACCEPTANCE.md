@@ -4,6 +4,15 @@
 > 数值与美术合同见 `DESIGN.md`，模块边界见 `ARCHITECTURE.md`，可读性打磨线见 `SOTA.md`。
 > 所有「现状」标注基于 2026-08-26 代码快照实测（`npm test` / `npm run probe` / `npm run bench` /
 > 全量 `node --check` / import 图静态校验 / `python3 -m http.server` 200 探测）。
+>
+> **Round 2 复核（2026-08-26）**：两个快照分开记。
+> ① **基线提交 27bfac5**（临时 worktree 检出实测）：`npm test` 15 过/1 败/2 挂起、probe 7/7、
+> bench 2000 tick/~571ms ≈ 0.29ms/tick——与 Round 1 记载一致。基线上五大差距全部实锤：
+> 桥接不激活、无失败结局、任务无 UI、三兵种未外显、`data-temp` 主题层无人写入、存档导入导出无按钮。
+> ② **工作树（Round 2 施工中，未提交）**：实现者正沿收敛路线并行施工——`js/bridge/{view,actions}.js`、
+> 任务托盘、失败幕、`data-temp` 写入、导入导出按钮均已见雏形；探针改嵌套形状、新增 `bridge-project-view`
+> 与 integration 套件后施工树测试 22/22 绿。**本文勾选一律以 Round 2 提交后的复测为准**，施工树数字仅供参照。
+> 本轮硬性视觉/反馈交付清单见 `SOTA.md` §2b。
 
 ---
 
@@ -22,9 +31,9 @@
 
 ```bash
 cd games/sanguo-ice-age
-npm test        # tests/runner.mjs 单元测试（当前 15 过 / 1 败 / 2 挂起）
-npm run probe   # tests/probes.mjs 边界探针（当前 7/7 过）
-npm run bench   # tests/bench.mjs 性能基准（当前 ~0.27ms/tick）
+npm test        # tests/runner.mjs 单元测试（基线 27bfac5：15 过/1 败/2 挂起；R2 施工树：22/22）
+npm run probe   # tests/probes.mjs 边界探针（基线：7/7；R2 施工树：新增 bridge-project-view 等 3 条）
+npm run bench   # tests/bench.mjs 性能基准（基线 ~0.29ms/tick，无 NaN/负数）
 npm start       # 127.0.0.1:4173 人工走查
 ```
 
@@ -40,7 +49,7 @@ npm start       # 127.0.0.1:4173 人工走查
 |---|---|---|
 | 位置 | `js/main.js` 内置 FALLBACK CORE（约 850 行） | `js/state.js` + `js/systems/{city,economy,climate,population,heroes,combat,quests}.js` |
 | 状态形状 | 扁平：`resources` / `buildings:[{key,level,workers}]` / `population.total` / `troops`(单标量) / `heroes:[]` | 嵌套：`meta` / `city.buildings{}` / `people` / `army{infantry,cavalry,archer,wounded}` / `heroes.roster` |
-| 建筑 id | `furnace,house,lumber,hunter,coal,iron,kitchen,storage,barracks,clinic,recruit,academy,wall`（13 座） | `config.BUILDING_IDS`（9 个，含 `lumberyard/coalmine/warmhouse`）与 `data/buildings.js`（17 座，`lumber/coal_mine/house/tavern…`），靠 `city.js ID_ALIASES` 勉强互认 |
+| 建筑 id | `furnace,house,lumber,hunter,coal,iron,kitchen,storage,barracks,clinic,recruit,academy,wall`（13 座） | 基线：`config.BUILDING_IDS`（9 个，含 `lumberyard/coalmine/warmhouse`）与 `data/buildings.js`（17 座，`lumber/coal_mine/house/tavern…`），靠 `city.js ID_ALIASES` 勉强互认。R2 施工树动态：config 正升级为 16 个权威 id + `BUILDING_ID_ALIASES`/`resolveBuildingId()`，`state.js` 增 `migrateBuildingIds`（未提交，P1-02 勾选以提交后为准） |
 | 升级模型 | 即时扣费即时升级 | 扣费 → 施工工期（`buildTicks`/`progress`）→ 完工 |
 | 战斗模型 | 单标量兵力 + 胜率掷骰（`Math.random`） | 三兵种 12 回合确定性战斗 + 技能 5 类 + 伤兵 |
 | 存档键 | `sanguo-ice-age-save-v1-ui`（`core.serialize`） | `sanguo-ice-age-save-v1`（`engine/save.js` 信封 + `assertState` 校验） |
@@ -61,21 +70,28 @@ npm start       # 127.0.0.1:4173 人工走查
 | `systems/population`（疾病/治疗/死亡/增长、gameOver 判定） | 🟡 未打通 | 同上 |
 | `systems/heroes`（星级/碎片/经验/编队5人/驻防） | 🟡 未打通 | UI 用「重复=升级、上限10级」的另一套养成 |
 | `systems/combat`（三兵种/技能/伤兵/劫掠生成 `makeRaidEncounter`） | 🟡 未打通 | UI 用简化胜率模型 |
-| `systems/quests` + `data/quests.js`（12 条主线链） | 🟡 未打通 | 单测通过，**无任何 UI 入口** |
+| `systems/quests` + `data/quests.js`（12 条主线链） | 🟡 未打通 | 单测通过，**无任何 UI 入口**（R2 复核基线确认：`main.js` import 后零引用）。id 勘误：`q_sawmill_3` 引用不存在 id `sawmill` 的坑在 `systems/quests.js` 内置链（`data/quests.js` 本身用规范 id `lumber`）；R2 施工树已在修 |
 | `engine/save.js`（信封 + 校验 + 导入导出） | 🟡 未打通 | 仅在桥接激活时才会被 UI 使用（即从未） |
 | `engine/rng.js`（可复现随机） | 🟡 未打通 | UI 内核招贤/战斗全用 `Math.random`，违反 ARCHITECTURE §10 确定性合同 |
 | `engine/bus.js` | 🟡 未打通 | 仅桥接时传入 systems，无订阅者 |
 | `data/troops.js` | ⬜ 完全未消费 | 兵种三分尚无宿主 |
 | 事件/贸易/使节馆/劫掠防守（DESIGN §11–12） | ⬜ 未实现 | 两侧皆无 |
 
-### 1.3 自动化测试基线（2026-08-26 实测）
+### 1.3 自动化测试基线（Round 2 复核，2026-08-26 实测）
+
+**基线提交 27bfac5**（临时 worktree 检出实测，即 Round 1 的交付物）：
 
 | 套件 | 结果 | 备注 |
 |---|---|---|
-| `npm test` | ❌ 15 过 / **1 败** / 2 挂起 | 败：`quests/production: furnace level gates non-furnace building upgrades` — 探针用**扁平** state 调 `city.canUpgrade`，而实现只认嵌套 `state.city.buildings`。这颗红灯就是 §1.1 断层的机读信号 |
+| `npm test` | ❌ 15 过 / **1 败** / 2 挂起 | 败：`quests/production: furnace level gates non-furnace building upgrades` — 探针用**扁平** state 调 `city.canUpgrade`，实现只认嵌套 `state.city.buildings`。红灯 = §1.1 断层的机读信号（Round 1 记载准确，R2 复核维持） |
 | `npm run probe` | ✅ 7/7 | 资源全 0 tick、火炉 30 级封顶、寒潮天数异常大、0 令抽卡、空阵容讨伐、兵力 1e6、坏档缺字段 |
-| `npm run bench` | ✅ 无 NaN/负数 | 2000 tick / ~550ms ≈ **0.27ms/tick**（满足 ≤2ms/tick 预算；但按此吞吐 10k tick ≈ 2.7s，`DESIGN §17`「10k tick < 250ms」**未达标**，需裁决目标或优化） |
+| `npm run bench` | ✅ 无 NaN/负数 | 2000 tick / ~571ms ≈ **0.29ms/tick**（满足 ≤2ms/tick 预算；但按此吞吐 10k tick ≈ 2.9s，`DESIGN §17`「10k tick < 250ms」**未达标**，需裁决目标或优化） |
 | 静态 | ✅ | 全部 js `node --check` 通过；import 图无断链；index/main HTTP 200 |
+
+**R2 施工树动态**（未提交，数字随施工变动，仅供参照）：探针 `makeState` 已改嵌套形状、probe 新增
+「初始建筑使用 lumber」「连续 400 tick 民心资源健康」「动态导入桥接 projectView」三条、另增 integration
+套件——施工树当前 22/22 全绿。⚠️ 验收警戒：**转绿必须来自断层真正收敛**（`bridge.active === true`、
+控制台不再打印「状态结构与 UI 内核不同」、`bridge-project-view` 转 pass），而非仅把探针形状改得与实现一致。
 
 ---
 
@@ -122,19 +138,20 @@ npm start       # 127.0.0.1:4173 人工走查
   - 失败判定：寒潮无预警直接开始；横幅不消失；`blizzardDaysLeft`/`blizzardIn` 与实际相位不符
   - ⚠️ 与 systems 侧差异待统一：`systems/climate.js` 有烈度逐场递增（+0.06/场）与持续天数增长，UI 公式没有；DESIGN §4 要求的「第 57 天甲子极寒」两侧皆 ⬜
 
-- [ ] **P0-07 温度对经济与人口的传导** ｜ ✅
+- [ ] **P0-07 温度对经济与人口的传导** ｜ ✅（数值传导）／ ⬜ 全局温度色 ｜ **温度色部分为 R2 硬性交付（SOTA §2b-4）**
   - Given 城内温度跌破 0° / −6°
   - When 持续 tick
   - Then <0°：产出打折（UI `coldPenalty`）+ 民心 −0.8/日；≤−6°：民心 −2.4/日 + 人口冻损（医馆派工可减免最多 55%）；HUD 温度计变色并显示「严寒/冰封」档位
   - 失败判定：温度带文案与阈值（−6/0/8）不符；冻损无日志
+  - ⚠️ R2 复核（基线）：tokens.css §7 的 `html[data-temp="comfort|mild|cold|freeze"]` / `html[data-crisis="blizzard|collapse"]` 整套全局主题（读数变色、HUD 结霜描边、冷雾/暖晖罩、寒潮三闪、崩溃去饱和）是**孤儿 CSS**——基线全 `js/` 无一处写 `documentElement.dataset`，HUD 只在 `#vital-temp` 上切局部类 `is-freeze/is-warm`。验收补充条款：JS 须按温度带与危机态写入这两个 dataset 属性，且档位切换与温度计档位文案同帧一致（施工树 hud.js 已见写入逻辑，按此条款复测）
 
 ### 2.3 城建与派工
 
-- [ ] **P0-08 13 座建筑可建可升、火炉封顶双侧生效** ｜ ✅ UI ／ 🟡 systems ／ ❌ 测试红灯
+- [ ] **P0-08 13 座建筑可建可升、火炉封顶双侧生效** ｜ ✅ UI ／ 🟡 systems ／ ❌ 基线测试红灯（R2 复核维持；施工树已在修）
   - Given 火炉 N 级、资源充足
   - When 升级任意非火炉建筑到 N 级后再点升级
   - Then 按钮禁用、文案「需先将火炉升至 N+1 级」；升火炉后立即解锁
-  - 失败判定：任何路径绕过封顶（含直接调 `window.__sanguo.game.upgrade`）；**`npm test` 的 `quests/production` 红灯未消**（探针要求升级门槛函数对扁平 state 形状也能给出 blocked/allowed 判定，当前 `city.canUpgrade` 只认嵌套形状）
+  - 失败判定：任何路径绕过封顶（含直接调 `window.__sanguo.game.upgrade`）；`npm test` 的 `quests/production` 红灯未消（基线实测仍败；R2 施工树通过探针改嵌套形状转绿——复测时须确认封顶行为在**运行中的游戏**里由哪套实现兜底，两套实现并存即不勾选）
   - ⚠️ systems 侧还有「火炉升级反向前置」（`furnacePrereqFor`：升火炉需指定建筑先达标）与施工工期两套机制，UI 完全未接（🟡）
 
 - [ ] **P0-09 资源不足禁止升级且原因可见** ｜ ✅
@@ -163,17 +180,18 @@ npm start       # 127.0.0.1:4173 人工走查
   - Then 民心缓涨（+0.35/日 × 厨房/医馆派工加成）；断粮时 −3.5/日 且日志「粮秣将尽」
   - 失败判定：民心越界 [0,100]；饥饿/寒冷/断供多重扣减互相吞并
 
-- [ ] **P0-13 失败判定 D1 民变 / D2 绝户** ｜ ⬜ UI ／ 🟡 systems（`flags.gameOver="morale"/"extinct"` 已实现且有 probe 覆盖）
+- [ ] **P0-13 失败判定 D1 民变 / D2 绝户** ｜ ⬜ 基线 UI ／ 🟡 systems（`flags.gameOver="morale"/"extinct"` 已实现且有 probe 覆盖）｜ **R2 硬性交付（SOTA §2b-2「失败幕」；施工树已见 gameOver 消费与「东山再起」重开）**
   - Given 民心 ≤15（systems 侧即时；DESIGN 要求连续 2 天）或 人口归 0
   - When 判定触发
-  - Then 弹全屏结算（存活天数 + 关键 stats + 重开按钮）；模拟停止推进；存档保留供回看
-  - 失败判定：**当前 UI 内核人口下限写死 1、民心 0 只发日志，永远不会输**——对一款 Frostpunk 致敬作这是 P0 缺陷；两侧任一未打通即不勾选
+  - Then 弹全屏结算（存活天数 + 关键 stats + 死因一句话 + 重开按钮）；模拟停止推进；存档保留供回看；入场启用 `data-crisis="collapse"` 去饱和视效（CSS 已备）
+  - 失败判定：**当前 UI 内核人口下限写死 1（`main.js` `Math.max(1, …)` R2 复核确认）、民心 <15 只发日志，永远不会输**——对一款 Frostpunk 致敬作这是 P0 缺陷；两侧任一未打通即不勾选
 
-- [ ] **P0-14 结局 E1（60 天「春回」或明确的无尽宣告）** ｜ ⬜ 两侧皆无
+- [ ] **P0-14 结局 E1（60 天「春回」或明确的无尽宣告）** ｜ ⬜ 两侧皆无（R2 复核维持）
   - Given 存活至第 60+2 天（甲子极寒撑过）
   - When 判定触发
   - Then 结算画卷 + 「继续治县」入口
   - 失败判定：游戏无任何「一局」的概念（当前状态）；若本轮裁决降级为 P1，需在交付说明中写明理由
+  - R2 备注：结算幕骨架与 P0-13 失败幕共用（SOTA §2b-2）——本轮至少交付失败幕；胜利画卷可沿用同一容器后补
 
 ### 2.5 武将与讨伐
 
@@ -190,20 +208,22 @@ npm start       # 127.0.0.1:4173 人工走查
   - Then 出征前实时胜算条 + 「我军 X vs 敌军 Y · 克制注记」；战后战报（逐回合文案、缴获、阵亡、经验）；兵力扣损、战利品受仓储上限截断、清剿目标标记「已平定」
   - 失败判定：空编队可出征（另见边界 B4）；胜算与战报结果系统性背离（胜算 90%+ 连败 5 次以上须复查）；战利品溢出上限
 
-- [ ] **P0-17 克制关系可感知** ｜ ✅ UI（预览 ±%、战报「（克制）」标注）／ 🟡 systems（乘区 1.25/1.15 完整实现且有单测）
+- [ ] **P0-17 克制关系可感知** ｜ ✅ UI（预览胜算 %、克制注记文字、战报「（克制）」标注）／ 🟡 systems（乘区 1.25/1.15 完整实现且有单测）｜ **R2 硬性交付（SOTA §2b-3「战报克制数字外显」）**
   - Given 编队含克制敌方兵种/阵营的武将
   - When 预览与开战
-  - Then 胜算注记出现「兵种克制/阵营克制」；战报伤害行带克制标记
+  - Then 胜算注记出现「兵种克制/阵营克制」**并带 ±% 数值**；战报伤害行外显克制乘区（如「斩敌 1840（骑克弓 +25%）」）
   - 失败判定：克制方向与 `config.FACTION_BEATS`（吴克蜀、蜀克魏、魏克吴）/ `TROOP_BEATS`（步克骑、骑克弓、弓克步）不符
+  - ⚠️ R2 复核发现两套克制数值并存：UI 胜算加成 +0.12/+0.10 与 systems 伤害乘区 1.25/1.15。**外显数字必须以 systems 乘区为准**（有单测钉死 25%），否则教学教错（施工树 panels.js 已见「克制乘区」区块，复测时核数值一致性）
 
 ### 2.6 存档与测试
 
 - [ ] **P0-18 存档往返**（细则见 §5） ｜ ✅ UI 自动存档 ／ 🟡 engine/save
-- [ ] **P0-19 自动化测试全绿** ｜ ❌（1 红灯）
+- [ ] **P0-19 自动化测试全绿** ｜ ❌ 基线 1 红灯（R2 复核 worktree 检出 27bfac5 实测维持）／ 施工树 22/22 绿（未提交，仅供参照）
   - Given 本仓库任意提交
   - When `npm test && npm run probe && npm run bench`
   - Then 退出码全 0；bench 无 NaN/负数
-  - 失败判定：当前 `quests/production` 红灯即失败；**修法二选一**：让升级门槛函数兼容扁平探针形状（参照 `quests.js readBuildingLevel` 的宽容读取），或完成状态树统一后探针自然转绿
+  - 失败判定：任何一颗红灯即失败。**修法二选一**：让升级门槛函数兼容扁平探针形状，或完成状态树统一后探针自然转绿（施工树走的是「探针改嵌套 + 桥接收敛」路线）
+  - ⚠️ 勾选条件（R2 补充）：以 Round 2 **提交后**复测为准，且 `bridge-project-view` 探针须为 pass 而非 skip——防止「改探针保绿、断层未收敛」的假绿
 
 ---
 
@@ -215,11 +235,11 @@ npm start       # 127.0.0.1:4173 人工走查
   - Then `main.js` 不再包含独立模拟内核；`window.__sanguo.bridge.active === true` 或桥接概念删除；四系统 tick（climate→economy→city→population）驱动 HUD
   - 失败判定：两套内核并存超过本轮；控制台仍打印「状态结构与 UI 内核不同」
 
-- [ ] **P1-02 建筑 id 三方归一** ｜ ⬜（现状：config 9 个 / data 17 个 / UI 13 个，靠别名互认）
+- [ ] **P1-02 建筑 id 三方归一** ｜ ⬜ 基线未动（config 9 个含 `lumberyard/coalmine` / data 17 个 / UI 13 个，靠别名互认）；R2 施工树进行中（config 升 16 个权威 id + 别名表、`state.js` 增 `migrateBuildingIds`、新增「初始建筑使用 lumber」看守探针——未提交）
   - Then `config.BUILDING_IDS`、`data/buildings.js`、渲染 `CITY_LAYOUT`、存档四方同名；`ID_ALIASES` 仅为旧档迁移保留
-  - 失败判定：同一建筑在任务文案（`q_sawmill_3` 引用了不存在的 `sawmill`！）、UI、数据表中出现第三种名字
+  - 失败判定：同一建筑在任务文案（基线 `systems/quests.js` 的 `q_sawmill_3` 仍引用不存在的 `sawmill`！`data/quests.js` 本身用规范 id）、UI、数据表中出现第三种名字
 
-- [ ] **P1-03 任务链上线** ｜ 🟡 systems+data 齐备（12 条主线、`initQuests/tickQuests/claimQuest` 有单测），⬜ UI
+- [ ] **P1-03 任务链上线** ｜ 🟡 systems+data 齐备（12 条主线、`initQuests/tickQuests/claimQuest` 有单测），⬜ 基线 UI 零引用（R2 复核确认）｜ **R2 硬性交付（SOTA §2b-1「任务托盘」，本轮性价比最高项；施工树已见 `#quest-tray`「功业簿」雏形）**
   - Given 新档
   - When 完成「伐木过冬 → … → 炉暖全城」链上条件
   - Then 有任务面板/托盘显示进度条与可领取红点；领奖入账（资源/招募令/heroId 赠将）；`q_main_11` 首胜赠赵云可达成
@@ -287,8 +307,8 @@ npm start       # 127.0.0.1:4173 人工走查
   - When 读取
   - Then 不崩溃、按新游戏处理并有告知（UI 侧目前无告知 toast，统一后需补）
 
-- [ ] **S-04 导出 / 导入 UI** ｜ ⬜（`exportSave/importSave` 引擎函数 ✅ 且有测试，无任何按钮暴露给玩家）
-  - Then 系统面板可导出 JSON（文件名含天数）、粘贴导入；导入坏档弹明确错误且不影响当前局
+- [ ] **S-04 导出 / 导入 UI** ｜ ⬜ 基线无任何按钮（`exportSave/importSave` 引擎函数 ✅ 且有测试；R2 复核确认基线 `panels.js`/`hud.js` 无系统面板与存档入口）｜ **R2 硬性交付（SOTA §2b-5；施工树已见顶栏 `#btn-export`/`#btn-import` 与结算幕导出）**
+  - Then 系统面板可导出 JSON（文件名含天数）、粘贴/选文件导入；导入坏档弹明确错误（复用 `importSave` 的中文报错）且不影响当前局
 
 - [ ] **S-05 双存档键合一（整合项）** ｜ ⬜
   - Given 状态树统一（P1-01）完成
@@ -366,7 +386,11 @@ npm start       # 127.0.0.1:4173 人工走查
 ## 8. 交付前回归清单
 
 ```text
-□ npm test / probe / bench 全绿（含 P0-19 红灯已修）
+□ npm test / probe / bench 全绿（基线红灯 P0-19 须在提交后复测确认已修）
+□ probes bridge-project-view 为 pass 而非 skip，且控制台不再打印「状态结构与 UI 内核不同」
+  （js/bridge/view.js 投影层真正接线的机读标志，防「改探针保绿」假绿）
+□ R2 硬性五项交付：任务托盘（P1-03）、失败幕（P0-13）、战报克制数字（P0-17）、
+  温度色 data-temp（P0-07 补充条款）、存档导入导出（S-04）—— 细则见 SOTA.md §2b
 □ 浏览器人工走查 P0-01 ~ P0-18 全部勾选
 □ 边界 B-01 ~ B-08 双侧验证
 □ 存档 S-01 ~ S-07（含刷新×2、坏档×1、隐私模式×1）

@@ -1,6 +1,11 @@
 /**
  * 兵种数据表（fable-balance）
  *
+ * 开局对齐（与 config.START 一致）：food 320 / wood 420 / coal 140 / iron 60，
+ *   开局自带 12 名枪盾兵；q_main_10 要求练 20 兵，
+ *   按枪盾兵造价合计 food 240 / wood 120 / iron 60——恰好压满开局铁储备，
+ *   迫使玩家先把铁矿（iron_mine）运转起来再扩军。
+ *
  * 克制关系见 config.TROOP_BEATS：步克骑、骑克弓、弓克步；
  * vsBonus 为克制时的伤害加成（统一 0.25）。
  * - 步兵：便宜耐打，前期主力，吃铁少；

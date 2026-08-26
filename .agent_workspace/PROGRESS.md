@@ -36,7 +36,7 @@
 | Round | 状态 | 简报 |
 |-------|------|------|
 | 1 初始构建与基线探索 | 完成 | 2026-08-26 |
-| 2 靶向重构与深度优化 | 未开始 | — |
+| 2 靶向重构与深度优化 | 完成 | 2026-08-26 |
 | 3 SOTA 打磨与最终验收 | 未开始 | — |
 
 ### Round 1 文件归属（避免冲突）
@@ -100,3 +100,39 @@
 4. 任务托盘 + 失败/重开 + 步骑弓分兵 + 战报克制 + `engine/rng`。
 5. 修红灯单测，生产断言不再 pending。
 6. Canvas 补齐三分兵营/仓库/城墙等地块。
+
+---
+
+## Round 2 结论简报
+
+**演进对比**
+
+| 项 | Round 1 | Round 2 |
+|----|---------|---------|
+| 模拟权 | UI 内置扁平内核 | `createInitialState` + systems 接管（能力探测） |
+| 建筑 id | 三套并存 | config/state 切权威 id，旧档 migrateBuildingIds |
+| 测试 | 15/1/2 | **22/0/0**；probes **10/10**（含 projectView） |
+| 场景 | 地块不全 | 17 建筑 + alias 同对象，level0 废墟 |
+| HUD | 无任务/失败/导入导出 | 托盘/霜幕失败/三兵种/导入导出 DOM 已齐 |
+
+**仍在的边界风险**
+
+1. `main.js` 创建 HUD 时未传入 `onExport/onImport/onRestart/onClaimQuest`，新控件在实机默认隐藏或 toast「尚未接通」。
+2. `systems/quests.js` FALLBACK 仍有 `sawmill` 幽灵 id（data 层已禁）。
+3. 武将 id `huatuo` vs `hua_tuo` 靠桥接归一，config.START_HERO_IDS 未改。
+4. AUDIT 指出旧 `runTick` 曾双核叠加——需确认新 main 已拆掉 `core.tick()` 无条件调用。
+5. 抽卡 pity、数字跳字、熄火暗场等 Juice 未做完。
+
+**SOTA 验收差距**
+
+- 桥接真绿已达（projectView pass，不再要求扁平 buildings[]）
+- 失败幕/任务/存档按钮缺最后一厘米接线
+- Frostpunk 级「燃料因果」与战报克制数字需实机确认
+- 文档 INTEGRATION/ROUND2_AUDIT 已成合同
+
+**Round 3 冲刺**
+
+1. 接通 HUD 回调 + 修 sawmill + 统一英雄 id
+2. Juice：熄火、寒潮四拍、抽卡高光、战力滚动
+3. README/验收勾选与测试链全绿
+4. 浏览器走完引导→升炉→招贤→讨伐→寒潮→失败/重开

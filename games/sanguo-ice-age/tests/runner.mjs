@@ -22,6 +22,7 @@ const suites = [
   "./unit/combat.test.mjs",
   "./unit/save.test.mjs",
   "./unit/quests.test.mjs",
+  "./integration.test.mjs",
 ];
 
 for (const suitePath of suites) {

@@ -1,6 +1,18 @@
 /**
  * 建筑数据表（fable-balance）
  *
+ * 开局对齐（与 config.START 一致）：food 320 / wood 420 / coal 140 / iron 60，
+ *   火炉 1 级、人口 12/24。该配给足够首日建 lumber(20/30) + hunter(15/45)
+ *   并留出火炉升 2 级（约 65/146）的余量，符合"7 天内火炉必须到 2 级"的节奏。
+ *
+ * 本表即建筑 id 的权威集合（共 17 个）：
+ *   furnace, lumber, hunter, coal_mine, iron_mine, house, warehouse, kitchen,
+ *   barracks_inf, barracks_arch, barracks_cav, hospital, academy, tavern,
+ *   wall, embassy, clinic
+ * 任何 systems / 任务表引用建筑时必须使用以上 id；
+ * 旧别名（lumberyard/coalmine/ironmine/warmhouse/barracks/storehouse 等）
+ * 由 systems/city.js 的 ID_ALIASES 负责映射，数据层禁止再使用。
+ *
  * 数值语义约定（供 systems 层实现时参考）：
  * - baseCost：1 级造价；升到第 n 级的造价 = baseCost * costScale^(n-1)，向上取整。
  * - baseTimeTicks：1 级建造 tick 数；建议每级时间 = baseTimeTicks * 1.3^(n-1)。
