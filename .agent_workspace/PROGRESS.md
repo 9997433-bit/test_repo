@@ -10,6 +10,7 @@
 | 灵画师 | `games/linghuashi/` | 4173 | Round 1–3 完成 |
 | 赵云与阿斗 | `games/zhao-yun-adou/` | 4180 | 见该目录 brief |
 | 蘑菇屋·慢生活 | `games/xiangwang-shenghuo/` | 4175 | Round 1–3 完成 |
+| 时尚百货城 | `games/fashion-mall/` | 4173 | Round 1–3 完成，94 测，见 `PROGRESS.fashion-mall.md` |
 
 ---
 

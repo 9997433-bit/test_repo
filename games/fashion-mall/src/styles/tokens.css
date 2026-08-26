@@ -1,0 +1,282 @@
+/* ==========================================================================
+   时尚百货城 · Design Tokens v2.0（Round 1 / Fable-2）
+   --------------------------------------------------------------------------
+   气质锚点：奶油白 / 玫瑰金 / 珊瑚粉 / 薄荷绿 · 卡通通透 · 女强人逆袭
+   分层架构：原子 primitive → 语义 semantic → 组件 component → legacy 别名
+   使用规约与完整规格见 docs/DESIGN_SYSTEM.md
+   动效 token 独立在 src/styles/motion.css（需在 index.html 中引入）
+   ========================================================================== */
+
+:root {
+  /* ======================================================================
+     1. 原子色板 Primitives（禁止在组件 CSS 中直接引用，走语义层）
+     ====================================================================== */
+
+  /* 珊瑚玫瑰 Rose —— 品牌主色，CTA / 强调 / 女主角色彩 */
+  --rose-50: #fff1f6;
+  --rose-100: #ffe1eb;
+  --rose-200: #ffc3d6;
+  --rose-300: #ff9cbc;
+  --rose-400: #f8759f;
+  --rose-500: #ef5a8f; /* 主色 */
+  --rose-600: #d43d75;
+  --rose-700: #b02a5e; /* 文本安全（白底 6.3:1） */
+  --rose-800: #8a1f4a;
+  --rose-900: #631539;
+
+  /* 珊瑚粉 Coral —— 暖场辅助，快餐店 / 热闹氛围 */
+  --coral-100: #ffeadd;
+  --coral-200: #ffd1b8;
+  --coral-300: #ffb28e;
+  --coral-400: #ff9066;
+  --coral-500: #f97952;
+
+  /* 香槟金 Gold —— 财富 / 结算 / 稀有奖励 */
+  --gold-100: #fdf3da;
+  --gold-200: #f7e3b2;
+  --gold-300: #eecf8c;
+  --gold-400: #e4ba69;
+  --gold-500: #d19f48;
+  --gold-600: #ad7f35;
+  --gold-700: #8a6329; /* 文本安全 */
+
+  /* 玫瑰金 Rose Gold —— 金属质感描边 / 勋章 / VIP */
+  --rosegold-200: #f9ddcd;
+  --rosegold-300: #f0c2ab;
+  --rosegold-400: #e2a084;
+  --rosegold-500: #cf7f63;
+
+  /* 薄荷绿 Mint —— 成功 / 完成 / 生鲜店 */
+  --mint-100: #e5fbf3;
+  --mint-200: #c3f4e3;
+  --mint-300: #7fdcc4;
+  --mint-400: #54c8ab;
+  --mint-500: #2fae90;
+  --mint-600: #1e8f76; /* 文本安全 */
+
+  /* 丁香紫 Lilac —— 占卜屋 / 稀有度 / 神秘感 */
+  --lilac-100: #f4eeff;
+  --lilac-200: #e4d8ff;
+  --lilac-300: #c9b6ff;
+  --lilac-400: #ad92f2;
+  --lilac-500: #9172dd;
+  --lilac-600: #7557bf; /* 文本安全 */
+
+  /* 奶油白 Cream —— 页面纸面 / 弹层底 */
+  --cream-0: #fffdfb;
+  --cream-50: #fff7f2;
+  --cream-100: #ffefe6;
+  --cream-200: #ffe9e0;
+  --cream-300: #fcdcd0;
+
+  /* 墨莓 Ink —— 带玫瑰调的深色中性色（替代纯黑，保持温柔） */
+  --ink-900: #3a2433;
+  --ink-700: #573848;
+  --ink-500: #6b4b5c;
+  --ink-300: #a98a99;
+  --ink-200: #cdb3c0;
+  --ink-100: #eddde5;
+
+  /* ======================================================================
+     2. 语义色 Semantic
+     ====================================================================== */
+
+  /* 文本 */
+  --text-strong: var(--ink-900);   /* 标题 / 数值，奶油底 13.4:1 */
+  --text-body: var(--ink-900);
+  --text-soft: var(--ink-500);     /* 说明文字，奶油底 7.1:1 */
+  --text-faint: var(--ink-300);    /* 占位 / 禁用 */
+  --text-inverse: var(--cream-50); /* 深底反白 */
+  --text-on-brand: #ffffff;        /* 玫瑰渐变按钮上的文字 */
+  --text-brand: var(--rose-700);   /* 链接 / 强调，白底 6.3:1 */
+  --text-gold: var(--gold-700);    /* 金价 / 收益文本 */
+  --text-success: var(--mint-600);
+  --text-danger: #c03652;
+
+  /* 功能反馈 */
+  --success: var(--mint-500);
+  --success-bg: var(--mint-100);
+  --warning: var(--gold-500);
+  --warning-bg: var(--gold-100);
+  --danger: #e14b64;
+  --danger-bg: #ffe4e8;
+  --info: var(--lilac-500);
+  --info-bg: var(--lilac-100);
+
+  /* 表面（卡通通透：玻璃拟态三档） */
+  --surface-card: rgba(255, 255, 255, 0.86);        /* 常规卡片 */
+  --surface-glass-strong: rgba(255, 255, 255, 0.93); /* 底部导航 / 顶栏 */
+  --surface-veil: rgba(255, 255, 255, 0.55);         /* 卡片内嵌次级面 */
+  --surface-solid: #ffffff;
+  --surface-sheet: var(--cream-50);                  /* 弹窗纸面 */
+  --surface-scrim: rgba(58, 36, 51, 0.45);           /* 弹窗遮罩 */
+  --blur-glass: 12px;                                 /* backdrop-filter 标准值 */
+
+  /* 描边 */
+  --line-soft: #f6e2ea;
+  --line-strong: #ecc9d8;
+  --line-glass: rgba(255, 255, 255, 0.7);
+  --line-dashed: #e4b8c6; /* 订单 chip 虚线 */
+
+  /* ======================================================================
+     3. 渐变 Gradients（卡通通透的核心表达）
+     ====================================================================== */
+  --grad-brand: linear-gradient(160deg, #ff8fb4 0%, var(--rose-500) 52%, var(--rose-600) 100%);
+  --grad-brand-press: linear-gradient(160deg, #e9548a 0%, #c23368 100%);
+  --grad-gold: linear-gradient(160deg, var(--gold-200) 0%, var(--gold-400) 55%, var(--gold-500) 100%);
+  --grad-rosegold: linear-gradient(135deg, var(--rosegold-200) 0%, var(--rosegold-400) 55%, var(--rosegold-500) 100%);
+  --grad-mint: linear-gradient(160deg, #a9efdb 0%, var(--mint-400) 100%);
+  --grad-lilac: linear-gradient(160deg, var(--lilac-200) 0%, var(--lilac-400) 100%);
+  --grad-page: linear-gradient(180deg, #fff3ec 0%, #f9d8e5 48%, #e9d8ff 100%);
+  --grad-hero: linear-gradient(135deg, #ffd6e5 0%, #ffe7c7 55%, #d9fff3 100%);
+  --grad-progress: linear-gradient(90deg, var(--rose-500), var(--gold-400));
+  --grad-nav-active: linear-gradient(180deg, #ffe1ec, #ffd0b5);
+  --grad-shine: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.75) 50%, transparent 60%);
+
+  /* ======================================================================
+     4. 阴影 Elevation（玫瑰调投影 + 顶部高光 = 通透感）
+     ====================================================================== */
+  --shadow-1: 0 2px 8px rgba(199, 59, 111, 0.1);    /* pill / chip */
+  --shadow-2: 0 6px 18px rgba(199, 59, 111, 0.13);  /* 列表卡 / 悬浮按钮 */
+  --shadow-3: 0 16px 40px rgba(199, 59, 111, 0.16); /* 面板 / 导航 / 顶栏 */
+  --shadow-4: 0 24px 64px rgba(139, 31, 74, 0.22);  /* 弹窗 / 结算 */
+  --shadow-btn: 0 8px 16px rgba(199, 59, 111, 0.28);
+  --shadow-btn-press: 0 3px 8px rgba(199, 59, 111, 0.3);
+  --shadow-gold: 0 8px 18px rgba(209, 159, 72, 0.35);
+  --shadow-mint: 0 8px 18px rgba(47, 174, 144, 0.28);
+  --glass-highlight: inset 0 1.5px 0 rgba(255, 255, 255, 0.9);
+
+  /* ======================================================================
+     5. 圆角 Radius
+     ====================================================================== */
+  --radius-xs: 8px;   /* 进度条内胆 / 小徽标 */
+  --radius-sm: 12px;  /* chip / 小按钮 / 家具块 */
+  --radius-md: 16px;  /* 常规按钮 / 流水线按钮 / 小游戏区 */
+  --radius-lg: 22px;  /* 面板 / 卡片（基准） */
+  --radius-xl: 28px;  /* 弹窗 sheet / 首屏 hero */
+  --radius-pill: 999px; /* 顶栏 / 资源 pill / 进度条 */
+
+  /* ======================================================================
+     6. 间距与触控 Spacing（4pt 网格）
+     ====================================================================== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --tap-target: 44px;        /* 最小可点击尺寸 */
+  --safe-bottom: 88px;       /* 390 布局为悬浮导航预留的底部空间 */
+
+  /* ======================================================================
+     7. 字体排印 Typography（390 基准；1280 提升见 DESIGN_SYSTEM.md §10）
+     ====================================================================== */
+  --font: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-display: var(--font);
+  --font-num: var(--font); /* 数值配合 font-variant-numeric: tabular-nums 使用 */
+
+  --text-2xs: 11px; /* 底部导航标签 */
+  --text-xs: 12px;  /* 资源 pill / 徽标 */
+  --text-sm: 13px;  /* 说明文字 / toast */
+  --text-md: 15px;  /* 正文 / 卡片标题 */
+  --text-lg: 17px;  /* 面板标题 */
+  --text-xl: 22px;  /* 页面主标题 */
+  --text-2xl: 28px; /* 结算数字 / 里程碑 */
+  --text-3xl: 34px; /* 1280 桌面主标题 / 巨型数值 */
+
+  --leading-tight: 1.25;  /* 标题 / 数值 */
+  --leading-normal: 1.45; /* 短正文 */
+  --leading-loose: 1.6;   /* 长段叙事 */
+
+  --weight-regular: 400;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --tracking-wide: 0.04em; /* 品牌字 / 全大写标签 */
+
+  /* ======================================================================
+     8. 层级与焦点 Z-index / Focus
+     ====================================================================== */
+  --z-toast: 5;
+  --z-nav: 10;
+  --z-modal: 20;
+  --z-fx: 30; /* 全屏粒子 / 金币飞行 */
+  --ring-focus: 0 0 0 3px rgba(239, 90, 143, 0.35); /* :focus-visible 统一焦点环 */
+
+  /* ======================================================================
+     9. 组件 Tokens（Round 2 在 main.css 中逐个接入）
+     ====================================================================== */
+
+  /* 按钮 */
+  --btn-radius: 14px;
+  --btn-pad-y: 10px;
+  --btn-pad-x: 16px;
+  --btn-primary-bg: var(--grad-brand);
+  --btn-primary-bg-press: var(--grad-brand-press);
+  --btn-primary-text: var(--text-on-brand);
+  --btn-primary-shadow: var(--shadow-btn);
+  --btn-primary-text-shadow: 0 1px 2px rgba(139, 31, 74, 0.35);
+  --btn-gold-bg: var(--grad-gold);
+  --btn-gold-text: var(--ink-900);
+  --btn-gold-shadow: var(--shadow-gold);
+  --btn-ghost-bg: var(--surface-solid);
+  --btn-ghost-text: var(--text-body);
+  --btn-ghost-border: 1px solid var(--line-strong);
+  --btn-disabled-bg: #f0e2e9;
+  --btn-disabled-text: var(--ink-300);
+
+  /* 卡片 / 面板 */
+  --card-bg: var(--surface-card);
+  --card-radius: 18px;
+  --card-shadow: var(--shadow-2), var(--glass-highlight);
+  --panel-radius: var(--radius-lg);
+  --panel-shadow: var(--shadow-3), var(--glass-highlight);
+
+  /* 底部导航 */
+  --nav-bg: var(--surface-glass-strong);
+  --nav-radius: 20px;
+  --nav-item-radius: var(--radius-md);
+  --nav-text: var(--text-soft);
+  --nav-active-bg: var(--grad-nav-active);
+  --nav-active-text: var(--ink-900);
+
+  /* 订单 chip */
+  --chip-bg: var(--surface-solid);
+  --chip-border: 1px dashed var(--line-dashed);
+  --chip-done-bg: #d9fff3;
+  --chip-done-border: 1px solid var(--mint-300);
+
+  /* 进度条 */
+  --progress-track: #f0d8e2;
+  --progress-fill: var(--grad-progress);
+  --progress-height: 8px;
+
+  /* 弹窗 / toast / HUD */
+  --modal-scrim: var(--surface-scrim);
+  --modal-sheet-bg: var(--surface-sheet);
+  --modal-sheet-radius: 24px;
+  --modal-sheet-shadow: var(--shadow-4);
+  --toast-bg: var(--ink-900);
+  --toast-text: var(--cream-50);
+  --hud-pill-bg: var(--surface-solid);
+  --hud-pill-shadow: 0 4px 12px rgba(58, 36, 51, 0.06);
+
+  /* ======================================================================
+     10. Legacy 别名（main.css 现用；Round 2 迁移到语义层后删除本段）
+     ====================================================================== */
+  --rose: var(--rose-500);
+  --rose-deep: var(--rose-600);
+  --gold: var(--gold-300);
+  --gold-deep: var(--gold-500);
+  --cream: var(--cream-50);
+  --cream-2: var(--cream-200);
+  --ink: var(--ink-900);
+  --ink-soft: var(--ink-500);
+  --mint: var(--mint-300);
+  --lilac: var(--lilac-300);
+  --card: var(--surface-card);
+  --shadow: var(--shadow-3), var(--glass-highlight);
+  --radius: var(--radius-lg);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1); /* = motion.css 的 --ease-out，此处保持自包含 */
+}

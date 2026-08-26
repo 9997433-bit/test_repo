@@ -11,6 +11,7 @@ on:
       - "games/chao-neng-xia-dan-ya/**"
       - "games/linghuashi/**"
       - "games/my-garden-world/**"
+      - "games/fashion-mall/**"
       - "pages/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -75,6 +76,11 @@ jobs:
             mkdir -p "site/$game"
             cp -a "src/games/$game/dist/." "site/$game/"
           done
+          # 时尚百货城是零构建 ES Modules，只拷入口和 src，不覆盖其他游戏。
+          rm -rf site/fashion-mall
+          mkdir -p site/fashion-mall
+          cp src/games/fashion-mall/index.html site/fashion-mall/
+          cp -a src/games/fashion-mall/src site/fashion-mall/
           cp src/pages/index.html site/index.html
           touch site/.nojekyll
 
