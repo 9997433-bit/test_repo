@@ -1,12 +1,24 @@
+import type { DecorTheme } from "../data/decorations";
 import { FLOWERS, type GrowthStage, type Season } from "../data/flowers";
 import type { OrderKind } from "../data/orders";
 
-/** v2：新增 lastSeenAt 墙钟锚点（离线补算），并在迁移时按等级回填 unlockedFlowers。 */
-export const SCHEMA_VERSION = 2;
+/**
+ * v2：新增 lastSeenAt 墙钟锚点（离线补算），并在迁移时按等级回填 unlockedFlowers。
+ * v3：新增 social（邻家花园互访的每日余量与交情）与 decorTheme（最后套用的主题，驱动 [data-theme]）。
+ */
+export const SCHEMA_VERSION = 3;
 export const INITIAL_PLOTS = 6;
 export const MAX_PLOTS = 12;
 export const WATER_CAP = 40;
 export const WATER_REGEN_MS = 8_000;
+/** 每日帮邻居浇水的总次数（单个邻居另有 NEIGHBOR_WATER_CAP 上限）。 */
+export const DAILY_WATER_HELP = 6;
+/** 每日摘邻家花的总枝数（单个邻居另有 NEIGHBOR_PICK_CAP 上限）。 */
+export const DAILY_PICK = 2;
+/** 交情点数上限（满档 5 心）。 */
+export const FRIENDSHIP_MAX = 30;
+/** 当日痕迹条数上限：一天的互动量远小于它，纯粹兜住改档与旧档。 */
+export const MARKS_CAP = 64;
 
 export interface Plot {
   id: number;
@@ -42,6 +54,28 @@ export interface Arrangement {
   createdAt: number;
 }
 
+/** 当日在某位邻居园中留下的一处痕迹：浇过的圃、摘过的花。 */
+export interface VisitMark {
+  neighborId: string;
+  plotIdx: number;
+  kind: "water" | "pick";
+}
+
+/** 邻里往来：每日余量跨日重置，交情长期累积，痕迹保证当日重进园子所见一致。 */
+export interface SocialState {
+  /** 上次结算的游戏日戳（engine/time.ts 的 gameDay）。 */
+  day: number;
+  waterLeft: number;
+  pickLeft: number;
+  /** 邻居 id → 交情点数（0..FRIENDSHIP_MAX）。 */
+  friendship: Record<string, number>;
+  marks: VisitMark[];
+}
+
+export function createSocialState(day = 0): SocialState {
+  return { day, waterLeft: DAILY_WATER_HELP, pickLeft: DAILY_PICK, friendship: {}, marks: [] };
+}
+
 export interface GameState {
   schemaVersion: number;
   startedAt: number;
@@ -65,6 +99,9 @@ export interface GameState {
   orders: ActiveOrder[];
   arrangements: Arrangement[];
   placedDecor: string[];
+  /** 最后一次套用的装扮主题；驱动根节点 [data-theme] 令牌，未套用则为 null。 */
+  decorTheme: DecorTheme | null;
+  social: SocialState;
   activeSpirit: string | null;
   unlockedSpirits: string[];
   tutorialStep: number;
@@ -116,6 +153,8 @@ export function createInitialState(now = Date.now()): GameState {
     orders: [],
     arrangements: [],
     placedDecor: [],
+    decorTheme: null,
+    social: createSocialState(),
     activeSpirit: null,
     unlockedSpirits: [],
     tutorialStep: 0,

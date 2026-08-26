@@ -2,7 +2,7 @@ import type { Season } from "../data/flowers";
 import type { GameState } from "./state";
 
 const SEASONS: Season[] = ["spring", "summer", "autumn", "winter"];
-const DAY_MS = 90_000;
+export const DAY_MS = 90_000;
 const MINUTES_PER_DAY = 24 * 60;
 /** 开局锚定在春日 09:00，而不是随墙钟随机落在某个季节 / 深夜。 */
 const START_MINUTE = 9 * 60;
@@ -15,6 +15,15 @@ export function advanceClock(state: GameState, dtMs: number): void {
   const seasonIdx = Math.floor((elapsed / (DAY_MS * 4)) % 4);
   state.season = SEASONS[seasonIdx] ?? "spring";
   void dtMs;
+}
+
+/**
+ * 游戏内第几日（开局当日为 0）：与 advanceClock 用同一把尺，
+ * 于是「跨日」与画面上的天亮天黑始终对得上。邻访每日余量按它重置。
+ */
+export function gameDay(state: GameState): number {
+  const elapsed = Math.max(0, state.now - state.startedAt) + START_OFFSET_MS;
+  return Math.floor(elapsed / DAY_MS);
 }
 
 export function isNight(state: GameState): boolean {

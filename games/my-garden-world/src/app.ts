@@ -3,6 +3,7 @@ import { FLOWER_MAP } from "./data/flowers";
 import { tutorialAllows } from "./data/story";
 import type { DecorTheme } from "./data/decorations";
 import { loadState, flushSave, clearSave } from "./engine/save";
+import { loadPrefs, setMutedPref } from "./engine/prefs";
 import { applyOfflineCatchUp } from "./engine/offline";
 import { startLoop } from "./engine/loop";
 import { isNight } from "./engine/time";
@@ -17,7 +18,14 @@ import { createGardenView } from "./scene/garden-view";
 import { mountAmbient, burst, splash } from "./scene/particles";
 import { mountSky } from "./scene/ambience";
 import { createHud } from "./ui/hud";
-import { renderPanel, updatePanelTimers, type PanelHandlers, type PanelId, type PanelSelection } from "./ui/panels";
+import {
+  renderPanel,
+  updatePanelTimers,
+  VISIT_PANEL,
+  type AnyPanelId,
+  type PanelHandlers,
+  type PanelSelection,
+} from "./ui/panels";
 import { mountToasts } from "./ui/toast";
 import { renderTutorial, advanceTutorial, tutorialEventAdvances, coachTargetId } from "./ui/tutorial";
 import { resumeAudio, toggleMute, isMuted, chime } from "./audio/soundscape";
@@ -27,7 +35,7 @@ type Tool = "none" | "water" | "fert" | "harvest";
 export function boot(root: HTMLElement): void {
   const state = loadState();
   let selected: number | null = null;
-  let panel: PanelId = null;
+  let panel: AnyPanelId = null;
   let tool: Tool = "none";
   const sel: PanelSelection = { workshopPick: [], orderPick: new Map(), pendingSeed: null };
 
@@ -47,6 +55,8 @@ export function boot(root: HTMLElement): void {
   const ambient = mountAmbient(root);
   mountToasts(root);
   const hud = createHud(hudEl);
+  // 静音是设备偏好而非花园进度，单独存一格，刷新后照旧
+  if (loadPrefs().muted !== isMuted()) toggleMute();
 
   let panelDirty = true;
   let panelSigLast = "";
@@ -182,7 +192,7 @@ export function boot(root: HTMLElement): void {
     tool = tool === t ? "none" : t;
     if (tool !== "none") sel.pendingSeed = null;
   };
-  const togglePanel = (id: PanelId): void => {
+  const togglePanel = (id: AnyPanelId): void => {
     panel = panel === id ? null : id;
   };
   const specs: DockSpec[] = [
@@ -195,8 +205,9 @@ export function boot(root: HTMLElement): void {
     { id: "decor", glyph: "饰", label: "装扮", aria: "打开庭院装扮", kind: "panel", run: () => togglePanel("decor") },
     { id: "spirit", glyph: "灵", label: "花灵", aria: "打开花灵栖所", kind: "panel", run: () => togglePanel("spirit") },
     { id: "bag", glyph: "囊", label: "库存", aria: "打开花材库存", kind: "panel", run: () => togglePanel("bag") },
+    { id: "visit", glyph: "邻", label: "访邻", aria: "串门去邻家花园", kind: "panel", run: () => togglePanel(VISIT_PANEL) },
     { id: "plot", glyph: "拓", label: "扩建", aria: "扩建一块花圃", kind: "action", run: () => unlockPlot(state) },
-    { id: "mute", glyph: "音", label: "音效", aria: "开关音效", kind: "action", run: () => toggleMute() },
+    { id: "mute", glyph: "音", label: "音效", aria: "开关音效", kind: "action", run: () => setMutedPref(toggleMute()) },
     {
       id: "reset",
       glyph: "归",
@@ -300,6 +311,9 @@ export function boot(root: HTMLElement): void {
         return `p|${state.unlockedSpirits.join(",")}|${state.activeSpirit ?? ""}`;
       case "bag":
         return `b|${invSig()}|${state.stats.harvested}|${state.stats.ordersDone}`;
+      case VISIT_PANEL:
+        // 访邻面板自己会重画；这里只在邻里状态真的动了（跨日、余量、痕迹）时补一次
+        return `v|${state.social.day}|${state.social.waterLeft}|${state.social.pickLeft}|${state.social.marks.length}|${state.level}`;
     }
   };
 
@@ -313,6 +327,12 @@ export function boot(root: HTMLElement): void {
       root.classList.toggle("is-night", night);
     }
     if (root.dataset.tool !== tool) root.dataset.tool = tool;
+    // 最后套用的主题驱动 [data-theme] 令牌；没套过主题就不留这个属性
+    const theme = state.decorTheme ?? "";
+    if ((root.dataset.theme ?? "") !== theme) {
+      if (theme) root.dataset.theme = theme;
+      else delete root.dataset.theme;
+    }
     sky.update(root, state);
     ambient.set(state.season, night);
     hud.update(state);

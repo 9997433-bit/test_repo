@@ -1,5 +1,17 @@
+import { THEMES, type DecorTheme } from "../data/decorations";
 import { FLOWERS } from "../data/flowers";
-import { SCHEMA_VERSION, createInitialState, type GameState } from "./state";
+import {
+  DAILY_PICK,
+  DAILY_WATER_HELP,
+  FRIENDSHIP_MAX,
+  MARKS_CAP,
+  SCHEMA_VERSION,
+  createInitialState,
+  createSocialState,
+  type GameState,
+  type SocialState,
+  type VisitMark,
+} from "./state";
 
 const KEY = "my-garden-world:save:v1";
 
@@ -119,6 +131,54 @@ function num(value: unknown, fallback: number, min = Number.NEGATIVE_INFINITY): 
   return typeof value === "number" && Number.isFinite(value) && value >= min ? value : fallback;
 }
 
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const n = Math.floor(num(value, fallback));
+  return Math.min(max, Math.max(min, n));
+}
+
+const THEME_IDS = new Set<string>(THEMES.map((t) => t.id));
+
+/** 主题只认目录里有的那几套；旧档 / 改档写进来的野值一律当作没套过主题。 */
+function normalizeTheme(raw: unknown): DecorTheme | null {
+  return typeof raw === "string" && THEME_IDS.has(raw) ? (raw as DecorTheme) : null;
+}
+
+/**
+ * v3 邻里状态：v1/v2 旧档没有这一段，补一份空的（当日余量给满，交情从零起）。
+ * 已有的段落逐字段体检——余量必须落在合法区间，交情只留有限数，痕迹只留形状对的条目。
+ */
+function normalizeSocial(raw: unknown): SocialState {
+  const base = createSocialState();
+  if (!raw || typeof raw !== "object") return base;
+  const s = raw as Partial<SocialState>;
+  const friendship: Record<string, number> = {};
+  if (s.friendship && typeof s.friendship === "object") {
+    for (const [id, value] of Object.entries(s.friendship as Record<string, unknown>)) {
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
+      friendship[id] = Math.min(FRIENDSHIP_MAX, Math.floor(value));
+    }
+  }
+  const marks: VisitMark[] = [];
+  if (Array.isArray(s.marks)) {
+    for (const mark of s.marks as unknown[]) {
+      if (!mark || typeof mark !== "object") continue;
+      const m = mark as Partial<VisitMark>;
+      if (typeof m.neighborId !== "string") continue;
+      if (m.kind !== "water" && m.kind !== "pick") continue;
+      if (typeof m.plotIdx !== "number" || !Number.isInteger(m.plotIdx) || m.plotIdx < 0) continue;
+      marks.push({ neighborId: m.neighborId, plotIdx: m.plotIdx, kind: m.kind });
+      if (marks.length >= MARKS_CAP) break;
+    }
+  }
+  return {
+    day: clampInt(s.day, 0, 0, Number.MAX_SAFE_INTEGER),
+    waterLeft: clampInt(s.waterLeft, DAILY_WATER_HELP, 0, DAILY_WATER_HELP),
+    pickLeft: clampInt(s.pickLeft, DAILY_PICK, 0, DAILY_PICK),
+    friendship,
+    marks,
+  };
+}
+
 export function migrate(raw: unknown, now = Date.now()): GameState {
   const base = createInitialState(now);
   if (!raw || typeof raw !== "object") return base;
@@ -135,6 +195,9 @@ export function migrate(raw: unknown, now = Date.now()): GameState {
   merged.unlockedFlowers = reconcileUnlocks(s.unlockedFlowers, merged.level);
   // v1 没有墙钟锚点：以本次加载为准，旧档首次回来不补发离线收益
   merged.lastSeenAt = num(s.lastSeenAt, now, 0);
+  // v3 两段：主题只认目录内的 id，邻里状态缺则补空、有则体检
+  merged.decorTheme = normalizeTheme(s.decorTheme);
+  merged.social = normalizeSocial(s.social);
   return merged;
 }
 
