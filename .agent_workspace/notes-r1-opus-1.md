@@ -11,11 +11,19 @@ the same seed produce byte-identical checksum traces over 2400 ticks. Render-onl
 state (`px/py/pz` interpolation, `anim`, `hurtFlash`) is written during `update`
 but never read by any decision, so drawing cannot perturb the sim.
 
-**No soft-lock.** Four independent guards:
+**No soft-lock.** Six independent guards:
 - the loop clamps raw frame deltas to `MAX_FRAME_MS` before they enter the
   accumulator, so an alt-tabbed tab cannot queue minutes of catch-up;
 - a frame can never run more than `MAX_STEPS_PER_FRAME` ticks, and any leftover
   accumulator is dropped rather than carried (`droppedTicks` counts it);
+- `Loop._guard` wraps both `update` and `render`, so a throw inside one frame no
+  longer ends the `requestAnimationFrame` chain and leave a live tab with a dead
+  game. The error is counted and surfaced once on the HUD log strip; only
+  `maxConsecutiveErrors` failures in a row shut the loop down. A reporter that
+  throws is absorbed too, since the DOM is often what broke;
+- `SpatialHash` clamps with `!(v >= 0)` rather than `v < 0`, so a NaN or Infinity
+  coordinate lands in cell 0 instead of returning an undefined bucket and
+  throwing out of every single hash rebuild;
 - waves auto-start on a countdown, so an idle player still advances;
 - lives reaching zero ends the run. `waves.test.js` runs an unattended game to
   completion to prove it terminates either way.
@@ -60,7 +68,11 @@ occurrence is the `warcraft3-td` directory name, which the brief fixes, and the
 
 ## Numbers
 
-- 95 assertions across 10 suites, `node tests/run.mjs`, ~2s.
+- 99 assertions across 10 suites, `node tests/run.mjs`, ~2s.
 - 40 towers / 121 concurrent creeps: 0.021 ms per tick, ~48k ticks/s headless.
 - Browser: 60 fps, 120 tps (2x speed), 0 dropped ticks, 17 ms peak frame,
   0 console errors over a full scripted playthrough to the wave-5 boss.
+
+When driving the game over CDP, send `Network.setCacheDisabled` first. Chrome
+caches `file://` scripts hard between runs, and a smoke test that skips this
+will happily exercise the previous build's JS and report a fixed bug as live.
