@@ -93,6 +93,6 @@
 | Opus-1 表驱动模拟 | 已完成 · 已合并 `cursor/opus1-table-driven-sim-862f` | `bc-74135006-1b0e-5e73-8dff-5bacf027862f` |
 | Opus-2 探索接线 | 已完成 · 已合入 `9730a5a` | `bc-f781c0f7-3a19-56c0-a877-d90e65e1f9a3` |
 | Opus-3 战斗闭环 | 已完成 · 已合入 `dda1072`，Boss 快照已重录 | `bc-6b096125-40ce-53b2-97e3-ee1d083a40a4` |
-| Opus-4 UX 债 | 运行中 | `bc-52499131-9ce7-5070-a82a-f4241f7babc7` |
+| Opus-4 UX 债 | 已完成 · 已合并 `cursor/cww-r2-ui-wiring-abc7` | `bc-52499131-9ce7-5070-a82a-f4241f7babc7` |
 | GPT-sol-1 快照单测 | 已完成 · 已合并 `cursor/cww-battle-tests-ed44`（37 测） | `bc-c3910345-5529-5a59-be22-f9a0d63eed44` |
 | GPT-sol-2 委任密集 bench | 已完成 · 已合入 `557ca91` | `bc-56356545-4d0f-5f3c-9951-5b6d57030b07` |
