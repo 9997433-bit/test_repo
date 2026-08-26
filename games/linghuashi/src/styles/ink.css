@@ -1,0 +1,325 @@
+/**
+ * 灵画师 · 皮肤层（材质与部件）
+ * ---------------------------------------------------------------
+ * 舞台隐喻：深色绢案（body）上摊开一幅立轴（.screen），
+ * 卷上再裱卡片（.card）与画心（canvas.paper）。
+ * 本文件只用 tokens.css 的令牌，不写裸色值（内嵌渐变的深浅端除外）。
+ * ui/ui.css 在打包顺序上位于本文件之后，保留其覆盖权：
+ * 按钮 hover 不改 background-color，避免压过 button.primary。
+ */
+
+* { box-sizing: border-box; }
+
+html, body, #app { margin: 0; height: 100%; }
+
+/* 收容子级外边距：否则卷面的 margin 会塌陷穿透 #app，
+   把文档整体顶下去、露出 theme-color 的焦墨底。 */
+#app { display: flow-root; }
+
+html {
+  background: var(--silk-deep);
+  scrollbar-color: rgba(59, 42, 24, 0.55) rgba(0, 0, 0, 0);
+}
+
+/* —— 绢案：旧绢织纹 + 四角矿彩雾气 —— */
+body {
+  font-family: var(--serif);
+  color: var(--ink);
+  line-height: 1.6;
+  overflow-x: clip;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  background:
+    radial-gradient(1100px 700px at 8% -12%, var(--gold-wash), transparent 52%),
+    radial-gradient(900px 720px at 108% 6%, rgba(47, 91, 116, 0.16), transparent 48%),
+    radial-gradient(1000px 620px at 50% 118%, rgba(61, 107, 79, 0.12), transparent 55%),
+    repeating-linear-gradient(90deg, rgba(255, 252, 244, 0.05) 0 2px, transparent 2px 4px),
+    repeating-linear-gradient(0deg, rgba(26, 18, 11, 0.035) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, var(--silk) 0%, var(--silk-deep) 100%);
+  background-attachment: fixed;
+}
+
+/* 远山：淡墨与石青石绿的三重晕染，只从立轴两侧的绢案缝隙里露出来 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: auto 0 0 0;
+  height: 44vh;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(58% 90% at 16% 120%, rgba(47, 91, 116, 0.28), transparent 62%),
+    radial-gradient(50% 95% at 82% 126%, rgba(26, 18, 11, 0.22), transparent 60%),
+    radial-gradient(44% 70% at 48% 132%, rgba(61, 107, 79, 0.2), transparent 64%);
+}
+
+/* 纸膜：一层极淡的宣纸颗粒罩住整个画面（含弹层），统一所有材质 */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 80;
+  background: var(--grain);
+  background-size: 160px 160px;
+  opacity: 0.06;
+  mix-blend-mode: multiply;
+}
+
+/* —— 立轴：宣纸卷面 —— */
+.screen {
+  position: relative;
+  min-height: 100%;
+  padding: 34px clamp(18px, 4.5vw, 52px) 48px;
+  background:
+    var(--columns),
+    var(--laid),
+    linear-gradient(180deg, var(--paper-bright) 0%, var(--paper) 46%, var(--paper-deep) 100%);
+  box-shadow: var(--shadow-sheet);
+  border-radius: 2px;
+  animation: sheet-unroll var(--dur-slow) var(--ease-brush);
+}
+
+/* 天杆 / 地杆：髹漆木杆，两端泥金 */
+.screen::before,
+.screen::after {
+  content: "";
+  position: absolute;
+  inset-inline: -16px;
+  height: 13px;
+  border-radius: 999px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, var(--gilt) 0 12px, transparent 12px calc(100% - 12px), var(--gilt) calc(100% - 12px)),
+    linear-gradient(180deg, var(--lacquer-light) 0%, var(--lacquer) 58%, #120c07 100%);
+  box-shadow:
+    0 3px 8px rgba(26, 18, 11, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.screen::before { top: -7px; }
+.screen::after { bottom: -7px; }
+
+/* 卷轴展开：自上而下的一次揭卷 */
+@keyframes sheet-unroll {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    clip-path: inset(-24px -64px 58% -64px);
+  }
+  55% { opacity: 1; }
+  to {
+    opacity: 1;
+    transform: none;
+    clip-path: inset(-24px -64px -24px -64px);
+  }
+}
+
+/* —— 文字 —— */
+.brand {
+  font-family: var(--script);
+  font-size: clamp(2.4rem, 6vw, 4.4rem);
+  letter-spacing: 0.12em;
+  line-height: 1.15;
+  margin: 0;
+  color: var(--ink);
+  text-shadow: 0 2px 16px rgba(26, 18, 11, 0.16);
+}
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .brand {
+    background: linear-gradient(178deg, #241a10 0%, var(--ink-soft) 58%, rgba(59, 42, 24, 0.82) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.sub {
+  letter-spacing: 0.42em;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  text-transform: none;
+}
+
+.muted { color: var(--ink-mute); }
+
+/* 卡内小题：细界线 + 一段朱丝栏 */
+.card h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  color: var(--ink-soft);
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--ink-hair);
+  background: linear-gradient(var(--seal), var(--seal)) left bottom / 34px 2px no-repeat;
+}
+
+::selection {
+  background: var(--seal-flash);
+  color: var(--ink);
+}
+
+/* —— 交互件：手裁纸签按钮 —— */
+button, .seal {
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  cursor: pointer;
+  color: var(--ink);
+  padding: 0.55rem 1.05rem;
+  background: var(--paper-tag);
+  border: 1px solid var(--ink-line);
+  /* 手裁纸签：四角微不对称 */
+  border-radius: 2px 6px 3px 5px / 5px 3px 6px 2px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+    0 1px 2px rgba(26, 18, 11, 0.07);
+  transition:
+    border-color var(--dur-fast) var(--ease-brush),
+    color var(--dur-fast) var(--ease-brush),
+    box-shadow var(--dur-fast) var(--ease-brush),
+    transform var(--dur-fast) var(--ease-brush),
+    background-color var(--dur-fast) var(--ease-brush);
+}
+/* hover 只动边、字、影：background 留给 ui.css 的 .primary / .toggle 覆盖 */
+button:hover, .seal:hover {
+  border-color: var(--seal);
+  color: var(--seal);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
+    inset 0 0 34px var(--seal-wash),
+    0 4px 12px rgba(26, 18, 11, 0.14);
+}
+button:active, .seal:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    inset 0 2px 8px rgba(26, 18, 11, 0.14);
+}
+
+/* 焦点兜底：全站可见的朱磦环（ui.css 会对常用件再精调） */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* —— 裱卡：托纸 + 白折光 + 界框 —— */
+.card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(253, 249, 240, 0.88), rgba(250, 243, 228, 0.72));
+  border: 1px solid var(--ink-hair);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+    var(--shadow-soft);
+  padding: 16px 18px;
+}
+
+.grid { display: grid; gap: 12px; }
+.hud { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* —— 墨条进度：方角墨锭，不作药丸 —— */
+.bar {
+  height: 10px;
+  background: linear-gradient(180deg, rgba(26, 18, 11, 0.14), rgba(26, 18, 11, 0.07));
+  box-shadow: inset 0 1px 2px rgba(26, 18, 11, 0.2);
+  position: relative;
+  overflow: hidden;
+  margin: 6px 0;
+  border-radius: 1px;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5e1212 0%, var(--seal) 55%, var(--seal-bright) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.18);
+  transition: width var(--dur-mid) var(--ease-brush);
+}
+.bar.qi > i {
+  background: linear-gradient(90deg, var(--cyan-deep) 0%, var(--cyan) 60%, #47799a 100%);
+}
+.bar.shield > i {
+  background: linear-gradient(90deg, #9b7d1c 0%, var(--gold) 60%, #e0be55 100%);
+}
+
+/* —— 战斗手账 —— */
+.log {
+  font-size: 0.87rem;
+  line-height: 1.55;
+  max-height: 160px;
+  overflow: auto;
+  padding-right: 6px;
+  mask-image: linear-gradient(180deg, transparent 0, #000 16px);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 16px);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(26, 18, 11, 0.32) transparent;
+}
+.log::-webkit-scrollbar { width: 8px; }
+.log::-webkit-scrollbar-thumb {
+  background: rgba(26, 18, 11, 0.28);
+  border-radius: 4px;
+}
+.log::-webkit-scrollbar-track { background: transparent; }
+
+/* —— 画心：绫边装裱的宣纸画布 —— */
+canvas.paper {
+  width: calc(100% - 20px);
+  margin: 10px 10px 14px;
+  height: min(52vh, 460px);
+  touch-action: none;
+  cursor: crosshair;
+  border: 1px solid rgba(26, 18, 11, 0.3);
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 7px var(--silk),
+    0 0 0 8px rgba(26, 18, 11, 0.26),
+    0 16px 44px rgba(26, 18, 11, 0.24);
+}
+
+/* —— 朱砂印 —— */
+.stamp {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  font-size: 1.55rem;
+  border: 3px solid var(--seal);
+  border-radius: 9px;
+  color: var(--seal);
+  font-family: var(--script);
+  background: radial-gradient(circle at 32% 30%, rgba(180, 35, 35, 0.16), var(--seal-wash));
+  box-shadow:
+    inset 0 0 0 1px rgba(122, 24, 24, 0.4),
+    0 3px 9px rgba(26, 18, 11, 0.2);
+  transform: rotate(-8deg);
+  animation: stamp-drop 460ms var(--ease-drop) both;
+}
+
+/* 印章落下：从高处压下、微微回弹后钤稳 */
+@keyframes stamp-drop {
+  from {
+    opacity: 0;
+    transform: rotate(-16deg) scale(2);
+  }
+  62% {
+    opacity: 1;
+    transform: rotate(-6deg) scale(0.93);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-8deg) scale(1);
+  }
+}
+
+/* —— 动效礼仪 —— */
+@media (prefers-reduced-motion: reduce) {
+  .screen, .stamp { animation: none; }
+  button, .seal, .bar > i { transition: none; }
+  button:hover, .seal:hover, button:active, .seal:active { transform: none; }
+  html { scroll-behavior: auto; }
+}

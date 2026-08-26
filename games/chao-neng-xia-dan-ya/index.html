@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#14101c" />
+    <meta name="description" content="超能下蛋鸭 · 重力弹球卡牌肉鸽网页复刻：滑动瞄准、蓄力下蛋、禽类天团。" />
+    <title>超能下蛋鸭</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='16' cy='18' rx='10' ry='12' fill='%23fff6e0'/><ellipse cx='17' cy='22' rx='6' ry='5' fill='%23ffd447'/></svg>" />
+    <!--
+      样式加载序：设计令牌 → 基础重置/底景 → 动效关键帧 → UI 主循环组件层。
+      layout/components/hud 三层针对的是另一套 BEM 标记契约（.hero-card__name 等），
+      与本轮 UI 生成的 DOM 结构不一致，先不挂载以免样式互相覆盖。
+    -->
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/base.css" />
+    <link rel="stylesheet" href="/src/styles/fx.css" />
+    <link rel="stylesheet" href="/src/ui/ui.css" />
+  </head>
+  <body>
+    <div id="app">
+      <main id="screen-root"></main>
+    </div>
+    <noscript>本游戏需要启用 JavaScript。</noscript>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

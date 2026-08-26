@@ -1,0 +1,135 @@
+/**
+ * 英雄属性成长（Opus-3 所有权）。
+ *
+ * 攻击链路（顺序固定，便于 UI 逐项展示与数值对拍）：
+ *   基础攻 × 等级乘区 × 星级乘区 × 全局乘区(图鉴 × 钓鱼 / 神器) × 种族科技 × 光环乘区
+ * 能量链路：基础回能(`BALANCE.energy.perEnemyHit`) × 等级段位 × 星级 × 模式乘区 × 光环乘区；
+ * 能量上限不在这里算，恒等于大招消耗（见 `energy.js`）。
+ */
+import {
+  EGG_RADIUS_MAX,
+  EGG_RADIUS_MIN,
+  LEVELS_PER_RADIUS_STEP,
+  STARS_PER_RADIUS_STEP,
+  clamp,
+} from "../progression/constants.js";
+import { neutralContext } from "../progression/context.js";
+import { DEFAULT_BASE_STATS } from "./constants.js";
+import { levelEnergyMul } from "./energy.js";
+
+/** 数据表字段名 → 基础属性键。F3 的 18 英雄表用 `energy` 表示大招能量上限。 */
+const FIELD_ALIASES = { energyMax: ["energyMax", "energy"] };
+
+/** 从数据表条目读基础属性，缺项走兜底。 */
+export function baseStatsOf(def) {
+  const base = { ...DEFAULT_BASE_STATS };
+  if (!def) return base;
+  for (const key of Object.keys(base)) {
+    for (const field of FIELD_ALIASES[key] ?? [key]) {
+      const value = Number(def[field]);
+      if (Number.isFinite(value)) {
+        base[key] = value;
+        break;
+      }
+    }
+  }
+  return base;
+}
+
+export function levelAtkMul(level, growth) {
+  return 1 + Math.max(0, level - 1) * (growth?.atkPerLevel ?? 0);
+}
+
+export function starAtkMul(star, growth) {
+  return 1 + Math.max(0, star - 1) * (growth?.atkPerStar ?? 0);
+}
+
+/**
+ * 能量回复的等级乘区。账号成长走数据表的 `LEVEL_BAND_BONUSES`（段位制），
+ * 肉鸽这类自带成长曲线的模式（growth.energyPerLevel > 0）仍用自己的每级系数。
+ */
+export function energyLevelMul(level, growth) {
+  const perLevel = Number(growth?.energyPerLevel) || 0;
+  if (perLevel > 0) return 1 + Math.max(0, level - 1) * perLevel;
+  return levelEnergyMul(level);
+}
+
+export function eggRadiusFor(baseRadius, level, star) {
+  const levelSteps = Math.floor(Math.max(0, level - 1) / LEVELS_PER_RADIUS_STEP);
+  const starSteps = Math.floor(Math.max(0, star - 1) / STARS_PER_RADIUS_STEP);
+  return clamp(baseRadius + levelSteps + starSteps, EGG_RADIUS_MIN, EGG_RADIUS_MAX);
+}
+
+/**
+ * 计算一名英雄在给定上下文下的最终属性。
+ * @param {object} def 数据表英雄条目
+ * @param {object} ctx 养成上下文（见 progression/context.js）
+ * @param {{auraAtkMul?: number, auraEnergyMul?: number, auraCritBonus?: number, extraEggs?: number}} auras
+ */
+export function computeHeroStats(def, ctx = neutralContext(), auras = {}) {
+  const base = baseStatsOf(def);
+  const growth = ctx.growth ?? {};
+  const level = Math.max(1, Math.floor(ctx.levelOf?.(def?.id) ?? 1));
+  const star = Math.max(1, Math.floor(ctx.starOf?.(def?.id) ?? 1));
+
+  const lvlMul = levelAtkMul(level, growth);
+  const strMul = starAtkMul(star, growth);
+  const globalMul = Number(ctx.globalAtkMul) || 1;
+  const raceMul = Number(ctx.heroAtkMul?.(def?.id)) || 1;
+  const auraMul = Number(auras.auraAtkMul) || 1;
+
+  const atk = base.atk * lvlMul * strMul * globalMul * raceMul * auraMul;
+  const hp =
+    base.hp *
+    (1 + Math.max(0, level - 1) * (growth.hpPerLevel ?? 0)) *
+    (1 + Math.max(0, star - 1) * (growth.hpPerStar ?? 0));
+  const energyMul =
+    energyLevelMul(level, growth) *
+    (1 + Math.max(0, star - 1) * (growth.energyPerStar ?? 0)) *
+    (Number(ctx.energyMul) || 1) *
+    (Number(auras.auraEnergyMul) || 1);
+  const energyGain = base.energyGain * energyMul;
+
+  const critRate = clamp(
+    base.critRate +
+      Math.max(0, star - 1) * (growth.critPerStar ?? 0) +
+      (Number(ctx.critBonus) || 0) +
+      (Number(auras.auraCritBonus) || 0),
+    0,
+    0.95,
+  );
+
+  return {
+    level,
+    star,
+    atk: round2(atk),
+    hp: Math.round(hp),
+    energyMax: base.energyMax,
+    energyGain: round2(energyGain),
+    energyMul: round4(energyMul),
+    critRate: round4(critRate),
+    critMul: base.critMul,
+    eggRadius: eggRadiusFor(base.eggRadius, level, star),
+    eggPower: round4(base.eggPower * (Number(ctx.eggPowerMul) || 1)),
+    eggs: base.eggs + (Math.floor(ctx.extraEggs) || 0) + (Math.floor(auras.extraEggs) || 0),
+    atkBreakdown: {
+      base: base.atk,
+      level: round4(lvlMul),
+      star: round4(strMul),
+      global: round4(globalMul),
+      raceTech: round4(raceMul),
+      aura: round4(auraMul),
+      dex: round4(ctx.breakdown?.dex ?? 0),
+      fishing: round4(ctx.breakdown?.fishing ?? 0),
+      artifacts: round4(ctx.breakdown?.artifacts ?? 0),
+    },
+  };
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function round4(n) {
+  return Math.round(n * 1e4) / 1e4;
+}
