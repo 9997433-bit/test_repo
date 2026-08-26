@@ -108,6 +108,68 @@ module.exports = function (t, WC3) {
     t.lt(loop.worstFrameMs, 91, 'peak never exceeds the real frame delta');
   });
 
+  t.test('a throwing update does not kill the loop', function () {
+    var ticks = 0;
+    var frames = 0;
+    var loop = new Loop({
+      update: function () { ticks++; if (ticks === 3) throw new Error('boom'); },
+      render: function () { frames++; },
+      onError: function () {}
+    });
+    loop.running = true;
+    loop.lastTime = 0;
+    for (var i = 1; i <= 40; i++) loop.frame(i * 16.7);
+    t.eq(loop.errors, 1, 'the throw was counted');
+    t.eq(loop.consecutiveErrors, 0, 'the counter reset once ticks succeeded again');
+    t.gt(ticks, 20, 'simulation kept running after the error');
+    t.eq(frames, 40, 'rendering never stopped');
+    t.eq(loop.running, true, 'loop still alive');
+  });
+
+  t.test('a permanent error storm stops the loop instead of spinning', function () {
+    var loop = new Loop({
+      update: function () { throw new Error('always'); },
+      render: function () {},
+      onError: function () {},
+      maxConsecutiveErrors: 5
+    });
+    loop.running = true;
+    loop.lastTime = 0;
+    for (var i = 1; i <= 60; i++) loop.frame(i * 16.7);
+    t.eq(loop.running, false, 'loop shut itself down');
+    t.eq(loop.consecutiveErrors >= 5, true, 'after the configured error budget');
+  });
+
+  t.test('an error reporter that itself throws cannot kill the loop', function () {
+    var frames = 0;
+    var loop = new Loop({
+      update: function () { throw new Error('boom'); },
+      render: function () { frames++; },
+      onError: function () { throw new Error('the HUD is broken too'); },
+      maxConsecutiveErrors: 1000
+    });
+    loop.running = true;
+    loop.lastTime = 0;
+    for (var i = 1; i <= 30; i++) loop.frame(i * 16.7);
+    t.eq(loop.running, true, 'loop still alive');
+    t.eq(frames, 30, 'rendering never stopped');
+  });
+
+  t.test('spatial hash survives NaN and Infinity coordinates', function () {
+    var hash = new SpatialHash(64, 1000, 1000);
+    var bad = [
+      { alive: true, id: 1, x: NaN, y: 10 },
+      { alive: true, id: 2, x: 10, y: NaN },
+      { alive: true, id: 3, x: Infinity, y: -Infinity },
+      { alive: true, id: 4, x: 500, y: 500 }
+    ];
+    hash.rebuild(bad);   // must not throw
+    t.eq(hash.count, 4, 'every live entity was filed somewhere');
+    var out = [];
+    t.eq(hash.query(500, 500, 40, out).length, 1, 'the sane entity is still findable');
+    t.eq(hash.query(NaN, NaN, 40, out).length, 0, 'a NaN query returns nothing instead of throwing');
+  });
+
   t.test('spatial hash finds exactly the entities inside the radius', function () {
     var hash = new SpatialHash(64, 1000, 1000);
     var ents = [];

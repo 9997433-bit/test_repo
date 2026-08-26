@@ -26,6 +26,12 @@
     this.update = opts.update || function () {};
     this.render = opts.render || function () {};
     this.onStats = opts.onStats || null;
+    this.onError = opts.onError || null;
+    this.maxConsecutiveErrors = opts.maxConsecutiveErrors || 120;
+    this.errors = 0;
+    this.consecutiveErrors = 0;
+    this.lastError = null;
+    this._frameFailed = false;
 
     this.speed = 1;
     this.paused = false;
@@ -94,6 +100,31 @@
     }
   };
 
+  /**
+   * Run one callback, absorbing a throw. Without this a single bad frame ends
+   * the requestAnimationFrame chain and the game is dead until reload, which
+   * is the worst possible failure mode. Errors are counted and reported, and
+   * a sustained storm stops the loop rather than burning CPU forever.
+   * @returns {boolean} true if the callback threw
+   */
+  Loop.prototype._guard = function (fn, a, b) {
+    try {
+      fn(a, b);
+      return false;
+    } catch (err) {
+      this.errors++;
+      this._frameFailed = true;
+      this.lastError = err;
+      // The reporter usually touches the DOM, which is exactly what may be
+      // broken; a throw in here must not escape and kill the loop anyway.
+      try {
+        if (this.onError) this.onError(err, this);
+        else if (typeof console !== 'undefined') console.error('loop error:', err);
+      } catch (ignored) { /* nothing left to report to */ }
+      return true;
+    }
+  };
+
   Loop.prototype.frame = function (ts) {
     if (!this.running) return;
     var t = (typeof ts === 'number') ? ts : now();
@@ -104,10 +135,11 @@
 
     var scale = this.paused ? 0 : this.speed;
     this.accumulator += (elapsed / 1000) * scale;
+    this._frameFailed = false;
 
     var steps = 0;
     while (this.accumulator >= this.dt && steps < this.maxSteps) {
-      this.update(this.dt);
+      if (this._guard(this.update, this.dt)) break;
       this.accumulator -= this.dt;
       this.ticks++;
       this._fpsTicks++;
@@ -120,8 +152,19 @@
     }
 
     var alpha = this.paused ? 1 : (this.accumulator / this.dt);
-    this.render(alpha, elapsed / 1000);
+    this._guard(this.render, alpha, elapsed / 1000);
     this.frames++;
+
+    // Only a frame that got all the way through cleanly clears the streak.
+    if (this._frameFailed) {
+      this.consecutiveErrors++;
+      if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+        this.stop();
+        return;
+      }
+    } else {
+      this.consecutiveErrors = 0;
+    }
     this._fpsFrames++;
 
     this._fpsTimer += elapsed;

@@ -24,11 +24,16 @@
     this.count = 0;
   };
 
+  /**
+   * Cell index for a world position, clamped to the grid.
+   * NaN/Infinity land in cell 0 rather than producing an undefined bucket: one
+   * bad coordinate must never be able to kill the tick that rebuilds the hash.
+   */
   SpatialHash.prototype._index = function (x, y) {
     var cx = Math.floor(x / this.cell);
     var cy = Math.floor(y / this.cell);
-    if (cx < 0) cx = 0; else if (cx >= this.cols) cx = this.cols - 1;
-    if (cy < 0) cy = 0; else if (cy >= this.rows) cy = this.rows - 1;
+    if (!(cx >= 0)) cx = 0; else if (cx >= this.cols) cx = this.cols - 1;
+    if (!(cy >= 0)) cy = 0; else if (cy >= this.rows) cy = this.rows - 1;
     return cy * this.cols + cx;
   };
 
@@ -56,10 +61,12 @@
     var maxCx = Math.floor((x + r) / this.cell);
     var minCy = Math.floor((y - r) / this.cell);
     var maxCy = Math.floor((y + r) / this.cell);
-    if (minCx < 0) minCx = 0;
-    if (minCy < 0) minCy = 0;
-    if (maxCx >= this.cols) maxCx = this.cols - 1;
-    if (maxCy >= this.rows) maxCy = this.rows - 1;
+    // `!(v >= 0)` also catches NaN, which would otherwise skip the loop body
+    // silently or index an undefined bucket.
+    if (!(minCx >= 0)) minCx = 0;
+    if (!(minCy >= 0)) minCy = 0;
+    if (!(maxCx < this.cols)) maxCx = this.cols - 1;
+    if (!(maxCy < this.rows)) maxCy = this.rows - 1;
     var r2 = r * r;
     for (var cy = minCy; cy <= maxCy; cy++) {
       var row = cy * this.cols;

@@ -126,11 +126,16 @@
   };
 
   Hud.prototype.showError = function (key) {
+    this.showMessage(t(key), 2600);
+  };
+
+  /** Put a literal (already-localised) line on the log strip. */
+  Hud.prototype.showMessage = function (text, ttl) {
     var div = document.createElement('div');
     div.className = 'bad';
-    div.textContent = t(key);
+    div.textContent = text;
     this.el.log.appendChild(div);
-    setTimeout(function () { if (div.parentNode) div.parentNode.removeChild(div); }, 2600);
+    setTimeout(function () { if (div.parentNode) div.parentNode.removeChild(div); }, ttl || 2600);
   };
 
   // ------------------------------------------------------------ selection

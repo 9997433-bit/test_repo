@@ -39,7 +39,8 @@
     this.loop = new WC3.Loop({
       update: function (dt) { self.update(dt); },
       render: function (alpha, dtReal) { self.render(alpha, dtReal); },
-      onStats: function (loop) { self.onStats(loop); }
+      onStats: function (loop) { self.onStats(loop); },
+      onError: function (err, loop) { self.onLoopError(err, loop); }
     });
 
     this.bindInput();
@@ -396,6 +397,18 @@
       self.setPaused(true);
       self.menus.showEnd(result);
     }, 900);
+  };
+
+  /**
+   * The loop swallows the throw so the game keeps running; surface it once so
+   * a broken frame is visible instead of silently degrading the run.
+   */
+  App.prototype.onLoopError = function (err, loop) {
+    if (typeof console !== 'undefined') console.error('loop error:', err);
+    if (this._reportedError) return;
+    this._reportedError = true;
+    this.hud.showMessage('⚠ ' + (err && err.message ? err.message : String(err)), 9000);
+    if (!loop.running) this.setPaused(true);
   };
 
   App.prototype.onStats = function (loop) {
