@@ -107,7 +107,8 @@ function lastSeenT(sideId, id) {
 const LAYER_CSS = `
 #zy-juice { position: fixed; inset: 0; z-index: 40; pointer-events: none; overflow: hidden; contain: layout paint; }
 #zy-juice .zy-float { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-family: var(--font-body, serif); font-size: 13px; font-weight: 700; letter-spacing: 0.04em; line-height: 1; color: var(--cinnabar, #b23a2f); text-shadow: 0 0 3px var(--paper-bright, #fbf5e6), 0 0 7px var(--paper-bright, #fbf5e6), 0 1px 0 rgba(255, 255, 255, 0.6); }
-#zy-juice .zy-float.zy-skill { font-family: var(--font-brush, cursive); font-size: 26px; font-weight: 400; letter-spacing: 0.12em; }
+/* 招式名走泥金：金字压在纸上对比度低，补一道极细墨边才立得住。 */
+#zy-juice .zy-float.zy-skill { font-family: var(--font-brush, cursive); font-size: 27px; font-weight: 400; letter-spacing: 0.12em; -webkit-text-stroke: 0.6px rgba(28, 22, 16, 0.42); paint-order: stroke fill; }
 #zy-juice .zy-float.zy-leak { font-size: 16px; }
 #zy-juice .zy-ring { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid currentColor; }
 `;
