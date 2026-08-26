@@ -55,7 +55,6 @@ function baseUnit(shape) {
     buffMaxDr: plan && plan.kind === "buff" ? plan.maxDr : 0,
     // 统计
     dealt: 0,
-    healed: 0,
     down: false,
   };
 }
@@ -126,7 +125,7 @@ function uniqueId(used, wanted) {
   return id;
 }
 
-/** 伤害落地：先吃护盾再扣血，返回真实掉血量。 */
+/** 伤害落地：先吃护盾，剩下的才扣血。 */
 function land(target, amount) {
   let rest = amount;
   if (target.shield > 0) {
@@ -136,7 +135,6 @@ function land(target, amount) {
   }
   target.hp -= rest;
   if (target.hp < 0) target.hp = 0;
-  return amount;
 }
 
 /** 结算阵亡：按入场序号补日志，保证「先写这一下打了多少，再写谁倒下」。 */
@@ -169,7 +167,7 @@ function runTurn(ctx, actor) {
   // 铁钩首回合专挑后排下手，否则前排优先规则会让钩子永远钩不到人。
   const hooking = Boolean(plan && plan.kind === "hook" && ctx.round === plan.round);
   const target = hooking ? pickBackTarget(rng, actor, units) : pickTarget(rng, actor, units);
-  if (!target) return false;
+  if (!target) return;
 
   let mult = 1;
   let pierce = 0;
@@ -235,12 +233,9 @@ function runTurn(ctx, actor) {
       const before = mate.hp;
       mate.hp = Math.min(mate.maxHp, mate.hp + plan.amount);
       mate.shield += plan.shield;
-      actor.healed += mate.hp - before;
       log.push(`${actor.name}的${plan.name}回了${mate.name} ${fixed1(mate.hp - before)}点，附带护盾。`);
     }
   }
-
-  return true;
 }
 
 /**
