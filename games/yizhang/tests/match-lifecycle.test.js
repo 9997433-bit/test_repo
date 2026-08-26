@@ -4,22 +4,14 @@ import { createMatch, isMatchOver, step } from "../src/sim/index.js";
 import { DT, advance, playersOf } from "./helpers.js";
 
 function humanPlayer(state) {
-  return (
-    playersOf(state).find((player) => player.kind === "human") ??
-    playersOf(state)[0]
-  );
+  const player = playersOf(state).find(({ id }) => id === "p0");
+  expect(player, "createMatch should create human player p0").toBeDefined();
+  expect(player?.kind).toBe("human");
+  return player;
 }
 
 describe("falls and respawning", () => {
-  it.each([
-    ["below the fall plane", (player) => {
-      player.y = MATCH.fallY - 0.01;
-    }],
-    ["outside the disk", (player) => {
-      player.x = MATCH.arenaRadius + 0.21;
-      player.z = 0;
-    }],
-  ])("marks a player fallen %s and respawns after 1.2 seconds", (_name, fall) => {
+  it("marks a player below the fall plane and respawns after 1.2 seconds", () => {
     const state = createMatch({
       seed: 201,
       gloveId: "cotton",
@@ -30,7 +22,7 @@ describe("falls and respawning", () => {
     const deathsBefore = player.deaths;
 
     player.invulnT = 0;
-    fall(player);
+    player.y = MATCH.fallY - 0.01;
     step(state, {}, DT);
 
     expect(player.alive).toBe(false);
@@ -47,10 +39,44 @@ describe("falls and respawning", () => {
       MATCH.arenaRadius,
     );
   });
+
+  it("lets an unsupported rim crossing fall before starting its respawn", () => {
+    const state = createMatch({
+      seed: 201,
+      gloveId: "cotton",
+      offhandId: "spring",
+      botCount: 0,
+    });
+    const player = humanPlayer(state);
+    const deathsBefore = player.deaths;
+
+    player.invulnT = 0;
+    player.x = MATCH.arenaRadius + 0.21;
+    player.y = 0;
+    player.z = 0;
+    player.grounded = false;
+
+    step(state, {}, DT);
+    expect(player.alive).toBe(true);
+
+    for (let frame = 0; frame < 120 && player.alive; frame += 1) {
+      step(state, {}, DT);
+    }
+
+    expect(player.alive).toBe(false);
+    expect(player.deaths).toBe(deathsBefore + 1);
+
+    advance(step, state, MATCH.respawnDelay - 3 * DT);
+    expect(player.alive).toBe(false);
+
+    advance(step, state, 4 * DT);
+    expect(player.alive).toBe(true);
+    expect(player.y).toBeGreaterThan(MATCH.fallY);
+  });
 });
 
 describe("match completion", () => {
-  it("ends immediately when a player reaches seven kills", () => {
+  it("ends on the next simulation step when p0 reaches seven kills", () => {
     const state = createMatch({
       seed: 202,
       gloveId: "cotton",
@@ -63,6 +89,7 @@ describe("match completion", () => {
     expect(isMatchOver(state)).toMatchObject({ over: false });
 
     winner.kills = MATCH.killsToWin;
+    step(state, {}, DT);
     expect(isMatchOver(state)).toMatchObject({
       over: true,
       winnerId: winner.id,
