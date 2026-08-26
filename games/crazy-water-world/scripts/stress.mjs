@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { createStore } from "../src/core/store.js";
+import { createStore, hydrateSave } from "../src/core/store.js";
+import { stepSim } from "../src/core/engine.js";
 import { placeBuilding, expandRaft, canPlace } from "../src/world/build.js";
 import { tickWorld } from "../src/world/sim.js";
+import { beginDive } from "../src/explore/dive.js";
+import { beginCast, hookCast } from "../src/explore/fishing.js";
 import { BUILDINGS } from "../src/data/buildings.js";
 import { STAGES } from "../src/data/stages.js";
 import { simulateBattle } from "../src/combat/battle.js";
@@ -12,6 +15,9 @@ const TARGET_BUILDINGS = 240;
 const STOCK = 1_000_000_000;
 const TSUNAMI_CYCLES = 20;
 const TSUNAMI_DT = [0.001, 0.1, 1, 30, 600, 3600];
+const TSUNAMI_SIM_STEPS = 256;
+const CODEX_ROUND_TRIPS = 32;
+const ROUND_TRIP_NOW_MS = 1_700_000_000_000;
 const SEEDS_PER_STAGE = 128;
 
 function round(value) {
@@ -94,6 +100,51 @@ for (let cycle = 0; cycle < TSUNAMI_CYCLES; cycle += 1) {
 }
 const tsunamiElapsedMs = performance.now() - tsunamiStarted;
 
+const tsunamiSimStarted = performance.now();
+let tsunamiSimState = {
+  ...prepared,
+  world: { ...prepared.world, weather: "clear", weatherTimer: 3600 },
+};
+tsunamiSimState = beginDive(tsunamiSimState, "wreck");
+const tsunamiDiveStarted = !!tsunamiSimState.explore.dive?.ok;
+tsunamiSimState = {
+  ...tsunamiSimState,
+  world: { ...tsunamiSimState.world, weather: "tsunami", weatherTimer: 3600 },
+};
+let tsunamiSimFinite = true;
+let tsunamiSimRetained = true;
+for (let i = 0; i < TSUNAMI_SIM_STEPS; i += 1) {
+  tsunamiSimState = stepSim(tsunamiSimState);
+  tsunamiSimFinite &&= finiteState(tsunamiSimState);
+  tsunamiSimRetained &&= tsunamiSimState.world.weather === "tsunami";
+}
+const tsunamiDiveClosed = tsunamiSimState.explore.dive === null;
+const tsunamiSimElapsedMs = performance.now() - tsunamiSimStarted;
+
+const codexStarted = performance.now();
+let codexState = {
+  ...prepared,
+  world: { ...prepared.world, weather: "clear", weatherTimer: 3600 },
+};
+codexState = beginCast(codexState);
+const codexCast = codexState.explore.fishing.cast;
+const codexCastStarted = !!codexCast?.ok;
+if (codexCastStarted) {
+  codexState = hookCast(codexState, (codexCast.window[0] + codexCast.window[1]) / 2);
+}
+const codexExpected = codexState.explore.fishing.codex || {};
+const codexExpectedJson = JSON.stringify(codexExpected);
+let codexRoundTripsRetained = Object.keys(codexExpected).length > 0;
+for (let i = 0; i < CODEX_ROUND_TRIPS; i += 1) {
+  const raw = JSON.parse(JSON.stringify({
+    ...codexState,
+    meta: { ...codexState.meta, savedAt: ROUND_TRIP_NOW_MS },
+  }));
+  codexState = hydrateSave(raw, ROUND_TRIP_NOW_MS);
+  codexRoundTripsRetained &&= JSON.stringify(codexState?.explore.fishing.codex || {}) === codexExpectedJson;
+}
+const codexElapsedMs = performance.now() - codexStarted;
+
 const allies = [
   { id: "stress-sam", heroKey: "sam", star: 5 },
   { id: "stress-mia", heroKey: "mia", star: 5 },
@@ -157,6 +208,12 @@ const checks = {
   allBuildingTypes: new Set(prepared.buildings.map((building) => building.type)).size === Object.keys(BUILDINGS).length,
   tsunamiTickFinite: tsunamiFinite,
   tsunamiWeatherRetained: tsunamiRetained,
+  tsunamiDiveStarted,
+  tsunamiStepSimFinite: tsunamiSimFinite,
+  tsunamiStepSimWeatherRetained: tsunamiSimRetained,
+  tsunamiDiveClosed,
+  codexCastStarted,
+  codexRoundTripsRetained,
   exactlyThirtyStages: STAGES.length === 30 && stageScan.length === 30,
   fiveHeroLineup: allies.length === 5,
   fiveEnemiesPerStage: STAGES.every((stage) => stage.enemies.length === 5),
@@ -183,6 +240,22 @@ const report = {
     retainedWeather: tsunamiRetained,
     minHp: round(minHp),
     elapsedMs: round(tsunamiElapsedMs),
+  },
+  tsunamiStepSimScan: {
+    steps: TSUNAMI_SIM_STEPS,
+    finite: tsunamiSimFinite,
+    retainedWeather: tsunamiSimRetained,
+    diveStarted: tsunamiDiveStarted,
+    diveClosed: tsunamiDiveClosed,
+    finalTick: tsunamiSimState.meta.tick,
+    elapsedMs: round(tsunamiSimElapsedMs),
+  },
+  saveRoundTripScan: {
+    method: "JSON.parse/stringify + hydrateSave",
+    roundTrips: CODEX_ROUND_TRIPS,
+    codexEntries: Object.keys(codexExpected).length,
+    codexRetained: codexRoundTripsRetained,
+    elapsedMs: round(codexElapsedMs),
   },
   battleStageScan: {
     format: `${allies.length}v${STAGES[0]?.enemies.length || 0}`,
