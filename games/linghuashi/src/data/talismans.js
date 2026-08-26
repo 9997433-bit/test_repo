@@ -17,11 +17,3 @@ export const TALISMANS = {
   cloud: { id: "spring", name: "回春笔", qi: 15, tags: ["heal"] },
   scribble: { id: "ink", name: "余墨", qi: 9, tags: ["basic"] },
 };
-
-// 键盘施法顺序（与教程一致）
-export const CASTABLE_TYPES = ["line", "curve", "circle", "zigzag", "spiral", "cloud"];
-
-export function talismanByKey(key) {
-  const type = CASTABLE_TYPES.find((t) => TALISMANS[t].key === key);
-  return type ? { type, talisman: TALISMANS[type] } : null;
-}

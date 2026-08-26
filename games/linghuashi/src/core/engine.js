@@ -13,12 +13,9 @@ export function boot(root, store) {
   store.set({ screen: entryScreen(store.get()) });
 
   function navigate(screen) {
-    if (typeof cleanup === "function") cleanup();
-    cleanup = null;
     store.set({ screen });
     store.persist();
-    cleanup = renderApp(root, store, navigate) || null;
-    focusHeading(root);
+    renderApp(root, store, navigate);
   }
 
   const persist = () => store.persist();
@@ -41,12 +38,4 @@ export function boot(root, store) {
       store.persist();
     },
   };
-}
-
-// 无障碍：切屏后把焦点移到主标题，屏幕阅读器能感知场景变化
-function focusHeading(root) {
-  const heading = root.querySelector("h1, h2");
-  if (!heading) return;
-  heading.setAttribute("tabindex", "-1");
-  heading.focus({ preventScroll: false });
 }

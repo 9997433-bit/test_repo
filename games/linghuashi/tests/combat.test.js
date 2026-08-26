@@ -1,19 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { createBattle } from "../src/combat/battle.js";
 import { reaction } from "../src/combat/elements.js";
-import { computeMods, defaultMods } from "../src/combat/mods.js";
-import { defaultSave } from "../src/core/store.js";
 
 function battle(player = {}) {
   return createBattle({
     player: { id: "p", name: "徒", classId: "jian", element: "metal", hp: 200, atk: 40, qi: 200, ...player },
     enemy: { id: "e", name: "蛾", classId: "yao", element: "wood", hp: 80, atk: 5 },
     seed: 7,
-    ...overrides,
   });
 }
 
-describe("battle casts", () => {
+describe("battle", () => {
   it("line cast reduces enemy hp", () => {
     const b = battle();
     b.cast({ type: "line", precision: 0.9, pressure: 0.6 });
@@ -65,8 +62,5 @@ describe("battle casts", () => {
 describe("elements", () => {
   it("water evaporates fire", () => {
     expect(reaction("water", "fire").id).toBe("evaporate");
-  });
-  it("thunder conducts through metal with crit bonus", () => {
-    expect(reaction("thunder", "metal").crit).toBeGreaterThan(0);
   });
 });

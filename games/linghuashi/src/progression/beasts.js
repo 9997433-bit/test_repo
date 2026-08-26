@@ -23,12 +23,6 @@ export function catchBeast(save, rng = Math.random, nowMs = Date.now()) {
   };
 }
 
-export function releaseBeast(save, uid) {
-  const beasts = (save.beasts || []).filter((b) => b.uid !== uid);
-  if (beasts.length === (save.beasts || []).length) return save;
-  return { ...save, beasts, notice: "灵兽归山，栏位已空出。" };
-}
-
 export function beastBonus(save) {
   const acc = { crit: 0, qiRegen: 0, shield: 0 };
   for (const b of save?.beasts || []) {

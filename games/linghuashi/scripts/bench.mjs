@@ -1,4 +1,3 @@
-// 性能基准：笔迹识别与战斗 tick 必须足够便宜（60fps 预算内）。
 import { classifyStroke } from "../src/drawing/recognizer.js";
 import { createBattle } from "../src/combat/battle.js";
 import { generateTrajectory, TRAJECTORY_TYPES } from "./trajectories.mjs";

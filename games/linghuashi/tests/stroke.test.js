@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { classifyStroke } from "../src/drawing/recognizer.js";
-import { templatePoints } from "../src/drawing/templates.js";
 
 function line() {
   return Array.from({ length: 40 }, (_, i) => ({ x: 10 + i * 6, y: 40 + i * 0.2, t: i * 16 }));

@@ -84,8 +84,6 @@ export function createActor(spec, realmId) {
     maxQi: spec.qi ?? realm.qi,
     qi: spec.qi ?? realm.qi,
     atk: spec.atk ?? realm.atk,
-    atkMs: spec.atkMs ?? 2000,
-    traits: spec.traits ?? [],
     shield: 0,
     controlMs: 0,
     shred: 0,
@@ -119,18 +117,9 @@ export function createBattle({ player, enemy, seed = 1, modifiers } = {}) {
   }
   syncIntent();
 
-  if (mods.openingShield > 0) {
-    state.player.shield += mods.openingShield;
-    push(`灵兽庇护 · 开局护盾 ${Math.round(mods.openingShield)}`, { kind: "buff" });
-  }
-  if (state.enemy.traits.includes("armored")) {
-    state.enemy.shield = Math.round(state.enemy.maxHp * 0.2);
-    push(`${state.enemy.name} 覆有甲壳（折线破甲可双倍削盾）`, { kind: "warn" });
-  }
-
   function push(msg, extra = {}) {
     state.log.unshift({ t: state.t, msg, ...extra });
-    state.log = state.log.slice(0, 30);
+    state.log = state.log.slice(0, 24);
   }
 
   function checkEnd() {
@@ -143,14 +132,12 @@ export function createBattle({ player, enemy, seed = 1, modifiers } = {}) {
     return state.finished;
   }
 
-  // 破甲类打击对护盾造成双倍削减
-  function deal(target, amount, { shieldBreak = false } = {}) {
+  function deal(target, amount) {
     let left = amount;
-    if (target.shield > 0 && left > 0) {
-      const power = shieldBreak ? 2 : 1;
-      const absorb = Math.min(target.shield, left * power);
+    if (target.shield > 0) {
+      const absorb = Math.min(target.shield, left);
       target.shield -= absorb;
-      left = Math.max(0, left - absorb / power);
+      left -= absorb;
     }
     target.hp = Math.max(0, target.hp - left);
     return amount;
@@ -209,13 +196,11 @@ export function createBattle({ player, enemy, seed = 1, modifiers } = {}) {
     if (stroke.type === "circle") {
       const shield = (18 + prec * 42 * (1 + bonus)) * mods.defMult + mods.shield;
       state.player.shield += shield;
-      state.stats.shieldGained += shield;
       push(`${talisman.name} · 护盾 +${Math.round(shield)}`, { kind: "buff" });
     } else if (stroke.type === "cloud") {
       const heal = (16 + prec * 36 * (1 + bonus)) * mods.supMult;
       state.player.hp = Math.min(state.player.maxHp, state.player.hp + heal);
-      state.stats.healingDone += state.player.hp - before;
-      push(`${talisman.name} · 回春 ${Math.round(heal)}${crit ? " · 妙笔!" : ""}`, { kind: "heal" });
+      push(`${talisman.name} · 回春 ${Math.round(heal)}`, { kind: "heal" });
     } else if (stroke.type === "curve") {
       state.enemy.controlMs += (700 + prec * 900 + (react.control || 0)) * mods.supMult;
       hit = deal(state.enemy, dmg * 0.55);

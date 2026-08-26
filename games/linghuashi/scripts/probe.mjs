@@ -1,6 +1,4 @@
-// 快速冒烟探针：识别、模板、战斗、tick 可靠性、解锁与迁移。任何一步失败即非零退出。
 import { classifyStroke } from "../src/drawing/recognizer.js";
-import { templatePoints, TEMPLATE_TYPES } from "../src/drawing/templates.js";
 import { createBattle } from "../src/combat/battle.js";
 import { generateTrajectory, TRAJECTORY_TYPES } from "./trajectories.mjs";
 
