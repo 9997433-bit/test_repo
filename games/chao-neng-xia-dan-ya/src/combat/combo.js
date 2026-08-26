@@ -72,7 +72,10 @@ export function keptStacks(reached = 0, mods = {}) {
  * @param {number} params.combo 命中前的连击层数
  * @param {number} [params.gain] 基础叠层（默认 1）
  * @param {object} [params.mods] 羁绊 / 增益修正
- * @returns {{ before:number, gain:number, after:number, delta:number, burst:boolean, threshold:number }}
+ * @returns {{
+ *   before:number, gain:number, after:number, delta:number,
+ *   burst:boolean, threshold:number, reached:number, kept?:number
+ * }}
  */
 export function planCombo({ combo = 0, gain = 1, mods = {} } = {}) {
   const before = Number.isFinite(combo) ? Math.max(0, Math.floor(combo)) : 0;

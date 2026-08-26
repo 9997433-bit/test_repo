@@ -4,8 +4,9 @@
  * 纯函数：给定蛋、目标、修正与随机源，产出伤害数值与逐段拆解（breakdown）。
  * 拆解会原样带回给调用方，方便 HUD 调试面板、基准脚本与单测断言每一段倍率。
  *
- * 顺序：基础攻击 → 流派 → 羁绊攻击 → 连击 → 碰撞 → 元素反应 → 爆蛋窗口
- *      → 全局伤害倍率 → 暴击 → 易伤 → 护甲 → 抗性 → 下限 1
+ * 顺序：基础攻击 → 流派 → 羁绊攻击 → 主蛋倍率 → 连击 → 碰撞 → 元素伤害
+ *      → 元素反应 → 爆蛋窗口 → 全局伤害倍率 → 暴击 → 易伤 → 护甲 → 抗性
+ *      → 下限 1（零威力除外，见 baseAttack）
  */
 
 import { ARMOR_K, COLLISION, CRIT, DEFAULT_EGG_POWER, ELEMENT, REACTIVE_ELEMENTS, RESIST_CLAMP, SCHOOL_MODIFIER } from "./constants.js";
