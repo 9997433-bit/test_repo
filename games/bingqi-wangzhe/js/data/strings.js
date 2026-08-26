@@ -101,6 +101,12 @@ export const RESOURCE_NAME = Object.freeze({
   stamina: '体力',
   diamond: '玄晶',
   exp: '锻造心得',
+  shardCommon: '凡铁碎片',
+  shardUncommon: '精钢碎片',
+  shardRare: '玄兵碎片',
+  shardEpic: '紫霄碎片',
+  shardLegendary: '传说碎片',
+  shardMythic: '神话碎片',
 });
 
 export const RESOURCE_ICON = Object.freeze({
@@ -115,6 +121,12 @@ export const RESOURCE_ICON = Object.freeze({
   stamina: '力',
   diamond: '晶',
   exp: '悟',
+  shardCommon: '屑',
+  shardUncommon: '钢',
+  shardRare: '玄',
+  shardEpic: '霄',
+  shardLegendary: '传',
+  shardMythic: '神',
 });
 
 /* ------------------------------ 炉 ------------------------------ */
