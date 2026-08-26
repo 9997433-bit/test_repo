@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { resolveSkill, resolveSlap } from "./index.js";
 import { installIntoSim } from "./sim-bridge.js";
 import { GLOVE_BY_ID } from "../data/gloves.js";
+import { resolveSlap as fallbackResolveSlap } from "../sim/fallback-combat.js";
 import { createMatch, getDeps, step } from "../sim/index.js";
 
 const DT = 1 / 60;
@@ -75,7 +76,8 @@ beforeEach(() => {
 describe("装进 sim 之后", () => {
   it("import combat 就完成 installCombat，sim 不再跑兜底解算", () => {
     expect(getDeps().usingRealCombat).toBe(true);
-    expect(getDeps().combat.resolveSlap).not.toBe(resolveSlap);
+    expect(getDeps().combat.resolveSlap).not.toBe(fallbackResolveSlap);
+    // 兜底解算会在 state=null 上炸；真实解算返回空命中列表。
     expect(getDeps().combat.resolveSlap(null, null, undefined, 0)).toHaveLength(0);
   });
 
