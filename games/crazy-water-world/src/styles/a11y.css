@@ -34,6 +34,14 @@ input[type="range"]:focus-visible {
   input[type="range"] {
     height: 38px;
   }
+
+  .cww-dpad button {
+    min-height: var(--tap-comfort);
+  }
+
+  .panel .cww-sel {
+    min-height: var(--tap-min);
+  }
 }
 
 /* ---------- 色盲友好：三条状态条形态各异 ----------
@@ -53,6 +61,66 @@ input[type="range"]:focus-visible {
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 45%),
     repeating-linear-gradient(0deg, transparent 0 3px, rgba(255, 255, 255, 0.45) 3px 5px);
+}
+
+/* ---------- 玩法状态图案（Round 2）：颜色之外的第二通道 ---------- */
+
+/* 建造非法格：45° 斜纹（叠在 sea.css 的珊瑚底色上，配合每格 ✕） */
+.cww-ghost .cww-ghost-cell.bad {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 107, 107, 0.55) 0 7px,
+    rgba(255, 107, 107, 0.18) 7px 14px
+  );
+}
+
+/* 氧气条：常态 = 气泡点纹；低氧 = 45° 斜纹（同口渴条的“斜纹 = 液体告急”语言） */
+.panel .cww-meter > i {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 45%),
+    radial-gradient(circle at 4px 4px, rgba(255, 255, 255, 0.55) 1.5px, transparent 2.6px);
+  background-size: auto, 13px 9px;
+}
+
+.panel .cww-meter.low > i {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 45%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0 4px, transparent 4px 9px);
+  background-size: auto;
+}
+
+/* 钓鱼完美核：竖纹金条，灰阶下与外围绿窗仍然两个纹理 */
+.panel .cww-zone-core {
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.55) 0 3px,
+    transparent 3px 8px
+  );
+}
+
+/* 战报血条：我方 = 纯色 + 光泽，敌方 = 斜纹 */
+.panel .cww-hp i b {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 55%);
+}
+
+.panel .cww-hp.enemy i b {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 55%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0 3px, transparent 3px 6px);
+}
+
+/* 深海稀有点位：金圈之外再盖 ★，形状通道与色圈互为备份 */
+.cww-dive .cww-node.rare::after {
+  content: "★" / "";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(6, 53, 68, 0.85);
+  transform: rotate(-45deg); /* 抵消菱形点位的 45° 旋转 */
 }
 
 /* ---------- 高对比偏好 ---------- */
@@ -85,6 +153,29 @@ input[type="range"]:focus-visible {
   .title-screen::after,
   .title-screen > div::before {
     display: none;
+  }
+
+  /* 玩法组件退化：状态全靠描边线型与文字，填充交给系统色 */
+  .cww-ghost .cww-ghost-cell.ok {
+    border-style: solid;
+  }
+
+  .cww-ghost .cww-ghost-cell.bad {
+    border-style: dashed;
+  }
+
+  .panel .cww-meter > i,
+  .panel .cww-hp i b {
+    background: ButtonText;
+  }
+
+  .panel .cww-zone {
+    border-left: 3px solid ButtonText;
+    border-right: 3px solid ButtonText;
+  }
+
+  .panel .cww-needle {
+    background: ButtonText;
   }
 }
 
