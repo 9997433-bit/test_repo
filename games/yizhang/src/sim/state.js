@@ -227,9 +227,8 @@ export function createMatch(opts = {}) {
     t: 0,
     tick: 0,
     config,
-    // combat 读这两个平铺字段做判定半径
+    // combat 的扇形判定读这个平铺字段来加身位
     playerRadius: config.playerRadius,
-    playerHeight: config.playerHeight,
     arena: createArena(config.arenaRadius, rng),
     players,
     events: [],
