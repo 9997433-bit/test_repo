@@ -10,6 +10,7 @@
 | `xiangwang-shenghuo/` | 《蘑菇屋·慢生活》向往的生活同构田园经营 | 4175 |
 | `zhao-yun-adou/` | 《赵云与阿斗》汉字合成 · 水墨塔防 | 4180 |
 | `sanguo-ice-age/` | 《三国：冰河时代》极寒城建 · 武将 SLG | 4176 |
+| `yizhang/` | 《异掌》WebGL 浮空擂台 · 双掌扇击 | 4181 |
 
 线上 Pages（项目站再加一级游戏目录，互不抢根）：
 
@@ -24,6 +25,7 @@
 | 兵器王者 | https://9997433-bit.github.io/test_repo/bingqi-wangzhe/ |
 | 边境要塞塔防 | https://9997433-bit.github.io/test_repo/warcraft3-td/ |
 | 三国：冰河时代 | https://9997433-bit.github.io/test_repo/sanguo-ice-age/ |
+| 异掌 | 源码在 `games/yizhang/`，本地 `npm run dev` 走 :4181 |
 | 蘑菇屋·慢生活 | 源码在 `games/xiangwang-shenghuo/`，本地 `npm run dev` 走 :4175 |
 
 ```bash
@@ -33,4 +35,5 @@ cd games/linghuashi && npm install && npm run dev             # :4173
 cd games/xiangwang-shenghuo && npm install && npm run dev     # :4175
 cd games/zhao-yun-adou && npm install && npm run dev          # :4180
 cd games/sanguo-ice-age && npm start                          # :4176
+cd games/yizhang && npm install && npm run dev                # :4181
 ```

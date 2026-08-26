@@ -4,12 +4,22 @@
 
 | 游戏 | 目录 | 端口 | 本轮状态 |
 | --- | --- | --- | --- |
+| 异掌 | `games/yizhang/` | 4181 | Round 1 进行中，见 `PROGRESS.yizhang.md` |
 | 三国：冰河时代 | `games/sanguo-ice-age/` | 4176 | Round 1–3 完成，24 测 / 10 探针全绿 |
 | 我的花园世界 | `games/my-garden-world/` | 5173 | Round 1–3 完成，见 `PROGRESS.my-garden-world.md` |
 | 超能下蛋鸭 | `games/chao-neng-xia-dan-ya/` | 4174 | Round 1–3 完成，L1 |
 | 灵画师 | `games/linghuashi/` | 4173 | Round 1–3 完成 |
 | 赵云与阿斗 | `games/zhao-yun-adou/` | 4180 | 见该目录 brief |
 | 蘑菇屋·慢生活 | `games/xiangwang-shenghuo/` | 4175 | Round 1–3 完成 |
+
+---
+
+# 异掌 — 编排进度
+
+- **任务名**: yizhang
+- **工作分支**: `cursor/yizhang-db8d`（逻辑名 `agent/yizhang`）
+- **游戏目录**: `/workspace/games/yizhang/`
+- 详见 `PROGRESS.yizhang.md`
 
 ---
 
