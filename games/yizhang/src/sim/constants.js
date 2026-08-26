@@ -29,6 +29,9 @@ export const PHYSICS = {
   railBlockSpeed: 9,
   railInset: 0.35,
 
+  // 出盘判死的下坠余量：越过台缘那一帧不判死，先让人真的往下掉一段
+  offDiskDrop: 1.5,
+
   playerPush: 9, // 圆柱互推刚度
   windupSlow: 0.35, // 前摇/后摇期间的移动控制系数
 

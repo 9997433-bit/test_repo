@@ -316,10 +316,14 @@ function updateMatch(state) {
   pushEvent(state, { type: "matchOver", winnerId: m.winnerId, reason: m.reason });
 }
 
-/** 出盘：水平半径超过 arenaRadius + 0.2 且脚下没台，就是掉出去了 */
+/**
+ * 出盘：水平半径超过 arenaRadius + 0.2、脚下没台、并且已经往下掉了 offDiskDrop。
+ * 越过台缘的那一帧不判死——人得先看得见地掉下去，才轮到重生计时；
+ * 掉够深度就不必再等 y < fallY，出盘一样在有限步内出局。
+ */
 function isOffDisk(state, p) {
   if (p.grounded) return false;
-  if (p.y > state.arena.floorY) return false;
+  if (p.y > state.arena.floorY - PHYSICS.offDiskDrop) return false;
   if (len2(p.x, p.z) <= state.arena.radius + 0.2) return false;
   return !isSupported(state.arena, p.x, p.z);
 }

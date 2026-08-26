@@ -5,11 +5,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, beforeEach } from "vitest";
 
+import * as realCombat from "../combat/index.js";
+import { normalizeSkillId } from "../combat/skills.js";
+import * as realData from "../data/gloves.js";
 import {
   GLOVES as REAL_GLOVES,
   GLOVE_BY_ID as REAL_GLOVE_BY_ID,
 } from "../data/gloves.js";
+import * as bridge from "./combat-bridge.js";
+import { combatSkillId } from "./combat-bridge.js";
 import {
+  getDeps,
   createMatch,
   step,
   getView,
@@ -445,6 +451,27 @@ describe("碎地", () => {
     expect(p.deaths).toBe(1);
   });
 
+  it("走出台缘先掉一段再判死，不在越缘那一帧凭空消失", () => {
+    const s = createMatch({ seed: 6, botCount: 0 });
+    const p = getPlayer(s, "p0");
+    place(p, s.config.arenaRadius + 0.21, 0, 0);
+    p.invulnT = 0;
+    p.grounded = false;
+
+    step(s, {}, DT);
+    expect(p.alive).toBe(true); // 越缘当帧还活着
+    expect(p.y).toBeLessThan(0); // 但已经在往下掉
+
+    let frames = 1;
+    while (p.alive && frames < 120) {
+      step(s, {}, DT);
+      frames++;
+    }
+    expect(p.alive).toBe(false); // 有限步内出局
+    expect(p.y).toBeGreaterThan(s.config.fallY); // 且不必等 y < fallY
+    expect(p.deaths).toBe(1);
+  });
+
   it("出生点被打碎时改到还有台的地方重组，不会连环摔", () => {
     const s = createMatch({ seed: 6, botCount: 1 });
     const p = getPlayer(s, "p0");
@@ -576,5 +603,68 @@ describe("变长 dt", () => {
     expect(s.time).toBeLessThan(1);
     step(s, {}, -5);
     expect(Number.isFinite(s.time)).toBe(true);
+  });
+});
+
+describe("真身识别", () => {
+  it("把真实 combat 再装一遍仍是生产路径：标志为真且走静态桥", () => {
+    const before = getDeps().combat;
+    installCombat(realCombat);
+    const after = getDeps();
+    expect(after.usingRealCombat).toBe(true);
+    expect(after.combat.resolveSlap).toBe(before.resolveSlap);
+    expect(after.combat.resolveSlap).toBe(bridge.resolveSlap);
+  });
+
+  it("只做转发的薄适配器也算真身（探针 / 装配层的老写法）", () => {
+    const adapter = {
+      resolveSlap: (s, a, g, now) => realCombat.resolveSlap(s, a, g, now),
+      resolveSkill: (s, a, g, now) => realCombat.resolveSkill(s, a, g, now),
+      tickStatuses: (s, dt) => realCombat.tickStatuses(s, dt),
+      applyAwaken: (a, g) => realCombat.applyAwaken(a, g),
+    };
+    installCombat(adapter);
+    expect(getDeps().usingRealCombat).toBe(true);
+    expect(getDeps().combat.resolveSlap).toBe(bridge.resolveSlap);
+  });
+
+  it("认不出的替身才算替身：标志为假且真的被调到", () => {
+    let called = 0;
+    installCombat({
+      resolveSlap: () => {
+        called++;
+        return { hits: [] };
+      },
+    });
+    expect(getDeps().usingRealCombat).toBe(false);
+    const s = createMatch({ seed: 7, botCount: 1 });
+    run(s, { p0: input({ slap: true }) }, 0.5);
+    expect(called).toBeGreaterThan(0);
+  });
+
+  it("把真实 data（含被翻译过 skillId 的那份）再装一遍，usingRealData 保持真", () => {
+    installData(realData);
+    expect(getDeps().usingRealData).toBe(true);
+
+    // 装配层 alignSkillIds 的产物：数值一字不差，只有 skillId 换成了 combat 词表
+    const translated = REAL_GLOVES.map((g) => ({ ...g, skillId: combatSkillId(g.skillId) }));
+    installData({ MATCH: realData.MATCH, GLOVES: translated });
+    expect(getDeps().usingRealData).toBe(true);
+    expect(getGloves()).toHaveLength(REAL_GLOVES.length);
+
+    // 数值改了就是替身
+    installData({ GLOVES: REAL_GLOVES.map((g) => ({ ...g, slapPower: 99 })) });
+    expect(getDeps().usingRealData).toBe(false);
+  });
+
+  it("技能别名三套词表都认，空值归一成 none", () => {
+    expect(combatSkillId("iron_pull")).toBe("magnetPull"); // data 词表
+    expect(combatSkillId("magnetPull")).toBe("magnetPull"); // combat 词表
+    expect(combatSkillId("pull")).toBe("magnetPull"); // 文档短名
+    expect(combatSkillId(null)).toBe("none");
+    expect(combatSkillId("none")).toBe("none");
+    for (const g of REAL_GLOVES) {
+      expect(normalizeSkillId(combatSkillId(g.skillId))).toBe(normalizeSkillId(g.skillId));
+    }
   });
 });
