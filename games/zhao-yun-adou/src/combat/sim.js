@@ -3,7 +3,7 @@ import { heroById } from "../data/heroes.js";
 import { waveSpec, leakCompensation, MAX_WAVE } from "../data/waves.js";
 import { castSkill } from "./skills.js";
 import { applyDamage } from "./damage.js";
-import { cellCenter, grazeOf, hitFactorAt, lanePoint, reachOf } from "./geometry.js";
+import { cellCenter, falloffFor, lanePoint } from "./geometry.js";
 import { linkArena, notePressureKill, opponentOf, sendPressure } from "./pressure.js";
 
 /** 路线推进的时间常数：speed(点/秒) / PATH_SCALE = 每秒推进的进度。 */
@@ -144,15 +144,16 @@ function runBoard(side, dt, haste, rally, notify) {
     if (!marks.length) continue;
 
     const range = hero ? (hero.range ?? 2) : (UNIT_TABLE[u.id]?.range ?? 1);
-    const reach = reachOf(range);
-    const outer = grazeOf(range);
+    const falloff = falloffFor(range);
     const c = cellCenter(cell.index);
     const targets = [];
     for (const m of marks) {
       if (m.e.hp <= 0) continue;
-      const d = Math.hypot(c.x - m.x, c.y - m.y);
-      if (d >= outer) continue;
-      targets.push({ e: m.e, factor: hitFactorAt(d, range) });
+      const dx = c.x - m.x;
+      const dy = c.y - m.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= falloff.outer2) continue;
+      targets.push({ e: m.e, factor: falloff.factor(Math.sqrt(d2)) });
     }
     if (!targets.length) continue;
     // 先打罩在核心圈里的领头者：否则一个刚擦到外沿的敌人会把满伤的一发骗走。
@@ -161,7 +162,7 @@ function runBoard(side, dt, haste, rally, notify) {
     if (hero) {
       if (u.cooldown <= 0) {
         const alive = marks.map((m) => m.e).filter((e) => e.hp > 0);
-        const r = castSkill(side, u, alive, { cellIndex: cell.index, reach });
+        const r = castSkill(side, u, alive, { cellIndex: cell.index, reach: falloff.reach });
         notify("skill", {
           side: side.id,
           hero: hero.name,

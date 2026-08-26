@@ -78,11 +78,27 @@ export function grazeOf(range) {
  * 而不是差半格就完全打不到。
  */
 export function hitFactorAt(distance, range) {
+  return falloffFor(range).factor(distance);
+}
+
+/**
+ * 一次算好某个射程的判定参数，热循环里按 (格子 × 敌人) 复用。
+ * outer2 让距离筛选先用平方比较，省掉每次 Math.hypot。
+ */
+export function falloffFor(range) {
   const reach = reachOf(range);
-  if (distance <= reach) return 1;
   const outer = grazeOf(range);
-  if (distance >= outer) return 0;
-  return 1 - (distance - reach) / (outer - reach);
+  const span = outer - reach;
+  return {
+    reach,
+    outer,
+    outer2: outer * outer,
+    factor(distance) {
+      if (distance <= reach) return 1;
+      if (distance >= outer || span <= 0) return 0;
+      return 1 - (distance - reach) / span;
+    },
+  };
 }
 
 export function hitFactor(index, t, range) {
