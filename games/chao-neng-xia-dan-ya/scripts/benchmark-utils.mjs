@@ -1,16 +1,18 @@
-import {
-  createEgg,
-  makeBrick as createBrick,
-} from "../src/physics/index.js";
+import { makeEgg as createGameEgg } from "../src/core/sim.js";
 
 const DEFAULT_EGG_RADIUS = 12;
 const DEFAULT_BRICK_WIDTH = 38;
 const DEFAULT_BRICK_HEIGHT = 18;
 
-export const BENCHMARK_SCHEMA_VERSION = 2;
+export const BENCHMARK_SCHEMA_VERSION = 3;
 export const PHYSICS_FRAME_BUDGET_MS = 4;
-export const PHYSICS_STEP_BUDGET_MS = PHYSICS_FRAME_BUDGET_MS / 2;
-export const ACTIVE_SCENARIO_WINDOW_STEPS = 240;
+export const TRAJECTORY_BUDGET_MS = 500;
+export const RENDER_FRAME_SECONDS = 1 / 60;
+export const FIXED_STEPS_PER_RENDER_FRAME = 2;
+export const FULL_LOAD_EGGS = 30;
+export const FULL_LOAD_STATICS = 200;
+export const FULL_LOAD_FIELDS = 8;
+export const ACTIVE_SCENARIO_WINDOW_FRAMES = 60;
 
 export function roundMetric(value, digits = 6) {
   if (!Number.isFinite(value)) return null;
@@ -23,77 +25,86 @@ export function elapsedMs(start) {
 }
 
 export function makeEgg(index) {
-  const column = index % 6;
-  const row = Math.floor(index / 6);
-  const x = 70 + column * 68 + (row % 2) * 8;
-  const y = 72 + row * 42;
-  const vx = ((index % 5) - 2) * 72;
-  const vy = 80 + (index % 4) * 35;
+  const column = index % 8;
+  const row = Math.floor(index / 8);
 
-  return createEgg({
-    id: `bench-egg-${index}`,
-    x,
-    y,
-    vx,
-    vy,
+  return createGameEgg({
+    x: 36 + column * 58 + (row % 2) * 5,
+    y: 48 + row * 29,
+    vx: ((index % 7) - 3) * 58,
+    vy: 150 + (index % 5) * 42,
     r: DEFAULT_EGG_RADIUS,
     restitution: 0.86,
-    mass: 1,
+    power: 10,
   });
 }
 
 export function makeBrick(index) {
   const column = index % 10;
   const row = Math.floor(index / 10);
-  const x = 34 + column * 46 + (row % 2) * 9;
-  const y = 230 + row * 48;
 
-  return createBrick({
+  return {
     id: `bench-brick-${index}`,
     kind: "brick",
-    x,
-    y,
+    x: 11 + column * 47 + (row % 2) * 2,
+    y: 180 + row * 28,
     w: DEFAULT_BRICK_WIDTH,
     h: DEFAULT_BRICK_HEIGHT,
-    restitution: 0.82,
-    hp: 1_000_000,
-    breakable: false,
-  });
+    alive: true,
+    flash: 0,
+  };
 }
 
-function addBodies(world, collectionName, methodName, bodies) {
-  if (Array.isArray(world[collectionName])) {
-    world[collectionName].push(...bodies);
-    return;
+export function makeField(index) {
+  const column = index % 4;
+  const row = Math.floor(index / 4);
+  const direction = index % 2 === 0 ? 1 : -1;
+
+  return {
+    id: `bench-field-${index}`,
+    x: column * 120,
+    y: 120 + row * 280,
+    w: 120,
+    h: 280,
+    ax: direction * (90 + row * 30),
+    ay: row === 0 ? -45 : 45,
+    alive: true,
+  };
+}
+
+/**
+ * 构造战斗实际使用的 `core/sim.js` 世界，而不是直接向上游 physics
+ * 的 `statics/fields` 填数据。第一次推进会经过生产路径的 `syncStage`。
+ */
+export function populateWorld(
+  world,
+  eggCount = FULL_LOAD_EGGS,
+  staticCount = FULL_LOAD_STATICS,
+  fieldCount = FULL_LOAD_FIELDS,
+) {
+  if (
+    !Array.isArray(world.eggs) ||
+    !Array.isArray(world.bricks) ||
+    !Array.isArray(world.fans)
+  ) {
+    throw new TypeError("Benchmark world must come from src/core/sim.js createWorld()");
   }
 
-  if (world[collectionName] instanceof Map) {
-    for (const body of bodies) world[collectionName].set(body.id, body);
-    return;
-  }
-
-  if (typeof world[methodName] === "function") {
-    for (const body of bodies) world[methodName](body);
-    return;
-  }
-
-  throw new TypeError(
-    `World must expose ${collectionName} as an Array/Map or implement ${methodName}()`,
+  world.eggs.push(
+    ...Array.from({ length: eggCount }, (_, index) => makeEgg(index)),
   );
-}
-
-export function populateWorld(world, eggCount, staticCount) {
-  const eggs = Array.from({ length: eggCount }, (_, index) => makeEgg(index));
-  const statics = Array.from({ length: staticCount }, (_, index) => makeBrick(index));
-
-  addBodies(world, "eggs", "addEgg", eggs);
-  addBodies(world, "statics", "addStatic", statics);
+  world.bricks.push(
+    ...Array.from({ length: staticCount }, (_, index) => makeBrick(index)),
+  );
+  world.fans.push(
+    ...Array.from({ length: fieldCount }, (_, index) => makeField(index)),
+  );
   return world;
 }
 
-export function measureSteps(world, stepWorld, stepCount) {
+export function measureSteps(world, step, stepCount) {
   const start = process.hrtime.bigint();
-  for (let index = 0; index < stepCount; index += 1) stepWorld(world);
+  for (let index = 0; index < stepCount; index += 1) step(world);
   const totalMs = elapsedMs(start);
 
   return {
@@ -105,20 +116,30 @@ export function measureSteps(world, stepWorld, stepCount) {
   };
 }
 
-function createScenarioWindows(factory, totalSteps, windowSteps) {
-  const windows = [];
-  let remainingSteps = totalSteps;
+function configuredStaticCount(world) {
+  return (
+    (world.pegs?.length ?? 0) +
+    (world.bricks?.length ?? 0) +
+    (world.enemies?.length ?? 0) +
+    (world.slopes?.length ?? 0)
+  );
+}
 
-  while (remainingSteps > 0) {
-    const steps = Math.min(windowSteps, remainingSteps);
+function createScenarioWindows(factory, totalFrames, windowFrames) {
+  const windows = [];
+  let remainingFrames = totalFrames;
+
+  while (remainingFrames > 0) {
+    const frames = Math.min(windowFrames, remainingFrames);
     const world = factory();
     windows.push({
       world,
-      steps,
+      frames,
       startingEggs: world.eggs.length,
-      startingStatics: world.statics.length,
+      configuredStatics: configuredStaticCount(world),
+      configuredFields: world.fans?.length ?? 0,
     });
-    remainingSteps -= steps;
+    remainingFrames -= frames;
   }
 
   return windows;
@@ -139,51 +160,32 @@ function summarizeScenarioWindows(windows) {
 
   return {
     windows: windows.length,
-    maxStepsPerWindow: Math.max(...windows.map(({ steps }) => steps)),
+    maxFramesPerWindow: Math.max(...windows.map(({ frames }) => frames)),
     startingEggsPerWindow: windows[0]?.startingEggs ?? 0,
-    staticsPerWindow: windows[0]?.startingStatics ?? 0,
+    configuredStaticsPerWindow: windows[0]?.configuredStatics ?? 0,
+    configuredFieldsPerWindow: windows[0]?.configuredFields ?? 0,
     minimumEndingEggsPerWindow: Math.min(...endingEggCounts),
     endingEggsTotal: endingEggCounts.reduce((total, count) => total + count, 0),
     physicsActivity: stats,
   };
 }
 
-function runScenarioWindows(windows, stepWorld, onStep) {
-  for (const { world, steps } of windows) {
-    for (let index = 0; index < steps; index += 1) {
-      onStep(world, stepWorld);
+function runScenarioWindows(windows, runFrame, onFrame) {
+  for (const { world, frames } of windows) {
+    for (let index = 0; index < frames; index += 1) {
+      onFrame(world, runFrame);
     }
   }
 }
 
 export function warmScenario(
   factory,
-  stepWorld,
-  stepCount,
-  windowSteps = ACTIVE_SCENARIO_WINDOW_STEPS,
+  runFrame,
+  frameCount,
+  windowFrames = ACTIVE_SCENARIO_WINDOW_FRAMES,
 ) {
-  const windows = createScenarioWindows(factory, stepCount, windowSteps);
-  runScenarioWindows(windows, stepWorld, (world, step) => step(world));
-}
-
-export function measureScenarioSteps(
-  factory,
-  stepWorld,
-  stepCount,
-  windowSteps = ACTIVE_SCENARIO_WINDOW_STEPS,
-) {
-  const windows = createScenarioWindows(factory, stepCount, windowSteps);
-  const start = process.hrtime.bigint();
-  runScenarioWindows(windows, stepWorld, (world, step) => step(world));
-  const totalMs = elapsedMs(start);
-
-  return {
-    steps: stepCount,
-    totalMs: roundMetric(totalMs, 3),
-    meanStepMs: roundMetric(totalMs / stepCount),
-    stepsPerSecond: roundMetric(stepCount / (totalMs / 1_000), 2),
-    workload: summarizeScenarioWindows(windows),
-  };
+  const windows = createScenarioWindows(factory, frameCount, windowFrames);
+  runScenarioWindows(windows, runFrame, (world, frame) => frame(world));
 }
 
 export function percentile(sortedSamples, percentileValue) {
@@ -192,43 +194,19 @@ export function percentile(sortedSamples, percentileValue) {
   return sortedSamples[Math.max(0, rank - 1)];
 }
 
-export function measureStepLatencies(world, stepWorld, sampleCount) {
-  const samples = new Array(sampleCount);
-
-  for (let index = 0; index < sampleCount; index += 1) {
-    const start = process.hrtime.bigint();
-    stepWorld(world);
-    samples[index] = elapsedMs(start);
-  }
-
-  const totalMs = samples.reduce((total, sample) => total + sample, 0);
-  const sorted = [...samples].sort((left, right) => left - right);
-
-  return {
-    samples: sampleCount,
-    totalMs: roundMetric(totalMs, 3),
-    meanMs: roundMetric(totalMs / sampleCount),
-    p50Ms: roundMetric(percentile(sorted, 50)),
-    p95Ms: roundMetric(percentile(sorted, 95)),
-    p99Ms: roundMetric(percentile(sorted, 99)),
-    maxMs: roundMetric(sorted.at(-1)),
-    finalWorldTimeSeconds: roundMetric(world.time),
-  };
-}
-
-export function measureScenarioStepLatencies(
+export function measureScenarioFrameLatencies(
   factory,
-  stepWorld,
+  runFrame,
   sampleCount,
-  windowSteps = ACTIVE_SCENARIO_WINDOW_STEPS,
+  windowFrames = ACTIVE_SCENARIO_WINDOW_FRAMES,
 ) {
-  const windows = createScenarioWindows(factory, sampleCount, windowSteps);
+  const windows = createScenarioWindows(factory, sampleCount, windowFrames);
   const samples = new Array(sampleCount);
   let sampleIndex = 0;
 
-  runScenarioWindows(windows, stepWorld, (world, step) => {
+  runScenarioWindows(windows, runFrame, (world, frame) => {
     const start = process.hrtime.bigint();
-    step(world);
+    frame(world);
     samples[sampleIndex] = elapsedMs(start);
     sampleIndex += 1;
   });
@@ -246,6 +224,23 @@ export function measureScenarioStepLatencies(
     maxMs: roundMetric(sorted.at(-1)),
     workload: summarizeScenarioWindows(windows),
   };
+}
+
+export function linearTrend(values) {
+  if (values.length < 2) return 0;
+  const xMean = (values.length - 1) / 2;
+  const yMean =
+    values.reduce((total, value) => total + value, 0) / values.length;
+  let numerator = 0;
+  let denominator = 0;
+
+  for (let index = 0; index < values.length; index += 1) {
+    const dx = index - xMean;
+    numerator += dx * (values[index] - yMean);
+    denominator += dx * dx;
+  }
+
+  return denominator === 0 ? 0 : numerator / denominator;
 }
 
 export function printStableJson(value) {
