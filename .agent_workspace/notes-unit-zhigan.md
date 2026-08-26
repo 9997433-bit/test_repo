@@ -46,18 +46,18 @@ Every hero: plate/boot legs, layered cape (dark inner + lit outer edge + fold
 shadow, waves faster while moving), specular pauldrons, distinct face, weapon
 with shine and an eased attack-swing pose driven by `h._rSwingT`.
 
-- **paladin (Uther)** — silver breastplate + gold trim, blue tabard with holy
+- **paladin (Aldric)** — silver breastplate + gold trim, blue tabard with holy
   diamond, gold-rimmed pauldrons, white beard + gold crown, warhammer that
   slams on attack with a holy glow, ambient aura.
-- **blademaster (Grom)** — green orc skin with pec highlights, red bandana +
+- **blademaster (Karghal)** — green orc skin with pec highlights, red bandana +
   whipping topknot, tusks, spiked leather pauldron, red sash, sashimono war
   banner, long two-tone katana with a wide additive slash arc on attack,
   wind-walk afterimage shimmer while `frenzyUntil` is up.
-- **demonhunter (Illidan)** — purple skin with glowing fel tattoos, flowing
+- **demonhunter (Sylthar)** — purple skin with glowing fel tattoos, flowing
   hair, horns, blindfold leaking fel light, twin crescent warglaives with fel
   edges that spin outward on attack; metamorphosis unfurls veined demon wings
   and swaps the palette to violet.
-- **deathknight (Arthas)** — saronite plate with glowing rune etchings, skull
+- **deathknight (Morvane)** — saronite plate with glowing rune etchings, skull
   belt buckle, spiked pauldrons, pale face with flowing white hair and icy eye
   glow, Frostmourne (skull crossguard, icy gradient blade, lit fuller + runes),
   frost mist pooling at the feet.
@@ -111,6 +111,18 @@ circles anywhere, including the portrait.
   `battle_vfx.png` (mixed army under fire at z2.6 — spark showers, arrow
   trails, death flashes clearly visible), `hero_swing_closeup.png` (paladin
   strike: flash star, spark fan, kill ring, blood, slow-motes on grunts).
+
+## Integration with the parallel balance branch
+
+Rebased onto the balance/README commits (`2a3645c`…`1a1bbdb`) that landed while
+this work was in flight. Verified compatibility: creep `name.en` keys used by
+the renderer's `SPECIES` map are unchanged, hero ids unchanged (only display
+names went IP-safe: Aldric/Karghal/Sylthar/Morvane), the reworked `fxEmit` in
+game.js still only emits the `text`/`spark`/`ring` kinds `_drawFx` handles, and
+the header keeps the "Frontier Keep TD" rename. The new `h._hitFlash` the
+balance branch sets on the hero is now rendered via `_hitWash` in `_drawHero`.
+All suites green after rebase: run.mjs 94/94, balance.mjs 6/6, zhigan.mjs 8/8,
+edges.mjs 6/6, bench 0.25 ms/tick.
 
 ## Leftovers / ideas for later
 
