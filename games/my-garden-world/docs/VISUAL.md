@@ -43,8 +43,9 @@
 - `[data-season="spring|summer|autumn|winter"]`：覆写天空、远山、雾带，秋冬另调土色（已接线）；
 - `[data-night="1"]`：整套换磁青纸令牌，同时点亮挂牌夜灯 `--decor-glow`
   （声明在季节之后，同特异度后者取胜，**勿调换顺序**；已接线）；
-- `[data-theme="spring|summer|autumn|winter|ink"]`：装扮主题层，见 §五（待接线）；
-- `[data-spirit="juyue|chiguang|rainbow|xueyi|suideng"]`：花灵驻园层，见 §六（待接线）。
+- `[data-theme="spring|summer|autumn|winter|ink"]`：装扮主题层，见 §五（已接线：`app.ts frame()` 每帧写 `state.decorTheme`）；
+- `[data-spirit="juyue|chiguang|rainbow|xueyi|suideng"]`：花灵驻园层，见 §六（已接线）；
+- `[data-mode="place|visit"]`：摆放 / 访邻模式层——摆放模式罩暗幕亮锚位，访邻模式隐去自家 dock、邻园盖上舞台（已接线，样式见 main.css 对应段）。
 
 `[data-theme]` 与 `[data-spirit]` 声明在夜色块**之后**，但**只覆写主题/灵专属变量**，
 不碰语义层与场景层；组件消费这些变量时一律 `color-mix(…, var(--text))` 掺墨，
@@ -101,12 +102,9 @@
    `THEMES` 归属映射同一套色，**per-摆件着色已生效，无需接线**；元素自身命中的
    别名优先于从 `#app` 继承的全局主题。
 
-仍差一处接线（owner: 引擎，CSS 无需再动）：
-
-```ts
-// app.ts frame()，一行：全局主题（需要先在 state 里记住玩家最后套用的主题）
-root.dataset.theme = state.decorTheme ?? "";
-```
+全局主题已接线（Round 3）：`state.decorTheme`（存档 v3 字段，`applyTheme` 时写入、迁移时清洗），
+`app.ts frame()` 每帧同步 `root.dataset.theme = state.decorTheme ?? ""`——玩家最后套用的主题
+染遍花笺与挂牌，跨会话保持。
 
 主题色一览：春晓桃夭（胭脂）、盛夏石青荷风、秋宴赭金、冬雪青瓷、墨雅焦墨泥金。
 
@@ -211,10 +209,10 @@ root.dataset.theme = state.decorTheme ?? "";
 
 ## 十、已知缺口（下一轮）
 
-1. 剩一处一行接线（owner: 引擎）：`root.dataset.theme`（§五，需 state 先记录
-   玩家最后套用的主题）。
+1. ✅ ~~`root.dataset.theme` 接线~~（Round 3 已完成，见 §五）。
 2. 花瓣颜色由 TS 内联写死，建议改读季节令牌（春桃粉/夏荷白/秋枫赤/冬雪白）。
 3. `index.html` 的 `theme-color` 仍是旧棕色 `#3d2a1c`，建议随昼夜切换（owner: 引擎）。
 4. `decor-layer.ts` 的注入式 `<style>` 里仍有裸色值与手写 z（属陈设层所有）；
    长期应并回样式域、改读令牌。
-5. `main.css` 存量裸色值（土面高光、进度条渐变、星点等）继续向令牌收敛。
+5. `main.css` 存量裸色值（土面高光、进度条渐变、星点等）继续向令牌收敛；
+   Round 3 新增的摆放/访邻两段样式已消费令牌，仅借花笺纸条底色两枚裸值待并入颜料层。

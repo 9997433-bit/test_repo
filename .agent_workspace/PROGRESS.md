@@ -23,7 +23,7 @@ SOTA 验收条：
 |-------|------|----------|
 | 1 初始构建与基线探索 | 完成 | 见下方《Round 1 结论简报》 |
 | 2 靶向重构与深度优化 | 完成 | 见下方《Round 2 结论简报》 |
-| 3 SOTA 打磨与最终验收 | 进行中 | — |
+| 3 SOTA 打磨与最终验收 | 完成（Fable-1 云端） | 见下方《Round 3 结论简报》 |
 
 ---
 
@@ -119,3 +119,25 @@ SOTA 验收条：
 6. 全量 `tsc` + `npm test` + 构建；交叉核验无回归。
 
 **Round 3 纪律**：只推 `agent/my-garden-world`；禁止切走 `/workspace`；禁止再开平行实现分支往主支硬并。
+
+---
+
+## 《Round 3 结论简报》（Fable-1 云端 · `claude-fable-5-thinking-xhigh`）
+
+产出分支：`cursor/fable1-round3-sota-161c`（基于 `agent/my-garden-world`，未合并 `cursor/fable1-round2-sota-563e`）。**必闭项全部核销**，`tsc` 0 错、**173 测全绿**（23 文件，probe 含在内）、`vite build` 通过。
+
+### 本轮落地
+
+1. **邻家花园可玩**：三位邻居（1/3/5 阶）、园圃按「邻居id+游戏日」确定生成（保底 ≥2 有花、≥1 盛放、≥1 缺水，当日痕迹回放）；帮浇 3 瓢/家/日（友谊+1、经验+2）、借花全局 2 枝/日（每家 1 枝，仅盛放，入自家库存换借花笺）；友谊每 6 点一心赠 1 碎片；访邻名册 + 邻园视图 + 回家「串门小记」toast + 急单提醒。
+2. **锚位摆放模式**：8 锚位、tap-tap 落座/拿起/替换/回匣，购买自动落座，`applyTheme` 带锚位腾挪；存档升 **v3**（`decorAnchors`/`social`/`decorTheme`/`seenTips`，迁移清洗 + 旧档自动补位）。
+3. **接线三件**：`spawnOrders` 走 `pickWeighted`；评分改色系配色（8/12/6/2）+ 章法（主配衬）+ 重样折价，上限 92、档位 60/70/85/92→1/2/4/8 阶（probe 固化）；`root.dataset.theme` 每帧同步。
+4. **番外折**：fence/borrow/settle 三折由串门/首摘/首摆触发。
+5. **音效**：静音偏好独立持久化（`localStorage:my-garden-world:muted`）；开园一次性音效贴士记 `seenTips`。
+6. **文档对齐**：README、GDD（公式/权重/装扮/邻家数值/清单核销）、UX（六七转已实现+落地备注、新增九节）、VISUAL（`data-theme`/`data-mode` 接线）、SOTA_AUDIT 六节终审验收。
+
+### 遗留细账（nits）
+
+- bundle gzip 40.52KB，超 40KB 预算 1.3%（SVG 模板可抽公共段找回）。
+- 邻园帮浇为 tap-tap 制（未复用拖浇手势，日限 3 瓢无连击场景）。
+- 番外折已读是会话内存态，刷新可重看（并入 `seenTips` 即一行改动）。
+- 借花笺两枚裸色值待并入令牌；器花相契留作后续备选。

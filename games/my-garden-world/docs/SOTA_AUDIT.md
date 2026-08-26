@@ -1,6 +1,6 @@
-# SOTA 审计报告 — 我的花园世界（Round 1 / Fable-1）
+# SOTA 审计报告 — 我的花园世界（Fable-1 · Round 3 终审）
 
-参照标尺：Stardew Valley 的操作反馈密度、Cozy Grove / Unpacking 的"juice"（微动效、粒子、声效即时回应）、原作《我的花园世界》的国风手绘氛围。审计对象为 commit `99e0d34` 的 Vite+TS 基线。
+参照标尺：Stardew Valley 的操作反馈密度、Cozy Grove / Unpacking 的"juice"（微动效、粒子、声效即时回应）、原作《我的花园世界》的国风手绘氛围。一、二节为 Round 1 审计原文（对象 commit `99e0d34`）；六节为 Round 3 终审验收。
 
 ---
 
@@ -53,11 +53,11 @@
 6. ✅ **光影时节**：晨/昼/暮/夜四相 + 日月天体 + 星空层 + 季节粒子（春瓣/夏萤/秋叶/冬雪），CSS 过渡实现，零 JS 逐帧成本。
 7. ✅ **移动 dock**：工具组/面板组/系统组分区，图章式圆钮（书法字 + 小标签），横向滚动 + safe-area，清档二次确认。
 8. ✅ **a11y**：全按钮 aria-label、工具 aria-pressed、弹窗 role=dialog、toast aria-live、地块中文状态朗读、focus-visible、prefers-reduced-motion。
-9. ⏭ **离线结算**：回归时快进生长（封顶 4h）+ "欢迎回来"摘要弹窗，需防离线枯萎惩罚。
-10. ⏭ **音景**：环境声层（风/鸟/雨）、浇水白噪声、可持久化的音量设置。
-11. ⏭ **装扮系统可视化**：装饰目前只是一排 chip，应落位到庭院场景（亭/池/径有真实图形与摆放位）。
-12. ⏭ **花灵形象**：花灵应有场景内的动态形象（漂浮精灵 + 光晕），当前只是文字按钮。
-13. ⏭ **数值曲线**：中后期（8 阶+）内容断档，订单模板仅 7 条；需扩充订单池、加入连续剧情订单。
+9. ✅ **离线结算**（Round 2）：回归时快进生长（封顶 2h）+ 「离园」摘要 toast，存档 v2 增 `lastSeenAt` 墙钟锚点。
+10. ✅ **音景**（Round 2 环境声 / Round 3 持久化）：四季五声音阶三声部底噪随昼夜与花灵换调；静音偏好落 `localStorage` 跨会话保持，开园附一次性音效贴士（`seenTips`）。
+11. ✅ **装扮系统可视化**（Round 2 入景 / Round 3 摆放）：陈设 SVG 入景 + 檐下挂牌；Round 3 落地 8 锚位摆放模式（tap-tap 落座/拿起/替换，购买自动落座，主题套用带锚位腾挪），存档 v3 迁移自动补位。
+12. ✅ **花灵形象**（Round 2）：驻园灵玉 + 灵光雾晕（零新增 DOM），面板灵牌 per-灵配色，环境音随行换调。
+13. ✅ **数值曲线**（Round 2 扩池 / Round 3 接线）：订单模板扩至 29 张、权重抽取上线；评分深化为色系配色 + 章法 + 重样折价，档位曲线 60/70/85/92 → 1/2/4/8 阶经 probe 固化。
 
 ---
 
@@ -91,6 +91,31 @@
 
 ## 五、验证方式
 
-- `npm test`：订单事务/计数/择价、教程推进、花艺评分、SVG 生成器全阶段输出、存档迁移。
+- `npm test`：订单事务/计数/择价、教程推进、花艺评分、SVG 生成器全阶段输出、存档迁移、锚位摆放、邻访全流程、音景生命周期、jsdom 端到端冒烟（教程全链路 / 访邻串门 / 摆放模式）。
 - `npx tsc --noEmit`：strict + noUncheckedIndexedAccess 全绿。
-- 手动：桌面 + 375px 视口走完教程四步 → 插花 → 交定制单 → 换季观察光影。
+- 手动：桌面 + 375px 视口走完教程四步 → 插花 → 交定制单 → 换季观察光影 → 串门借花 → 摆放陈设。
+
+---
+
+## 六、Round 3 终审验收（Final）
+
+审计对象：`cursor/fable1-round3-sota-161c` 分支头。**必闭项逐条核销**：
+
+| 必闭项 | 状态 | 实现与证据 |
+|--------|------|-----------|
+| 可玩的邻家花园（串门/浇水/摘花/小结） | ✅ | `systems/neighbors.ts`（确定性园圃、日限、友谊心心）+ `ui/visit-mode.ts`（横幅/园圃/动作条/回家小记 toast）+ 名册面板（剪影卡、余量、急单提醒）。`tests/unit/neighbors.test.ts`（9 例）+ `tests/unit/visit-ui.test.ts`（4 例）覆盖生成保底、限额、跨日重置与 jsdom 全流程 |
+| 摆放模式锚位制 | ✅ | 8 锚位数据 + `placeAt/unplace/autoPlace` + `ui/place-mode.ts` tap-tap 层；存档 v3 `decorAnchors` 迁移自动补位。`tests/unit/anchors.test.ts` + `tests/unit/place-mode.test.ts` |
+| `pickWeighted` + 色系/章法评分接线 | ✅ | `spawnOrders` 权重抽取；`scoreBreakdown` 配色按色系、章法 + 重样折价，上限 92、档位 60/70/85/92 → 1/2/4/8 阶。`tests/unit/round3-wiring.test.ts` + `tests/probe/balance.test.ts` 固化基准 |
+| `dataset.theme` 全局主题 | ✅ | 存档 v3 `decorTheme` + `app.ts frame()` 每帧同步 `root.dataset.theme`，主题按钮带 `is-on` 态 |
+| 静音持久化 | ✅ | `localStorage`（`my-garden-world:muted`）独立于存档；开园一次性音效贴士记 `seenTips: ["sound"]`。`tests/unit/visit-ui.test.ts` 换会话重载验证 |
+| 番外折钩子 | ✅ | `fence`（首次串门）/ `borrow`（首次借花）/ `settle`（首次摆放）三折全部接线，jsdom 冒烟逐折断言弹出与收起 |
+| 文档对齐 | ✅ | README / GDD（评分公式、权重、装扮锚位、邻家数值、接线清单核销）/ UX（六、七转「已实现」+ 落地备注）/ VISUAL（`data-theme`、`data-mode` 接线）与本报告 |
+| tsc + npm test + build 全绿 | ✅ | `tsc --noEmit` 0 错；vitest 23 文件 173 例全过（probe 含在内）；`vite build` 产物 gzip JS ≈ 40.5KB（预算 40KB 贴线，见遗留） |
+
+**遗留细账（nits，不阻断验收）**：
+
+1. JS bundle gzip 40.52KB，较 40KB 预算超 1.3%——邻访/摆放两套 UI 层是纯功能增量；下一轮可把 `flower-art.ts`/`decor-art.ts` 的 SVG 模板抽公共段找回。
+2. 邻园帮浇未复用拖浇手势（tap-tap 制，见 UX 6.8）；日限 3 瓢下无连击场景，属体验取舍而非缺口。
+3. 番外折已读为会话内存态（刷新可重看），`seenTips` 目前只收录音效贴士；如需跨会话不重看番外，把 `sideSeen` 并入 `seenTips` 即一行改动。
+4. 借花笺纸条底色两枚裸色值待并入颜料层令牌（VISUAL §十 5）。
+5. 器花相契（花器色系亲和）仍留作后续轮备选（GDD 清单 C 原案）。
