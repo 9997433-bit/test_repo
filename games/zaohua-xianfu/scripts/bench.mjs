@@ -1,7 +1,6 @@
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { pathToFileURL } from "node:url";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -48,7 +47,7 @@ try {
       equipped: state.equipped,
     });
 
-  for (let index = -warmupRuns; index < 0; index += 1) runBattle(index);
+  for (let index = 0; index < warmupRuns; index += 1) runBattle(index);
 
   let wins = 0;
   let losses = 0;
