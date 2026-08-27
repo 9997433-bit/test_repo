@@ -361,24 +361,24 @@ idle 与战斗逐掌**押韵不复制**（ART §16.0 快慢架 / §17.4 对齐�
 
 分层一句话：`vfx.js`（§14 本表）管**参数**、`COMBAT_VFX_KIND` / `IDLE_VFX_KIND` 管**分派**、ART §16 管**终稿**。分派词活在 render 域，数据红线不变（`src/data` 禁 import three / DOM / Math.random）：本表不登记 render 词为字段，render 也不复制本表数字。
 
-## 15. 固定人物视角与机位（`CAMERA`，LOOK-R1；契约 v4.3 ADR-37…39）
+## 15. 固定人物视角与机位（`CAMERA`，LOOK-R1/R2；契约 v4.3 ADR-37…39）
 
 ### 15.1 视角模式 `lookMode`
 
 值域冻结为两词 `'locked' | 'free'`（第三值先登记契约再用）。**产品缺省 `lookMode = 'locked'` = 固定人物视角**：镜头钉在角色身后，**人物水平面向 ≡ 相机水平前向**——`Input.yaw = cameraYawToSimYaw(θ)` 由 sim 直赋、无平滑，等式逐 tick 精确成立（契约不变量 §14-30）；上下看（pitch）不受影响，照走 ADR-35 通路。
 
-`free` 为**可切换**的自由视角：镜头与面向解耦——移动矢量非零时面向 = 世界系移动方向（`atan2(−moveX, −moveZ)`），零移动保持当前朝向（§14-31）。两种模式下移动换算是同一条公式：W 永远朝镜头水平前方。运行时权威只住在 input（`getLook().lookMode`）；sim 与 renderer 都不感知 lookMode（ADR-38），渲染侧只有机位 yaw 来源差（locked 用角色 yaw / free 用喂入的 `simYaw`）。
+`free` 为**可切换**的自由视角（LOOK-R2 已落地，LK-04 收口）：镜头与面向解耦——分派整只收在 `input.sample()`：**移动矢量非零**时送 `yawFromDir(moveX, moveZ)`，面朝走向（= 世界系移动方向 `atan2(−moveX, −moveZ)`，§14-31）；**零位移**送 `yaw: null`，sim 见非有限值保持当前朝向——静止转镜头，人一动不动；W+S 对消的合零矢量同样落回 null，不会原地翻身。**locked 仍 1:1**：恒送 `cameraYawToSimYaw(θ)`，与视角轮之前的既有行为逐字一致（`input/index.test.js`「Input.yaw 按 lookMode 分派」与 `sim/look-yaw.test.js` 两侧锁死）。两种模式下移动换算是同一条公式：W 永远朝镜头水平前方。运行时权威只住在 input（`getLook().lookMode`）；sim 与 renderer 都不感知 lookMode（ADR-38），渲染侧只有机位 yaw 来源差（locked 用角色 yaw / free 用喂入的 `simYaw`）。
 
 **切换四通道**（初值链左优先：URL > 存档 > 缺省 locked）：
 
 | 通道 | 行为 |
 | --- | --- |
 | 键 **V**（`KeyV`） | 上升沿 toggle；不占用既有键位、不置位任何动作；落盘存档 |
-| 设置面板「视角」 | 锁定 / 自由两段开关，与 V 同路（`onLookModeChange`）落盘 |
+| 设置面板「视角模式」 | 「固定视角 / 自由视角」两段分段器（与画质同一套 `.yz-seg`）；经 `onSettingsChange → input.setLookMode`（静默 setter，不触发 `onLookModeChange`）收敛后落盘，与 V 键殊途同归于 `shell.setLookMode` 的同一枚回执 |
 | URL `?look=locked\|free` | 仅本次会话，不回写存档；非法值忽略、走存档链 |
 | 存档 `lookMode` | 老档缺字段 / 非法值一律补 `'locked'` |
 
-**文案**（契约 §13.2 归本文定，按实现登记）：切换 toast =「锁 定 视 角」/「自 由 视 角」（1.2s，隔字空格式同「掌 意 觉 醒」）；准星下回执小字（`.yz-look-flash`，F2 ART §18.1）=「视角锁定 / 自由视角」；键位表行 =「锁定视角 V」；设置面板段 =「锁定 / 自由」。改词先过 F2 视觉规范。
+**文案**（契约 §13.2 归本文定，LOOK-R2 按实现对账后登记，与 `ui/hud.js` `LOOK_LABEL`、`ui/shell.js` 键位表 / 设置板逐字同词）：切换**不开中央 toast**——模式提示只有准星下那一枚回执小字（`.yz-look-flash`，F2 ART §18.1）：「视角锁定 / 自由视角」+ 键帽 V（触屏收起键帽、文本照常），亮约 **0.9s**（`LOOK_FLASH_MS = 900`；比 toast 1.6s 短，它是确认回执不是通知），连按只重置计时、不排队不叠字；键位表行 =「切换视角 V」（另有「视角 鼠标」一行）；设置面板段 = 标签「视角模式」+「固定视角 / 自由视角」两段。旧版登记的 1.2s 隔字 toast「锁 定 视 角 / 自 由 视 角」作废——实现从未挂载（`main.js` 明写反馈只有回执一枚，模式提示不与战斗信息抢眼；`shell.test.js`「中央短讯那块大字不跟着开」锁死）。改词先过 F2 视觉规范。
 
 ### 15.2 机位距离 / 阻尼对照表（`CAMERA`）
 
