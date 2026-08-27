@@ -32,8 +32,9 @@
 | O1 hub 模拟 | `claude-opus-5-thinking-high-fast` | `bc-aaa7b471-0831-5c1b-996b-fb7368bea8f9` | 已合入 `cursor/yizhang-sim-hub-phase-db8d` |
 | O2 渲染大厅 | `claude-opus-5-thinking-high-fast` | `bc-616666ea-d922-5c09-abfd-aa6e3fdd5417` | 运行中 |
 | O4 开局进 hub | `claude-opus-5-thinking-high-fast` | `bc-87e682d7-eb47-54e2-b6fe-990d4a6066f4` | 运行中 |
-| F3 大厅布局 | `claude-fable-5-thinking-xhigh` | `bc-4404da32-f3a3-594a-9b41-0f08d6da3b0f` | 运行中 |
+| F3 大厅布局 | `claude-fable-5-thinking-xhigh` | `bc-4404da32-f3a3-594a-9b41-0f08d6da3b0f` | 已合入 `cursor/yizhang-hub-data-db8d` |
+| O3 Bot 休眠 | `claude-opus-5-thinking-high-fast` | `bc-db1b4a02-cc18-5227-875d-1cbb7ef07674` | 运行中 |
 
 ### 待派发
 
-F2、F3、F4、O3、G1、G2
+F2、F4、O3、G1、G2
