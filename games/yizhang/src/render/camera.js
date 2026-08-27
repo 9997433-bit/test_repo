@@ -4,6 +4,8 @@
 //  1. 有阻尼 —— 位置与视点都是弹簧跟随，快速移动时先滞后再追上（手册 §11.5）
 //  2. 有呼吸 —— 即使静止也有极轻微的漂移，避免「引擎默认机位」的死板
 //  3. 震动按质量给 —— 轻掌几乎不震，重击才震；移动端整体乘 0.45，避免小屏晕眩
+//  4. 阻尼归阻尼，脸前是禁区 —— 机位相对跟随角的滞后封顶在 BEHIND_LIMIT，
+//     再急的甩镜也荡不到角色正面（契约 §14-35 两分支同式）
 //
 // 例外只有一个：`snap()`。弹簧是给「角色在走」准备的，不是给「角色换了个岛」准备的
 // —— 安全区在 z ≈ -120、裂岛在原点，过门后老老实实跟随的话镜头要飞越 120m，
@@ -28,6 +30,49 @@ export const BASE_PITCH = 0.22;
 
 /** 与 src/input 的 PITCH_LIMIT（π/2.6）同量级：再多镜头就翻过头顶了。 */
 export const PITCH_LIMIT = Math.PI / 2.6;
+
+/**
+ * 「跟随目标这一帧是被搬走了，不是走过去的」的判据（米，契约 §7.1）。
+ *
+ * 上界由裂岛定：局内最远的一次瞬移是重生落到对角（≤ 2 × arenaRadius = 40m），
+ * 那一下的弹簧甩镜是既有手感，**不许**被当成传送吸掉（契约 §14-33）。
+ * 下界由双区布局定：安全区在 z ≈ -120、裂岛在原点，过门那 ~120m 必须触发。
+ * 60 落在两者中间，两边都留了 20m 富余。
+ */
+export const CAMERA_SNAP_TELEPORT = 60;
+
+/**
+ * snap（含自动 snap）落位后相机与跟随目标的距离上界（米，契约 §7.1）。
+ * 稳态机位几何上界 ≈ 9–18m，20 是留了余量的验收线，G1/G2 断言用。
+ */
+export const CAMERA_SNAP_MAX_DIST = 20;
+
+/**
+ * 机位相对**跟随角**的极角偏离上限（弧度）。跟随角就是 update() 收到的那个 yaw：
+ * locked 是角色自己的朝向，free 是壳层喂的视线角（契约 §14-35 两分支同式）。
+ *
+ * 为什么要这道闸：机位有两层阻尼（yaw λ=7.5、位置 λ=6.2），一次急甩的稳态滞后
+ * 约 ω·(1/7.5 + 1/6.2) 弧度 —— 8 rad/s 就滞后 135°，机位整个荡到角色**脸前**，
+ * 「固定人物视角永不绕到正脸」当场破功。闸只在甩得比 ~4 rad/s 还快时才咬到，
+ * 日常瞄准（≲ 3 rad/s，滞后 ~51°）逐帧无感，转身的重量感原样保留。
+ *
+ * 75° 距半平面边界还有 15°：cos 75° × 7.1m ≈ 1.84m 余量，够吃下呼吸（±0.05m）
+ * 与最重的一记震动（≈ 0.67m）而不越界。
+ *
+ * 闸是**咬合式**的（state.behindHeld）：只有机位已经在锥内时才按得住。跟随角换了源
+ * （切视角模式）那一下机位可能正落在锥外，此时闸松开、交给弹簧荡回来 —— 硬拽会
+ * 当场把画面拽过半个圈，那就是一记 snap，正是切 V 时禁止发生的事。见 releaseBehind。
+ */
+export const BEHIND_LIMIT = Math.PI / 2.4;
+
+/**
+ * 背后闸的工作壳层：机位离跟随目标超过「当前跟随距离 × 本系数」就整只松开。
+ *
+ * 那种距离只出现在「人被搬走了、镜头还在老地方」的追赶途中（重生级瞬移不走 snap，
+ * 契约 §14-33 要求保留那段弹簧甩镜）。追赶弧线上机位常常正对着角色的脸，此时按闸
+ * 会把飞行路径拽成一记几十米的横跳 —— 比它要防的毛病还难看。
+ */
+export const BEHIND_SHELL = 2;
 
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
@@ -62,6 +107,41 @@ function desiredPos(out, focus, sy, cy, dist, pitch) {
 }
 
 /**
+ * 背后半平面闸，一帧一次。
+ *
+ * 三档，按序判：
+ *   1. 机位飞在工作壳层之外（`radius > dist × BEHIND_SHELL`）—— 只可能是刚被传送
+ *      又没走 snap，这时镜头正从老远处赶过来，「前后半平面」无从谈起。松闸，
+ *      让弹簧走它自己的弧线（重生的甩镜手感就是这条，契约 §14-33 要求保留）。
+ *   2. 机位在锥内 —— 咬合。此后就归第 3 档管。
+ *   3. 咬合状态下越界 —— 按住：只旋转水平偏移，半径与高度一律不动，
+ *      所以画面上是「转得跟手了一点」，不是「被吸走了」。
+ *
+ * @returns {boolean} 这一帧闸有没有真的按住机位
+ */
+function holdBehind(state, focus, yaw) {
+  const dx = state.pos.x - focus.x;
+  const dz = state.pos.z - focus.z;
+  const radius = Math.hypot(dx, dz);
+  if (!(radius > 1e-4)) return false;
+  if (radius > state.dist * BEHIND_SHELL) {
+    state.behindHeld = false;
+    return false;
+  }
+  // 与 desiredPos 同一套极角：正后方 = (sin yaw, cos yaw)，故极角取 atan2(x, z)
+  const dev = shortestAngle(yaw, Math.atan2(dx, dz));
+  if (Math.abs(dev) <= BEHIND_LIMIT) {
+    state.behindHeld = true;
+    return false;
+  }
+  if (!state.behindHeld) return false;
+  const held = yaw + (dev > 0 ? BEHIND_LIMIT : -BEHIND_LIMIT);
+  state.pos.x = focus.x + Math.sin(held) * radius;
+  state.pos.z = focus.z + Math.cos(held) * radius;
+  return true;
+}
+
+/**
  * 视点落在角色正前方一米多的地方，构图上人物就不会永远钉在画面正中。
  * 抬头时视点跟着抬、低头时跟着压：镜头只是升降的话，画面里的地平线不会动。
  */
@@ -88,6 +168,8 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
     /** 本帧真正用掉的俯角 = pitch + pitchBias，夹在 ±PITCH_LIMIT。 */
     pitchOut: BASE_PITCH,
     dist: 7.4,
+    /** 背后半平面闸是否咬合（见 BEHIND_LIMIT / releaseBehind）。snap 落位即咬上。 */
+    behindHeld: false,
     shake: 0,
     shakeFreq: 26,
     fovKick: 0,
@@ -110,6 +192,17 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
       state.shakeScale = v ? 0.45 : 1;
     },
 
+    /**
+     * 松开背后半平面闸：下一次 update 起先让弹簧把机位荡回锥内，进锥再自动咬合。
+     *
+     * 只在「跟随角换了源」时调 —— 也就是切视角模式（locked ↔ free）。此刻机位可能
+     * 正落在新跟随角的锥外（free 里人朝移动方向、镜头在另一边），闸要是硬按，画面
+     * 会当场被拽过半个圈；那是一记 snap，而切 V 不许 snap。人没换地方，弹簧荡过去即可。
+     */
+    releaseBehind() {
+      state.behindHeld = false;
+    },
+
     /** 冲击强度 0..1 以上。重击给 1.0，普通扇击 0.35 左右。 */
     impulse(strength = 0.5, fov = 0) {
       state.shake = Math.min(1.4, state.shake + strength * state.shakeScale);
@@ -123,7 +216,8 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
 
     /**
      * @param {Vector3} focus 玩家脚下位置
-     * @param {number} yaw    玩家/输入朝向
+     * @param {number} yaw    本帧的跟随角（locked = 角色朝向，free = 视线角）；
+     *                        机位既绕着它转，也被它按在背后半平面里（BEHIND_LIMIT）
      * @param {Vector3} vel   水平速度，用于视点前引
      * @param {{pitchBias?: number}} [opts] pitchBias：叠在 BASE_PITCH 上的抬头/低头量
      */
@@ -150,6 +244,8 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
       state.pos.x = damp(state.pos.x, desired.x, 6.2, dt);
       state.pos.y = damp(state.pos.y, desired.y, 5.0, dt);
       state.pos.z = damp(state.pos.z, desired.z, 6.2, dt);
+      // 重量归重量，脸前是禁区：闸咬合时滞后超过 BEHIND_LIMIT 就按住不许再往前荡
+      holdBehind(state, focus, Number.isFinite(yaw) ? yaw : state.yaw);
 
       // 视点前引：朝移动方向偏一点，构图不会永远把角色钉在正中
       if (vel) {
@@ -219,6 +315,8 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
       state.pitchOut = pitch;
       state.dist = Number.isFinite(opts.dist) ? opts.dist : REST_DIST;
       state.lead.set(0, 0, 0);
+      // 落位就在正后方，背后闸当场咬合
+      state.behindHeld = true;
       // 上一处的震动 / 变焦不跟着人过门
       state.shake = 0;
       state.fovKick = 0;

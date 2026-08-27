@@ -25,6 +25,7 @@
 //   · 固定人物视角 setLookMode('locked' | 'free')，缺省 locked：镜头钉在角色背后
 //   · 传送 / 换人 snapCamera()：过门时机位吸附，不许弹簧飞越 120m
 
+import { CAMERA_SNAP_MAX_DIST, CAMERA_SNAP_TELEPORT } from './camera.js';
 import { QUALITY, QUALITY_TIERS, PALETTE, GLOVE_TINT } from './config.js';
 import { COMBAT_VFX_KIND, SKILL_VFX_KIND, combatVfxKind, skillVfxKind } from './combat-vfx.js';
 import { ACCESSORIES, accessoryFromAppearance, resolveSkinLook, skinTable } from './skins.js';
@@ -142,8 +143,9 @@ export function getLookMode() {
 /**
  * 机位吸附：下一帧把镜头瞬时架到跟随目标身后，不走弹簧。
  *
- * 过门（hub ↔ arena）、焦点整跳与换跟随目标渲染层会自己认出来；这个入口是给
- * 壳层用的 —— 传送前一帧调一次，镜头就不会从上一处飞越过来。
+ * 过门（hub ↔ arena）、焦点整跳（> `CAMERA_SNAP_TELEPORT`）与换跟随目标渲染层会
+ * 自己认出来；这个入口是给壳层用的 —— 传送前一帧调一次，镜头就不会从上一处飞越
+ * 过来。切视角模式（V 键 / 设置面板）**不**走这条路：人没动地方，弹簧荡过去就行。
  */
 export function snapCamera() {
   return active && !active.disposed ? active.snapCamera() : null;
@@ -180,6 +182,9 @@ export {
   GLOVE_TINT,
   DEFAULT_LOCAL_ID,
   YizhangRenderer,
+  // snap 两阈值（契约 §7.1）：传送判据与落位距离上界，验收 / 探针引用同一份数字
+  CAMERA_SNAP_TELEPORT,
+  CAMERA_SNAP_MAX_DIST,
   // 每掌一套的战斗特效：分派键与查询函数（UI / 验收脚本要对照 8 只掌时用得上）
   COMBAT_VFX_KIND,
   SKILL_VFX_KIND,
