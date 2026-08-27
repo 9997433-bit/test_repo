@@ -776,6 +776,13 @@ export const CAMERA_SNAP_MAX_DIST = 20;   // 米。snap 后（含自动 snap）�
 export const BEHIND_LIMIT = Math.PI / 2.4; // ≈75°。机位相对跟随角的咬合闸极角上限
 export const BEHIND_SHELL = 2;             // 机位半径 > 当前跟随距离×本系数 ⇒ 松闸
                                           // （重生级追赶弧线不横跳，契约 §14-33）
+
+// 对照登记（复盘 P0-3/P1-6，数据层 src/data/tuning.js，值一律不变）：CAMERA 表已并列登记
+// lockedYawSpan（= LOCKED_YAW_SPAN，R2）与 behindLimit/behindShell（R3），关系锁死
+// lockedYawSpan **严格 >** BEHIND_LIMIT（咬合闸在内先咬，硬顶是外墙）；render/characters.js
+// 私有 TELEPORT_DISTANCE = 16 只管**模型**位置插值跳变（重生 ≤ 40m 模型瞬移出现、不滑步），
+// 与本节 CAMERA_SNAP_TELEPORT = 60（管**机位**）故意不同数——已登记为
+// CHARACTERS.teleportDistance，tuning.test.js 锁两边同数（GDD §15.2/§15.3 同口径）。
 ```
 
 **lookMode 与渲染器（ADR-38，v4.4 按实现修订措辞）**：v4.3 曾写「渲染器不感知 lookMode、禁止塞进 renderer 状态」，合入的实现（F4 已验、`render/look.test.js` 锁定）是**随帧镜像**——payload 恒携 `lookMode`，`setLook` 每帧覆盖渲染器侧副本，它活不过一帧、**不构成第二权威**（运行期权威仍唯一住 input，禁令原意「防状态分叉」不变）。镜像驱动的唯一分支是**机位跟随角选源**（§14-35）：
