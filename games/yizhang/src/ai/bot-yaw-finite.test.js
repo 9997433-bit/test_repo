@@ -244,6 +244,27 @@ describe("think() 的 yaw 永远是有限数", () => {
       // 连跑三帧：跨帧记忆（lastYaw / 自校准）也不该把非数攒起来。
       for (let i = 0; i < 3; i++) expectFinite(think(view, id, counter(9)), `${tag} 第 ${i + 1} 帧`);
     }
+
+    // 上面每一支走的都是「活着且有人可打」那条路：朝向最后由 emit 的 finiteYaw 兜。
+    // 另外两条 pass-through 路径（安全区休眠 / 自己已出局）不进 emit，它们把快照上的
+    // yaw 原样递出去，各自只有一道 num() 兜底。坏快照与这两条路以前从没交叉过 ——
+    // 那两道 num() 拿掉，全套测试照样绿。这里把交叉补齐。
+    for (const [tag, view] of cases) {
+      const hub = structuredClone(view);
+      hub.phase = "hub";
+
+      const dead = structuredClone(view);
+      for (const p of dead.players) {
+        if (p.id !== id) continue;
+        p.alive = false;
+        p.respawnT = 1.4;
+      }
+
+      for (const [path, v] of [["安全区休眠", hub], ["自己已出局", dead]]) {
+        resetBots();
+        expectFinite(think(v, id, counter(9)), `${tag} / ${path}`);
+      }
+    }
   });
 
   it("随机源与 reactionJitter 病态时也不漏", () => {
