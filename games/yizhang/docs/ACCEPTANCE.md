@@ -450,3 +450,4 @@ npm run build   # HG-03：退出码 0
 - 契约-实现漂移七处已登记（SOTA §11.6 洞 4），收口前按实现名判读。
 - 静态面：`RENDER_YAW_OFFSET = 0` 在位（手感轮修复未回潮）；`rg googleapis src index.html` 零命中；`vite.config.js` `base:"./"` + 4181 双端口在位。
 - 差距标注与 Round 2/3 洞：见 SOTA_CHECKLIST §11.5 / §11.6。
+- **编排层补记**：O2 已于 `86e619f` 合入父分支（走道/八座展掌/idle VFX/传送门两态）；本基线里「渲染零命中 / HV 全红起步」仅描述 `@ 1b4371f` 当时状态，复验按合入后代码。F2 仍未合入；probe 对齐漂移（洞 3）仍待 GPT-sol-2。

@@ -451,6 +451,8 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 **基线实测**：`npm test` **306/306**（23 文件）退出码 0；`npm run probe` **FAIL 退出码 1**（`probe must start in hub phase; got arena`，洞 3）；`npm run build` 退出码 0；`rg -i "hub|pedestal|portal" src/render` **零命中**（O2 未合入）；`src/styles/**` 无大厅样式、`docs/ART_DIRECTION.md` 无大厅章节（F2 未合入）；`RENDER_YAW_OFFSET = 0` 在位、`rg googleapis src index.html` 零命中（手感轮成果未回潮）。
 
+**编排层补记（O2 合入后，@ `86e619f` / 父分支 `320bf54`）**：`src/render/hub.js` + `hub-palm.js` + `hub-vfx.js` + `hub.test.js` 已合入；`npm test` 升至 **330/330**（24 文件）。洞 1「O2 渲染整章缺席」关闭；HV-01…05 改按合入后画面复验，不再按「盲走」记。洞 2（F2 视觉真源）与洞 3（probe 缺省 arena）仍开。
+
 | 用户目标 | 现状基线（Fable-4 实测） | L1 可玩线（Round 1 全绿即达） | SOTA 线（Round 2/3 才算兑现） |
 |---|---|---|---|
 | 开局在另一区域（安全区） | sim/壳层全链在：缺省 `phase='hub'`、p0 落走道 (0,−106)、免战免掉落、Bot 留裂岛；**3D 画面无走道**（O2 缺席，「盲走」） | HB-01 + HV-01 几何桩：脚下有可见走道 | 场景光影/磨损/暮蓝暖黄按 R 表评审；灰度剪影可读 |

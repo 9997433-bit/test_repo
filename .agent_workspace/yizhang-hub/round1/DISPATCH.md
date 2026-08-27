@@ -37,7 +37,7 @@
 | F3 大厅布局 | `claude-fable-5-thinking-xhigh` | `bc-4404da32-f3a3-594a-9b41-0f08d6da3b0f` | 已合入 `cursor/yizhang-hub-data-db8d` |
 | O3 Bot 休眠 | `claude-opus-5-thinking-high-fast` | `bc-db1b4a02-cc18-5227-875d-1cbb7ef07674` | 已合入 `cursor/yizhang-ai-hub-guard-db8d` |
 | G1 大厅单测 | `gpt-5.6-sol-xhigh-fast` | `bc-575d6d55-cbfd-5f9d-8ddc-7d5179d691c9` | 已合入 `cursor/hub-tests-db8d` |
-| F4 大厅验收 | `claude-fable-5-thinking-xhigh` | `bc-3997f853-d6f6-537d-9836-3bad0c882d15` | 运行中 |
+| F4 大厅验收 | `claude-fable-5-thinking-xhigh` | `bc-3997f853-d6f6-537d-9836-3bad0c882d15` | 已合入 `cursor/yizhang-hub-f4-acceptance-db8d`（§11/§12；开工基线 @ `1b4371f`，O2 后补记已加） |
 
 ### 待派发
 
