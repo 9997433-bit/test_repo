@@ -548,7 +548,7 @@ async function boot() {
     startProbe();
   }
 
-  /** 三个入口共用的取值链：上一局 → 存档 → 2D 配掌板（core/entry.js）。 */
+  /** 两个回程入口共用的取值链：上一局 → 存档 → 2D 配掌板（core/entry.js）。 */
   function entryFor(kind) {
     return resolveEntry(kind, {
       lastLoadout,
