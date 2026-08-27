@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 export const DT = 1 / 60;
@@ -18,6 +19,12 @@ const ZERO_INPUT = Object.freeze({
 
 const SIMULATION_URL = new URL('../src/sim/index.js', import.meta.url);
 const AI_URL = new URL('../src/ai/bots.js', import.meta.url);
+const PROBE_URL = new URL('./probe.mjs', import.meta.url);
+const FORBIDDEN_PURITY_DIRECTORIES = new Set(['render', 'ui']);
+const STATIC_MODULE_SPECIFIER =
+  /\b(?:import|export)\s+(?:[^"'`;]*?\s+from\s*)?["']([^"']+)["']/g;
+const DYNAMIC_MODULE_SPECIFIER =
+  /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 
 function moduleSpecifier(environmentName, defaultUrl) {
   return process.env[environmentName] || defaultUrl.href;
@@ -53,6 +60,43 @@ export async function loadSimulation() {
   }
 
   return simulation;
+}
+
+/**
+ * 静态遍历探针、生产 sim 与 AI 的本地依赖图。这里只读源码，不执行被扫描模块；
+ * render/ui 一旦进入图就明确失败，避免无头探针悄悄带上 DOM/WebGL。
+ */
+export async function scanProbePurity() {
+  const pending = [PROBE_URL, SIMULATION_URL];
+  if (existsSync(AI_URL)) {
+    pending.push(AI_URL);
+  }
+
+  const visited = new Set();
+  while (pending.length > 0) {
+    const moduleUrl = pending.pop();
+    const moduleKey = moduleUrl.href;
+    if (visited.has(moduleKey)) {
+      continue;
+    }
+    visited.add(moduleKey);
+
+    const source = await readFile(moduleUrl, 'utf8');
+    for (const specifier of localModuleSpecifiers(source)) {
+      assertPureSpecifier(moduleUrl, specifier);
+      if (specifier.startsWith('.') || specifier.startsWith('/')) {
+        const dependencyUrl = new URL(specifier, moduleUrl);
+        if (dependencyUrl.protocol === 'file:') {
+          pending.push(dependencyUrl);
+        }
+      }
+    }
+  }
+
+  return {
+    filesScanned: visited.size,
+    forbiddenDirectories: [...FORBIDDEN_PURITY_DIRECTORIES],
+  };
 }
 
 export function getWiredCombat(simulation) {
@@ -268,6 +312,34 @@ export function findNonFinite(value, path = 'state', seen = new WeakSet()) {
 
 export function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function localModuleSpecifiers(source) {
+  const specifiers = new Set();
+  for (const pattern of [STATIC_MODULE_SPECIFIER, DYNAMIC_MODULE_SPECIFIER]) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+      specifiers.add(match[1]);
+    }
+  }
+  return specifiers;
+}
+
+function assertPureSpecifier(importerUrl, specifier) {
+  const pathSegments = specifier
+    .split(/[\\/]/)
+    .map((segment) => segment.split(/[?#]/, 1)[0])
+    .filter(Boolean);
+  const forbidden = pathSegments.find((segment) =>
+    FORBIDDEN_PURITY_DIRECTORIES.has(segment),
+  );
+  if (forbidden) {
+    throw new Error(
+      `probe purity violation: ${fileURLToPath(importerUrl)} imports ` +
+        `${JSON.stringify(specifier)} from forbidden ${forbidden}/`,
+    );
+  }
 }
 
 function readProbeSteps(value) {

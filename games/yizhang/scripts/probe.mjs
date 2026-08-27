@@ -13,6 +13,7 @@ import {
   loadSimulation,
   makeProbeInputs,
   makeSeededRandom,
+  scanProbePurity,
   validateRoster,
 } from './harness.mjs';
 
@@ -131,6 +132,8 @@ function superviseProbe() {
 
 async function executeProbeWorker() {
   try {
+    heartbeat('purity scan');
+    const purity = await scanProbePurity();
     heartbeat('loading');
     const simulation = await loadSimulation();
     const ai = await loadOptionalAi();
@@ -272,7 +275,9 @@ async function executeProbeWorker() {
         ai: ai ? 'think' : 'fallback',
         botThinkCalls: activity.botThinkCalls,
         botSlapAttempts: activity.botSlapAttempts,
+        usingRealCombat: wiredCombat,
         wiredCombat,
+        purityFilesScanned: purity.filesScanned,
       },
     });
   } catch (error) {
