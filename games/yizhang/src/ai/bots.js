@@ -26,6 +26,12 @@
 // getView 也不透出它。所以 think() 认的角永远只有 `p.yaw` 这一个 sim 空间的值 ——
 // 快照上多出 lookMode / pitch / 相机角，Bot 的输出一个字节都不该变
 // （`look-mode-blind.test.js` 把这条钉死）。
+//
+// 反过来，玩家那一路的产出约定也别渗进来：free 静止帧送 `yaw: null`，sim 见非有限值
+// 就「保持朝向」。Bot 走的是另一条路 —— 它**帧帧送有限角**。漏一个 null / NaN 出去
+// sim 不会报错，只会让这只 Bot 闷头不转身，之后每一掌都扇向旧朝向，
+// 表现成「打别人打不到」。emit() 的 finiteYaw 是这条的最后一道闸
+// （`bot-yaw-finite.test.js`）。
 
 import { GLOVE_BY_ID as DATA_GLOVE_BY_ID } from "../data/gloves.js";
 import { BOT_PERSONA_BY_ID } from "../data/bots.js";
@@ -661,7 +667,9 @@ export function think(view, botId, rng) {
     mem.timers.strafe = 1.4 + random() * 1.8;
   }
   if (mem.timers.aim <= 0) {
-    mem.aimNoise = (random() * 2 - 1) * CONFIG.reactionJitter;
+    // num() 兜的是病态随机源与被写坏的 reactionJitter：瞄准抖动一旦成了 NaN，
+    // 整条 aimYaw 都会跟着变非数。
+    mem.aimNoise = num((random() * 2 - 1) * CONFIG.reactionJitter);
     mem.timers.aim = tuning.reactionSeconds * 0.75 + random() * 0.22;
   }
 
@@ -748,11 +756,22 @@ export function think(view, botId, rng) {
   });
 }
 
-function emit(out, mem, view, face, wx, wz, yaw, flags) {
+/**
+ * Bot 侧 `Input.yaw` 的最后一道闸：非有限值一律回落到上一帧的朝向（再兜到 0）。
+ * sim 把 null / NaN 读作「保持朝向」，是给玩家 free 静止帧留的口子；Bot 一旦借到
+ * 这个口子就是静默故障 —— 不报错，只是从此不再转身。宁可少转一帧也不放非数出去。
+ */
+function finiteYaw(yaw, mem) {
+  if (Number.isFinite(yaw)) return yaw;
+  return num(mem && mem.lastYaw);
+}
+
+function emit(out, mem, view, face, wx, wz, rawYaw, flags) {
+  const yaw = finiteYaw(rawYaw, mem);
   const space = moveSpaceFor(view, mem);
   const vec = space === "local" ? face.toLocal(wx, wz, yaw) : { x: wx, z: wz };
-  out.moveX = clamp(vec.x, -1, 1);
-  out.moveZ = clamp(vec.z, -1, 1);
+  out.moveX = clamp(num(vec.x), -1, 1);
+  out.moveZ = clamp(num(vec.z), -1, 1);
   out.yaw = yaw;
   out.slap = !!flags.slap;
   out.skill = !!flags.skill;
