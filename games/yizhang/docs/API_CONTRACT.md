@@ -516,7 +516,7 @@ interface ViewPlayer {
 
 **安全区四禁（对 hub 内实体的行为面）**：
 
-1. **免战**：命中落账处豁免——`applyHits` 对 hub 内目标把 combat 已写入的冲量**退回**、跳过 `lastHitBy/hitsTaken/kbT` 记账、不发 `hit` 事件；无掉落 KO ⇒ 无 meter 击杀奖励。注意 `combat.tickStatuses` 每子步照跑（状态倒计时是全局一份），豁免在落账处不在管线口。**空挥闸（ADR-33，Round 2 O1 落地）**：`phase === 'hub'` 时 `handleActions` 不启动扇击前摇（不发 `slapStart/slap`、`stats.slaps` 不涨）、不调 `resolveSkill`/不发 `skill`（含疾风 dashSlap 这类战斗位移技）；R1 实况是 hub 内按住鼠标仍空挥（hits:0），R2 起按本条闸死。
+1. **免战**：命中落账处豁免——`applyHits` 对 hub 内目标把 combat 已写入的冲量**退回**、跳过 `lastHitBy/hitsTaken/kbT` 记账、不发 `hit` 事件；无掉落 KO ⇒ 无 meter 击杀奖励。注意 `combat.tickStatuses` 每子步照跑（状态倒计时是全局一份），豁免在落账处不在管线口。**空挥闸（ADR-33，Round 2 O1 落地）**：闸门是 **`playerInHub(state, p)`（空间，不是 phase 全局）**——站在安全区体积里才拦扇击前摇 / `resolveSkill` / 战斗冲刺；`phase==='hub'` 但人被测具摆在裂岛盘上时仍可打。拦下则不发 `slapStart/slap/skill/dash`、`stats.slaps` 不涨。走、看、跳、换掌、interact 不受影响。
 2. **无掉落**：hub 内支撑不查 `arena` 台面，走 `resolveHubGround`——实心地板（`floorY`）+ `walkway` 隐形墙硬钳制（贴墙滑动，不反弹）+ 台座柱体（`pedestalRadius` 实体，走不过去）；`fallY` 与出盘 ko 判定跳过。移动/跳/Shift 位移冲刺照常（手感与 arena 一致）。
 3. **Bot 静默**：`createMatch` 时 Bot 全部落裂岛站位（安全区不放 Bot）。编排层 hub 阶段不调 `ai.think`（ADR-32）；`think` 见 hub 视图自返零输入（双保险）。
 4. **计时域 = 传送重置**（§4.1）：`secondsLeft` 在 hub 也走表（自 `startTime = 0`），但壳层在 hub 阶段不消费 `over`、HUD 不展示对局倒计时；穿门时 `startTime/secondsLeft/over` 整体重置，「挑掌不吃对局时长」由此保证。
@@ -880,4 +880,4 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 23. **未解锁拒绝（ADR-30）**：聚焦未解锁掌 + interact ⇒ 配装逐字段不变，发 `hubLocked { unlock }`。
 24. **传送（ADR-31，v4.1 补 ⑤②）**：`portalReady` 后 xz 进入门触发圆（`≤ portal.radius`）⇒ 同 tick `phase === 'arena'`、loadout 保留、`match.startTime` 重置、发 `enterArena`。
 25. **安全区免战（ADR-29）**：hub 内无击退 KO、无碎地；被连扇 180 帧位置/deaths/hitsTaken 零变化；Bot 不进攻。
-26. **hub 空挥闸（ADR-33，Round 2 起生效）**：`phase === 'hub'` 时按住 `slap` 任意帧数 ⇒ 零 `slapStart/slap` 事件、`stats.slaps` 不变、`attack.phase` 恒 `'idle'`；`skill` 上升沿 ⇒ 零 `skill` 事件、`skillCd` 不变；移动/跳/dash/interact/switchGlove 不受影响。
+26. **hub 空挥闸（ADR-33，Round 2 起生效）**：`playerInHub` 为真时按住 `slap` 任意帧数 ⇒ 零 `slapStart/slap` 事件、`stats.slaps` 不变、`attack.phase` 恒 `'idle'`；`skill` / 战斗 `dash` 同样不起。`phase==='hub'` 但人在裂岛坐标上（旧测/harness）**不受闸**。移动/跳/interact/switchGlove 不受影响。

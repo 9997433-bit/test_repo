@@ -83,7 +83,7 @@ combat.tickStatuses（状态倒计时·掌意衰减·满条觉醒·返回延迟�
 ```
 subStep（两个 phase 共用骨架）：
   combat.tickStatuses（全局照跑，状态倒计时只有一份）→ 计时器/重生
-  → handleActions（换掌/冲刺/跳照常；扇击前摇与技能在 phase='hub' 时被空挥闸拦下，ADR-33）
+  → handleActions（换掌/跳照常；`playerInHub` 时扇击前摇、技能、战斗冲刺被空挥闸拦下，ADR-33）
   → 位移积分 → 互推
   → 地面解算：playerInHub ? resolveHubGround（实心地板+隐形墙+台座柱体）: resolveGround
   → strike 结算（hub 内经 ADR-33 不会有 strike；即使有，applyHits 对 hub 内目标退回冲量）
@@ -299,6 +299,6 @@ R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「�
 30. **走道选掌（HUB-R1，冻结；R2 按实现补记）**：布局来源 `src/data/hub.js`（已合入，缺席时 `sim/hub.js` 默认表兜底，`installHubLayout` 供测试覆盖）。`interact` 上升沿：未解锁拒绝（`hubLocked{unlock}`），否则主空→主、**副掌再按提为主掌（原主退副）**、已是主掌 ⇒ `changed:false` 回执、副空→副、双满→换副（契约 §4.4 装备表）。
 31. **传送门（HUB-R1，冻结；R2 按实现补记）**：`portalReady`（⇔ 主掌已选）且 xz 进入门触发圆（`portal.radius`，sim 不读 aabb）⇒ 同 tick `phase='arena'`，p0 到裂岛出生点，loadout 保留，`match.startTime` 重置，发 `enterArena{id,x,y,z}`。过渡归外壳；传送帧 `lerpView` 跳插值。
 32. **`interact` 与 hub 期 Bot 静默（HUB-R1，冻结；R2 按实现补记）**：E 键双义（skill hold + interact），分流在 **input 侧**——`input.setPhase('hub')` 下 sample 把 slap/skill 归零、只出 interact（+interactSlot）；sim 侧 `p.prev.interact` 做上升沿。hub 不调 `think`；`think` 见 hub 视图（`isHubView` fail-safe）自返零输入。
-33. **hub 空挥闸（HUB-R2 新增，冻结；归 O1）**：`phase === 'hub'` 时 `handleActions` 不启动扇击前摇、不调 `resolveSkill`——零 `slapStart/slap/skill` 事件、`stats.slaps` 不涨、`skillCd` 不动（含疾风 dashSlap 这类战斗位移技）；移动、跳、Shift 位移冲刺、`interact`、`switchGlove` 照常。R1 实况是大厅按住鼠标仍空挥（hits:0）并污染 stats，本条闸死；免战豁免（applyHits 对 hub 内目标退回冲量）保留为第二道保险。不变量见契约 §14-26。
+33. **hub 空挥闸（HUB-R2 新增，冻结；归 O1）**：闸门是 `playerInHub(state, p)`（`phase==='hub'` **且**人在安全区体积内），不是 phase 全局开关。闸内 `handleActions` 不启动扇击前摇、不调 `resolveSkill`、不启动战斗冲刺——零 `slapStart/slap/skill/dash` 事件、`stats.slaps` 不涨。移动、跳、`interact`、hub `switchGlove`（主副交换、无锁）照常。把人摆在裂岛盘上的旧测仍可打。免战豁免（applyHits 对 hub 内目标退回冲量）是第二道保险。不变量见契约 §14-26。
 34. **skinId 与 combat.ghosts 进 getView（HUB-R2 新增，冻结；O1 导出、O2 消费、G1 锁测）**：`getView().players[].skinId`——sim 视为**不透明字符串**原样透传（不校验、不 import skins.js，缺省 null，消费端 `resolveSkin` 兜底，ADR-26）；`view.combat.ghosts`——源 `state.combat.ghosts` 经桥 `ghostsView` 翻译（yaw 还原 -Z、数值 round、`ttl/ttl0` 齐全），**恒存在**（无残影 = 空数组）、纯 JSON。两个名字冻结为 `players[].skinId` / `combat.ghosts`，皮肤五段链（F3 表 → O4 传参 → O1 透传 → O2 换件）与残影双段接线（O1 导出 → O2 绘制）都以此为对接面。形状见契约 §4.3，不变量 §14-18/19。
 35. **相机 pitch 通路（HUB-R2 新增，冻结；O2 开 API、O4 每帧喂）**：`input.getLook().pitch` 是俯仰的**唯一权威源**（ADR-4 同源）。渲染句柄冻结追加 `setPitch(pitch: number)`（弧度，render 内部 clamp 防翻转），O4 每 rAF 在 `sync` 前调用；O2 的 `cameraRig` 消费该值（内部签名自便，现状 `update(dt, focus, yaw, vel)` 不吃 pitch 即本条要修的断链）。禁止 render/ui 各自维护第二份 pitch 状态、禁止把 pitch 塞进 view 快照。
