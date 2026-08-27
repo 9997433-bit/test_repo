@@ -3,7 +3,7 @@
 维护者：Fable-4（SOTA 验收）。上游依据：`.agent_workspace/yizhang/DESIGN_SEED.md`、`.agent_workspace/yizhang/CONTRACT.md`、`games/yizhang/docs/VISUAL_HANDBOOK.md`。
 执行规程见同目录 `ACCEPTANCE.md`。数值调参（击退量、掌意增速等）以 Fable-3 的 `GDD.md` 为单一事实源；本清单只锁**契约常量、行为、可验证阈值**。
 
-> **当前生效轮次：固定人物视角轮（Look Round 1–3，父分支 `cursor/yizhang-look-db8d`）—— 验收以 §12 为唯一记分表。**
+> **当前生效轮次：固定人物视角轮 Round 4（打磨轮 LOOK-R4，父分支 `cursor/yizhang-polish-db8d`，自 main `18ed78e` 拉出）—— 验收以 §12 为唯一记分表，Round 4 记分见 §12.8。**
 > §11 是大厅轮（`cursor/yizhang-hub-db8d`，视角轮分支即由其拉出，基线 `7340300`）的记分表，其 HG/HB/HV 条目被 §12 回归门（LG-06）引用作防回退基准；§10 是手感轮存档；§0–§9 是骨架→精品系列存档。各段均不得删改。
 
 ## 0. 判定规则
@@ -575,7 +575,7 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 ---
 
-## 12. 固定人物视角轮（Look Round 1–3）验收清单 —— 视角空间修复 / lookMode / 过门吸附
+## 12. 固定人物视角轮（Look Round 1–4）验收清单 —— 视角空间修复 / lookMode / 过门吸附 / 打磨
 
 维护者：Fable-4（SOTA 验收）。上游依据：`.agent_workspace/yizhang-look/GOAL.md`（用户原话：视角转换很奇怪 + 固定人物视角）、`.agent_workspace/yizhang-look/OWNERSHIP.md`、`docs/API_CONTRACT.md` v4.3（ADR-37 simYaw 喂入 / ADR-38 lookMode / ADR-39 过门 snap，新不变量 §14-28…33）。执行规程见 `ACCEPTANCE.md` §13。
 判定规则沿用 §0：全部二值可勾选、勾选只由验收流程执行、红线即时否决、上级默认包含下级（复验防回退）。
@@ -765,3 +765,37 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 - **W2 hit-stop 零余量哨兵**结转（§11.9）。**保留。**
 
 **判定：视角轮 Round 3 = PASS-WITH-WARNINGS**（判定表与证据见 ACCEPTANCE §13.8；LG 六门全绿、LK 九条全绿（含 O2 DEFER 改勾）、LT 八条全在场真实断言 + R3 新增 20 条锁测、六条用户验收线 6/6 复验无回退；WARNING 仅余真机段延后与 W2 hit-stop 哨兵，R3 O2/O4 在飞已销；无实现缺口、无红线命中）。
+
+### 12.8 Round 4 实测记分（打磨轮 LOOK-R4 · F4 终验席 @ 父分支 `bbe51de`，2026-08-27，全套命令实跑）
+
+**执行口径**：Round 4 打磨轮的终验。父分支 **`cursor/yizhang-polish-db8d`**（自 main `18ed78e` 拉出，打向 main），本轮由 Round 3 复盘驱动：三 P0（free 单帧 11.2m 横旋 / CI 不跑测试 / `TELEPORT_DISTANCE=16` 未登记）+ 两 P1（触屏无切视角钮 / 重获指针锁左键白挥）+ 一 P2（invertY 开关缺席）。工作分支 `cursor/yizhang-p1-f4-db8d`（仅动本文件与 `ACCEPTANCE.md`，零 src）。十席均已合入父分支；**F3 GDD 落文已合入**（merge `ff12039`）。本环境仍无交互桌面与真机——§13.4 实机八步**未做**、真机触屏照旧 **DEFER**，均如实标注不装绿；本轮改动全在输入 / 机位闸 / CI / 登记面（零视觉改动），以 842 条单测 + 三 seed probe 硬门替代。命令原文见 ACCEPTANCE §13.9。
+
+**三件套实测**（勾选依据）：
+
+- `npm test`：**842/842（57 文件）**，退出码 0（Round 3 收口基线 775/54 → 842/57，零红零减量。新增 3 文件：`combat/hit-feel-budget.test.js`（O3）、`core/settings-invert-y.test.js`（O4）、`ui/touch.test.js`（F2）；行内扩充：`render/look-camera.test.js` 放手带组（O2/G1）、`input/index.test.js` 抓锁组（O4）、`render/characters.test.js` TELEPORT/呼吸 seed 组（O1）、`data/tuning.test.js` 对照组（F1）、`ui/shell.test.js`/`ui/look-switch.test.js`（F2）、`combat/look-invariants.test.js` 命中锥加固（O3））。
+- `npm run probe`：**PASS** 退出码 0，3/3 固定 seed（`0x1a2b3c4d` / `0x5eed1234` / `0xc0ffee42`）。**本轮新增读数全过硬门（G2）**：`noSnapFrameMaxDisplacement:0.450m`（**复盘 P0 的判决读数**——free 一帧甩过 π 的单帧机位位移，修前实测 11.2m，硬门 ≤1m，实测与切 V 同级）、`lookTurnMinAngleDeg:89.38°`（探针转角真实压过 `BEHIND_LIMIT` 75°——不压过闸宽的放手带断言是空话）、`freeGateTurnAngle:3.12rad`（一帧跨闸判决路径真实入探针）。R3 读数全部复跑无回退：`cameraSnapMaxDist:7.1` / `modeSwitchCameraMaxDist:7.1` / `lockedForwardMinDot:1`（每 seed 3601 帧）/ `lockedCameraMaxBehindness:-7.1` / `freeStationaryMaxYawDeltaDeg:0` / `freeMoveMaxYawErrorDeg:0.00063` / `snappedFrames:2` / hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`；arenaKills 1/2/2、`wiredCombat:true`、`ai:"think"`、p99StepMs 0.094–0.107、横幅 `MODEL_SLUG: yizhang-probe`。
+- `npm run build`：退出码 0；主 chunk 682.23kB / gzip 188.71kB（>500kB 警告既知，含 three）；**dist 零 `.map` 文件**（G2 sourcemap 门实测）。
+
+**复盘六项销号表（本轮记分主表）**：
+
+| # | 复盘项 | 席 | 判定 | 证据 |
+|---|---|---|---|---|
+| P0-1 | free 大幅视线增量单帧横旋 11.2m | O2 | **关** | `render/camera.js` `behindReleaseSlack(dt)`（与 R2 硬顶**同源**：同一个 `lockedHoldSlack`，30rad/s × dt 夹 [0.25,1.2]，掉帧一起放宽）——跟随角一帧跨过带宽或偏离超出闸宽+带宽即整只松手、交给弹簧；**只给 free，locked 照旧硬顶**（54rad/s 连续急转仍被按在上限内，锁测在场）。probe `noSnapFrameMaxDisplacement 0.450m`（11.2m → 0.45m）；`look-camera.test.js`「free 视线一帧跨过闸宽」组 ×5（一帧甩过 π / 闸宽逐档扫到 π / 12m 瞬移不横旋 / locked 无放手带 / 同源掉帧放宽，修前 11.2m 写进回归线） |
+| P0-2 | CI 不跑测试 | G1 | **关** | `.github/workflows/pages.yml` 构建前 `npm ci && npm test`（隔离例外，派发点名允许） |
+| P0-3 | `TELEPORT_DISTANCE=16` 未登记 | F1+O1 | **关** | O1：`render/characters.js` 导出 `TELEPORT_DISTANCE = 16`（头注指向对照表）+ `createCharacters` 可选呼吸初相 seed（缺省行为不变）；F1：`data/tuning.js` 登记 `CHARACTERS.teleportDistance = 16` 与 R2 常量 `CAMERA.lockedYawSpan / lockedHold*`（GDD §15.2 随 `425b756` 同步）；`tuning.test.js` 锁 16 与 render 源码同数、`snapTeleport = 60`、40m 重生落在 16–60 必不触发区间、**`lockedYawSpan > behindLimit` 两闸关系**（复盘 P1-6）。16 ≠ 60 冻结未动 |
+| P1-1 | 触屏无切视角钮 | F2 | **关** | `ui/touch.js` `.yz-tbtn--look`「视」钮（V 的触屏等价物：同一条上升沿 toggle、同一枚 `.yz-look-flash` 回执、同样落盘；不走 `setTouchButton`——非 sim 动作）；`touch.test.js` + `look-switch.test.js` 锁链路 |
+| P1-2 | 重获指针锁左键白挥 | O4 | **关** | `input/index.js`：吞的判据与真正去申请锁的条件**逐字一致**（`pointerLockWanted` ∧ 未持锁 ∧ target 支持锁；少一条照常扇击）；吞整只——edge 不补、hold 不置位（防「锁到手即按住连扇」）；触屏 `preventDefault` 提到 enabled 闸**之前**（暂停/结算时 iOS 手势照拦）。`input/index.test.js` 抓锁不 slap / 持锁 slap / 触屏拦手势用例在场 |
+| P2-1 | invertY 开关缺席 | F2+O4 | **关** | F2：设置板「Y 轴反转」两段开关（缺省关；`shell.js` 只做 UI 面）；O4/main：存档 `invertY` 落盘（`storage.js` 缺省 `false`、`main.js` 布尔清洗防 `undefined` 展开覆盖、启动即 `input.setInvertY`）；`settings-invert-y.test.js` 锁「刷新后开关仍在」 |
+
+**O3 hit-stop 冻结锁测（守门项，非修复项）**：`HIT_STOP` 全表原数（dealt 0.08 / taken 0.065 / heavyBonus 0.035 / heavyPower 16 / **max 0.12 不动** / cooldown 0.22）；`hit-feel-budget.test.js` 钉死打击感分工——**时间封顶，分量走 VFX / 相机冲击**（想加强打击感不许加长顿帧）；横扇 / simYaw 命中锥锁测加固（`look-invariants.test.js` 行内扩充）。W2 零余量哨兵照常结转（本轮已从「口头哨兵」升级为锁测）。
+
+**冻结面复验（全零回退）**：`RENDER_YAW_OFFSET = 0`；缺省 `phase:'hub'`、`lookMode` 缺省 locked、free 静止 yaw null、W+S 对冲 null、`QUALITY.low.bloom === false`、再来一局 ≠ 回安全区（既有锁测在 842 内复跑绿）；`BEHIND_LIMIT = π/2.4` 与 `TELEPORT_DISTANCE = 16` 数值原样；**两套 behind 闸并存未合成**（R2 `holdBehind` + `LOCKED_YAW_SPAN` 夹 locked `behindYaw`、R3 `holdBehindLimit` + `BEHIND_LIMIT` 咬跟随角，`camera.js` 头注明示并存，放手带只进后者）；换算实现唯一（`core/view.js`）；`rg googleapis|gstatic src dist index.html` 零命中（build 后复查）；隔离：`games/yizhang/**` 与 `.agent_workspace/**` 之外仅 `.github/workflows/pages.yml`（G1 点名例外）。
+
+**WARNING 清单（记录不否决）**：
+
+- **F3 GDD 落文已合入**：merge `ff12039`（`84f30d6`+`f52fcda`：§15.5 放手带 / §15.6 人瞬移镜头追 16≠60 / §15.7 指针锁不扇 / §5 hit-stop 冻结段 / §15.1 五通道+invertY）。合入零冲突。§15.2「模型瞬移 ≠ 机位瞬移」与 §15.6 的 16≠60 复述由合并工人去重（§2 `CHARACTERS` 索引格已是一版）。
+- **真机触屏 DEFER 结转**：「视」钮点按、invertY 触屏拖动方向、`preventDefault` 实机手势（iOS 边缘返回 / 下拉刷新 / 双指缩放）——jsdom 锁测在场，真机段照旧延后。
+- **§13.4 桌面八步实机手测未做**（无交互桌面）：本轮零视觉改动（输入 / 机位闸 / CI / 登记面），以 842 测 + 三 seed probe 硬门替代并如实标注，不假装手测。
+- **W2 hit-stop 零余量哨兵**结转（§11.9；本轮 O3 已锁测化，哨兵照常保留）。
+
+**判定：打磨轮 Round 4 = PASS-WITH-WARNINGS**（判定表与命令原文见 ACCEPTANCE §13.9；复盘六项 6/6 销号、三件套全绿、冻结面零回退、红线零命中；WARNING 全部为环境性延后（真机 / 交互桌面）及既有哨兵（F3 已合入），无实现缺口）。
