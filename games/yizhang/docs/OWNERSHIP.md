@@ -1,6 +1,6 @@
-# 异掌 · 文件所有权与协作边界（安全区大厅轮 Round 1–2）
+# 异掌 · 文件所有权与协作边界（安全区大厅轮 Round 1–3）
 
-> 本轮目标：**3D 安全区 → 走道选掌 → 传送门进裂岛**（`.agent_workspace/yizhang-hub/GOAL.md`），叠在手感轮之上。手感轮 ADR-25…28 沿用；大厅双区记 **ADR-29…32**（Fable-1 原文 25…28 已改号，避免与朝向/皮肤契约撞车）；Round 2 新增 **ADR-33…35**（hub 空挥闸、skinId+ghosts 导出、相机 pitch 通路）。O1 缺省 `phase:'hub'`，不以「缺省 arena」回退。Round 2 契约已向实现收口（`API_CONTRACT.md` v4.1 §0 七处名义漂移表）：一律用实现名 `phase/skipHub/unlocked`、`enterArena/enterHub`、`hubLocked`、`portalNear/mainGloveId/offGloveId`、`portal.radius`；死名 `startPhase/unlockedGloveIds/phaseChange/hubDeny/nearPortal/mainChosen` 禁止写进代码与测试。
+> 本轮目标：**3D 安全区 → 走道选掌 → 传送门进裂岛**（`.agent_workspace/yizhang-hub/GOAL.md`），叠在手感轮之上。手感轮 ADR-25…28 沿用；大厅双区记 **ADR-29…32**（Fable-1 原文 25…28 已改号，避免与朝向/皮肤契约撞车）；Round 2 新增 **ADR-33…35**（hub 空挥闸、skinId+ghosts 导出、相机 pitch 通路）；Round 3 新增 **ADR-36**（双区渲染子树互斥）。O1 缺省 `phase:'hub'`，不以「缺省 arena」回退。Round 2 契约已向实现收口（`API_CONTRACT.md` v4.1 §0 七处名义漂移表）：一律用实现名 `phase/skipHub/unlocked`、`enterArena/enterHub`、`hubLocked`、`portalNear/mainGloveId/offGloveId`、`portal.radius`；死名 `startPhase/unlockedGloveIds/phaseChange/hubDeny/nearPortal/mainChosen` 禁止写进代码与测试。Round 3 契约 v4.2 继续按实现补记（零新 API）：L3-10 实测数字（mid hub ≈94 draw / 47.8k tris、arena ≈117 / 70.0k，上限仍 ≤120 / ≤80k）、`COMBAT_VFX_KIND` 分派词（afterimage=`phase` 非 mirror）、皮肤渲染通路（`skinAppearance()` + `createRenderer({data,skins})`、配件映射冻结）、hub 换掌 = 主副交换（v4.1 曾误写「与 arena 同语义」）、进局入口 `ENTRY.RESTART/HUB`（再来一局 ≠ 回安全区）。
 
 游戏根：`games/yizhang/`　父分支：**`cursor/yizhang-hub-db8d`**（**所有子 PR 的 base，不是 `main`**）。
 各代理在自己的云端分支提交，父调度器合回父分支。输出首行必须声明实际模型 slug，严禁静默降级。
@@ -35,6 +35,21 @@
 | GPT-sol-1 单测 | 空挥（§14-26）/ skinId / ghosts / probe 对齐的单测，不减量 |
 | GPT-sol-2 探针基准 | probe 调用传 `phase:'hub'`（不改 harness 缺省），`hubJourney` 全绿且 `arenaKills ≥ 1` |
 
+### Round 3 主攻（对齐 `.agent_workspace/yizhang-hub/round3/DISPATCH.md`；写路径不变）
+
+| 席位 | Round 3 主攻 |
+| --- | --- |
+| Fable-1 架构 | 契约/架构向实现终对齐（契约 v4.2 + ADR-36）：L3-10 实测数字、`COMBAT_VFX_KIND` 分派词、皮肤渲染通路、hub 换掌交换语义、进局入口语义 |
+| Fable-2 美术 UX | HV-04 idle 盲辨规范 + 预算下仍可辨的视觉合同（ART_DIRECTION §17，已合入） |
+| Fable-3 玩法数值 | GDD §13 与 `skins.js`/`vfx.js` 同词；不改战斗数值 |
+| Fable-4 SOTA 验收 | Round 3 签字；重跑全表；W1 修后按字面勾 L3-10 |
+| Opus-1 模拟物理 | 计时域/回程边角；不回退空间闸 |
+| Opus-2 WebGL 渲染 | **P0 画调用预算**（已合入：mid hub 峰值 ≈94 draw / 47.8k tris、arena ≈117 / 70.0k）；hub 关裂岛、idle 降档；禁砍 8 掌可辨 |
+| Opus-3 技能与 Bot | 战斗事件/残影边角；hub 继续拒战 |
+| Opus-4 主循环 UI 输入 | 结算回走道 UX 打磨（再来一局 ≠ 回安全区）；说明牌/门提示跟 F2 |
+| GPT-sol-1 单测 | 预算/三 seed/盲辨锁表；不减量 |
+| GPT-sol-2 探针基准 | probe 三固定 seed；去掉误导 MODEL_SLUG 横幅（已合入） |
+
 ## 2. 共享只读（需改时只追加、先在简报声明）
 
 `package.json`、`vite.config.js`、`README.md`、`.gitignore`。
@@ -49,7 +64,7 @@
 2. **安全区四禁（ADR-29/33）**：免战按「实体所处空间」豁免（`playerInHub`；`applyHits` 退回冲量、`tickStatuses` 照跑）+ R2 空挥闸（ADR-33：hub 不启动扇击/技能）、无掉落（`walkway` 硬钳制 + 实心地板）、Bot 静默（O4 不调 think + O3 think 自守卫）、计时域 = 传送重置（`match.startTime`，hub 内壳层不消费 over）。
 3. **`view.hub`（契约 §4.3）**：`pedestals[]`（8 条：`gloveId/x/y/z/yaw/row/index/height/radius/unlock/unlocked/selected/slot/focused/name/color/desc/role`）、`focusGloveId`、`portalReady`、`portalNear`、`mainGloveId/offGloveId`、`unlocked`、`interactRadius`、`walkway/zone/portal/spawn`。F3 的 `data/hub.js HUB` 表是唯一布局源（§3.3），O1 快照进 state、O2/O4 从 view 读，**禁止硬编码第二份坐标**。死名：`nearPortal`、`mainChosen/offChosen`。
 4. **输入增加 `interact`（ADR-32）**：持续位上报、sim 边沿结算（`p.prev.interact`）；键鼠 E 双义，分流在 input 侧（`setPhase('hub')` 下 sample 归零 slap/skill）；触控「选」钮 `setTouchButton('interact', down, { slot })` + `data-yz-interact`。O4 采样，O1 在最近台座上结算。
-5. **装备规则（ADR-30，契约 §4.4）**：主空→主、**副掌再按提为主掌（原主退副）**、已是主掌 ⇒ `changed:false` 回执、副空→副、双满→替换副；hub 内 `switchGlove` 与 arena 同语义（activeSlot 切换 + switchLock，「主副交换」从未实装已废除）；未解锁 ⇒ `hubLocked{unlock}` 拒绝。解锁集 `opts.unlocked`（数组/Set/Record/`'all'`）由 shell 从存档换算注入，缺省 fail-closed。死名：`hubDeny`、`unlockedGloveIds`。
+5. **装备规则（ADR-30，契约 §4.4）**：主空→主、**副掌再按提为主掌（原主退副）**、已是主掌 ⇒ `changed:false` 回执、副空→副、双满→替换副；hub 内 `switchGlove` = **主副交换、无锁**（`sim/hub.js swapHubLoadout`，`switch{slot:0}` 事件；arena 维持 activeSlot 切换 + switchLock——契约 §4.4 已在 v4.2 按实现改写，R2 本条曾误记「交换从未实装」）；未解锁 ⇒ `hubLocked{unlock}` 拒绝。解锁集 `opts.unlocked`（数组/Set/Record/`'all'`）由 shell 从存档换算注入，缺省 fail-closed。死名：`hubDeny`、`unlockedGloveIds`。
 6. **传送（ADR-31）**：`portalReady ⇔ !!mainGloveId`；ready ∧ 进门触发圆（`portal.radius`，sim 不读 aabb）⇒ 同 tick `phase='arena'`、p0 写裂岛出生点（既有链路，`invulnT` 保护）、**loadout 保留**、`match.startTime` 重置、发 `enterArena{id,x,y,z}`；回程 `enterHub(state)` 壳层 API 发 `enterHub`。过渡表现归外壳（淡场/门内粒子，禁加载条）；`lerpView` 在 `prev.phase !== cur.phase` 时跳插值。死名：`phaseChange`。
 7. **事件与音名（契约 §10/§11 实测表）**：大厅词表 = `hubFocus / hubEquip / hubLocked / hubPortalNear / enterArena / enterHub`；音效映射 = `hubFocus→uiMove`、`hubEquip(changed)→switchGlove`、`hubLocked→uiBack`、`enterArena→matchStart`，其余静默——v4 的 `equip/deny/portal` 音名从未实装。聚焦获得是 `hubFocus` 事件，聚焦丢失读 view diff。O2 按实现事件名做 VFX，O4 加音效先登记。
 8. **HUD 契约（§13.1）**：`.yz-inspect` 说明牌（直接读 `HubPedestalView` 的 name/role/desc/color/slot/unlock）、门提示两态（`portalNear ∧ !portalReady` /「穿过传送门」）、配装指示。数据面冻结在契约，视觉归 F2。
@@ -88,8 +103,8 @@
 
 | 文档 | 作用 |
 | --- | --- |
-| `docs/ARCHITECTURE.md` | 模块图、tick 顺序（含 hub 子步差异）、双区状态机 §4.6、ADR 16–35 |
-| `docs/API_CONTRACT.md` | 冻结导出面 v4.1：名义漂移收口表 §0、`HUB` 表 §3.3、`phase/skipHub/unlocked`、`state.hub`/`view.hub`、大厅交互语义 §4.4、事件/音名词表（实测）、hub HUD §13.1、不变量 1–26 |
+| `docs/ARCHITECTURE.md` | 模块图、tick 顺序（含 hub 子步差异）、双区状态机 §4.6、性能预算 §8（L3-10 实测）、ADR 16–36 |
+| `docs/API_CONTRACT.md` | 冻结导出面 v4.2：名义漂移收口表 §0、`HUB` 表 §3.3、`phase/skipHub/unlocked`、`state.hub`/`view.hub`、大厅交互语义 §4.4（含 hub 换掌交换）、VFX 分派词表 §7、事件/音名词表（实测）、hub HUD 与进局入口 §13.1、不变量 1–27 |
 | `docs/OWNERSHIP.md`（本文） | 写路径、R1 握手与验收线、R2 主攻、红线 |
 | `docs/VISUAL_HANDBOOK.md` | 视觉质量基线（用户手册，强制） |
 | `docs/ART_DIRECTION.md`（F2） / `docs/GDD.md`（F3） / `docs/SOTA_CHECKLIST.md`+`docs/ACCEPTANCE.md`（F4） | 各自轮内产出 |

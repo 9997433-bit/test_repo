@@ -1,8 +1,10 @@
-# 异掌 · 公共 API 契约 v4.1（安全区大厅轮 Round 2 · 契约向实现收口，冻结）
+# 异掌 · 公共 API 契约 v4.2（安全区大厅轮 Round 3 · 契约继续向实现收口，冻结）
 
-> 手感轮改四处：渲染朝向零补偿、皮肤契约、每掌 VFX / ghosts、hit-stop 边界。大厅轮追加：`Input.interact`、`HUB` 布局、`phase/hub` 视图、`hubEquip/hubLocked/hubFocus/hubPortalNear/enterArena/enterHub`。O1 缺省 `phase:'hub'`；旧测靠空间规则或 `skipHub`。大厅 ADR 记为 29…32（手感轮已占用 25…28）；Round 2 新增 ADR-33…35（空挥闸 / skinId+ghosts 导出 / 相机 pitch，见 ARCHITECTURE §10）。
+> 手感轮改四处：渲染朝向零补偿、皮肤契约、每掌 VFX / ghosts、hit-stop 边界。大厅轮追加：`Input.interact`、`HUB` 布局、`phase/hub` 视图、`hubEquip/hubLocked/hubFocus/hubPortalNear/enterArena/enterHub`。O1 缺省 `phase:'hub'`；旧测靠空间规则或 `skipHub`。大厅 ADR 记为 29…32（手感轮已占用 25…28）；Round 2 新增 ADR-33…35（空挥闸 / skinId+ghosts 导出 / 相机 pitch）；Round 3 新增 ADR-36（双区渲染子树互斥，见 ARCHITECTURE §10）。
 >
 > **v4.1 修订说明（SOTA_CHECKLIST §11.6 洞 4 收口，方向 = 契约向实现修）**：v4 与已被 330 测锁定的实现存在七处名/义漂移，本版全部按**实现的名字**改写（见下方「§0 名义漂移收口表」）。旧名一律是**从未实装的死名**（aliases-not-used）：不得对其写测试、写分派表或写音效映射。
+>
+> **v4.2 修订说明（Round 3 收口，零新 API，全部为登记既有实现）**：① §7 登记 `createRenderer` 已实装的 `data`/`skins` 可选项与皮肤剪影通路（`skinAppearance()` 归一 + 配件映射冻结，§3.2-6）；② §7 锁定战斗 VFX 分派词表 = `render/combat-vfx.js` 的 `COMBAT_VFX_KIND` 八词（afterimage = `phase`，**不是** mirror）；③ §7 补记双区互斥渲染子树（ADR-36）与测量口 `getStats()`——L3-10 实测数字见 ARCHITECTURE §8；④ §4.4 hub 内 `switchGlove` 按实现改写为**主副交换、无锁**（`sim/hub.js swapHubLoadout`，`hub-actions.test.js` 锁定——v4.1 曾误写「与 arena 同语义」，与实现相反）；⑤ §13.1 登记进局入口语义（`core/entry.js`：再来一局 `skipHub:true` ≠ 回安全区 `skipHub:false` 不预填掌）。
 >
 > **变更规则**：已列出的导出（名字、参数、返回形状）不得改动或删除；追加新导出/新可选字段允许，但必须先在本文登记再写代码。类型用 TS 记法描述形状，实现是纯 JS。
 
@@ -193,6 +195,7 @@ interface SkinDef {
 3. Bot 皮肤：`BOT_PERSONAS` 每个 persona 带 `skinId`（建议 brute→`wildhorn`、fox→`crane`、bully→`nuo`，终值 F3 定），三人互异且不与 `DEFAULT_SKIN_ID` 相同——**Bot 不得全员同一造型**。
 4. 新皮肤 / 新枚举值（headgear、back、build 扩档）= 先在本表登记，再写代码。禁止贴图包、禁止下载素材，全部低面数几何 + 程序化材质。
 5. 枚举值的视觉终稿归 F2/O2（`docs/ART_DIRECTION.md` 补规范），本表只冻结 id 与形状语言的语义。
+6. **渲染通路（v4.2 按实现登记）**：真表经壳层喂给 `createRenderer(canvas, { data, skins })`（`skins` = `resolveSkins`/`skinTable` 过的表，优先于 `data`，见 §7）；render 侧 `resolveSkinLook` 先过 `core/skins.js` 的 **`skinAppearance()`** 把真表（枚举）与兜底表（比例数值）归一成同一份外观模型。契约枚举 → 渲染配件的映射**冻结**（`render/skins.js accessoryFromAppearance`）：`hood/horns/mask` → 同名件；`back:'banner'` → `banner`；`back:'pack'` → `sash`（斜带 + 垂尾顶出行囊轮廓）；`topknot/strawHat` → `turban`。表外 id 走 `EXTRA_LOOKS` → 字符串散列两级**纯函数**兜底（同 id 恒同形），绝不退回统一胶囊。
 ### 3.3 `HUB` 安全区大厅布局表（HUB-R1，Fable-3；`src/data/hub.js`，ADR-30；v4.1 按实现名收口）
 
 大厅布局是**数据不是代码**（ADR-26）：具体数值归 F3，本节只冻结形状与硬约束。接线实况：`src/data/index.js` 汇总导出 `HUB`，装配层（`core/modules.js wireSimDeps → sim.installData`，deps 真身识别不翻假标志）或测试的 `installHubLayout` 把它交给 sim；数据表缺席时 sim 用 `sim/hub.js DEFAULT_HUB_LAYOUT`（同形状同坐标）兜底，`getDeps().usingDataHub` 报真源。`createMatch` 时经 `normalizeHubLayout` 补全并快照进 `state.hub.layout`；render/ui 从 `view.hub` 读，**禁止任何模块硬编码第二份坐标**。
@@ -536,7 +539,7 @@ interface ViewPlayer {
 
 装备成功即写回玩家（`applyLoadout`）：`gloveId/offhandId` 更新、副掌未选时 `offhandId = mainGloveId`（不让人白捡没选过的掌）、`activeSlot = 0`。指定 `interactSlot:'off'` 时：该掌已是副掌 ⇒ `changed:false` 回执；已是主掌 ⇒ 静默 no-op（同一只掌不占两格）。
 
-**hub 内 `switchGlove`**（洞 5 收口，契约随实现修）：与 arena 完全同一套语义——`activeSlot` 切换 + `switchLock 0.4s` + 既有 `switch` 事件；**没有**「主副槽交换、免 switchLock」的特殊 hub 语义（v4 旧文，从未实装）。「换主掌」的诉求由上表第 4 行（副掌再按提主）承担。
+**hub 内 `switchGlove`**（v4.2 按实现改写；`sim/hub.js swapHubLoadout`，`sim/hub-actions.test.js` 锁定）：闸门同空挥闸走 `playerInHub`（空间不是 phase）——安全区内 `switchGlove` 上升沿 = **主副槽交换**：`gloveId ↔ offhandId`、`activeSlot` 归 0、**无 switchLock 代价**（连按连换；长按仍不连发），复用既有 `switch` 事件（`slot: 0`、`gloveId` = 交换后的主掌）。`hub.mainGloveId/offGloveId` 仅在两格都已挑过时随行交换（只挑了主掌时副掌与主掌同值，交换恒等，传送门不失效）。裂岛坐标上（含 `phase==='hub'` 的旧测摆位）维持 arena 语义：`activeSlot` 切换 + `switchLock 0.4s`。v4.1 曾写「与 arena 完全同一套语义、交换从未实装」，与 Round 2 起的实现相反，本版更正。「装备新主掌」另有装备表第 4 行（副掌再按 interact 提主）。
 
 **传送**：`portalReady ∧ 真人 xz 进入门触发圆（距门中心 ≤ portal.radius）` 的同一 tick 完成（⑤；sim 只读 radius，不读 aabb）——`enterArena(state, p)`：`phase = 'arena'`、该玩家走既有出生点链路（`spawnSlot → spawnPointFor → findSpawnSpot`，速度清零、`grounded = true`、朝台心）、`invulnT = max(invulnT, invulnTime)`、**loadout 原样保留**；`match.startTime = state.time`、`secondsLeft` 回满、`over/winnerId/reason` 清空；`hub.enteredArenaAt = state.time`、`focusGloveId = null`、`portalNear = false`；发 `enterArena { id, x, y, z }`（②，每个被传送真人一条；**不带 yaw**——朝向已写在玩家身上，壳层读 view 对齐相机）。未 ready 进圆不传送——「先选一只掌」提示由 HUD 从 `portalNear ∧ !portalReady` 状态读出（状态驱动）+ `hubPortalNear{ready:false}` 事件 toast。穿门即传送，无需 interact，键鼠触控同一路径。
 
@@ -631,6 +634,8 @@ export function createRenderer(canvas: HTMLCanvasElement, opts?: {
   tier?: Tier; pixelRatio?: number; width?: number; height?: number;
   seed?: number; arenaRadius?: number;
   localId?: PlayerId;      // 本地玩家，缺省 'p0'（ADR-16）；main 传 followId 亦须接受
+  data?: object;           // v4.2 登记（已实装）：src/data 命名空间，带 SKINS 即用真表剪影
+  skins?: object;          // v4.2 登记（已实装）：已 resolveSkins/skinTable 过的皮肤表，优先于 data
   [k: string]: unknown;    // 未知 opts 必须容忍
 }): RendererHandle;
 
@@ -639,19 +644,28 @@ export function sync(view: MatchView): void;
 // origin/tileSize/cols + tiles[].x/z 建板，alive/crack/seam/zone 驱动碎裂与缝隙表现）、
 // players（yaw 直接 rotation.y——ADR-25：收到的就是 -Z 基 sim yaw，零补偿）、
 // events（§10 词表触发 VFX）。字段缺失容错不抛错。
-// 手感轮新增消费面（ADR-26/27）：
-//   · players[].skinId → resolveSkin 建外观变体（build/headgear/back/palette，§3.2）；
+// 手感轮新增消费面（ADR-26/27；皮肤通路 v4.2 按实现补记）：
+//   · players[].skinId → 皮肤剪影：main/smoke 经 createRenderer({data,skins}) 喂真表，
+//     render/skins.js resolveSkinLook 先过 skinAppearance() 归一（§3.2-6），配件映射冻结
+//     （hood/horns/mask 同名；back banner→banner；back pack→sash；topknot/strawHat→turban）；
 //     skinId 变化时重建/换件该角色，识别色背件语义不变
 //   · view.combat.ghosts → 半透明分身残影，按 ttl/ttl0 淡出，必须在画面上可见
 //   · VFX 分派纪律：扇击按事件 gloveId 八套可辨、技能按 skillId 分派（含 parry/
-//     meteorImpact/ghostSlap）；禁止 8 掌共用光球/描边；GloveDef.vfx 只是调参输入
-// players（yaw 直接 rotation.y）、events（§10 词表触发 VFX）。字段缺失容错不抛错。
+//     meteorImpact/ghostSlap）。分派词表冻结 = render/combat-vfx.js COMBAT_VFX_KIND：
+//     cotton→fanwake、granite→slab、gale→gust、frost→rime、spring→recoil、
+//     afterimage→phase（不是 mirror，SOTA HG-06 已锁）、magnet→flux、meteor→cinder；
+//     技能经 SKILL_VFX_KIND 同形放大，认不出退回持掌词（与 ART_DIRECTION §16/§17.4、
+//     GDD §13 同词）。禁止 8 掌共用光球/描边；GloveDef.vfx 只是调参输入
 // HUB-R1：view.hub 存在 ⇒ 建大厅场景（走道、台座、门；8 只展掌**手指朝上 +Y**、轻微
 // 悬浮/呼吸、每掌可辨识的 idle VFX——霜雾/岩屑/风带/磁弧等，禁纯色光球）；按 view.phase
 // 切场景与相机域；pedestals[].focused/slot/unlocked 驱动高亮/落位标记/锁灰态；
 // enterArena / enterHub 事件（②）⇒ 短过渡（淡场或门内粒子，禁加载条）；落点/朝向读
 // view.players（事件只带 x/y/z），相机对齐由壳层 alignCameraToSelf 完成。
 // view.hub === null（降级件）⇒ 跳过大厅表现，不抛错。
+// HUB-R3 补记（ADR-36，L3-10 预算前提）：「切场景」= 两棵子树互斥可见——hub 阶段
+// 裂岛子树整棵关（台面 InstancedMesh 是 frustumCulled=false，不显式关会在走道上照画
+// 整座岛），arena 阶段安全区子树整棵关；两区世界坐标错开（走道 z≈-120）从来不同框，
+// 谁都不替对方付 draw。mid 档预算与 Round 3 实测数字见 ARCHITECTURE §8。
 
 export function resize(width: number, height: number, dpr: number): void;   // dpr 已被 main 封顶 2
 export function setQuality(tier: Tier): void;
@@ -660,6 +674,8 @@ export function dispose(): void;         // 释放 GL 资源，可重复调用
 // Round 2 冻结追加（ADR-35）：setPitch(pitch: number)——相机俯仰（弧度，render 内部 clamp）。
 // O4 每 rAF 在 sync 前用 input.getLook().pitch 喂入；O2 的 cameraRig 消费该值（内部签名自便）。
 // 禁止第二个 pitch 状态源（input.getLook() 是唯一权威，ADR-4/17/35）。
+// v4.2 登记（已实装，测量面）：getStats() 返回 { tier, phase, drawCalls, triangles, … }
+//（three renderer.info 读数）——L3-10 预算与冒烟 HUD 的唯一读数口，禁止另设第二个计数器。
 ```
 
 ## 8. `src/input`（Opus-4 所有）
@@ -763,7 +779,7 @@ type SimEvent = { t: number } & (
 
 - `awaken / awakenEnd / parry / meteorImpact / ghostSlap` 由 combat 触发、经桥翻译后 sim 代发（ADR-22）；其余全部 sim 直发。
 - **死名（v4 曾登记、从未发射，禁止对其写测试/分派/音效）**：`hubDeny`（→ `hubLocked`）、`phaseChange`（→ `enterArena` / `enterHub`）。
-- hub 内 `switchGlove` 复用既有 `switch` 事件（arena 同语义，见 §4.4）；聚焦获得/换座**是** `hubFocus` 事件（v4「聚焦变化不是事件」已按实现修正），聚焦丢失读 view diff。
+- hub 内 `switchGlove` 复用既有 `switch` 事件（hub = 主副交换、无锁：`slot: 0`、`gloveId` = 交换后的主掌；arena = activeSlot 切换 + switchLock，见 §4.4 v4.2）；聚焦获得/换座**是** `hubFocus` 事件（v4「聚焦变化不是事件」已按实现修正），聚焦丢失读 view diff。
 - `skill` 事件与 `HitRecord` 的 `skillId` 是 **handler id**（§3.1 右列）。
 - **VFX 分派键（ADR-27）**：O2 按事件的 `gloveId` 分派扇击表现、按 `skillId` 分派技能表现——`slapStart/slap/hit/switch/skill/parry/meteorImpact/ghostSlap` 都带 `gloveId`，禁止按 type 猜或全掌共用一套。
 - `ko.reason` 现值恒为 `'fell'`（掉落是唯一死法）。
@@ -853,6 +869,8 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 
 触控：hub 阶段显示「选」按钮（`data-yz-interact`，`setTouchButton('interact', down, { slot })` 可指定主/副槽），仅在 `focusGloveId` 非空时可用态；靠近+确认与键鼠同一套语义（种子验收线）。2D 选掌板 `.yz-home` 降为暂停/设置里的备选入口，默认开局不再作为必经路（GOAL 附则）；开始一局 = `startMatch` 缺省进大厅（`phase:'hub'`、`gloveId:null` 让门从未就绪起步），配装在走道完成；只有备选台上的「直接进裂岛」才带 `skipHub`。
 
+**进局入口语义（v4.2 按实现登记；`src/core/entry.js`，冻结）**：结算「再来一局」= `ENTRY.RESTART` ⇒ `skipHub: true`，**同一副掌直接回裂岛**（配装取值链：上一局 → 存档 → 2D 配掌板，链头必须是 lastLoadout）；结算「回安全区换掌」/ 暂停「回安全区」= `ENTRY.HUB` ⇒ `skipHub: false`，main 开局**不预填主副掌**（`gloveId/offhandId` 传 null），`portalReady` 从 false 起步、挑完掌门才放行。`skipHubFor(kind)` 只对 RESTART 返回 true——两个按钮不许再指向同一件事（Round 1 遗留 6 的收口）。
+
 ## 14. 不变量清单（G1 测试基线 / F4 验收引用）
 
 1. `structuredClone(createMatch({seed:1,...}))` 成功；克隆体与原件各 step 600 tick 后 `getView` 深比较相等。
@@ -881,3 +899,4 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 24. **传送（ADR-31，v4.1 补 ⑤②）**：`portalReady` 后 xz 进入门触发圆（`≤ portal.radius`）⇒ 同 tick `phase === 'arena'`、loadout 保留、`match.startTime` 重置、发 `enterArena`。
 25. **安全区免战（ADR-29）**：hub 内无击退 KO、无碎地；被连扇 180 帧位置/deaths/hitsTaken 零变化；Bot 不进攻。
 26. **hub 空挥闸（ADR-33，Round 2 起生效）**：`playerInHub` 为真时按住 `slap` 任意帧数 ⇒ 零 `slapStart/slap` 事件、`stats.slaps` 不变、`attack.phase` 恒 `'idle'`；`skill` / 战斗 `dash` 同样不起。`phase==='hub'` 但人在裂岛坐标上（旧测/harness）**不受闸**。移动/跳/interact/switchGlove 不受影响。
+27. **hub 换掌 = 主副交换（v4.2 按实现登记；`sim/hub-actions.test.js`）**：`playerInHub` 内 `switchGlove` 上升沿 ⇒ `gloveId/offhandId` 互换、`activeSlot === 0`、`switchLockT === 0`（连按连换、长按不连发）、发 `switch { slot: 0, gloveId: 交换后主掌 }`；两格都挑过时 `hub.mainGloveId/offGloveId` 随行交换；arena 语义不变（activeSlot 切换 + 0.4s 锁）。

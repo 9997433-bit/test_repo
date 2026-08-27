@@ -1,6 +1,6 @@
-# 异掌 · 架构总纲（安全区大厅轮 Round 2 · 叠手感轮）
+# 异掌 · 架构总纲（安全区大厅轮 Round 3 · 叠手感轮）
 
-> 状态：**冻结（HUB-R2 + 手感轮）**。父分支 **`cursor/yizhang-hub-db8d`**。手感轮 ADR-25…28（朝向零补偿、皮肤、每掌 VFX、hit-stop）沿用；大厅轮 **ADR-29…32**（双区状态机、走道选掌、传送门、`interact` / Bot 静默）；Round 2 新增 **ADR-33…35**（hub 空挥闸、skinId+ghosts 导出、相机 pitch 通路，见 §10）。大厅 Fable-1 原文曾占用 ADR-25…28，与手感轮撞号，父调度器改记 29…32。O1 已落地 `createMatch` **缺省 `phase:'hub'`**，旧测靠裂岛坐标/空间规则或 `skipHub` 零回归，不以「缺省 arena」回退实现。Round 2 契约向实现收口：`API_CONTRACT.md` v4.1 §0 的七处名义漂移（`phase/skipHub`、`enterArena/enterHub`、`hubLocked`、`portalNear/mainGloveId/offGloveId`、`portal.radius`、副掌提主、音效实测表）以实现名为准，本文同名处已同步。变更流程：先改本文与 `docs/API_CONTRACT.md`，再改代码。
+> 状态：**冻结（HUB-R3 + 手感轮）**。父分支 **`cursor/yizhang-hub-db8d`**。手感轮 ADR-25…28（朝向零补偿、皮肤、每掌 VFX、hit-stop）沿用；大厅轮 **ADR-29…32**（双区状态机、走道选掌、传送门、`interact` / Bot 静默）；Round 2 新增 **ADR-33…35**（hub 空挥闸、skinId+ghosts 导出、相机 pitch 通路）；Round 3 新增 **ADR-36**（双区渲染子树互斥，见 §10）。大厅 Fable-1 原文曾占用 ADR-25…28，与手感轮撞号，父调度器改记 29…32。O1 已落地 `createMatch` **缺省 `phase:'hub'`**，旧测靠裂岛坐标/空间规则或 `skipHub` 零回归，不以「缺省 arena」回退实现。Round 2 契约向实现收口：`API_CONTRACT.md` v4.1 §0 的七处名义漂移（`phase/skipHub`、`enterArena/enterHub`、`hubLocked`、`portalNear/mainGloveId/offGloveId`、`portal.radius`、副掌提主、音效实测表）以实现名为准，本文同名处已同步。Round 3 继续收口（契约 v4.2，零新 API）：L3-10 实测入 §8、hub 换掌交换语义 / VFX 分派词 / 皮肤渲染通路按实现登记。变更流程：先改本文与 `docs/API_CONTRACT.md`，再改代码。
 
 ## 0. 一句话架构
 
@@ -83,7 +83,8 @@ combat.tickStatuses（状态倒计时·掌意衰减·满条觉醒·返回延迟�
 ```
 subStep（两个 phase 共用骨架）：
   combat.tickStatuses（全局照跑，状态倒计时只有一份）→ 计时器/重生
-  → handleActions（换掌/跳照常；`playerInHub` 时扇击前摇、技能、战斗冲刺被空挥闸拦下，ADR-33）
+  → handleActions（换掌/跳照常，hub 内换掌 = 主副交换、无锁（契约 §4.4 v4.2）；
+     `playerInHub` 时扇击前摇、技能、战斗冲刺被空挥闸拦下，ADR-33）
   → 位移积分 → 互推
   → 地面解算：playerInHub ? resolveHubGround（实心地板+隐形墙+台座柱体）: resolveGround
   → strike 结算（hub 内经 ADR-33 不会有 strike；即使有，applyHits 对 hub 内目标退回冲量）
@@ -136,6 +137,7 @@ subStep（两个 phase 共用骨架）：
 - `switchGlove` 上升沿且 `alive && 不在前摇/出手 && 可行动` 时：`activeSlot ^= 1`，`switchLockT = MATCH.switchLock (0.4)`，`slapCd = max(slapCd, 0.2)`，发 `switch` 事件。
 - `switchLockT > 0` 期间禁扇击、禁技能；移动/冲刺/跳不受限。
 - **冷却是玩家级标量**：`slapCd` / `skillCd` 各一个，双掌共享（R1「按槽位记账」的 ADR-8 **已废除**，以合并后实现为准）。
+- **hub 例外**（HUB-R2 实装，契约 §4.4 v4.2）：`playerInHub` 内换掌 = **主副槽交换、无锁**（`sim/hub.js swapHubLoadout`，`switch{slot:0}` 事件）；本节其余条目描述裂岛语义。
 
 ### 4.3 掌意与觉醒（awaken meter）
 
@@ -255,7 +257,8 @@ DPR 全局封顶 2（main 的 `applyResize` 计算并传 `renderer.resize`）。
 | --- | --- |
 | `sim.step`（1 人 + 3 bot + ~208 tile） | ≤ 1ms/tick（合并后实测 p99 ≈ 0.04ms，余量充足） |
 | 渲染帧时 | high 档桌面 ≤ 8ms；mid 档中端手机 ≤ 14ms |
-| Draw calls / 三角形 | < 150 / < 120k（high 档全场景；方格台面必须合批/Instanced） |
+| Draw calls / 三角形（high 档） | < 150 / < 120k（全场景；方格台面必须合批/Instanced） |
+| Draw calls / 三角形（mid 档，= SOTA L3-10） | **≤ 120 / ≤ 80k**。Round 3 O2 合入后实测（`getStats()` 读 `renderer.info`，契约 §7）：**hub 峰值 ≈ 94 draw / 47.8k tris、arena ≈ 117 draw / 70.0k tris——两区均在预算内**。前提与手段见 ADR-36：hub 阶段裂岛子树整棵关、arena 阶段关 hub |
 | GC 压力 | `step` 热路径零分配目标；`getView` 每 tick 一次快照分配可接受 |
 | 启动 | 首屏可交互 < 3s（4G 模拟），three 按需只进 `render` chunk |
 
@@ -265,7 +268,7 @@ DPR 全局封顶 2（main 的 `applyResize` 计算并传 `renderer.resize`）。
 
 ## 10. 决策记录（ADR）
 
-R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「已废除/修订」；Round 3 的修订与新增（19/21/22 修订，23/24 新增）与**手感轮（17 修订，25–28 新增）**、**大厅轮（29–32 新增）**已并入下表。**实现一律以最新裁定为准。**
+R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「已废除/修订」；Round 3 的修订与新增（19/21/22 修订，23/24 新增）与**手感轮（17 修订，25–28 新增）**、**大厅轮（29–32 新增；R2 33–35、R3 36 新增）**已并入下表。**实现一律以最新裁定为准。**
 
 1. **render/input/audio 模块级单例**：`createX` 初始化内部单例并返回句柄，模块级函数操作该单例。（沿用）
 2. **Input 坐标系**：input 层完成相机系→世界系换算，sim 不懂相机。（沿用，公式收紧见 ADR-17）
@@ -302,3 +305,4 @@ R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「�
 33. **hub 空挥闸（HUB-R2 新增，冻结；归 O1）**：闸门是 `playerInHub(state, p)`（`phase==='hub'` **且**人在安全区体积内），不是 phase 全局开关。闸内 `handleActions` 不启动扇击前摇、不调 `resolveSkill`、不启动战斗冲刺——零 `slapStart/slap/skill/dash` 事件、`stats.slaps` 不涨。移动、跳、`interact`、hub `switchGlove`（主副交换、无锁）照常。把人摆在裂岛盘上的旧测仍可打。免战豁免（applyHits 对 hub 内目标退回冲量）是第二道保险。不变量见契约 §14-26。
 34. **skinId 与 combat.ghosts 进 getView（HUB-R2 新增，冻结；O1 导出、O2 消费、G1 锁测）**：`getView().players[].skinId`——sim 视为**不透明字符串**原样透传（不校验、不 import skins.js，缺省 null，消费端 `resolveSkin` 兜底，ADR-26）；`view.combat.ghosts`——源 `state.combat.ghosts` 经桥 `ghostsView` 翻译（yaw 还原 -Z、数值 round、`ttl/ttl0` 齐全），**恒存在**（无残影 = 空数组）、纯 JSON。两个名字冻结为 `players[].skinId` / `combat.ghosts`，皮肤五段链（F3 表 → O4 传参 → O1 透传 → O2 换件）与残影双段接线（O1 导出 → O2 绘制）都以此为对接面。形状见契约 §4.3，不变量 §14-18/19。
 35. **相机 pitch 通路（HUB-R2 新增，冻结；O2 开 API、O4 每帧喂）**：`input.getLook().pitch` 是俯仰的**唯一权威源**（ADR-4 同源）。渲染句柄冻结追加 `setPitch(pitch: number)`（弧度，render 内部 clamp 防翻转），O4 每 rAF 在 `sync` 前调用；O2 的 `cameraRig` 消费该值（内部签名自便，现状 `update(dt, focus, yaw, vel)` 不吃 pitch 即本条要修的断链）。禁止 render/ui 各自维护第二份 pitch 状态、禁止把 pitch 塞进 view 快照。
+36. **双区渲染子树互斥（HUB-R3 新增，冻结；归 O2，L3-10 预算前提）**：安全区与裂岛在同一世界里错开（走道 z≈-120）、从来不同框，`view.phase` 决定哪棵子树整棵 `visible=false`——hub 阶段裂岛子树整棵关（台面 InstancedMesh 是 `frustumCulled=false`，不显式关会在走道上照画整座岛），arena 阶段安全区子树整棵关（R2 已有做法的反向补齐）。叠加手段：阴影贴图每帧只烘一次、mid 档辉光只画挡光替身层、角色按材质合批（识别色与皮肤本色走顶点色）、非本区角色远距剔除、碎岩/雾凇/裂纹贴花实例化。Round 3 实测 mid 档 hub 峰值 ≈94 draw / 47.8k tris、arena ≈117 / 70.0k——L3-10（≤120 / ≤80k）两区达标；测量口唯一 = 渲染句柄 `getStats()`（契约 §7）。降耗的视觉底线归 ART_DIRECTION §17 互锁合同：八掌 idle/战斗 VFX 不许合并、皮肤剪影不许砍，预算与 HV-04 盲辨在同一份 mid 档构建上验。
