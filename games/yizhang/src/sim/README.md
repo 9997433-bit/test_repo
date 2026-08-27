@@ -66,6 +66,10 @@ getView(s).hub.portalReady;  // 选过主掌没有
   **loadout 原样保留**，并且把对局计时重置成满时长（挑掌的时间不吃对局时长）。
   没选主掌时靠近只发 `hubPortalNear { ready: false }`。
   手动切换用 `enterArena(state, player?)` / `enterHub(state, player?)`（Round 2 回程）。
+- **回程**：`enterHub` 是**原局回程**——人回走道出生点、复活清状态、把 arena 那半段冲刺与收掌锁
+  收掉、手回主槽（`activeSlot = 0`），**挑好的掌与 `hub.mainGloveId` 全留着**，门仍就绪。
+  结算板的「回安全区换掌」是壳层**重开一局**（`createMatch` 不传 `gloveId` ⇒ 走道上重挑），
+  两条入口在 sim 里不合成一条。
 - **Bot 不进安全区**：`phase: "hub"` 时只有真人被摆到走道，Bot 留在裂岛出生点等着。
 
 ### 布局表

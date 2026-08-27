@@ -208,7 +208,14 @@ export function enterArena(state, player = null) {
   return state;
 }
 
-/** 回程（Round 2 对局结束后再选掌）：把真人送回安全区，装备保留。 */
+/**
+ * 回程（Round 2 对局结束后再选掌）：把真人送回安全区，**装备保留**。
+ *
+ * 这是「原局回程」，和结算壳层那两个进局按钮（`core/entry.js` 的 RESTART / HUB，
+ * 都是重开一局）不是一件事：挑好的主副掌与 `hub.mainGloveId` 原样留着，传送门
+ * 仍然就绪。壳层要的「回安全区不预填掌」由 `createMatch` 那条路给（不传
+ * `gloveId` ⇒ `mainGloveId` 为 null ⇒ `portalReady` false），sim 不把两条入口合成一条。
+ */
 export function enterHub(state, player = null) {
   const list = player ? [player] : state.players.filter((p) => p.kind === "human");
   state.phase = "hub";
@@ -222,6 +229,12 @@ export function enterHub(state, player = null) {
     p.attack.t = 0;
     p.knockScale = 1;
     p.kbT = 0;
+    // 冲刺整段带进走道的话，人一回来就横滑出去：空挥闸只拦冲刺的**启动**，拦不住
+    // 已经在飞的那半段。收掌锁同理——走道的换掌是主副交换，本来就不带锁。
+    p.dashT = 0;
+    p.switchLockT = 0;
+    // 走道上手里拿的是主掌：arena 里切到副槽再回程，不该让 HUD / 台座标记显示副掌
+    p.activeSlot = 0;
     pushEvent(state, { type: "enterHub", id: p.id, x: p.x, y: p.y, z: p.z });
   }
   if (state.hub) {
