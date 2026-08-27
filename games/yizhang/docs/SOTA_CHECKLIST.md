@@ -3,6 +3,9 @@
 维护者：Fable-4（SOTA 验收）。上游依据：`.agent_workspace/yizhang/DESIGN_SEED.md`、`.agent_workspace/yizhang/CONTRACT.md`、`games/yizhang/docs/VISUAL_HANDBOOK.md`。
 执行规程见同目录 `ACCEPTANCE.md`。数值调参（击退量、掌意增速等）以 Fable-3 的 `GDD.md` 为单一事实源；本清单只锁**契约常量、行为、可验证阈值**。
 
+> **当前生效轮次：手感轮（Feel Round 1–3，父分支 `cursor/yizhang-feel-db8d`）—— 验收以 §10 为唯一记分表。**
+> §0–§9 是上一系列（骨架→精品，`cursor/yizhang-db8d`，2026-08-26 以 197 测全绿收口）的存档；其命令、红线表与判定记录仍被 §10 回归门引用作防回退基准，不得删改。
+
 ## 0. 判定规则
 
 - 每一项都是**二值可勾选项**，附验证方法（命令 / 文件 / 操作脚本）。勾选只由验收流程执行，开发代理不自勾。
@@ -274,3 +277,110 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 - **probe 单 seed**（对局 seed `0x1a2b3c4d`、bot rng `0x5eed1234`，复验无变化）：距 T-07 规格「3 固定 seed」有差，记 WARNING（GPT-sol-2）。
 - **注释级 fallback-combat 残留**：`sim/deps.js` 头注仍引旧文件名（`data/tiles.js` 已清）；`sim-integration.test.js` 的**活引用**归 §9.4 #0，不在本条。不否决，顺手清。
 - **probe kills 基线漂移**：改压真实桥路径后 kills 3→1（单 seed 下的合法波动，≥1 硬门达标、未回退到 0）；终验如需更稳读数，3-seed 硬化后取分布。
+
+---
+
+## 10. 手感轮（Feel Round 1–3）验收清单 —— 方向 / 皮肤 / 每掌 VFX / 打击感
+
+维护者：Fable-4。上游依据：`.agent_workspace/yizhang-feel/GOAL.md`（用户原话四条）、`.agent_workspace/yizhang-feel/OWNERSHIP.md`（握手四条）。执行规程见 `ACCEPTANCE.md` §11。数值定稿（僵直时长、冲击强度等）归 Fable-3 `GDD.md`；本表只锁行为、契约与可验证阈值。
+判定规则沿用 §0：全部二值可勾选、勾选只由验收流程执行、红线即时否决、上级默认包含下级（复验防回退）。
+
+### 10.0 轮次门槛（手感轮 Gate）
+
+| 轮次 | 必须全绿 | 允许延后 / 最小实现 |
+|---|---|---|
+| Round 1（L1 可玩线） | FG-01…06 全部；FD-01…05、FD-07、FD-08；FS-01…04；FV-01、FV-03；FJ-01、FJ-05；FT-01/02/03/05/06 真实断言；红线 FR-01…05 与 R-10…13 零命中 | FS-05 Bot 皮肤可先最小两款；FV-02 允许"分派表 8 键在、视觉打磨延后"；FJ-02/03/04 允许最小实现（在场可感即可）；FV-04/05、FS-06 评审延后；FT-04/07 可 todo 占位 |
+| Round 2 | 复验 Round 1 全绿（回退按 FAIL 计）；FS-05、FS-06；FV-02、FV-04；FJ-02、FJ-03、FJ-04 全实装；FT-01…08 全部真实断言；§10.8 洞 1–6 逐条销号 | FV-05 盲测预跑（记录不记分）；打击感评分卡预跑 |
+| Round 3（SOTA 签字） | 复验全表；FV-05 盲测 ≥6/8；打击感四维评分卡（§7 复用）无 <3 分项；真机触屏方向复验（FD-08 触屏段）；性能不回归（probe p99StepMs ≤0.5ms、桌面 high 档 60fps）；红线全表零命中 | — |
+
+### 10.1 FG- 回归门（每轮前置；任何一项红 → 直接 REJECT，不再往下记分）
+
+- [ ] **FG-01 测试全绿且不减量** — `npm test` 退出码 0，通过数 **≥197**（开工基线 @ `be97cee`：197/197、17 文件）。唯一预期改动：`src/core/view.test.js` 第 130 行「yaw+π」断言必须随 FD-01 同 PR 翻转为「原样透传」，属预期改绿不算回退；除此之外弱化/删除既有断言按造假计（§4 规则 4 照常适用）。
+- [ ] **FG-02 探针不回归** — `npm run probe` `status:"pass"`、**`wiredCombat:true`**、`kills ≥ 1`、`ai:"think"`、`movedPlayers:4`（基线：kills=2、p99StepMs≈0.099、botSlapAttempts=3818）。加僵直 / hit-stop 调参后必须复跑：kills 允许波动但 ≥1 硬门；`botSlapAttempts` 低于基线一半（<1900）须书面解释（Bot 被连续僵直挂机的哨兵）。
+- [ ] **FG-03 构建过** — `npm run build`（vite）退出码 0（基线：通过，主 chunk 含 three）。
+- [ ] **FG-04 base 与端口不动** — `vite.config.js` 保持 `base: "./"`、dev 与 preview 均 **4181** + strictPort。验证：`rg -n 'base:|4181' vite.config.js`。
+- [ ] **FG-05 隔离** — 改动只落 `games/yizhang/**`（及编排工作区 `.agent_workspace/yizhang-feel/**`）；不碰 `games/` 其他游戏、`pages/`、`.github/workflows`、不复制第二份游戏目录。验证：`git diff --name-only origin/main...HEAD` 审读。
+- [ ] **FG-06 依赖与外链纪律** — 运行时依赖仍仅 `three`；`rg -n "googleapis|gstatic" src dist index.html` 零命中（上一系列已清零，不得回潮）；皮肤/VFX 全部低面数几何 + 程序纹理，零下载素材。
+
+### 10.2 FD- 方向与操控（用户目标 1 —— 自动化必须锁死）
+
+**背景（开工实测，防假达标）**：`src/input/index.js` 的输入层**今天就是自洽的**——只按 W 时 `sample(c)` 输出恰为 `forward(cameraYawToSimYaw(c))`。整轴反转的唯一来源是 `src/core/view.js` `RENDER_YAW_OFFSET = Math.PI`：`src/render/camera.js` 已按 yaw=0→-Z 建（身后 = +(sin yaw, cos yaw)），`toRenderView` 再加 π 把相机放到角色**面前**，于是 W 朝相机走、A/D 镜像、鼠标右移镜头跑反。**只写输入层单测会天然全绿、构成假达标**；本组必须包含「修复前红、修复后绿」的渲染侧断言（FD-01、FD-06 是防造假锚点）。
+
+- [ ] **FD-01 渲染朝向归零** — `RENDER_YAW_OFFSET === 0`（或 `toRenderView` 不再改 yaw）：`toRenderView({players:[{yaw:0.5}]}).players[0].yaw === 0.5`。`core/view.test.js:130` 的 `0.5 + Math.PI` 断言同 PR 翻转。验证：单测（当前红，修复后绿）。
+- [ ] **FD-02 W = 远离相机（屏幕深处）** — 单测：任取 ≥4 个相机方位角 `c`（含非轴对齐值），只按 W 时 `sample(c)` 的 `(moveX,moveZ)` 与 `(forwardX(yaw), forwardZ(yaw))`（`src/sim/math.js`，`yaw = sample(c).yaw`）点积 ≥0.999 且模 ≈1；只按 S 点积 ≤ -0.999。
+- [ ] **FD-03 A = 屏幕左** — 同法：只按 A 时 `(moveX,moveZ)` 与 `(rightX(yaw), rightZ(yaw))` 点积 ≤ -0.999（相机在身后时屏幕左 = 负右手向）；D 相反 ≥0.999。
+- [ ] **FD-04 鼠标右移 = 右转** — 单测：mousemove `+dx`（pointer-lock 或拖拽路径任一）前后两次 `sample()` 的 sim yaw 满足 `dot(forward(yaw₂), right(yaw₁)) > 0`（面向向右手侧偏转，FACE 约定 yaw=0→-Z、right(0)=+X）；`-dx` 反向。触屏右侧拖拽 `+dx` 同断言。
+- [ ] **FD-05 触屏摇杆与 WASD 同映射** — 单测：`setStick(0,-1)` 与按 W 输出同向（点积 ≥0.999）；`setStick(-1,0)` 与 A 同向。
+- [ ] **FD-06 相机在身后（几何锁）** — 单测：`createCameraRig` 按渲染链路（收 `toRenderView` 后的 yaw）更新收敛后，`dot(camPos − focus, (forwardX(simYaw), forwardZ(simYaw))) < 0`——相机必须在角色面向的**反方向**半平面。此断言在 +π 偏移下必红，是本组「修了没修」的判决性证据。
+- [ ] **FD-07 换算点纪律** — 相机方位角→sim yaw 仍只经 `cameraYawToSimYaw`（ADR-17），禁第四套约定；修复后原「render +π」换算点归零，`docs/OWNERSHIP.md` 第 5 条修订注需同步（F1 所有权，验收核对不代改）。验证：`rg -n "cameraYawToSimYaw|RENDER_YAW_OFFSET" src` 审读。
+- [ ] **FD-08 手动全链** — 按 ACCEPTANCE §11.4 方向脚本实机走一遍并录屏：W 走向屏幕深处、S 走向相机、A 屏幕左、D 屏幕右、鼠标右移镜头与角色右转、转身 180° 后重验（证明相机相对而非世界绝对轴）、触屏仿真摇杆 + 右拖同映射。
+
+### 10.3 FS- 皮肤（用户目标 2）
+
+- [ ] **FS-01 皮肤表 ≥6** — `src/data/skins.js` 导出 `SKINS`（长度 ≥6）/ `SKIN_BY_ID` / `DEFAULT_SKIN_ID`（OWNERSHIP 握手 2）；每条至少含 `id`、`name` 与几何剪影 / 配色 / 配件三类描述字段；任意两条在三类中至少一类不同。验证：schema + 两两对比单测。
+- [ ] **FS-02 大厅可选** — 主菜单/大厅有皮肤选择 UI：≥6 套全部可选、选中即预览、进局后本人模型用所选皮肤。验证：手动 + 截图。
+- [ ] **FS-03 存档记住** — `yizhang-save-v1` 增 `skinId`：写读 roundtrip；刷新页面后大厅默认选中上次皮肤；损坏 / 缺失 / 旧档（无 skinId 字段）回退 `DEFAULT_SKIN_ID` 不崩。验证：单测 + 手动刷新。
+- [ ] **FS-04 skinId 进 view** — `createMatch` 吃人类 `skinId`、Bot 用 `persona.skinId`；`getView().players[].skinId` 存在且 JSON-pure。验证：单测。
+- [ ] **FS-05 Bot 不同模** — 默认 1+3 开局同屏出现 ≥3 种不同 `skinId`（含人类），Bot 不得全员同款；渲染侧 Bot 模型按 skinId 构建（不再全员同一胶囊）。验证：单测（getView skinId 集合大小）+ 同屏截图。
+- [ ] **FS-06 剪影可辨（SOTA 面）** — 6+ 套皮肤灰度截图并排，剪影/明度两两可辨（手册 §14-1 同法）；差异靠几何与配件，不靠换色贴皮或贴图包。验证：灰度评审。
+
+### 10.4 FV- 每掌 VFX 与残影（用户目标 3）
+
+- [ ] **FV-01 事件带掌 id** — 命中/技能/残影事件（经 `normalizeEvent`）携带 `gloveId`（技能另带 `skillId`），8 掌各至少一条事件形状断言（OWNERSHIP 握手 3）。验证：单测。
+- [ ] **FV-02 渲染按掌分派** — 渲染 VFX 按 `gloveId`+`skillId` 分派：分派表 8 键齐全（静态单测）；任意两掌的扇击/技能特效参数（形状/色/运动）不全同；**禁止 8 掌共用一个光球**。验证：单测 + 慢放录屏逐掌确认。
+- [ ] **FV-03 残影可见** — `getView()` 暴露 `ghosts`（源 `state.combat.ghosts`，含位置与剩余时长；OWNERSHIP 握手 4），单测；渲染画半透明分身；实机放分身技能后录屏画面上可见 ≥1 个残影。
+- [ ] **FV-04 特效纪律** — 每掌特效有形状-衰减-残留三段（手册 §10）；禁纯色 additive 光球（R-05）、禁发光描边（R-02）、禁 Bloom 糊屏（R-03；顺手清「low 档 bloom 不可关」遗留 WARNING）。验证：慢放评审。
+- [ ] **FV-05 八掌识别卡（Round 3 记分）** — 盲测：隐藏 HUD 掌名，逐掌放扇击+技能各一次，评审按特效猜掌 id，**≥6/8 命中**（协议 ACCEPTANCE §11.5）。
+
+### 10.5 FJ- 打击感与僵直（用户目标 4）
+
+- [ ] **FJ-01 hit-stop ≤120ms** — 单测锁：`HIT_STOP.max ≤ 0.12` 且 `hitStopFor` 任何分支 ≤ max；只在**本人参与**的扇击命中触发（旁观互扇不定格）；两次定格间有冷却（连段不幻灯片化）。基线 `src/core/juice.js` max=0.09 已达标；本轮加强手感时**不得越 0.12 上界**。
+- [ ] **FJ-02 接触扬尘** — 命中在**接触点**触发扬尘粒子爆（挂命中事件坐标，非全屏、非纯光球），随 power 分级。验证：代码审读（vfx 生成点）+ 实机慢放录屏。
+- [ ] **FJ-03 短相机冲击** — 本人参与的命中触发相机 shake/fovKick（基线 `renderer.js` 事件→`cameraRig.impulse` 已接线）：本人参与强度 > 旁观；冲击 ≤0.5s 内衰减回稳；冲击上限（camera.js clamp 1.4 / 6.5）不得放宽。验证：单测（rig 衰减）或代码审读 + 录屏。
+- [ ] **FJ-04 受击僵直** — 被扇命中挂短暂僵直（`stun` 或等价 status；`src/sim/physics.js` 已认 `kind==="stun"` → canAct=false，**基线 combat 从不下发，本轮补**）：期间不能扇/放技能、不阻击退位移；时长以 GDD 定稿为准且 **≤0.5s**、到时精确清除。验证：时序单测（挂载/期间 canAct=false/到期清除）+ 渲染可见姿态变化录屏。
+- [ ] **FJ-05 禁红晕糊屏** — 受击反馈维持去饱和帧（`.yz-hit-flash`），禁新增满屏红 vignette / 红闪；postfx 常驻暗角（uVignette 0.42）是构图暗角，不得改造成受击驱动红晕。验证：`rg -in "vignette" src/render src/styles` 判读 + 录屏。
+
+### 10.6 FT- 测试锁表（MUST EXIST；载体 vitest `tests/**`+`src/**`、probe `scripts/**`）
+
+| ID | 锁什么 | 关联条目 | 责任 | 真实生效轮次 |
+|---|---|---|---|---|
+| **FT-01** | 输入方向矩阵：W/S/A/D/摇杆/鼠标 ±dx，≥4 个非平凡相机角 | FD-02/03/04/05 | G1 | Round 1 |
+| **FT-02** | 渲染朝向锁：偏移常量归零 + 透传 + 相机半平面几何断言 | FD-01/06 | G1 | Round 1 |
+| **FT-03** | 皮肤 schema 两两差异 + 存档 roundtrip/回退 + view 字段 | FS-01/03/04 | G1 | Round 1 |
+| **FT-04** | VFX 事件形状 ×8 + 分派表 8 键齐全 + 两两参数不全同 | FV-01/02 | G1 | Round 2（R1 至少事件形状） |
+| **FT-05** | 残影进 view：ghosts 字段、位置、ttl 衰减 | FV-03 | G1 | Round 1 |
+| **FT-06** | hit-stop 上界：显式断言 ≤0.12 + 本人限定 + 冷却 | FJ-01 | G1 | Round 1 |
+| **FT-07** | 僵直时序：status 挂载 / 期间 canAct=false / 到期清除 | FJ-04 | G1 | Round 2（R1 可 todo） |
+| **FT-08** | 探针不回归：wiredCombat/kills 硬门；可选手感统计段（命中数/僵直计数） | FG-02 | G2 | Round 1 |
+
+### 10.7 L1 可玩线 vs SOTA 线（差距标注 · 开工基线 @ `be97cee` 实测 2026-08-27）
+
+| 用户目标 | 现状基线（Fable-4 实测） | L1 可玩线（Round 1 全绿即达） | SOTA 线（Round 2/3 才算兑现） |
+|---|---|---|---|
+| 1 方向 | 反转在场：`RENDER_YAW_OFFSET=π` 致相机在脸前；输入层自洽（W=forward(sample.yaw)），单测输入层会假绿 | FD-01…05/07/08：轴向正确、实机可玩 | FD-06 几何锁防回潮；真机触屏复验；转向手感（阻尼/灵敏度）进评分卡 |
+| 2 皮肤 | 零基础：无 `skins.js`、无选择 UI、存档无 skinId、getView 无 skinId，全员同一胶囊 | FS-01…04：≥6 套可选、可存、进局生效 | FS-05/06：Bot 多样、灰度剪影两两可辨、差异靠几何配件而非换色 |
+| 3 每掌 VFX | `vfx.js` 为通用激波+尘环，无按掌分派；`ghosts` 在 combat 态（`ghostSlap` 事件在）但 getView 不导出、渲染不画 | FV-01/03：事件带掌 id、残影实机可见 | FV-02/04/05：8 掌分派齐、形状-衰减-残留、盲测 ≥6/8 |
+| 4 打击感 | hit-stop 在场（90ms、本人限定、冷却 0.14s，有测）；相机冲击已接事件；**无**接触点扬尘；僵直通道 sim 认但 combat 不下发；无红晕（去饱和帧） | FJ-01/05：上界锁死、红晕禁令成文生效 | FJ-02/03/04 全实装 + 四维评分卡（§7）无 <3 分项 |
+
+### 10.8 Round 2/3 必须补的洞（Round 1 已知无法收口的部分，验收侧备案）
+
+1. **假达标陷阱（最高优先）**：输入层单测今天就绿；若 Round 1 只交 FT-01 而不动 `RENDER_YAW_OFFSET`，方向照旧反。Round 2 复核必须在当前代码上复现 FD-01/FD-06 的红/绿状态（把偏移临时改回 π 应见两测红），防「只写测试不修实现」。
+2. **测试互斥点**：`core/view.test.js:130`（+π 断言）与 FD-01 不能同时绿；哪个 PR 改 `view.js` 就必须同 PR 翻转该断言，否则 FG-01 挡下——多代理并行时这是最可能的合并冲突点。
+3. **文档-代码漂移**：ADR-17 修订注（`docs/OWNERSHIP.md` 第 5 条）仍写「`core/view.js toRenderView`（render +π）」；F1 需同步修订为归零后的表述，Round 2 验收核对。
+4. **残影双段接线**：ghosts 要 O1（getView 导出）与 O2（渲染绘制）两段齐；Round 1 若只通一段残影仍不可见，FV-03 只记部分，Round 2 必收口。
+5. **皮肤五段链**：data（F3）→ 大厅 UI（O4）→ 存档（O4）→ sim/getView（O1）→ 渲染 mesh（O2），跨 5 个所有权；任何一段缺失整链不可见。Round 2 重点查三个断点：「选了但进局不生效」「存了但刷新丢失」「Bot persona 未接 skinId」。
+6. **僵直的连锁效应**：combat 下发 stun 会改变 Bot 行为与 probe kills 分布；每次调参后复跑 probe（FG-02：kills≥1、movedPlayers=4、botSlapAttempts 哨兵）；僵直叠加击退可能把「被连扇」变成死锁体验，时长上界 0.5s 不得放宽。
+7. **打击感过量风险**：hit-stop + 扬尘 + 冲击 + 僵直四层叠加，连段可能幻灯片化/晕屏；Round 3 按 §7 评分卡裁量；hit-stop 冷却（0.14s）与相机冲击 clamp（1.4/6.5）是防过量的既有闸门，不得放宽。
+8. **遗留 WARNING 结转**（上一系列 §9.5）：技能 id 四处别名表并存（与 FV-01 事件带 skillId 直接相关，Round 2 顺手收敛为一张表）；bloom 三档常开 low 不可关（FV-04 一并清）；probe 单 seed（FT-08 硬化时顺手上 3-seed）。
+9. **真机缺口**：Round 1–2 触屏全靠 devtools 仿真；Round 3 必须真机验方向（FD-08 触屏段）与多点触控（摇杆+扇击同按不互斥）。
+10. **性能回归口**：8 掌 VFX + 残影 + 扬尘全实装后粒子预算（`config.js` dustBudget 900/380/140）可能超；Round 3 复测 probe p99StepMs（基线 0.099ms，红线 0.5ms）与桌面 high 档 60fps。
+
+### 10.9 FR- 红线增补（手感轮即时否决，叠加 §5 的 R-10…13）
+
+| ID | 红线 | 依据 | 检查方法 |
+|---|---|---|---|
+| **FR-01** | 满屏红晕 / 红闪回潮 | 用户明令（GOAL 验收线） | `rg -in "vignette" src` 判读 + 录屏；FJ-05 |
+| **FR-02** | 第四套朝向约定 | ADR-17 / OWNERSHIP 红线 | `cameraYawToSimYaw` 之外新增相机→sim 换算即中；rg 审读 |
+| **FR-03** | 复制第二份游戏目录 / 改其他 `games/*` | GOAL 首段 | `git diff --name-only` 审读（FG-05） |
+| **FR-04** | 皮肤用下载贴图 / 版权素材 | OWNERSHIP 红线（R-13 同源） | 资产审读 + `rg -n "https?://" src` |
+| **FR-05** | 弱化既有断言骗绿（删测试、改阈值、空 expect） | §4 造假条款 | 测试 diff 审读（FG-01 唯一豁免：view.test.js:130 翻转） |
