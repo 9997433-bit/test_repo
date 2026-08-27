@@ -128,7 +128,9 @@ describe("alignSkillIds", () => {
 describe("接线后 8 掌技能能进局", () => {
   it("装了 combat 之后按 E 能打出 skill 事件", () => {
     wireSimDeps(sim, data, combat);
-    const state = sim.createMatch({ seed: 11, gloveId: "granite", offhandId: "meteor", botCount: 3 });
+    // 这条测的是「裂岛里按 E 能出技能」。createMatch 缺省开在安全区，而安全区
+    // 不进 combat 管线（E 在大厅里是装备掌，不是放技能），所以要显式要一局裂岛。
+    const state = sim.createMatch({ seed: 11, gloveId: "granite", offhandId: "meteor", botCount: 3, phase: "arena" });
 
     let sawSkill = false;
     for (let i = 0; i < 90 && !sawSkill; i += 1) {
