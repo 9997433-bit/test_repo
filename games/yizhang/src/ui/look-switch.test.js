@@ -209,6 +209,45 @@ describe("连按 V：屏上不叠第二套 HUD", () => {
   });
 });
 
+describe("触控「视」钮：与 V 键同一条链（LOOK-R4）", () => {
+  function tap(btn) {
+    btn.dispatchEvent(new Event("pointerdown"));
+    btn.dispatchEvent(new Event("pointerup"));
+  }
+
+  it("点一下当帧切模式，HUD 回执照常亮 0.9s（走的就是 onLookModeChange 那条既有链）", () => {
+    vi.useFakeTimers();
+    live = wire();
+    const { input, shell, root } = live;
+
+    tap(shell.touch.buttons.look);
+    expect(input.getLookMode()).toBe("free");
+    expect(input.sample(0.4).yaw).toBeNull();
+    expect(root.querySelector("#hud").dataset.look).toBe("free");
+    expect(flashOf(root).classList.contains("is-on")).toBe(true);
+    expect(flashOf(root).textContent).toContain("自由视角");
+
+    vi.advanceTimersByTime(900);
+    expect(flashOf(root).classList.contains("is-on")).toBe(false);
+
+    tap(shell.touch.buttons.look);
+    expect(input.getLookMode()).toBe("locked");
+    expect(flashOf(root).textContent).toContain("视角锁定");
+  });
+
+  it("输入禁用时钮也不切、不亮：闸在输入层，UI 不拦第二道", () => {
+    live = wire();
+    const { input, shell, root } = live;
+    input.setEnabled(false);
+
+    tap(shell.touch.buttons.look);
+    tap(shell.touch.buttons.look);
+    expect(input.getLookMode()).toBe("locked");
+    expect(root.querySelector("#hud").dataset.look).toBe("locked");
+    expect(flashOf(root).classList.contains("is-on")).toBe(false);
+  });
+});
+
 describe("输入禁用：任何切换路径都不换模式", () => {
   it("暂停期间按 V 不换模式，也不亮回执", () => {
     live = wire();

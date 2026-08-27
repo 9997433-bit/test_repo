@@ -299,6 +299,84 @@ describe("视角模式接线（LOOK-R1 · ART_DIRECTION §18）", () => {
   });
 });
 
+describe("设置板：Y 轴反转（LOOK-R4）", () => {
+  function segOptions(root, label) {
+    const tag = [...root.querySelectorAll(".yz-screen--frost .yz-glove-role")].find(
+      (n) => n.textContent === label
+    );
+    return tag ? [...tag.parentElement.querySelectorAll(".yz-seg-opt")] : [];
+  }
+
+  /** 记账替身：settingsBlock 的开关必须打到 input.setInvertY 这个既有 API 上。 */
+  function inputSpy() {
+    const calls = [];
+    return {
+      calls,
+      setInvertY: (v) => calls.push(["setInvertY", v]),
+      // 触控层挂载时会拿到同一个 input，但这些口子只在真的交互时才被叫到
+      setStick() {},
+      setTouchButton() {},
+      toggleLookMode() {},
+      getLookMode: () => "locked",
+    };
+  }
+
+  it("暂停板上有「Y 轴反转」一行：关 / 开，缺省（存档 false）亮在「关」", () => {
+    const { shell, root } = mount();
+    shell.showPause();
+    const opts = segOptions(root, "Y 轴反转");
+    expect(opts.map((b) => b.textContent)).toEqual(["关", "开"]);
+    expect(opts.map((b) => b.classList.contains("is-on"))).toEqual([true, false]);
+    expect(shell.settings.invertY).toBe(false);
+  });
+
+  it("存档 invertY=true 进来就亮「开」（storage.js 的字段早就位）", () => {
+    const { shell, root } = mount(
+      {},
+      {
+        save: {
+          loadout: { main: "cotton", off: "cotton" },
+          skinId: "drifter",
+          unlocked: ["cotton"],
+          invertY: true,
+        },
+      }
+    );
+    shell.showPause();
+    expect(segOptions(root, "Y 轴反转").map((b) => b.classList.contains("is-on"))).toEqual([
+      false,
+      true,
+    ]);
+    expect(shell.settings.invertY).toBe(true);
+  });
+
+  it("点「开」：即时打到 input.setInvertY，onSettingsChange 也带上 invertY", () => {
+    const input = inputSpy();
+    let emitted = null;
+    const { shell, root } = mount({ onSettingsChange: (next) => (emitted = next) }, { input });
+    shell.showPause();
+    const opts = segOptions(root, "Y 轴反转");
+    opts[1].click();
+    expect(input.calls).toEqual([["setInvertY", true]]);
+    expect(emitted.invertY).toBe(true);
+    expect(shell.settings.invertY).toBe(true);
+    expect(opts.map((b) => b.classList.contains("is-on"))).toEqual([false, true]);
+    opts[0].click();
+    expect(input.calls).toEqual([
+      ["setInvertY", true],
+      ["setInvertY", false],
+    ]);
+    expect(shell.settings.invertY).toBe(false);
+  });
+
+  it("切 invertY 不亮视角回执：.yz-look-flash 是模式切换的专属反馈", () => {
+    const { shell, root } = mount();
+    shell.showPause();
+    segOptions(root, "Y 轴反转")[1].click();
+    expect(root.querySelector(".yz-look-flash").classList.contains("is-on")).toBe(false);
+  });
+});
+
 describe("暂停板", () => {
   it("「回安全区」也走 onReturnHub，「配掌面板」才是退到 2D 板", () => {
     const { shell, root, calls } = mount();

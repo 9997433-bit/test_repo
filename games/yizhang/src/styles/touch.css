@@ -5,9 +5,10 @@
    .yz-touch
    ├── .yz-stick-zone          左下走位区（触点落区，JS 在区内生成摇杆）
    │   └── .yz-stick > .yz-stick-nub
-   └── .yz-cluster             右下按钮簇（栅格布点，8px 间距）
-       ├── .yz-tbtn--jump / --skill
-       └── .yz-tbtn--dash / --switch / --slap
+   ├── .yz-cluster             右下按钮簇（栅格布点，8px 间距）
+   │   ├── .yz-tbtn--jump / --skill
+   │   └── .yz-tbtn--dash / --switch / --slap
+   └── .yz-tbtn--look          右上切视角钮（V 等价，贴 HUD 暂停钮左侧）
    尺寸法：扇击 ≥72dp（实做 88/76px），其余 ≥48dp；全部避开安全区。
    JS 钩子：.yz-stick 的 --x/--y（区内定位）与 --sx/--sy（推杆位移）、
             .is-active、按钮 .is-pressed / :disabled、
@@ -250,6 +251,20 @@
 
 .yz-tbtn--jump {
   grid-area: jump;
+  width: var(--yz-touch-min);
+  height: var(--yz-touch-min);
+  font-size: var(--yz-fs-sm);
+}
+
+/* ---- 右上切视角钮（V 的触屏等价物，LOOK-R4）----
+   相机/系统键不是战斗键：不进 .yz-cluster 栅格（塞进去会挤乱布点），
+   作为 .yz-touch 直接子节点贴在 HUD 暂停钮（.yz-btn-pause，右上 48dp）
+   左侧一格，读作同一族控件。右上 56px 以下是 .yz-feed 的地盘，不下去。
+   hub / arena 都在：V 键两区都好使，这枚钮也一样。48dp 达标。 */
+.yz-tbtn--look {
+  position: absolute;
+  top: var(--yz-inset-t);
+  right: calc(var(--yz-inset-r) + var(--yz-touch-min) + var(--yz-s1));
   width: var(--yz-touch-min);
   height: var(--yz-touch-min);
   font-size: var(--yz-fs-sm);
