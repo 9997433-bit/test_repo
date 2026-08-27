@@ -25,7 +25,9 @@ export function decideMatch(state) {
     }
   }
 
-  const timeUp = state.time >= state.config.matchSeconds || state.match.secondsLeft <= 0;
+  // 计时从 match.startTime 起算：从安全区传送进岛时会重置，挑掌不吃对局时长
+  const elapsed = state.time - (state.match.startTime || 0);
+  const timeUp = elapsed >= state.config.matchSeconds || state.match.secondsLeft <= 0;
   if (timeUp) {
     const best = leaderOf(state);
     return { winnerId: best ? best.id : null, reason: "time" };

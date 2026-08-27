@@ -1,8 +1,10 @@
 // 对局状态构造。state 必须是纯数据：可 structuredClone、可 JSON 序列化，不放函数/类。
 
 import { createArena, isSupported } from "./arena.js";
-import { PHYSICS, SIM_VERSION } from "./constants.js";
+import { SIM_VERSION } from "./constants.js";
 import { getDeps, resolveGlove } from "./deps.js";
+import { pushEvent } from "./events.js";
+import { createHubState, placeAtHubSpawn } from "./hub.js";
 import { TAU, yawFromDir } from "./math.js";
 import { createRngState, nextRange, nextU32 } from "./rng.js";
 
@@ -84,8 +86,8 @@ function makePlayer(id, kind, slotIndex, gloveId, offhandId, persona) {
     hitsDealt: 0,
     hitsTaken: 0,
 
-    // 上一帧的按键，用来做边沿触发
-    prev: { slap: false, skill: false, switchGlove: false, dash: false, jump: false },
+    // 上一帧的按键，用来做边沿触发（interact 只在安全区用）
+    prev: { slap: false, skill: false, switchGlove: false, dash: false, jump: false, interact: false },
   };
 }
 
@@ -173,10 +175,58 @@ export function respawnPlayer(state, player) {
   pushEvent(state, { type: "respawn", id: player.id, x: player.x, y: player.y, z: player.z });
 }
 
-export function pushEvent(state, ev) {
-  if (state.events.length >= PHYSICS.maxEvents) return;
-  ev.t = state.time;
-  state.events.push(ev);
+export { pushEvent };
+
+/**
+ * 传送门：安全区 -> 裂岛。loadout 原样保留，只挪位置 + 重置对局计时。
+ * 没传 player 就把所有真人一起送过去。
+ */
+export function enterArena(state, player = null) {
+  const list = player ? [player] : state.players.filter((p) => p.kind === "human");
+
+  state.phase = "arena";
+  for (const p of list) {
+    placeAtSpawn(state, p, false);
+    p.invulnT = Math.max(p.invulnT, state.config.invulnTime); // 刚落地就被扇太亏
+    pushEvent(state, { type: "enterArena", id: p.id, x: p.x, y: p.y, z: p.z });
+  }
+
+  // 在大厅里挑掌的时间不算进对局时长
+  state.match.startTime = state.time;
+  state.match.secondsLeft = state.config.matchSeconds;
+  state.match.over = false;
+  state.match.winnerId = null;
+  state.match.reason = null;
+
+  if (state.hub) {
+    state.hub.enteredArenaAt = state.time;
+    state.hub.focusGloveId = null;
+    state.hub.portalNear = false;
+  }
+  return state;
+}
+
+/** 回程（Round 2 对局结束后再选掌）：把真人送回安全区，装备保留。 */
+export function enterHub(state, player = null) {
+  const list = player ? [player] : state.players.filter((p) => p.kind === "human");
+  state.phase = "hub";
+  let i = 0;
+  for (const p of list) {
+    placeAtHubSpawn(state, p, i++);
+    p.alive = true;
+    p.respawnT = 0;
+    p.statuses.length = 0;
+    p.attack.phase = "idle";
+    p.attack.t = 0;
+    p.knockScale = 1;
+    p.kbT = 0;
+    pushEvent(state, { type: "enterHub", id: p.id, x: p.x, y: p.y, z: p.z });
+  }
+  if (state.hub) {
+    state.hub.focusGloveId = null;
+    state.hub.portalNear = false;
+  }
+  return state;
 }
 
 export function getPlayer(state, id) {
@@ -192,9 +242,23 @@ export function activeGlove(player) {
   return resolveGlove(activeGloveId(player));
 }
 
+/** 开局在哪：默认安全区。`phase:'arena'` / `skipHub` / `config.skipHub` 直接进岛。 */
+function resolvePhase(opts, config) {
+  if (opts.phase === "arena" || opts.phase === "hub") return opts.phase;
+  if (opts.skipHub === true || config.skipHub === true) return "arena";
+  return "hub";
+}
+
 /**
  * createMatch(opts)
- * opts: { seed, gloveId, offhandId, botCount = 3, botPersonas?, config? }
+ * opts: {
+ *   seed, gloveId, offhandId, botCount = 3, botPersonas?, config?,
+ *   phase?: 'hub' | 'arena',      // 缺省 'hub'（开局在安全区）
+ *   skipHub?: boolean,            // 等价于 phase:'arena'，config.skipHub 也认
+ *   unlocked?: string[] | Set | Record<string, boolean> | 'all',
+ * }
+ *
+ * 缺省已解锁 = `unlock === "default"` 的掌 + 调用方明确带进来的 gloveId / offhandId。
  */
 export function createMatch(opts = {}) {
   const deps = getDeps();
@@ -233,14 +297,35 @@ export function createMatch(opts = {}) {
     players,
     events: [],
     combat: { clock: 0, pending: [], dashes: [], ghosts: [], seq: 1 },
-    match: { over: false, winnerId: null, reason: null, secondsLeft: config.matchSeconds },
+    // startTime：比赛计时的起点。从安全区传送进岛时会重置成当时的 time，
+    // 让「在大厅里挑掌」不吃掉对局时长。
+    match: {
+      over: false,
+      winnerId: null,
+      reason: null,
+      startTime: 0,
+      secondsLeft: config.matchSeconds,
+    },
     stats: { slaps: 0, hits: 0, kos: 0, tilesBroken: 0 },
+    phase: resolvePhase(opts, config),
+    hub: null,
   };
 
+  // 先按裂岛出生点摆一遍：rng 消耗顺序不变，phase 只决定真人要不要再挪进安全区
   const n = players.length;
   for (let i = 0; i < n; i++) {
     players[i].spawnAngle = (i / n) * TAU;
     placeAtSpawn(state, players[i], false);
+  }
+
+  // 每局自带一份布局，别和 deps 缓存共享可变对象
+  state.hub = createHubState(opts, deps, structuredClone(deps.HUB));
+  if (state.phase === "hub") {
+    let humanIndex = 0;
+    for (const p of players) {
+      if (p.kind !== "human") continue; // Bot 留在裂岛等人，安全区不放 Bot
+      placeAtHubSpawn(state, p, humanIndex++);
+    }
   }
 
   return state;

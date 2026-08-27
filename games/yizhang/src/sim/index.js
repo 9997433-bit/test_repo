@@ -6,12 +6,39 @@ import { getDeps } from "./deps.js";
 import { damageFloor } from "./floor.js";
 import { decideMatch } from "./match.js";
 
-export { createMatch, getPlayer, activeGlove, activeGloveId, respawnPlayer } from "./state.js";
-export { step, applyHits, ZERO_INPUT } from "./step.js";
+export {
+  createMatch,
+  getPlayer,
+  activeGlove,
+  activeGloveId,
+  respawnPlayer,
+  enterArena,
+  enterHub,
+} from "./state.js";
+export { step, applyHits, ZERO_INPUT, HUB_ZERO_INPUT } from "./step.js";
 export { getView } from "./view.js";
 
+// 安全区（hub）：布局、靠近判定、装备、传送门
+export {
+  DEFAULT_HUB_LAYOUT,
+  equipFromPedestal,
+  hubSpawnFor,
+  inHubZone,
+  nearPortal,
+  nearestPedestal,
+  playerInHub,
+  setHubUnlocked,
+} from "./hub.js";
+
 // 依赖接线：默认就是真实 ../data/gloves.js + ../combat/index.js，install* 只给测试做替身
-export { installData, installCombat, resetDeps, getDeps, resolveGlove } from "./deps.js";
+export {
+  installData,
+  installCombat,
+  installHubLayout,
+  resetDeps,
+  getDeps,
+  resolveGlove,
+} from "./deps.js";
 
 // combat 同名转发，调用方不必知道 bridge 的存在
 export function resolveSlap(state, attacker, glove, now) {
@@ -51,6 +78,11 @@ export function damageTileAt(state, x, z, amount) {
 /** 脚下有没有台 */
 export function hasFloorUnder(state, x, z) {
   return isSupported(state.arena, x, z);
+}
+
+/** 生效中的安全区布局（内置默认表，或 data 侧装进来的那张） */
+export function getHubLayout() {
+  return structuredClone(getDeps().HUB);
 }
 
 /**
