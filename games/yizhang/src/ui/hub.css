@@ -1,0 +1,273 @@
+/* ============================================================
+   异掌 · 安全区大厅壳层（说明牌 / 配装条 / 传送门提示 / 门内过渡）
+
+   与 shell.css 不同，本文件**不**挂 data-yz-fallback：大厅 HUD 是
+   Round 1 新增的结构，Fable-2 的 src/styles 里还没有对应规则，
+   缺了它整块提示就没有排版。为了不和 F2 抢层叠：
+
+   · 类名走同一套合同前缀（.yz-inspect / .yz-loadout-strip / .yz-portal-hint），
+     F2 之后在 src/styles 里全量声明同名类即可覆盖 —— 本文件由 ui/hub.js
+     静态 import，先于 loadSiblingStyles() 注入，同权重时后到的 F2 胜出。
+   · 只用 tokens.css 的变量，不自造第二套色板；变量缺席时给同族兜底值。
+   ============================================================ */
+
+.yz-hub-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+  font-size: var(--yz-fs-sm, 12px);
+}
+
+#hud[data-phase="hub"] .yz-hub-hud {
+  display: block;
+}
+
+/* 大厅里没有击杀刻度、没有倒计时、没有准星、没有播报：那些是裂岛的信息。
+   掌位坞也收起 —— 走道里的配装由 .yz-loadout-strip 报，两块别打架。 */
+#hud[data-phase="hub"] .yz-kill-track,
+#hud[data-phase="hub"] .yz-timer,
+#hud[data-phase="hub"] .yz-reticle,
+#hud[data-phase="hub"] .yz-feed,
+#hud[data-phase="hub"] .yz-glove-dock {
+  display: none;
+}
+
+/* ---- 顶部区名带 ---- */
+.yz-hub-title {
+  position: absolute;
+  top: var(--yz-inset-t, 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: var(--yz-s1, 8px);
+  padding: 2px var(--yz-s2, 16px);
+  white-space: nowrap;
+  color: var(--yz-text-dim, #cfc8b8);
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+}
+
+.yz-hub-title small {
+  font-size: var(--yz-fs-xs, 11px);
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+  color: var(--yz-text-mute, #9a927f);
+}
+
+/* ---- 靠近说明牌 ---- */
+.yz-inspect {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b, 8px) + 132px);
+  transform: translate(-50%, 10px);
+  width: min(360px, calc(100vw - 2 * var(--yz-inset-l, 16px)));
+  padding: var(--yz-s2, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--yz-s-h, 4px);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--yz-t-med, 220ms) var(--yz-ease, ease),
+    transform var(--yz-t-med, 220ms) var(--yz-ease, ease);
+}
+
+.yz-inspect.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+/* 识别色只给一条竖漆线，不给整块底色（饱和峰值留给 3D 里那只掌） */
+.yz-inspect::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  background: var(--yz-accent, #e2604a);
+}
+
+.yz-inspect-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--yz-s1, 8px);
+}
+
+.yz-inspect-name {
+  font-size: var(--yz-fs-lg, 17px);
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  color: var(--yz-bone-100, #f0ebdf);
+}
+
+.yz-inspect-role {
+  font-size: var(--yz-fs-xs, 11px);
+  letter-spacing: 0.12em;
+  color: var(--yz-accent, #e2604a);
+}
+
+.yz-inspect-desc {
+  font-size: var(--yz-fs-sm, 12px);
+  line-height: 1.8;
+  color: var(--yz-text-dim, #cfc8b8);
+}
+
+.yz-inspect-cta {
+  display: flex;
+  align-items: center;
+  gap: var(--yz-s1, 8px);
+  margin-top: var(--yz-s-h, 4px);
+  font-size: var(--yz-fs-sm, 12px);
+  color: var(--yz-bone-100, #f0ebdf);
+}
+
+.yz-inspect-slot {
+  font-size: var(--yz-fs-xs, 11px);
+  letter-spacing: 0.14em;
+  color: var(--yz-gold-300, #eec678);
+}
+
+/* 未解锁：整牌去饱和，提示换成解锁条件 */
+.yz-inspect.is-locked {
+  filter: saturate(0.25);
+}
+
+.yz-inspect.is-locked .yz-inspect-cta {
+  color: var(--yz-text-mute, #9a927f);
+}
+
+/* ---- 当前配装条 ---- */
+.yz-loadout-strip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b, 8px) + 84px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--yz-s1, 8px);
+  padding: var(--yz-s-h, 4px) var(--yz-s2, 16px);
+  white-space: nowrap;
+}
+
+.yz-loadout-slot {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--yz-s-h, 4px);
+  font-size: var(--yz-fs-sm, 12px);
+  color: var(--yz-text-dim, #cfc8b8);
+}
+
+.yz-loadout-slot b {
+  font-weight: 500;
+  color: var(--yz-bone-100, #f0ebdf);
+}
+
+.yz-loadout-slot i {
+  font-style: normal;
+  font-size: var(--yz-fs-xs, 11px);
+  letter-spacing: 0.16em;
+  color: var(--yz-text-mute, #9a927f);
+}
+
+.yz-loadout-slot.is-empty b {
+  color: var(--yz-text-mute, #9a927f);
+}
+
+.yz-loadout-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--yz-frame, #39424e);
+}
+
+/* ---- 传送门提示 ---- */
+.yz-portal-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b, 8px) + 44px);
+  transform: translateX(-50%);
+  padding: var(--yz-s-h, 4px) var(--yz-s2, 16px);
+  max-width: min(420px, calc(100vw - 2 * var(--yz-inset-l, 16px)));
+  text-align: center;
+  font-size: var(--yz-fs-sm, 12px);
+  letter-spacing: 0.1em;
+  color: var(--yz-text-mute, #9a927f);
+  transition: color var(--yz-t-med, 220ms) var(--yz-ease, ease);
+}
+
+.yz-portal-hint.is-ready {
+  color: var(--yz-gold-300, #eec678);
+}
+
+.yz-portal-hint.is-near {
+  color: var(--yz-bone-100, #f0ebdf);
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  border-color: var(--yz-gold-700, #8f6a2a);
+  animation: yz-hub-breathe 1.4s var(--yz-ease, ease) infinite;
+}
+
+@keyframes yz-hub-breathe {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.28);
+  }
+}
+
+/* ---- 触控「选」确认钮：挂在触控层里，不进 F2 的 .yz-cluster 栅格 ---- */
+.yz-touch .yz-hub-confirm {
+  position: absolute;
+  right: var(--yz-inset-r, 16px);
+  bottom: calc(var(--yz-inset-b, 8px) + 150px);
+  width: var(--yz-touch-slap, 72px);
+  height: var(--yz-touch-slap, 72px);
+  display: none;
+  font-size: var(--yz-fs-lg, 17px);
+}
+
+.yz-touch[data-phase="hub"] .yz-hub-confirm {
+  display: grid;
+}
+
+/* 大厅里不打架：扇击/技能/换掌三钮收起，只留移动、跳、冲和「选」 */
+.yz-touch[data-phase="hub"] .yz-tbtn--slap,
+.yz-touch[data-phase="hub"] .yz-tbtn--skill,
+.yz-touch[data-phase="hub"] .yz-tbtn--switch {
+  display: none;
+}
+
+/* ---- 门内过渡：淡场 + 门框光，不要加载条 ---- */
+.yz-warp {
+  position: fixed;
+  inset: 0;
+  z-index: var(--yz-z-modal, 40);
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(60% 46% at 50% 52%, rgb(238 198 120 / 0.5), rgb(238 198 120 / 0) 62%),
+    radial-gradient(120% 100% at 50% 50%, rgb(11 16 28 / 0.2), rgb(8 12 20 / 0.98) 74%);
+  transition: opacity var(--yz-t-slow, 420ms) var(--yz-ease, ease);
+}
+
+.yz-warp.is-on {
+  opacity: 1;
+  transition-duration: var(--yz-t-fast, 120ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yz-portal-hint.is-near {
+    animation: none;
+  }
+
+  .yz-inspect {
+    transition: opacity var(--yz-t-fast, 120ms) linear;
+    transform: translate(-50%, 0);
+  }
+}

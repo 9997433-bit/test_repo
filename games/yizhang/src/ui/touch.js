@@ -4,6 +4,10 @@
 // 尺寸由 touch.css 保证：扇击 88px（竖屏 76px，都 ≥72dp），其余 48dp，
 // 全部锚在 env(safe-area-inset-*) 上。摇杆走 --x/--y（落点）与 --sx/--sy（推杆）。
 // 所有 pointer 事件都 preventDefault：iOS 的边缘返回、下拉刷新、双指缩放不许抢手势。
+//
+// 安全区多一枚「选」确认钮 .yz-hub-confirm：它是 .yz-touch 的直接子节点，
+// **不**进 .yz-cluster 的 grid-template-areas —— 塞进去会挤乱 F2 的栅格布点。
+// 显隐靠 .yz-touch[data-phase="hub"]（见 ui/hub.css），大厅里同时收起扇/技/换三钮。
 
 import { h, bindHoldButton, capturePointer } from "./dom.js";
 
@@ -104,8 +108,11 @@ export function createTouchLayer({ input, audio }) {
   const btnDash = actionButton("dash", "冲", "dash", true);
   const btnJump = actionButton("jump", "跳", "jump", false);
 
+  const btnInteract = actionButton("interact", "选", "interact", false);
+  btnInteract.classList.add("yz-hub-confirm");
+
   const cluster = h("div", { class: "yz-cluster" }, [btnJump, btnSkill, btnDash, btnSwitch, btnSlap]);
-  const el = h("div", { class: "yz-touch" }, [zone, cluster]);
+  const el = h("div", { class: "yz-touch", dataset: { phase: "arena" } }, [zone, cluster, btnInteract]);
 
   function applyCooldown(node, remaining, max, disabled) {
     const cd = Math.max(0, remaining || 0);
@@ -119,7 +126,28 @@ export function createTouchLayer({ input, audio }) {
   return {
     el,
     reset: resetStick,
-    buttons: { slap: btnSlap, skill: btnSkill, switchGlove: btnSwitch, dash: btnDash, jump: btnJump },
+    buttons: {
+      slap: btnSlap,
+      skill: btnSkill,
+      switchGlove: btnSwitch,
+      dash: btnDash,
+      jump: btnJump,
+      interact: btnInteract,
+    },
+    /** @param {'hub'|'arena'} phase */
+    setPhase(phase) {
+      const next = phase === "hub" ? "hub" : "arena";
+      if (el.dataset.phase === next) return next;
+      el.dataset.phase = next;
+      // 收起的钮如果正被按住，抬起事件就再也收不到了：切区时主动松开
+      for (const [name, node] of Object.entries({ slap: btnSlap, skill: btnSkill, switchGlove: btnSwitch, interact: btnInteract })) {
+        if (!node.dataset.pressed) continue;
+        delete node.dataset.pressed;
+        node.classList.remove("is-pressed");
+        input.setTouchButton(name, false);
+      }
+      return next;
+    },
     setCooldowns(self, glove, maxes = {}) {
       if (!self) return;
       const noSkill = !glove || !glove.skillId || glove.skillId === "none";

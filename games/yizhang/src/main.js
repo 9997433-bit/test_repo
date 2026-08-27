@@ -1,5 +1,9 @@
 // 异掌 · 入口。职责：装配（模块探测 → 依赖注入 → 降级）、主循环、事件转音效/播报、存档。
 // 这里不写玩法规则，也不碰 Three.js；规则在 src/sim + src/combat，画面在 src/render。
+//
+// 开局路线（Round 1 起）：装配完直接进**安全区**，相机就在走道里的角色身后。
+// createMatch 缺省 `phase:'hub'`，这里不传 skipHub；2D 的 `.yz-home` 配掌板降为
+// 暂停里翻得到的备选台（`shell` 的「配 掌 面 板」），不再是必经的第一屏。
 
 import {
   loadSiblingModules,
@@ -22,6 +26,7 @@ import {
   toRenderView,
 } from "./core/view.js";
 import { normalizeSkinId, resolveSkins } from "./core/skins.js";
+import { unlockedIdsFor } from "./core/hub-flow.js";
 import { createUnlockChecker, newlyUnlocked, unlockTextOf } from "./core/unlocks.js";
 import { createProgressTracker } from "./core/progress.js";
 import * as fallbackSim from "./core/fallback/sim.js";
@@ -196,6 +201,7 @@ async function boot() {
       onStart: (loadout) => startMatch(loadout),
       onResume: () => setPaused(false),
       onRestart: () => startMatch(lastLoadout || shell.menu.getLoadout()),
+      onReturnHub: () => returnToHub(),
       onQuit: () => quitToMenu(),
       onPauseRequest: () => togglePause(),
       onSettingsChange: (next) => applySettings(next),
@@ -272,6 +278,9 @@ async function boot() {
     const look = input.getLook();
     inputs[SELF_ID] = input.sample(look.yaw);
     if (!curView) return inputs;
+    // 玩家还在安全区挑掌时不要让 Bot 在岛上互扇：那会把对局分数打完，
+    // 传送过去正好碰上「已经有人先到 7 杀」。缺省零输入 = 原地待命。
+    if (curView.phase === "hub") return inputs;
     for (const p of curView.players || []) {
       if (p.id === SELF_ID || p.kind === "human") continue;
       try {
@@ -325,6 +334,33 @@ async function boot() {
         case "respawn":
           if (e.playerId === SELF_ID) audio.play("respawn");
           break;
+        // ---- 安全区 ----
+        case "hubFocus":
+          audio.play("uiMove");
+          break;
+        case "hubEquip":
+          if (e.changed === false) break;
+          audio.play("switchGlove");
+          if (e.playerId === SELF_ID || e.id === SELF_ID) {
+            const name = (gloveById[e.gloveId] && gloveById[e.gloveId].name) || e.gloveId;
+            shell.toast(e.slot === "main" ? `主 掌 · ${name}` : `副 掌 · ${name}`, 1400);
+          }
+          break;
+        case "hubLocked": {
+          audio.play("uiBack");
+          const glove = gloveById[e.gloveId];
+          shell.toast(`${(glove && glove.name) || e.gloveId} 还没解锁 · ${unlockTextOf(glove, dataModule)}`, 1800);
+          break;
+        }
+        case "hubPortalNear":
+          if (!e.ready) shell.toast("传送门认掌不认人 · 先挑一只主掌", 1600);
+          break;
+        case "enterArena":
+          if (e.playerId === SELF_ID || e.id === SELF_ID) enterArenaFx();
+          break;
+        case "enterHub":
+          if (e.playerId === SELF_ID || e.id === SELF_ID) enterHubFx();
+          break;
         case "ko": {
           const mine = e.killerId === SELF_ID || e.victimId === SELF_ID;
           shell.pushKill({
@@ -349,6 +385,47 @@ async function boot() {
     if (stop > 0) loop.hold(stop);
     const flash = hitFlashForEvents(view.events, SELF_ID);
     if (flash) shell.flashHit(flash);
+  }
+
+  /** 相机重新架到角色身后。传送会改写 yaw，不同步的话过门后镜头在脸前。 */
+  function alignCameraToSelf(pitch) {
+    const self = curView ? (curView.players || []).find((p) => p.id === SELF_ID) : null;
+    input.setLook(simYawToCameraYaw(self ? self.yaw : 0), pitch);
+  }
+
+  /** 走道里挑的掌落盘，下次「直接进裂岛」和结算板的「再来一局」都用它。 */
+  function rememberHubLoadout() {
+    const hub = curView && curView.hub;
+    if (!hub || !hub.mainGloveId) return;
+    const next = { main: hub.mainGloveId, off: hub.offGloveId || hub.mainGloveId };
+    save = updateSave({ loadout: next });
+    lastLoadout = { ...(lastLoadout || {}), ...next };
+    shell.setSave(save);
+  }
+
+  /** 穿过传送门：门内短过渡（淡场 + 门光），不上加载条。 */
+  function enterArenaFx() {
+    rememberHubLoadout();
+    syncPhase("arena");
+    shell.warp(240);
+    alignCameraToSelf(0.3);
+    tracker.reset();
+    resultShown = false;
+    audio.play("matchStart");
+    shell.toast("裂 岛", 1200, true);
+  }
+
+  function enterHubFx() {
+    syncPhase("hub");
+    shell.warp(200);
+    alignCameraToSelf(0.3);
+    shell.toast("安 全 区 · 走道两侧挑掌", 1800);
+  }
+
+  /** phase 变了就同步输入层与外壳（大厅不出招、HUD 换脸、触控换钮）。 */
+  function syncPhase(next) {
+    input.setPhase(next);
+    shell.setPhase(next);
   }
 
   function evaluateUnlocks(won) {
@@ -413,13 +490,20 @@ async function boot() {
     tracker.reset();
     resultShown = false;
 
+    // 缺省进安全区。只有 2D 备选台上的「直接进裂岛」才带 skipHub。
+    const skipHub = loadout.skipHub === true;
+    // 走道才是选掌的地方：进 hub 时**不**预填主副掌，让 `portalReady` 从 false 起步，
+    // 传送门先提示「先挑一只主掌」，挑完才放行（GOAL §6）。直通裂岛才吃存档配装。
     // sim 还没吃 skinId 的那一版会直接忽略这两个字段，壳层的 roster 仍会补上皮肤。
     const matchOpts = {
-      gloveId: loadout.main,
-      offhandId: loadout.off,
+      gloveId: skipHub ? loadout.main : null,
+      offhandId: skipHub ? loadout.off : null,
       botCount: 3,
       skinId,
       skins: skinTable.skins,
+      phase: skipHub ? "arena" : "hub",
+      // 台座的可选中状态跟着存档走：没解锁的掌看得见、选不中、显示解锁条件。
+      unlocked: unlockedIdsFor(gloves, isUnlocked, save),
     };
 
     try {
@@ -437,17 +521,25 @@ async function boot() {
     if (fallbackAi.resetBots) fallbackAi.resetBots();
     if (ai.resetBots) ai.resetBots();
 
-    const self = (curView.players || []).find((p) => p.id === SELF_ID);
     setSpectator(false);
     shell.showMatch();
+    // 大厅与裂岛用同一套 HUD/触控，只换脸；phase 由 sim 说了算。
+    syncPhase(curView.phase === "arena" ? "arena" : "hub");
+    shell.updateHub(curView);
     input.setEnabled(true);
-    // 出生朝台心：把 sim 的初始 yaw 换算回相机方位角，开局镜头在人背后。
-    input.setLook(simYawToCameraYaw(self ? self.yaw : 0), 0.3);
+    // 出生朝走道尽头（或台心）：把 sim 的初始 yaw 换算回相机方位角，开局镜头在人背后。
+    alignCameraToSelf(0.3);
     loop.setPaused(false);
     audio.unlock();
-    audio.play("matchStart");
+    audio.play(skipHub ? "matchStart" : "uiSelect");
     applyResize();
     startProbe();
+  }
+
+  /** 回程：重开一局并落在安全区。装备沿用上一次的配装。 */
+  function returnToHub() {
+    startMatch({ ...(lastLoadout || shell.menu.getLoadout()), skipHub: false });
+    shell.toast("安 全 区 · 走道两侧挑掌", 1800);
   }
 
   function quitToMenu() {
@@ -458,6 +550,7 @@ async function boot() {
     state = null;
     curView = null;
     prevView = null;
+    syncPhase("arena");
     shell.showMenu();
     shell.setNotes(degraded);
   }
@@ -505,9 +598,11 @@ async function boot() {
       }
       if (curView.events.length) {
         handleEvents(curView);
-        tracker.feed(curView.events, curView);
+        if (curView.phase !== "hub") tracker.feed(curView.events, curView);
       }
-      if (curView.over) finishMatch();
+      // 安全区里对局还没开始：倒计时归零 / Bot 互刷都不该弹结算板。
+      // 传送时 enterArena 会把 match 重置，那之后 over 才算数。
+      if (curView.over && curView.phase !== "hub") finishMatch();
     },
     draw(alpha, info) {
       if (probe && !info.paused) probe.feed(performance.now() / 1000);
@@ -526,7 +621,10 @@ async function boot() {
       hudAcc += 1 / 60;
       if (hudAcc >= HUD_INTERVAL) {
         hudAcc = 0;
+        // 兜底：phase 万一没走事件就变了（回放 / 外部改 state），HUD 也别停在旧脸上
+        if (shell.phase !== curView.phase) syncPhase(curView.phase);
         shell.updateHud(curView, SELF_ID);
+        if (curView.phase === "hub") shell.updateHub(curView);
       }
     },
     onPauseChange(isPaused, why) {
@@ -546,6 +644,17 @@ async function boot() {
   loop.setPaused(true);
   applyResize();
   setQuality(shell.settings.quality === "auto" ? "mid" : shell.settings.quality, null);
+
+  // 开局直接落在安全区：不再先弹一块 2D 平面网格。存档里的配装带进走道当初始装，
+  // 玩家可以沿走道换掉；`.yz-home` 从暂停面板的「配 掌 面 板」进得去。
+  try {
+    startMatch({ ...shell.menu.getLoadout(), skipHub: false });
+  } catch (err) {
+    console.error("[yizhang] 进入安全区失败，退回 2D 配掌台", err);
+    shell.setNotes([...degraded, { text: `进入安全区失败：${err.message} · 已退回 2D 配掌台`, tone: "warn" }]);
+    quitToMenu();
+  }
+
   document.documentElement.dataset.yizhang = "ready";
 
   // 调试钩子：探针脚本和手测都用得上，不参与游戏逻辑。
@@ -587,7 +696,15 @@ async function boot() {
     audio,
     loop,
     startMatch,
+    returnToHub,
+    quitToMenu,
     togglePause,
+    get phase() {
+      return curView ? curView.phase : null;
+    },
+    get hub() {
+      return curView ? curView.hub : null;
+    },
   };
 }
 

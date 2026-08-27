@@ -291,13 +291,20 @@ export function createMenu({
   const skinHeading = h("h2", { class: "yz-heading", text: "选 皮 肤" });
   panel.append(skinHeading, skinStrip);
 
+  // 主路径是 3D 走道：这块 2D 板降为「暂停里翻得到的备选配装台」。
+  // 主按钮把配好的掌带进安全区，想跳过走道的老玩法留一个次按钮直通裂岛。
   const startBtn = h("button", {
     class: "yz-btn yz-btn--primary",
     type: "button",
-    text: "进 裂 岛",
+    text: "进 安 全 区",
   });
   startBtn.addEventListener("click", () =>
-    onStart({ main: state.main, off: state.off, skinId: state.skinId })
+    onStart({ main: state.main, off: state.off, skinId: state.skinId, skipHub: false })
+  );
+
+  const skipBtn = h("button", { class: "yz-btn", type: "button", text: "直 接 进 裂 岛" });
+  skipBtn.addEventListener("click", () =>
+    onStart({ main: state.main, off: state.off, skinId: state.skinId, skipHub: true })
   );
 
   const settingsBtn = h("button", { class: "yz-btn yz-btn--ghost", type: "button", text: "设 置" });
@@ -311,9 +318,13 @@ export function createMenu({
       h("div", {}, [
         h("h1", { class: "yz-title", text: "异 掌" }),
         h("p", { class: "yz-subtitle", text: "暮色裂岛 · 一场体面的巴掌架" }),
+        h("p", {
+          class: "yz-lock-note",
+          text: "备选配装台：默认开局直接落在安全区走道，靠近展掌按 E 选。",
+        }),
       ]),
       panel,
-      h("div", { class: "yz-menu" }, [startBtn, settingsBtn]),
+      h("div", { class: "yz-menu" }, [startBtn, skipBtn, settingsBtn]),
     ]),
     foot,
   ]);

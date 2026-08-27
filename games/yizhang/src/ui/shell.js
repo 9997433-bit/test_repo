@@ -7,6 +7,7 @@ import "./shell.css";
 import { h, clear } from "./dom.js";
 import { createMenu } from "./menu.js";
 import { createHud } from "./hud.js";
+import { createHubUi } from "./hub.js";
 import { createKillFeed } from "./killfeed.js";
 import { createTouchLayer } from "./touch.js";
 
@@ -14,7 +15,7 @@ const KEYMAP = [
   ["移动", "W A S D"],
   ["视角", "鼠标"],
   ["扇击", "左键 / F"],
-  ["技能", "E"],
+  ["技能 / 选掌", "E"],
   ["换掌", "Q"],
   ["冲刺", "SHIFT"],
   ["跳跃", "SPACE"],
@@ -69,6 +70,9 @@ export function createShell(opts) {
   const hud = createHud();
   const feed = createKillFeed();
   hud.mountFeed(feed.el);
+  // 大厅 HUD 与战斗 HUD 同住 #hud，靠 #hud[data-phase] 互斥显示（见 ui/hub.css）
+  const hubUi = createHubUi({ gloveById, unlockTextOf });
+  hud.el.appendChild(hubUi.el);
   hud.pauseButton.addEventListener("click", () => {
     audio.play("uiBack");
     if (callbacks.onPauseRequest) callbacks.onPauseRequest();
@@ -255,12 +259,13 @@ export function createShell(opts) {
           audio.play("uiSelect");
           if (callbacks.onResume) callbacks.onResume();
         }),
-        button("重 开", null, () => {
+        // 3D 走道是主路径，2D 配掌板退居这里：想一次看全八掌 / 改皮肤还是走它。
+        button("回 安 全 区", null, () => {
           audio.play("uiSelect");
-          if (callbacks.onRestart) callbacks.onRestart();
+          if (callbacks.onReturnHub) callbacks.onReturnHub();
         }),
-        button("回 主 菜 单", "ghost", () => {
-          audio.play("uiBack");
+        button("配 掌 面 板", null, () => {
+          audio.play("uiSelect");
           if (callbacks.onQuit) callbacks.onQuit();
         }),
       ])
@@ -322,7 +327,12 @@ export function createShell(opts) {
           audio.play("uiSelect");
           if (callbacks.onRestart) callbacks.onRestart();
         }),
-        button("回 主 菜 单", "ghost", () => {
+        // GOAL §6 回程：打完不该逼玩家刷新页面才能重挑掌
+        button("回 安 全 区 换 掌", null, () => {
+          audio.play("uiSelect");
+          if (callbacks.onReturnHub) callbacks.onReturnHub();
+        }),
+        button("配 掌 面 板", "ghost", () => {
           audio.play("uiBack");
           if (callbacks.onQuit) callbacks.onQuit();
         }),
@@ -336,17 +346,20 @@ export function createShell(opts) {
   root.appendChild(hud.el);
   root.appendChild(touch.el);
   root.appendChild(sheet);
+  root.appendChild(hubUi.warp);
 
   function applyTouchMode() {
     const on = touchActive();
     // 合同要求把开关挂在 html/body 上：.yz-touch 与 .yz-kbd 的显隐都靠它。
     if (on) document.documentElement.dataset.touch = "1";
     else delete document.documentElement.dataset.touch;
+    hubUi.setTouch(on);
     if (!on) touch.reset();
   }
   applyTouchMode();
 
   let screen = "menu";
+  let phase = "arena";
 
   function setScreen(next) {
     screen = next;
@@ -356,7 +369,19 @@ export function createShell(opts) {
     if (next === "menu") closeSheet();
   }
 
+  /** 安全区 / 裂岛：同一套 HUD 换一张脸，别再开第二个全屏层。 */
+  function setPhase(next) {
+    const value = next === "hub" ? "hub" : "arena";
+    if (phase === value) return value;
+    phase = value;
+    hud.el.dataset.phase = value;
+    touch.setPhase(value);
+    if (value === "arena") hubUi.reset();
+    return value;
+  }
+
   setScreen("menu");
+  hud.el.dataset.phase = phase;
 
   return {
     el: root,
@@ -366,10 +391,23 @@ export function createShell(opts) {
     get settings() {
       return { ...settings };
     },
+    get phase() {
+      return phase;
+    },
     menu,
     hud,
+    hubUi,
     feed,
     touch,
+    setPhase,
+    /** 大厅一帧：说明牌 / 配装 / 传送门提示。返回本帧模型给 main 做音效判断。 */
+    updateHub(view) {
+      return hubUi.update(view);
+    },
+    /** 门内短过渡（穿过传送门时放一次）。 */
+    warp(ms) {
+      hubUi.playWarp(ms);
+    },
     showMenu() {
       setScreen("menu");
       hud.reset();
@@ -440,6 +478,7 @@ export function createShell(opts) {
       hud.el.remove();
       touch.el.remove();
       sheet.remove();
+      hubUi.warp.remove();
     },
   };
 }
