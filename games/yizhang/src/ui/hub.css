@@ -25,12 +25,17 @@
 
 /* 大厅里没有击杀刻度、没有倒计时、没有准星、没有播报：那些是裂岛的信息。
    掌位坞也收起 —— 走道里的配装由 .yz-loadout-strip 报，两块别打架。 */
-#hud[data-phase="hub"] .yz-kill-track,
-#hud[data-phase="hub"] .yz-timer,
 #hud[data-phase="hub"] .yz-reticle,
 #hud[data-phase="hub"] .yz-feed,
 #hud[data-phase="hub"] .yz-glove-dock {
   display: none;
+}
+
+/* 顶带是 `1fr auto 1fr` 三列栅格：刻度与计时用 visibility 让位，
+   不能 display:none —— 抽掉格子会把暂停钮从右上角挪到中间。 */
+#hud[data-phase="hub"] .yz-kill-track,
+#hud[data-phase="hub"] .yz-timer {
+  visibility: hidden;
 }
 
 /* ---- 顶部区名带 ---- */
@@ -62,8 +67,8 @@
   left: 50%;
   bottom: calc(var(--yz-inset-b, 8px) + 132px);
   transform: translate(-50%, 10px);
-  width: min(360px, calc(100vw - 2 * var(--yz-inset-l, 16px)));
-  padding: var(--yz-s2, 16px);
+  width: min(340px, calc(100vw - 2 * var(--yz-inset-l, 16px)));
+  padding: var(--yz-s1, 8px) var(--yz-s2, 16px);
   display: flex;
   flex-direction: column;
   gap: var(--yz-s-h, 4px);
@@ -112,8 +117,9 @@
 }
 
 .yz-inspect-desc {
+  margin: 0;
   font-size: var(--yz-fs-sm, 12px);
-  line-height: 1.8;
+  line-height: 1.7;
   color: var(--yz-text-dim, #cfc8b8);
 }
 
@@ -124,6 +130,21 @@
   margin-top: var(--yz-s-h, 4px);
   font-size: var(--yz-fs-sm, 12px);
   color: var(--yz-bone-100, #f0ebdf);
+}
+
+/* 确认键章：键鼠写 E、触屏写「选」。刻意不复用 .yz-kbd —— 那一类在
+   [data-touch="1"] 下被整类隐藏，触屏上会连「选」一起吞掉。 */
+.yz-inspect-key {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 0 5px;
+  text-align: center;
+  font-size: var(--yz-fs-xs, 11px);
+  line-height: 1.5;
+  border: 1px solid var(--yz-steel-500, #6b7684);
+  border-radius: var(--yz-r1, 4px);
+  color: var(--yz-bone-100, #f0ebdf);
+  background: rgb(11 16 28 / 0.55);
 }
 
 .yz-inspect-slot {

@@ -27,7 +27,9 @@ export function createHubUi({ gloveById = {}, unlockTextOf = null } = {}) {
   const nameNode = h("span", { class: "yz-inspect-name", text: "—" });
   const roleNode = h("span", { class: "yz-inspect-role", text: "" });
   const descNode = h("p", { class: "yz-inspect-desc", text: "" });
-  const ctaKey = h("span", { class: "yz-kbd", text: "E" });
+  // 不能用 .yz-kbd：那是「键位提示章」，F2 在 [data-touch="1"] 下把它整类隐藏了
+  // （hud.css §键位提示章）。这枚章在触屏上要写「选」，得有自己的类。
+  const ctaKey = h("span", { class: "yz-inspect-key", text: "E" });
   const ctaText = h("span", { class: "yz-inspect-cta-text", text: "" });
   const slotTag = h("span", { class: "yz-inspect-slot", text: "" });
   const inspect = h("div", { class: "yz-plate yz-inspect" }, [
