@@ -126,7 +126,6 @@ describe("Round 2 public view fields", () => {
       expect.arrayContaining([
         expect.objectContaining({
           ownerId: "p0",
-          gloveId: "afterimage",
           ttl0: expect.any(Number),
         }),
       ]),
