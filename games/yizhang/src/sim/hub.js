@@ -349,6 +349,33 @@ export function equipFromPedestal(state, p, ped, slot = null) {
   return target;
 }
 
+/**
+ * 安全区里的换掌（契约 §4.4）：**主副槽交换**，不是 arena 的 activeSlot 切换。
+ * 无 switchLock 代价，`activeSlot` 归 0，复用既有 `switch` 事件（`slot: 0`、
+ * `gloveId` = 交换后的主掌）。要换主掌：新掌先落副槽，再按一次换掌。
+ *
+ * 「挑过」的位（`mainGloveId` / `offGloveId`）只在两格都挑过时随行——只挑了主掌就
+ * 对调的话主掌会变成 null，传送门跟着失效。那种情况下副掌本来就跟主掌同值，
+ * 交换本身是恒等的。
+ */
+export function swapHubLoadout(state, p) {
+  const hub = state.hub;
+  const previousMain = p.gloveId;
+  p.gloveId = p.offhandId;
+  p.offhandId = previousMain;
+  p.activeSlot = 0;
+
+  if (hub && hub.mainGloveId && hub.offGloveId) {
+    const chosenMain = hub.mainGloveId;
+    hub.mainGloveId = hub.offGloveId;
+    hub.offGloveId = chosenMain;
+    syncSelection(hub);
+  }
+
+  pushEvent(state, { type: "switch", id: p.id, slot: 0, gloveId: p.gloveId });
+  return p.gloveId;
+}
+
 export function nearPortal(hub, x, z) {
   const portal = hub.layout.portal;
   return len2(portal.x - x, portal.z - z) <= portal.radius;

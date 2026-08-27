@@ -96,7 +96,8 @@ describe("normalizeEvent", () => {
   });
 
   it("真实 sim 跑起来后事件能被归一化", () => {
-    const { state } = freshView();
+    // 扇击事件只在裂岛发：安全区里按住鼠标不启动扇击（sim 的空挥闸）
+    const state = createMatch({ seed: 7, gloveId: "cotton", offhandId: "granite", phase: "arena" });
     const seen = new Set();
     for (let i = 0; i < 120; i += 1) {
       step(state, { [SELF_ID]: { moveX: 1, slap: true, yaw: 0 } }, 1 / 60);
