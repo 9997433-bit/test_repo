@@ -41,6 +41,7 @@ export function createShell(opts) {
     root,
     gloves,
     gloveById,
+    skinTable,
     save,
     audio,
     input,
@@ -77,6 +78,7 @@ export function createShell(opts) {
 
   const menu = createMenu({
     gloves,
+    skinTable,
     save,
     switchLock: matchConfig.switchLock || 0.4,
     isUnlocked,
@@ -87,6 +89,10 @@ export function createShell(opts) {
       if (callbacks.onStart) callbacks.onStart(loadout);
     },
     onPick: () => audio.play("uiMove"),
+    onPickSkin: (id) => {
+      audio.play("uiSelect");
+      if (callbacks.onSkinChange) callbacks.onSkinChange(id);
+    },
     onOpenSettings: () => openSheet("settings"),
   });
 
@@ -400,8 +406,9 @@ export function createShell(opts) {
     pushKill(entry) {
       feed.push(entry);
     },
-    flashHit() {
-      hud.flashHit();
+    /** @param {{strength?:number, ms?:number}} [opts] 见 core/juice.js hitFlashFor */
+    flashHit(opts) {
+      hud.flashHit(opts);
     },
     toast(text, ms, gold) {
       hud.setToast(text, ms, gold);

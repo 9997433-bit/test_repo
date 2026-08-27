@@ -1,19 +1,35 @@
-// 手感（juice）里唯一进主循环的那一条：命中定格（hit-stop）。
+// 手感（juice）里唯一进主循环的那一条：命中定格（hit-stop）与受击画面反馈。
 //
 // 规矩：
 // 1. 只在**本人**参与的扇击命中上定格 —— 别人在远处互扇不该冻住我的镜头。
-// 2. 极短：单次 ≤ 90ms，且两次定格之间留冷却，连段不会把画面剁成幻灯片。
-// 3. 只停时间，不加画面层。受击去饱和已在 HUD（.yz-hit-flash），
-//    不再叠满屏红晕，也不因为连击而反复重触发。
+// 2. 极短：单次 ≤ 120ms（验收线上限），两次定格之间留冷却，
+//    最坏情况下的冻结占空比（max / cooldown）压在一半以下，连段不会剁成幻灯片。
+// 3. 只停时间，不加红。受击反馈是 HUD 那层的一瞬去饱和 + 轻压暗（.yz-hit-flash），
+//    强度按这一记的分量给，从来不是满屏红晕。
 
-/** 定格时长表（秒）。数值取「能感觉到、但不影响回身」的下限。 */
+/**
+ * 定格时长表（秒）。数值取「一掌下去手上有东西」的量，同时守住 ≤120ms。
+ * 原来的 50ms 在 60fps 下只有三帧，掌掌都像扇在空气上，所以整体上调。
+ */
 export const HIT_STOP = {
-  dealt: 0.05,
-  taken: 0.045,
-  heavyBonus: 0.02,
+  dealt: 0.08,
+  taken: 0.065,
+  heavyBonus: 0.035,
   heavyPower: 16,
-  max: 0.09,
-  cooldown: 0.14,
+  max: 0.12,
+  cooldown: 0.22,
+};
+
+/**
+ * 受击画面反馈（去饱和 + 轻压暗）的强度与时长。
+ * strength 是 0..1 的系数，交给 HUD 折算成滤镜量；没有任何红色通道。
+ */
+export const HIT_FLASH = {
+  base: 0.45,
+  perPower: 0.03,
+  maxStrength: 1,
+  minMs: 90,
+  maxMs: 190,
 };
 
 /** 定格只认扇击类命中：技能/延迟结算自带表现，不再叠时间停顿。 */
@@ -50,6 +66,31 @@ export function hitStopForEvents(events, selfId) {
     if (seconds > longest) longest = seconds;
   }
   return longest;
+}
+
+/**
+ * 一条事件该给多强的受击反馈。只认**本人挨打**（打中别人不糊自己的屏）。
+ * @returns {{ strength: number, ms: number } | null}
+ */
+export function hitFlashFor(event, selfId) {
+  if (!event || event.type !== "hit" || !selfId) return null;
+  if (event.targetId !== selfId) return null;
+  const power = Number.isFinite(event.power) ? Math.max(0, event.power) : 0;
+  const strength = Math.min(HIT_FLASH.maxStrength, HIT_FLASH.base + power * HIT_FLASH.perPower);
+  const ms = Math.round(
+    HIT_FLASH.minMs + (HIT_FLASH.maxMs - HIT_FLASH.minMs) * (strength / HIT_FLASH.maxStrength)
+  );
+  return { strength, ms };
+}
+
+/** 一批事件合并成一次受击反馈（同帧多段只取最重的一记）。 */
+export function hitFlashForEvents(events, selfId) {
+  let best = null;
+  for (const e of events || []) {
+    const flash = hitFlashFor(e, selfId);
+    if (flash && (!best || flash.strength > best.strength)) best = flash;
+  }
+  return best;
 }
 
 /**

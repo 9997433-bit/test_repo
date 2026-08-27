@@ -1,6 +1,6 @@
-# 异掌 · 公共 API 契约 v3（Round 3 · Fable-1，冻结）
+# 异掌 · 公共 API 契约 v4（手感轮 R1 · Fable-1，冻结）
 
-> 本文把**合并后代码的实际导出面**冻结成基准（`ARCHITECTURE.md` §10 ADR-16…24）。v2 标注的〔R2 必改〕已全部落地：一部分改在模块本体（`isGloveUnlocked` 导出、`isMatchOver` 活谓词、人类 id `p0`、事件词表），一部分由生产桥 `src/sim/combat-bridge.js` 在边界收敛（命中形状、事件纪律、技能 id 翻译、朝向差）。本版把桥的职责写进契约（§5），并冻结技能 id 别名表（§3.1）与接线标志语义（§4.0）。
+> v3（R3）基线全部沿用；本版（手感轮）改四处：**① 渲染朝向零补偿**——`RENDER_YAW_OFFSET` 冻结为 0，朝向换算点从三处收敛到两处（ADR-25，§1-8）；**② 皮肤契约**——`src/data/skins.js` 词表与 SkinDef（§3.2）、`createMatch.skinId / botSkinIds`（§4.1）、`view.players[].skinId`（§4.3）、存档 `skinId`（§12）、大厅选择器（§13）；**③ 每掌 VFX 事件**——`hit` 补 `gloveId/skillId`、桥代发事件补齐 id、`view.combat.ghosts` 导出（§4.3、§5.1、§10，ADR-27）；**④ hit-stop 语义**（ADR-28，只登记边界、不改导出面）。
 >
 > **变更规则**：已列出的导出（名字、参数、返回形状）不得改动或删除；追加新导出/新可选字段允许，但必须先在本文登记再写代码。类型用 TS 记法描述形状，实现是纯 JS。
 
@@ -13,8 +13,9 @@
 5. 确定性（只约束 sim）：同 `seed` + 同输入序列 + 同 `dt` ⇒ 逐位复现。
 6. 事件（§10）是模拟核对外唯一「已发生」通道，**只由 sim 发射**（ADR-22）；音效名（§11）是 main→audio 的唯一词表。
 7. 存档 key 唯一：`yizhang-save-v1`，只有 `src/core/storage.js` 读写 localStorage。
-8. **朝向约定全局唯一**（ADR-17）：`yaw = 0` 面向 **-Z**，`forward(yaw) = (-sin yaw, -cos yaw)`，`right(yaw) = (cos yaw, -sin yaw)`；three 侧 `mesh.rotation.y = yaw` 直用。
+8. **朝向约定全局唯一**（ADR-17，手感轮修订）：`yaw = 0` 面向 **-Z**，`forward(yaw) = (-sin yaw, -cos yaw)`，`right(yaw) = (cos yaw, -sin yaw)`；three 侧 `mesh.rotation.y = yaw` 直用。**render 零补偿（ADR-25）**：`core/view.js` 的 `RENDER_YAW_OFFSET` 恒为 0，`toRenderView` 对 yaw 恒等透传。朝向换算点全项目只有两处：`sim/combat-bridge.js`（combat ±π，含 `ghostsView` 的 yaw 还原）与 `core/view.js cameraYawToSimYaw / simYawToCameraYaw`（相机方位角）。键鼠语义验收线：**W = 镜头水平前方、A = 屏幕左、鼠标右移 = 右转**（锚点公式见 ARCHITECTURE §5.1.1 与本文 §14-15/16）。
 9. **人类玩家 id 全局唯一**（ADR-16）：`'p0'`；bot 为 `'b0' | 'b1' | 'b2'`。
+10. **皮肤纯装饰**（ADR-26）：`skinId` 只影响外观，禁止挂数值；sim 视其为不透明字符串，合法性由消费端 `resolveSkin` 兜底。
 
 ## 2. 通用类型
 
@@ -23,6 +24,7 @@ type PlayerId = 'p0' | `b${number}`;   // p0 = 人类；b0..b2 = bot（botCount 
 type GloveId  = 'cotton'|'granite'|'gale'|'frost'|'spring'|'afterimage'|'magnet'|'meteor';
 type Tier     = 'high'|'mid'|'low';
 type Persona  = 'brute'|'fox'|'bully';
+type SkinId   = 'drifter'|'mason'|'crane'|'reed'|'nuo'|'wildhorn';   // 皮肤词表 v1（§3.2）；新皮肤先登记再写代码
 // 技能 id 两套词表（翻译表见 §3.1，ADR-23）
 type SkillDataId    = 'quake_slam'|'wind_rush'|'frost_arc'|'coil_counter'|'phantom_swap'|'iron_pull'|'sky_fall';
 type SkillHandlerId = 'groundPound'|'dashSlap'|'frostArc'|'parry'|'blinkSwap'|'magnetPull'|'meteorSlam';
@@ -79,6 +81,11 @@ interface GloveDef {
     slapPowerMul: number; slapRangeMul: number; slapCooldownMul: number;
     special: string; params?: Record<string, number>;
   };
+  vfx?: {                           // 手感轮新增（可选，纯数据调参）：颜色/粒子数/半径/时长等，
+    slap?: Record<string, number|string>;    // O2 消费；缺省时 O2 用内建参数。
+    skill?: Record<string, number|string>;   // 注意：VFX 分派键永远是事件上的 gloveId/skillId
+    hit?: Record<string, number|string>;     //（ADR-27），本字段只调参、不参与分派。
+  };
 }
 
 interface MatchConst {
@@ -91,11 +98,17 @@ interface MatchConst {
 
 // 其余表（同为只读；消费方注明）
 export const SKILLS, SKILL_IDS;                  // skills.js —— 数据 id 词表（§3.1 左列）的详参
-export const BOT_PERSONAS, BOT_PERSONA_BY_ID;    // bots.js —— ai 消费
+export const BOT_PERSONAS, BOT_PERSONA_BY_ID;    // bots.js —— ai 消费；手感轮起每个 persona 必带
+                                                 // skinId: SkinId（三人互异，main 传给 createMatch）
 export const UNLOCKS, UNLOCK_BY_ID, UNLOCK_BY_GLOVE;  // unlocks.js —— shell/main 消费
 export const MOVEMENT, KNOCKBACK, METER, RULES;  // tuning.js —— 参考值；运动手感的运行时权威是 sim.PHYSICS
 export const TILE;                               // tiles.js —— 仅伤害调参语义；拓扑字段不具约束力（ADR-18）
-// SKILL_COMBAT_ALIASES（skills.js）是 §3.1 别名表的 R2 过渡副本，R3 删除（ADR-23）
+
+// skins.js（手感轮新增，F3 所有；shell/render/main 消费，sim 不 import）
+export const SKINS: SkinDef[];                   // ≥ 6 套，顺序即大厅选择器顺序
+export const SKIN_BY_ID: Record<SkinId, SkinDef>;
+export const DEFAULT_SKIN_ID: SkinId;            // 'drifter'
+export function resolveSkin(id?: string|null): SkinDef;   // 未知/缺省 → SKIN_BY_ID[DEFAULT_SKIN_ID]
 ```
 
 ### 3.1 技能 id 别名表（冻结，ADR-23）
@@ -120,6 +133,44 @@ export const TILE;                               // tiles.js —— 仅伤害调
 3. 重复副本一律删除（R3 必改）：`data/skills.js` 的 `SKILL_COMBAT_ALIASES`（F3）、`core/modules.js` 的 `SKILL_ALIASES / alignSkillIds`（O4）。`combat/skills.js` 内部的宽容归一化（旧别名仍可命中）是防御性细节，不具规范地位、不得新增依赖。
 4. 新掌 / 新技能 = 先在本表登记一行，再写代码。
 
+### 3.2 皮肤契约（手感轮新增，冻结，ADR-26）
+
+`src/data/skins.js`（F3 所有）。皮肤 = **剪影（体型+头部+背部配件）× 配色**的纯数据组合：O2 对每个枚举值各实现一次几何/材质件，F3 填组合表，两边不看对方代码即可并行。
+
+```ts
+interface SkinDef {
+  id: SkinId;
+  name: string;                       // 中文名（≤3 字，大厅主标题）
+  desc: string;                       // 一句话（≤18 字，大厅副标题）
+  build: 'slim'|'stock'|'broad';      // 体型档：O2 映射为躯干/四肢比例与肩宽
+  headgear: 'hood'|'bare'|'topknot'|'strawHat'|'mask'|'horns';   // 头部剪影件
+  back: 'panel'|'banner'|'pack';      // 背部识别色载体的形状（语义见下）
+  palette: {                          // hex；只配衣料底色，饱和识别色仍归手套
+    cloth: string; clothDim: string; leather: string; accent: string; skin: string;
+  };
+  trim?: Record<string, number|string>;   // 可选附加调参（F3/O2 协商，先登记再用）
+}
+```
+
+**皮肤表 v1（id 词表冻结；name/palette 等终值由 F3 定稿）**：
+
+| id | 中文名 | build | headgear | back | 定位 |
+| --- | --- | --- | --- | --- | --- |
+| `drifter` | 行脚 | stock | hood | panel | 缺省；现役造型的正名 |
+| `mason` | 石契 | broad | bare | pack | 宽肩工匠 |
+| `crane` | 鹤羽 | slim | topknot | banner | 瘦高背旗 |
+| `reed` | 苇笠 | stock | strawHat | panel | 斗笠蓑客 |
+| `nuo` | 傩面 | slim | mask | banner | 傩戏面客（原创民俗，无版权素材） |
+| `wildhorn` | 荒角 | broad | horns | pack | 兽角蛮客 |
+
+规则：
+
+1. **识别色载体不可少**：每套皮肤的 `back` 件（背板/背旗/行囊盖布）必须承载**当前激活掌识别色**——换掌可读性是视觉契约（VISUAL_HANDBOOK §5.11），皮肤只能换载体形状，不能取消它。
+2. **兜底链**（消费端统一）：`resolveSkin(p.skinId ?? BOT_PERSONA_BY_ID[p.persona]?.skinId)`，未知/缺省一律落 `DEFAULT_SKIN_ID`。sim 不参与校验。
+3. Bot 皮肤：`BOT_PERSONAS` 每个 persona 带 `skinId`（建议 brute→`wildhorn`、fox→`crane`、bully→`nuo`，终值 F3 定），三人互异且不与 `DEFAULT_SKIN_ID` 相同——**Bot 不得全员同一造型**。
+4. 新皮肤 / 新枚举值（headgear、back、build 扩档）= 先在本表登记，再写代码。禁止贴图包、禁止下载素材，全部低面数几何 + 程序化材质。
+5. 枚举值的视觉终稿归 F2/O2（`docs/ART_DIRECTION.md` 补规范），本表只冻结 id 与形状语言的语义。
+
 ## 4. `src/sim`（Opus-1 所有；入口 `src/sim/index.js`）
 
 ### 4.0 依赖接线（ADR-19/24，冻结）
@@ -140,6 +191,10 @@ export function createMatch(opts: {
   gloveId: GloveId; offhandId: GloveId;     // 人类主/副掌；非法 id 回落 cotton
   botCount?: number;                         // 默认 3
   botPersonas?: Persona[];                   // 默认 brute→fox→bully 循环
+  skinId?: string;                           // 手感轮新增：人类皮肤。sim 视为不透明字符串原样存取，
+                                             // 不校验、不 import skins.js（ADR-26）；缺省存 null
+  botSkinIds?: (string|null)[];              // 手感轮新增：与 bot 序号对齐（b0 取 [0]…）。
+                                             // 编排层从 BOT_PERSONA_BY_ID[persona].skinId 取值传入
   config?: Partial<MatchConst>;              // 测试用覆盖
 }): MatchState;
 
@@ -202,6 +257,7 @@ interface MatchState {
 
 interface PlayerState {
   id: PlayerId; kind: 'human'|'bot'; persona: Persona|null;
+  skinId: string|null;                                    // 手感轮新增：不透明装饰标签（ADR-26）
   spawnSlot: number; spawnAngle: number;
   x: number; y: number; z: number; yaw: number;          // yaw 按 ADR-17 约定
   vx: number; vy: number; vz: number;
@@ -252,8 +308,15 @@ interface MatchView {
     tiles: ViewTile[];
   };
   players: ViewPlayer[];
+  combat: { ghosts: ViewGhost[] };     // 手感轮新增（ADR-27）：分身残影，render 必画
   events: SimEvent[];
   stats: { slaps: number; hits: number; kos: number; tilesBroken: number };
+}
+interface ViewGhost {                  // 来源 state.combat.ghosts，经 combat-bridge.ghostsView
+  id: string; ownerId: PlayerId;       // 翻译导出：yaw 已还原为 -Z 约定（ADR-17/25）、纯 JSON
+  x: number; y: number; z: number; yaw: number;
+  ttl: number; ttl0: number;           // 剩余/初始秒；render 用 ttl/ttl0 做淡出（O3 建 ghost 时写 ttl0）
+  fake: boolean;                       // true = 觉醒残影，会假挥掌（ghostSlap 事件）
 }
 interface ViewTile {
   i: number; x: number; z: number; zone: 0|1|2|3; seam: boolean;
@@ -262,6 +325,7 @@ interface ViewTile {
 }
 interface ViewPlayer {
   id: PlayerId; kind: 'human'|'bot'; persona: Persona|null;
+  skinId: string|null;                 // 手感轮新增：原样透传，消费端 resolveSkin 兜底（§3.2）
   x: number; y: number; z: number; yaw: number;
   vx: number; vy: number; vz: number; speed: number;
   gloveId: GloveId; offhandId: GloveId; activeSlot: 0|1;
@@ -291,6 +355,8 @@ interface ViewPlayer {
 4. **事件（ADR-22）**：combat push 的事件先进桥的暂存缓冲，翻译成 §10 词表（`awaken / awakenEnd / parry / meteorImpact / ghostSlap`；`tileBreak` 顺带补 `brokenCount / stats` 记账）后由 sim 代发；其余暂存事件丢弃（sim 已发等价事件）。
 5. **字段回写**：combat 自有字段同步到 sim 读的字段（`knockbackT → kbT`、`lastHitAt → lastHitT`）。
 6. **技能 id**：入参掌与 combat 内部掌表（`syncGloveTable`）按 §3.1 翻译，桥是唯一翻译点。
+7. **残影导出（手感轮新增，ADR-27）**：桥新增导出 `ghostsView(state): ViewGhost[]`——把 `state.combat.ghosts`（yaw 是 combat 的 +Z 基，因为 ghost 快照在 `inCombatFrame` 内落笔）逐条翻译成 §4.3 的 ViewGhost：`yaw` 按 `FACE.combatOffset` 还原回 -Z 并 wrap、数值 round、缺 `ttl0` 时以 `ttl` 兜底。`sim/view.js getView` 调它填 `view.combat.ghosts`——combat 基的朝向换算依旧只住在桥。
+8. **代发事件补 id（手感轮新增，ADR-27）**：桥 `digestEvents` 代发的三个事件补齐分派键——`parry` 补 `gloveId`（弹反者结算时激活掌）与 `skillId: 'parry'`；`meteorImpact` 补 `gloveId: 'meteor'`、`skillId: 'meteorSlam'`；`ghostSlap` 补 `gloveId: 'afterimage'`、`skillId: 'blinkSwap'`。词表见 §10。
 
 ### 5.2 sim 面向的 combat 契约（桥的导出面 = `getDeps().combat`）
 
@@ -324,6 +390,9 @@ interface HitRecord {
   impulse: { x: number; y: number; z: number };
   power: number;                          // 水平冲量模长（事件/音效强度用）
   skillId?: SkillHandlerId | null;
+  gloveId?: GloveId;                      // 手感轮新增（可选）：出招掌。延迟命中（陨掌落地等）时
+                                          // 攻击者可能已换掌，combat 知道就填；sim 发 hit 事件时
+                                          // 优先用它，缺省回落 attacker 当下 activeGloveId
   hitX?: number; hitZ?: number;
   tile?: { x: number; z: number; amount: number };      // 对地伤害，sim 转 damageTileAt
   statuses?: { id: string; t: number; mag?: number; src?: PlayerId|null }[];
@@ -362,7 +431,14 @@ export function createRenderer(canvas: HTMLCanvasElement, opts?: {
 export function sync(view: MatchView): void;
 // 每 rAF 一次，view 已由编排层插值。消费：view.arena 方格台面（ADR-18：由
 // origin/tileSize/cols + tiles[].x/z 建板，alive/crack/seam/zone 驱动碎裂与缝隙表现）、
-// players（yaw 直接 rotation.y）、events（§10 词表触发 VFX）。字段缺失容错不抛错。
+// players（yaw 直接 rotation.y——ADR-25：收到的就是 -Z 基 sim yaw，零补偿）、
+// events（§10 词表触发 VFX）。字段缺失容错不抛错。
+// 手感轮新增消费面（ADR-26/27）：
+//   · players[].skinId → resolveSkin 建外观变体（build/headgear/back/palette，§3.2）；
+//     skinId 变化时重建/换件该角色，识别色背件语义不变
+//   · view.combat.ghosts → 半透明分身残影，按 ttl/ttl0 淡出，必须在画面上可见
+//   · VFX 分派纪律：扇击按事件 gloveId 八套可辨、技能按 skillId 分派（含 parry/
+//     meteorImpact/ghostSlap）；禁止 8 掌共用光球/描边；GloveDef.vfx 只是调参输入
 
 export function resize(width: number, height: number, dpr: number): void;   // dpr 已被 main 封顶 2
 export function setQuality(tier: Tier): void;
@@ -381,10 +457,13 @@ export function createInput(dom: HTMLElement|Document, canvas: HTMLCanvasElement
 }): InputHandle;
 
 export function sample(cameraYaw: number): Input;
-// 每模拟步一次。按 §2 公式把摇杆/WASD 换算成世界系 moveX/moveZ；Input.yaw = cameraYaw。
-// R2 达标方式：input 内部保留自己的相机方位角，换算收敛在 core/view.js 的
-// cameraYawToSimYaw / simYawToCameraYaw（唯一适配点）；sample 返回的必须是
-// ADR-17 约定下的世界系结果，换算不得散布到其它文件。
+// 每模拟步一次。按 §2 公式把摇杆/WASD 换算成世界系 moveX/moveZ。
+// input 内部保留自己的相机方位角 θ（forward = (cos θ, sin θ)），换算收敛在 core/view.js 的
+// cameraYawToSimYaw / simYawToCameraYaw（两处合法换算点之一，ADR-17/25）；sample 返回的
+// Input.yaw = cameraYawToSimYaw(θ)，即 ADR-17 约定下的期望面朝。换算不得散布到其它文件。
+// 键鼠语义锚点（G1 锁死，ARCHITECTURE §5.1.1）：纯 W ⇒ (moveX,moveZ) = (cos θ, sin θ)
+//（= 相机水平前向）；纯 D ⇒ (−sin θ, cos θ)（屏幕右）；cameraYawToSimYaw 对 θ 单调递减
+//（鼠标 +dx ⇒ θ 增大 ⇒ sim yaw 减小 ⇒ 从上方看顺时针 = 右转）。
 export function setEnabled(enabled: boolean): void;   // false：动作清零、移动归零
 export function getLook(): { yaw: number; pitch: number };   // 相机朝向权威源（ADR-4/17）
 // 句柄追加（冻结命名）：setLook(yaw, pitch)、setSensitivity(v)、setPointerLock(on)、
@@ -415,6 +494,9 @@ type SimEvent = { t: number } & (
   | { type: 'slap';      id: PlayerId; gloveId: GloveId; hits: number;   // hits=0 ⇒ 空挥
       x: number; y: number; z: number; yaw: number }
   | { type: 'hit';       id: PlayerId; targetId: PlayerId; source: 'slap'|'skill';
+      gloveId: GloveId;                          // 手感轮新增：HitRecord.gloveId 优先，
+                                                 // 缺省回落攻击者结算时 activeGloveId
+      skillId: SkillHandlerId|null;              // 手感轮新增：null = 素掌扇击
       power: number; x: number; y: number; z: number }
   | { type: 'ko';        id: PlayerId; by: PlayerId|null; reason: string;  // by=null 自坠
       x: number; y: number; z: number }
@@ -425,9 +507,12 @@ type SimEvent = { t: number } & (
   | { type: 'skill';     id: PlayerId; gloveId: GloveId; skillId: SkillHandlerId|'none' }
   | { type: 'awaken';    id: PlayerId; gloveId: GloveId|null }      // combat 触发，经桥代发
   | { type: 'awakenEnd'; id: PlayerId }                             // 同上
-  | { type: 'parry';     id: PlayerId; targetId: PlayerId; power: number }   // id = 弹反者
-  | { type: 'meteorImpact'; id: PlayerId; x: number; z: number; radius: number }
-  | { type: 'ghostSlap'; id: PlayerId; targetId: PlayerId }         // 残影假掌骗中
+  | { type: 'parry';     id: PlayerId; targetId: PlayerId; power: number;
+      gloveId: GloveId; skillId: 'parry' }                          // id = 弹反者（手感轮补 id）
+  | { type: 'meteorImpact'; id: PlayerId; x: number; z: number; radius: number;
+      gloveId: 'meteor'; skillId: 'meteorSlam' }                    // 手感轮补 id
+  | { type: 'ghostSlap'; id: PlayerId; targetId: PlayerId;
+      gloveId: 'afterimage'; skillId: 'blinkSwap' }                 // 残影假掌骗中（手感轮补 id）
   | { type: 'tileCrack'; i: number; x: number; z: number; hp: number; maxHp: number }
   | { type: 'tileBreak'; i: number; x: number; z: number; hp: number; maxHp: number }
   | { type: 'matchOver'; winnerId: PlayerId|null; reason: 'kills'|'time' }
@@ -438,6 +523,7 @@ type SimEvent = { t: number } & (
 
 - `awaken / awakenEnd / parry / meteorImpact / ghostSlap` 由 combat 触发、经桥翻译后 sim 代发（ADR-22）；其余全部 sim 直发。
 - `skill` 事件与 `HitRecord` 的 `skillId` 是 **handler id**（§3.1 右列）。
+- **VFX 分派键（ADR-27）**：O2 按事件的 `gloveId` 分派扇击表现、按 `skillId` 分派技能表现——`slapStart/slap/hit/switch/skill/parry/meteorImpact/ghostSlap` 都带 `gloveId`，禁止按 type 猜或全掌共用一套。
 - `ko.reason` 现值恒为 `'fell'`（掉落是唯一死法）。
 - O4 经 `core/view.js normalizeEvent` 把本词表整形成 shell 内部形状（`ko → killerId/victimId` 等）——线上词表以本节为准，normalizeEvent 的输出形状不冻结。
 
@@ -466,6 +552,9 @@ interface SaveV1 {
   version: 1;
   unlocked: GloveId[];                       // 恒含 'cotton'
   loadout: { main: GloveId; off: GloveId };
+  skinId: SkinId;                            // 手感轮新增：默认 DEFAULT_SKIN_ID（'drifter'）。
+                                             // 追加字段不换 key：旧档缺失 ⇒ loadSave 补默认；
+                                             // 非法值 ⇒ 消费端 resolveSkin 兜底
   quality: 'auto'|Tier;                      // 默认 'auto'
   muted: boolean;
   lookSensitivity: number;                   // 0.2..3，默认 1
@@ -480,10 +569,14 @@ interface SaveV1 {
 ## 13. `src/ui/shell.js` 与 `src/core/loop.js`（Opus-4 所有；最小面）
 
 ```ts
-// ui/shell —— 主菜单（双掌选择，读解锁位）、HUD、结算、暂停、触控控件 DOM。
+// ui/shell —— 主菜单（双掌选择 + 皮肤选择，读解锁位）、HUD、结算、暂停、触控控件 DOM。
 // HUD 类名走 F2 的 .yz-* 契约（src/styles），shell 自带样式只做 critical fallback。
+// 手感轮新增：大厅皮肤选择器（SKINS 顺序渲染、样式类 .yz-skin-*，F2 出契约；
+// 选中写 save.skinId）；onStart 的 loadout 扩为 { main, off, skinId }——main 把
+// skinId 传 createMatch、botSkinIds 从 BOT_PERSONA_BY_ID[persona].skinId 取。
 export function createShell(opts: { root, gloves, gloveById, save, audio, input, matchConfig,
-  callbacks: { onStart(loadout); onResume(); onRestart(); onQuit(); onPauseRequest(); onSettingsChange(next) };
+  callbacks: { onStart(loadout: { main: GloveId; off: GloveId; skinId: SkinId });
+               onResume(); onRestart(); onQuit(); onPauseRequest(); onSettingsChange(next) };
 }): {
   updateHud(view: MatchView, selfId: PlayerId): void;   // main ~30Hz 调，内部脏检查
   showMenu(); showMatch(); showResult(r); showPause(); hideSheet();
@@ -515,3 +608,9 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 11. sim/combat/ai/data 源码静态扫描无 `three`、`document`、`window`、`Math.random`（G2 probe 断言）。
 12. 技能入局：装备 magnet 的玩家对目标放技能并 `step` 若干帧后，两者水平距离必须缩短（真实 combat 接线的回归锚点）。
 13. **接线不变量（ADR-24）**：import `src/sim` 后不做任何 install，`getDeps().usingRealData === true && usingRealCombat === true`；probe 的 wiring 断言以此为准、**不得先 install 再测**。`installCombat(任意非 null 模块)` 后 `usingRealCombat` 必须为 false，`resetDeps()` 后恢复 true。
+14. **渲染零补偿（ADR-25）**：`RENDER_YAW_OFFSET === 0`；`toRenderView(view)` 后 `players[].yaw` 与入参逐位相等（`core/view.test.js` 原「补 π」断言按此改写）。
+15. **键鼠映射（ADR-17/25，ARCHITECTURE §5.1.1）**：对任意相机方位角 θ，纯 W 时 `sample(θ)` 的 `(moveX, moveZ) ≈ (cos θ, sin θ)`、纯 D 时 `≈ (−sin θ, cos θ)`、A/S 取反；`Input.yaw === cameraYawToSimYaw(θ)` 且 `forward(Input.yaw) ≈ (cos θ, sin θ)`。
+16. **右转方向（ADR-17/25）**：`cameraYawToSimYaw` 对 θ 单调递减（wrap 意义下 `ds/dθ = −1`）——鼠标 +dx ⇒ sim yaw 减小 ⇒ 从上方（+Y 向下）看 `forward(simYaw)` 顺时针转 ⇒ 右转。
+17. **皮肤表（ADR-26，§3.2）**：`SKINS.length ≥ 6`、id 唯一且属 SkinId 词表、字段齐全（build/headgear/back/palette 全非空）；`resolveSkin(未知 id)` 与 `resolveSkin(null)` 都返回 `SKIN_BY_ID[DEFAULT_SKIN_ID]`；`BOT_PERSONAS` 每项带 `skinId` 且三人互异。
+18. **皮肤透传（ADR-26）**：`createMatch({ skinId: 'x' })` 后 `getView().players[0].skinId === 'x'`（sim 不校验）；缺省为 null；`botSkinIds` 按序落到 b0…；存档 `skinId` 经 `loadSave/updateSave` 往返保留，旧档缺失补 `DEFAULT_SKIN_ID`。
+19. **VFX 事件形状（ADR-27）**：任一 `hit` 事件带 `gloveId`（属 GloveId 词表）与 `skillId`（handler id 或 null）；`view.combat.ghosts` 恒存在（无残影时空数组）；分身放技能后 ghosts 出现 `{ ownerId, ttl0 > 0, yaw 为 -Z 基 }` 条目并在 ttl 耗尽后消失。
