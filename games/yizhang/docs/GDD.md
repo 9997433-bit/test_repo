@@ -306,4 +306,34 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 | `hatRadius` | number | reed | 笠檐半径（米，剪影关键） |
 | `hornSpread` | number | wildhorn | 双角外张半距（米） |
 
+## 14. 每掌战斗 VFX 参数表（`vfx.js`，HUB-R2；Round 1 遗留 3）
+
+大厅 idle 特效已可辨（ART §13.4，O2 已渲染）；本表管**裂岛里的扇击与技能**——Round 1 里它们还是一套通用壳。`src/data/vfx.js` 导出 `GLOVE_VFX`（数组，GLOVES 图鉴顺序）/ `GLOVE_VFX_BY_ID` / `GLOVE_VFX_BY_SKILL` / `resolveGloveVfx`，`data/index.js` 已转发。
+
+**消费方式（O2 分派）**：扇击事件带 gloveId → `GLOVE_VFX_BY_ID[gloveId].slap`；技能事件线上的 `skillId` 是 §3.1 右列 handler id → `GLOVE_VFX_BY_SKILL[skillId]`（表内 `skill.skillId` 就登记为 handler id，木棉无主动技不在此表）；分身残影读 `view.combat.ghosts`（O1 导出），视觉规格取 afterimage 的 `skill.ghosts`；未知/缺省 gloveId `resolveGloveVfx` 回落木棉（与 `createMatch` 同一约定）。
+
+**职责边界**：判定几何（`slapRange`/`slapAngleDeg`/技能半径）的唯一事实源仍是 `gloves.js`/combat，O2 按 gloveId 自取——本表**不复制战斗数字**，只带视觉参数（形状关键词、粒子数、寿命秒、高度米、贴花种类）；识别色 `ident` 直接引用 `GLOVE_BY_ID[id].color`，不产生第三份色源（HUD/样式仍走 tokens.css，ART §1.3 注）。
+
+### 14.1 八掌速览（完整参数见 `vfx.js`；关键词与 ART §7 逐行对齐）
+
+| 掌 | 扇击 burst（主形） | trail（过程痕） | residue（残留） | 技能（handler id → 形） |
+| --- | --- | --- | --- | --- |
+| 木棉 | `gustFan` 掌风压出的贴地尘楔 | `fiberWisp` 布纤维碎屑 | `fluff` 棉絮缓落 | 无；觉醒 combo3 第三掌走 `slap.finisher`（同形 ×1.5，不换形不加光） |
+| 磐石 | `stoneWedge` 石屑抛物线楔 | `gritDrag` 重尘拖曳 | `grit` 石屑弹跳滞留 + 金缮裂纹贴花 | `groundPound` → `slamShock`：尘幕 2s + 放射金缮裂纹 |
+| 疾风 | `windShear` 被扰动的尘与草屑 | `chaffWake` 贴地草屑尾流 | `chaff` 打旋沉降 | `dashSlap` → `rushWake`：地面尘线 + 双布条 |
+| 冰霜 | `rimeFan` 扇面闪结霜晶 | `coldFog` 贴地冷雾 | `frost` 化成湿痕 + 枝晶贴花 | `frostArc` → `dendriteWave`：枝晶波前；觉醒冻结带 `iceShell` 厚度 0.08m |
+| 弹簧 | `coilSnap` 簧圈形变 + 高光游走 | `coilArc` 三圈簧弧 | `dustPop` 弹起的灰 | `parry` → `coilGuard`：压缩 0.12s → 释放弹尘 |
+| 分身 | `ghostCut` 挥击剥离残影 | `poseGhost` 保留姿态、边缘先散、去饱和 | `ashMotes` 灰烬微尘 | `blinkSwap` → `swapVeil`：换位两端各留残影（ghosts ×2，寿命 0.7s，禁蓝色光柱） |
+| 磁掌 | `fieldArcs` 尘埃吸成弧线场纹 | `filingStream` 铁屑流 | `filings` 铁屑微颤 + 拖擦贴花 | `magnetPull` → `pullField`：场弧收束 + 一帧磁弧 `snapFlash`（禁持续电弧） |
+| 陨掌 | `emberImpact` 冲击环 + 余烬迸散 | `emberStreak` 余烬拖痕 | `embers` 呼吸余烬（全表唯一 additive）+ 焦痕贴花 | `meteorSlam` → `craterFall`：腾空遮光 → 冲击环 + 尘幕 + 焦痕环 |
+
+### 14.2 纪律（`src/data/vfx.test.js` 逐条锁死）
+
+1. **禁纯色光球**：burst 形 / trail 痕 / residue 残留三列各自八掌互异，不许「同团换 hue」（拒收 §9-11 的数据层前置）。
+2. **识别色只做点缀**：着色粒子占比 ≤ `identMaxShare`（0.2，ART §13.4 的两成纪律战斗同用）。
+3. **加法混合只给真高温**：全表 `blend:"additive"` 仅陨掌余烬，其余 Normal（手册 §10）。
+4. **事后残留必查**：每掌 residue 有种类、数量 ≥1、寿命 >0——尘/屑/霜/烬至少留一样，打完不能像没发生（手册 §14-13）。
+
+**调参指南**：想让某掌特效更「重」，先动 residue `count`/`lifeSeconds`（残留即重量感），再动 burst 寿命；不要加发光、不要动三列关键词（改词 = 改识别语言，需过 F2 视觉规范）；改完跑 `src/data/vfx.test.js` 与 `src/data/skins.test.js`。
+
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。
