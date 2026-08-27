@@ -22,8 +22,10 @@ import {
   ExtrudeGeometry,
   Group,
   IcosahedronGeometry,
+  InstancedBufferAttribute,
   InstancedMesh,
   LatheGeometry,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -625,50 +627,87 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
 
   // ---------- 损伤裂纹贴花 ----------
   // 只在 tile 真的挨过打之后才出现，越伤越明显；塌下去时跟着一起消失。
+  //
+  // 一场打到尾声能同时亮着十几片。图案是同一张 crack 贴图，差别只在位置 / 转角 /
+  // 大小 / 淡入程度 —— 正好是一块实例网格的形状，中档因此从 12 个 draw 收成 1 个。
+  // 淡入淡出过去改 material.opacity，实例之间不能各改各的，改走每实例的 aFade。
+  const decalCapacity = Math.max(0, quality.decalBudget | 0);
   const decalGeo = track(new PlaneGeometry(1, 1));
-  let decalBudget = quality.decalBudget;
-  const decalGroup = new Group();
-  decalGroup.name = 'tile-damage';
-  group.add(decalGroup);
-
-  function addDamageDecal(rec) {
-    if (decalBudget <= 0 || !textures.crack) return;
-    if (rec.decals.length >= 2) return;
-    decalBudget--;
-    const mat = new MeshBasicMaterial({
+  const decalFade = new InstancedBufferAttribute(new Float32Array(decalCapacity), 1);
+  decalFade.setUsage(DynamicDrawUsage);
+  decalGeo.setAttribute('aFade', decalFade);
+  const decalMat = track(
+    new MeshBasicMaterial({
       map: textures.crack,
       transparent: true,
       depthWrite: false,
-      opacity: 0,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
       toneMapped: false,
-    });
-    disposables.push(mat);
-    const mesh = new Mesh(decalGeo, mat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.rotation.z = rand() * Math.PI * 2;
+    })
+  );
+  decalMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aFade;\nvarying float vFade;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvFade = aFade;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vFade;')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.a *= vFade;');
+  };
+  const decals = new InstancedMesh(decalGeo, decalMat, decalCapacity);
+  decals.name = 'tile-damage';
+  decals.instanceMatrix.setUsage(DynamicDrawUsage);
+  // 贴花散落在整个台面上，实例包围球不随写入自动更新，交给台面本身的可见性判断
+  decals.frustumCulled = false;
+  decals.renderOrder = 2;
+  decals.visible = false;
+  // 与 vfx 的冲击贴花同理：平铺的分叉纹路一旦吃辉光就会炸成四芒星
+  group.add(decals);
+  disposables.push(decals);
+
+  /** 收起来的槽位停在原点、缩到 0：一个退化三角形，不占像素也不挡辉光。 */
+  const DECAL_PARKED = new Matrix4().makeScale(0, 0, 0);
+  const decalDummy = new Object3D();
+  const decalFree = [];
+  for (let i = decalCapacity - 1; i >= 0; i--) {
+    decalFree.push(i);
+    decals.setMatrixAt(i, DECAL_PARKED);
+  }
+  let decalShown = 0;
+  let decalMatrixDirty = false;
+
+  function addDamageDecal(rec) {
+    if (decalFree.length === 0 || !textures.crack) return;
+    if (rec.decals.length >= 2) return;
+    const slot = decalFree.pop();
+    decalDummy.rotation.set(-Math.PI / 2, 0, rand() * Math.PI * 2);
     const spread = deckTileSize * 0.3;
-    mesh.position.set(
+    decalDummy.position.set(
       rec.x + (rand() - 0.5) * spread,
       0.014 + rec.decals.length * 0.004,
       rec.z + (rand() - 0.5) * spread
     );
     const s = deckTileSize * (0.7 + rand() * 0.5);
-    mesh.scale.set(s, s, s);
-    mesh.renderOrder = 2;
-    // 与 vfx 的冲击贴花同理：平铺的分叉纹路一旦吃辉光就会炸成四芒星
-    decalGroup.add(mesh);
-    rec.decals.push({ mesh, mat });
+    decalDummy.scale.set(s, s, s);
+    decalDummy.updateMatrix();
+    // 刚出现时透明度是 0，槽位先停着不画 —— 与过去 mesh.visible 的门槛一致
+    decalFade.array[slot] = 0;
+    decalFade.needsUpdate = true;
+    rec.decals.push({ slot, fade: 0, shown: false, matrix: decalDummy.matrix.clone() });
   }
 
   function dropDecals(rec) {
     for (const d of rec.decals) {
-      decalGroup.remove(d.mesh);
-      d.mat.dispose();
-      decalBudget = Math.min(quality.decalBudget, decalBudget + 1);
+      decalFade.array[d.slot] = 0;
+      if (d.shown) {
+        decals.setMatrixAt(d.slot, DECAL_PARKED);
+        decalMatrixDirty = true;
+        decalShown--;
+      }
+      decalFree.push(d.slot);
     }
+    if (rec.decals.length > 0) decalFade.needsUpdate = true;
     rec.decals.length = 0;
   }
 
@@ -1019,14 +1058,28 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       // 替身和本尊共用同一份实例矩阵，只有条数要跟上
       if (deckShade) deckShade.count = deck ? deck.count : 0;
 
+      let fadeDirty = false;
       for (const rec of tiles.values()) {
         if (rec.decals.length === 0) continue;
+        const want = rec.broken ? 0 : 0.2 + rec.displayCrack * 0.45;
         for (const d of rec.decals) {
-          const want = rec.broken ? 0 : 0.2 + rec.displayCrack * 0.45;
-          d.mat.opacity += (want - d.mat.opacity) * Math.min(1, dt * 3);
-          d.mesh.visible = d.mat.opacity > 0.01;
+          d.fade += (want - d.fade) * Math.min(1, dt * 3);
+          decalFade.array[d.slot] = d.fade;
+          fadeDirty = true;
+          const shown = d.fade > 0.01;
+          if (shown === d.shown) continue;
+          d.shown = shown;
+          decalShown += shown ? 1 : -1;
+          decals.setMatrixAt(d.slot, shown ? d.matrix : DECAL_PARKED);
+          decalMatrixDirty = true;
         }
       }
+      if (fadeDirty) decalFade.needsUpdate = true;
+      if (decalMatrixDirty) {
+        decals.instanceMatrix.needsUpdate = true;
+        decalMatrixDirty = false;
+      }
+      decals.visible = decalShown > 0;
     },
 
     /** 台面顶面高度。sim 的 floorY 恒为 0，这里跟着它。 */
