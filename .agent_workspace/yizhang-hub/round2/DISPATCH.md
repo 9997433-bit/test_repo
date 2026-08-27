@@ -26,9 +26,9 @@
 
 | 席位 | 模型 | 状态 |
 | --- | --- | --- |
-| F3 皮肤真表 | `claude-fable-5-thinking-xhigh` | 待填 Agent ID |
-| O1 空挥+导出 | `claude-opus-5-thinking-high-fast` | 待填 Agent ID |
-| G2 探针 phase | `gpt-5.6-sol-xhigh-fast` | 待填 Agent ID |
+| F3 皮肤真表 | `claude-fable-5-thinking-xhigh` | `bc-19617087-f8db-5dae-9f0b-83e998f63ff2` | 已派出 |
+| O1 空挥+导出 | `claude-opus-5-thinking-high-fast` | `bc-3b6a15f6-a353-5978-984c-afaa1b882532` | 已派出 |
+| G2 探针 phase | `gpt-5.6-sol-xhigh-fast` | `bc-7f07748d-c290-5db1-ac3c-5b9d64e4618e` | 已派出 |
 
 ### Wave 2（Wave 1 合入后）
 
