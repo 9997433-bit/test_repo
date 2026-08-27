@@ -5,6 +5,7 @@
 
 import "./shell.css";
 import { ENTRY, entryCopy } from "../core/entry.js";
+import { normalizeLookMode } from "../core/look.js";
 import { h, clear } from "./dom.js";
 import { createMenu } from "./menu.js";
 import { createHud } from "./hud.js";
@@ -15,6 +16,7 @@ import { createTouchLayer } from "./touch.js";
 const KEYMAP = [
   ["移动", "W A S D"],
   ["视角", "鼠标"],
+  ["锁定视角", "V"],
   ["扇击", "左键 / F"],
   ["技能 / 选掌", "E"],
   ["换掌", "Q"],
@@ -69,6 +71,9 @@ export function createShell(opts) {
     sensitivity: save.lookSensitivity ?? 1,
     pointerLock: save.pointerLock !== false,
     touch: save.touch || "auto",
+    // 视角模式：开局值由 main 收敛（URL > 存档 > locked）后经 opts 传入，
+    // 免得 URL 覆盖了运行值、设置面板却还照存档亮灯。
+    lookMode: normalizeLookMode(opts.lookMode ?? save.lookMode),
   };
   let currentSave = save;
 
@@ -176,6 +181,20 @@ export function createShell(opts) {
           () => settings.muted,
           (v) => {
             settings.muted = v;
+            emitSettings();
+          }
+        )
+      ),
+      settingRow(
+        "视角",
+        segment(
+          [
+            ["locked", "锁定"],
+            ["free", "自由"],
+          ],
+          () => settings.lookMode,
+          (v) => {
+            settings.lookMode = v;
             emitSettings();
           }
         )
@@ -618,6 +637,14 @@ export function createShell(opts) {
       menu.setSave(next);
     },
     getSave: () => currentSave,
+    /** V 键切换后的回写：设置面板正开着也不许亮旧灯。 */
+    setLookMode(mode) {
+      const next = normalizeLookMode(mode, settings.lookMode);
+      if (next === settings.lookMode) return settings.lookMode;
+      settings.lookMode = next;
+      if (sheetMode === "pause" || sheetMode === "settings") openSheet(sheetMode);
+      return settings.lookMode;
+    },
     refreshSettingsUi() {
       if (sheetMode === "pause" || sheetMode === "settings") openSheet(sheetMode);
     },

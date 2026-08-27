@@ -250,6 +250,106 @@ describe("安全区的 interact 采样", () => {
   });
 });
 
+describe("视角模式（lookMode / V 键）", () => {
+  it("产品缺省 locked（固定人物视角），getLook 随帧透出", () => {
+    expect(input.getLookMode()).toBe("locked");
+    expect(input.getLook().lookMode).toBe("locked");
+  });
+
+  it("opts.lookMode 能把开局值设为 free；认不出的值落回 locked", () => {
+    input.dispose();
+    input = createInput(doc, canvas, { pointerLock: false, lookMode: "free" });
+    expect(input.getLookMode()).toBe("free");
+    input.dispose();
+    input = createInput(doc, canvas, { pointerLock: false, lookMode: "orbit" });
+    expect(input.getLookMode()).toBe("locked");
+  });
+
+  it("V 键在 locked/free 间来回切，并回调 onLookModeChange（壳层落存档 + 提示用）", () => {
+    const modes = [];
+    input.dispose();
+    input = createInput(doc, canvas, {
+      pointerLock: false,
+      onLookModeChange: (m) => modes.push(m),
+    });
+    press("KeyV");
+    expect(input.getLookMode()).toBe("free");
+    expect(input.getLook().lookMode).toBe("free");
+    release("KeyV");
+    press("KeyV");
+    expect(input.getLookMode()).toBe("locked");
+    release("KeyV");
+    expect(modes).toEqual(["free", "locked"]);
+  });
+
+  it("长按 V（e.repeat）不振荡：按住只算一次", () => {
+    press("KeyV");
+    expect(input.getLookMode()).toBe("free");
+    globalThis.window.emit("keydown", { code: "KeyV", repeat: true });
+    globalThis.window.emit("keydown", { code: "KeyV", repeat: true });
+    expect(input.getLookMode()).toBe("free");
+    release("KeyV");
+  });
+
+  it("V 不抢既有键位：同帧 WASD/空格/E 全部照常，切换也真的发生了", () => {
+    press("KeyW");
+    press("Space");
+    press("KeyE");
+    press("KeyV");
+    const out = input.sample(0.7);
+    expect(Math.hypot(out.moveX, out.moveZ)).toBeCloseTo(1, 9);
+    expect(out.jump).toBe(true);
+    expect(out.skill).toBe(true);
+    expect(input.getLookMode()).toBe("free");
+    release("KeyW");
+    release("Space");
+    release("KeyE");
+    release("KeyV");
+  });
+
+  it("setLookMode 是静默 setter：归一非法值、不触发回调（设置面板不弹双提示）", () => {
+    const modes = [];
+    input.dispose();
+    input = createInput(doc, canvas, {
+      pointerLock: false,
+      onLookModeChange: (m) => modes.push(m),
+    });
+    expect(input.setLookMode("free")).toBe("free");
+    expect(input.setLookMode("banana")).toBe("free"); // 认不出保持原值，不偷偷回 locked
+    expect(input.setLookMode("locked")).toBe("locked");
+    expect(modes).toEqual([]);
+  });
+
+  it("toggleLookMode API 与 V 键同一条路径（触控钮/调试可走它）", () => {
+    const modes = [];
+    input.dispose();
+    input = createInput(doc, canvas, {
+      pointerLock: false,
+      onLookModeChange: (m) => modes.push(m),
+    });
+    expect(input.toggleLookMode()).toBe("free");
+    expect(modes).toEqual(["free"]);
+  });
+
+  it("禁用输入时 V 不生效：暂停面板上手滑不换模式", () => {
+    input.setEnabled(false);
+    press("KeyV");
+    expect(input.getLookMode()).toBe("locked");
+    input.setEnabled(true);
+  });
+
+  it("切换视角模式不动 yaw/pitch：机位数值与模式解耦", () => {
+    dragLook(80, 40);
+    const before = input.getLook();
+    press("KeyV");
+    release("KeyV");
+    const after = input.getLook();
+    expect(after.yaw).toBe(before.yaw);
+    expect(after.pitch).toBe(before.pitch);
+    expect(after.lookMode).toBe("free");
+  });
+});
+
 describe("鼠标转向", () => {
   it("鼠标右移让角色右转（sim yaw 变小，前向倒向原来的右手边）", () => {
     const before = input.sample().yaw;

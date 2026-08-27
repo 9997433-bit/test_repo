@@ -54,6 +54,10 @@ export function createRenderer(canvas, opts = {}) {
   const cam = { x: 0, z: 0, init: false };
   let lastView = null;
   const bursts = [];
+  // 视角喂入（core/look.js feedLook 的 payload）。2D 斜俯视没有可转的机位，
+  // 但 lookMode 必须「认」：收下、透出、并在降级角标里报出来，别让切换在
+  // 兜底画面上看起来像坏了。simYaw / pitch 一并记下，探针与手测读得到。
+  const look = { pitch: null, simYaw: null, lookMode: "locked" };
 
   function resize(w, h, ratio) {
     width = Math.max(1, Math.floor(w));
@@ -71,6 +75,21 @@ export function createRenderer(canvas, opts = {}) {
 
   function setFollow(id) {
     followId = id;
+  }
+
+  /** 契约同名口：吃 feedLook 的 payload（yaw 已是 sim 空间），单值写法也认。 */
+  function setLook(payload = {}) {
+    const o = typeof payload === "number" ? { pitch: payload } : payload || {};
+    if (Number.isFinite(o.pitch)) look.pitch = o.pitch;
+    const yaw = Number.isFinite(o.simYaw) ? o.simYaw : Number.isFinite(o.yaw) ? o.yaw : null;
+    if (yaw !== null) look.simYaw = yaw;
+    if (o.lookMode === "locked" || o.lookMode === "free") look.lookMode = o.lookMode;
+    return { ...look };
+  }
+
+  /** 过门机位吸附：下一帧直接跳到目标位，不再看阻尼跟随飞 120 米。 */
+  function snapCamera() {
+    cam.init = false;
   }
 
   function ingestEvents(view) {
@@ -287,7 +306,8 @@ export function createRenderer(canvas, opts = {}) {
     ctx.save();
     ctx.font = "500 11px ui-monospace, SFMono-Regular, Menlo, monospace";
     ctx.textAlign = "left";
-    const label = "占位渲染 · src/render 未接入";
+    const mode = look.lookMode === "free" ? "自由视角" : "锁定视角";
+    const label = `占位渲染 · src/render 未接入 · ${mode}`;
     const w = ctx.measureText(label).width + 16;
     const x = Math.round((width - w) / 2);
     const y = height - 28;
@@ -351,6 +371,9 @@ export function createRenderer(canvas, opts = {}) {
     resize,
     setQuality,
     setFollow,
+    setLook,
+    getLook: () => ({ ...look }),
+    snapCamera,
     dispose() {
       bursts.length = 0;
       lastView = null;
