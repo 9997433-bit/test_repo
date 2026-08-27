@@ -354,6 +354,61 @@ describe("视角模式（lookMode / V 键）", () => {
     input.setEnabled(true);
   });
 
+  it("禁用时 toggleLookMode 也不切：触控钮 / 调试与 V 键同一条路，同一道闸", () => {
+    const modes = [];
+    input.dispose();
+    input = createInput(doc, canvas, {
+      pointerLock: false,
+      onLookModeChange: (m) => modes.push(m),
+    });
+    input.setEnabled(false);
+    expect(input.toggleLookMode()).toBe("locked");
+    expect(input.getLookMode()).toBe("locked");
+    // 一次回调都不许发：壳层不该为一次没发生的切换落存档、亮回执
+    expect(modes).toEqual([]);
+    input.setEnabled(true);
+    expect(input.toggleLookMode()).toBe("free");
+    expect(modes).toEqual(["free"]);
+  });
+
+  it("禁用只是不许切，不是把模式清回缺省：暂停一趟回来还是 free", () => {
+    input.setLookMode("free");
+    input.setEnabled(false);
+    input.setEnabled(true);
+    expect(input.getLookMode()).toBe("free");
+  });
+
+  it("切换当帧生效：同一回合里 V 之后那次 sample 已经按新模式分派", () => {
+    expect(input.sample(0.7).yaw).toBe(cameraYawToSimYaw(0.7));
+    press("KeyV");
+    expect(input.sample(0.7).yaw).toBeNull();
+    release("KeyV");
+    press("KeyV");
+    expect(input.sample(0.7).yaw).toBe(cameraYawToSimYaw(0.7));
+    release("KeyV");
+  });
+
+  it("壳层回调抛错不连坐：模式照翻、当帧照分派，异常不炸穿输入层", () => {
+    const warn = console.warn;
+    const warned = [];
+    console.warn = (...args) => warned.push(args);
+    try {
+      input.dispose();
+      input = createInput(doc, canvas, {
+        pointerLock: false,
+        onLookModeChange: () => {
+          throw new Error("存档写不进去");
+        },
+      });
+      expect(() => press("KeyV")).not.toThrow();
+      expect(input.getLookMode()).toBe("free");
+      expect(input.sample(0.7).yaw).toBeNull();
+      expect(warned).toHaveLength(1);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   it("切换视角模式不动 yaw/pitch：机位数值与模式解耦", () => {
     dragLook(80, 40);
     const before = input.getLook();
