@@ -27,15 +27,19 @@
 //   ?glove=afterimage       本人主掌；配 ?phase=arena 就能盯着那一掌的战斗特效看
 //   ?off=frost              本人副掌
 //   ?pitch=0.6              起始俯角（正 = 往下看）。运行时右键拖拽 / ↑↓ 也能改
+//   ?look=locked|free       视角模式（缺省 locked = 固定人物视角，镜头钉在角色背后）。
+//                           free 下横向拖拽 / ←→ 转镜头（喂的是 sim 空间的 simYaw）
 //
 // 就绪后 window.smoke 可用；异步引导的 Promise 在 window.smokeReady 上。
 
 import {
   createRenderer,
   dispose,
+  getLook,
   getStats,
   resize,
   setLook,
+  setLookMode,
   setQuality,
   setSpectator,
   sync,
@@ -370,16 +374,25 @@ export async function bootSmoke(canvas) {
   fit();
   globalThis.addEventListener?.('resize', fit);
 
-  // 抬头 / 低头。壳层那边由 O4 每帧喂 input.getLook().pitch；冒烟台自己拖鼠标，
-  // 走的是同一个入口（render.setLook），所以「鼠标上下看有没有用」这里就能验。
+  // 视角模式。缺省 locked（固定人物视角）：镜头钉在角色背后，朝向跟角色自己的 yaw。
+  const lookMode = opt('look', 'locked') === 'free' ? 'free' : 'locked';
+  setLookMode(lookMode);
+
+  // 抬头 / 低头 + 转镜头。壳层那边由 O4 每帧喂 input.getLook()；冒烟台自己拖鼠标，
+  // 走的是同一个入口（render.setLook），所以「鼠标看有没有用」这里就能验。
+  //
+  // 横向那份喂的是 **simYaw**（sim 空间，yaw = 0 面向 -Z）—— 冒烟台自己维护这个角，
+  // 不经过输入层的相机方位角，所以链路上没有任何一处需要再换算。
   const PITCH_MAX = Math.PI / 2.6;
   let pitch = numOpt('pitch', 0.22);
-  const applyPitch = () => {
+  let simYaw = numOpt('yaw', 0);
+  const applyLook = () => {
     pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, pitch));
-    setLook({ pitch });
+    // locked 时不喂朝向：镜头该跟角色，喂了也只是多一份会漂的状态
+    setLook(lookMode === 'free' ? { pitch, simYaw } : { pitch });
     return pitch;
   };
-  applyPitch();
+  applyLook();
 
   const hud = opt('hud', '0') === '1' ? document.getElementById('readout') : null;
   if (hud) hud.style.display = 'block';
@@ -397,9 +410,11 @@ export async function bootSmoke(canvas) {
           m.phase === 'hub'
             ? `hub  focus ${m.focus ?? '-'}  主 ${m.main ?? '-'} / 副 ${m.off ?? '-'}  门 ${m.portalReady ? '通' : '封'}`
             : `arena  tiles ${m.tiles - m.broken}/${m.tiles}  ko ${m.kos}  残影 ${m.ghosts}`;
+        const look = getLook();
         hud.textContent =
           `${s.tier}  dpr ${s.pixelRatio.toFixed(2)}  draw ${s.drawCalls}  tris ${s.triangles}` +
           `  pitch ${s.pitch.toFixed(2)}` +
+          `  look ${look.lookMode} yaw ${look.cameraYaw.toFixed(2)}` +
           `  |  t ${m.t}s  ${zone}  |  皮肤 ${m.skins}`;
       }
     }
@@ -468,9 +483,18 @@ export async function bootSmoke(canvas) {
     /** 抬头 / 低头。正 = 往下看，与 src/input 的 getLook().pitch 同约定。 */
     setPitch(v) {
       pitch = v;
-      return applyPitch();
+      return applyLook();
     },
     getPitch: () => pitch,
+    /** 转镜头（sim 空间 yaw，0 面向 -Z）。只有 ?look=free 时喂得进去。 */
+    setSimYaw(v) {
+      simYaw = v;
+      applyLook();
+      return simYaw;
+    },
+    getSimYaw: () => simYaw,
+    lookMode,
+    getLook,
     stats: getStats,
     simStats: () => match.stats(),
     stop() {
@@ -502,8 +526,12 @@ export async function bootSmoke(canvas) {
       // 键盘也能抬头低头：录屏时比按住鼠标稳
       if (e.key === 'ArrowUp') api.setPitch(pitch - 0.08);
       if (e.key === 'ArrowDown') api.setPitch(pitch + 0.08);
+      // free 模式下左右也能转镜头（locked 时镜头跟角色，喂了也不用）
+      if (e.key === 'ArrowLeft') api.setSimYaw(simYaw + 0.1);
+      if (e.key === 'ArrowRight') api.setSimYaw(simYaw - 0.1);
     });
-    // 按住拖拽 = 上下看。冒烟台没有指针锁，用拖拽足够验证这条链路通了。
+    // 按住拖拽 = 上下看（free 下横向拖拽 = 转镜头）。
+    // 冒烟台没有指针锁，用拖拽足够验证这条链路通了。
     let dragging = false;
     canvas.addEventListener('pointerdown', (e) => {
       dragging = true;
@@ -514,7 +542,9 @@ export async function bootSmoke(canvas) {
       canvas.releasePointerCapture?.(e.pointerId);
     });
     canvas.addEventListener('pointermove', (e) => {
-      if (dragging) api.setPitch(pitch + (e.movementY || 0) * 0.0035);
+      if (!dragging) return;
+      api.setPitch(pitch + (e.movementY || 0) * 0.0035);
+      if (lookMode === 'free') api.setSimYaw(simYaw - (e.movementX || 0) * 0.0035);
     });
   }
 

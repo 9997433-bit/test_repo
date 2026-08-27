@@ -28,6 +28,23 @@ import { forwardFromYaw, readView } from './view.js';
 
 const UP = new Vector3(0, 1, 0);
 
+/**
+ * 焦点一帧之内挪了这么远就当成传送（安全区在 z ≈ -120、裂岛在原点）。
+ * 正常位移一帧最多一米出头（冲刺 ~14m/s × 0.05s），拉开一个数量级不会误判。
+ */
+const TELEPORT_DIST = 16;
+
+/** 固定人物视角 / 自由视角。缺省锁视角（GOAL：产品默认钉在角色背后）。 */
+const LOOK_MODES = ['locked', 'free'];
+const DEFAULT_LOOK_MODE = 'locked';
+
+/** 认不出来的值一律当成「没说」，返回 null 由调用点决定要不要改。 */
+function normalizeLookMode(mode) {
+  if (typeof mode !== 'string') return null;
+  const m = mode.trim().toLowerCase();
+  return LOOK_MODES.includes(m) ? m : null;
+}
+
 function forwardOf(yaw, out) {
   const f = forwardFromYaw(yaw);
   return out.set(f.x, 0, f.z);
@@ -51,7 +68,10 @@ export class YizhangRenderer {
     // 抬头 / 低头。null = 壳层还没接线，镜头维持静止机位的俯角（camera.js 的 BASE_PITCH）。
     // 语义与 src/input 的 getLook().pitch 一致：正 = 往下看。
     this.lookPitch = Number.isFinite(opts.pitch) ? opts.pitch : null;
-    this.lookYaw = Number.isFinite(opts.lookYaw) ? opts.lookYaw : null;
+    // 镜头朝向，**sim 空间**（yaw = 0 面向 -Z）。相机系角不许进这个字段，见 setLook。
+    // null = 壳层没喂朝向，镜头跟角色自己的 yaw。
+    this.lookYaw = Number.isFinite(opts.lookYaw ?? opts.simYaw) ? (opts.lookYaw ?? opts.simYaw) : null;
+    this.lookMode = normalizeLookMode(opts.lookMode) ?? DEFAULT_LOOK_MODE;
     // 皮肤表：壳层把已经 resolveSkins 过的表、或 data 命名空间喂进来。
     // 不喂就用兜底表，冒烟台 / 单测不必绑 src/data。
     this.skins = opts.skins || skinTable(opts.data ?? null);
@@ -94,6 +114,12 @@ export class YizhangRenderer {
     this._tmp = new Vector3();
     this._tmp2 = new Vector3();
     this._tmp3 = new Vector3();
+    // 过门 / 换人 / 开局：下一帧把机位直接架到目标身后，不走弹簧（见 _followCamera）
+    this._snapPending = true;
+    this._lastPhase = null;
+    this._following = false;
+    this._prevFocusX = 0;
+    this._prevFocusZ = 0;
 
     this._buildWorld();
 
@@ -217,13 +243,55 @@ export class YizhangRenderer {
 
   /** 观战 / 主菜单 / 结算：不跟人，绕着裂岛慢慢推轨。 */
   setSpectator(v) {
-    this.spectator = !!v;
+    const next = !!v;
+    // 从环绕机位切回跟随：镜头这会儿在岛外的轨道上，弹簧回来就是一段飞越
+    if (this.spectator && !next) this._snapPending = true;
+    this.spectator = next;
   }
 
   /** 主循环换人（分屏、观战某个 bot）时用；不给就回到 view 自己的判断。 */
   setLocalId(id) {
-    this.forcedLocalId = id ?? null;
+    const next = id ?? null;
+    if (next !== this.forcedLocalId) this._snapPending = true;
+    this.forcedLocalId = next;
     return this.forcedLocalId;
+  }
+
+  /**
+   * 下一帧把镜头瞬时架到跟随目标身后（过门、结算回程、壳层显式重置）。
+   *
+   * 渲染层自己也会在 hub ↔ arena 切换、焦点整跳（> TELEPORT_DIST）时自动 snap，
+   * 这个方法是给壳层用的显式入口：它比渲染层更早知道「这一帧要传送」。
+   */
+  snapCamera() {
+    this._snapPending = true;
+    return true;
+  }
+
+  /** snapCamera 的别名（壳层语义：重新架机位跟人）。 */
+  resetFollow() {
+    return this.snapCamera();
+  }
+
+  /**
+   * 固定人物视角开关。
+   *
+   *   'locked' —— 镜头钉在角色**背后**，用角色自己的 yaw（locked 时它与视线一致，
+   *               见 GOAL：人物水平面向 ≡ 相机水平前向），镜头永远绕不到正脸；
+   *   'free'   —— 用壳层喂进来的 lookYaw（**sim 空间**），没喂就跟角色 yaw。
+   *
+   * @param {'locked'|'free'} mode 认不出来的值不改现状
+   * @returns {'locked'|'free'} 生效后的模式
+   */
+  setLookMode(mode) {
+    const next = normalizeLookMode(mode);
+    if (next) this.lookMode = next;
+    return this.lookMode;
+  }
+
+  /** @returns {'locked'|'free'} */
+  getLookMode() {
+    return this.lookMode;
   }
 
   /** main.js 的旧名字。语义与 setLocalId 相同。 */
@@ -232,20 +300,28 @@ export class YizhangRenderer {
   }
 
   /**
-   * 抬头 / 低头（以及可选的镜头朝向）。壳层每帧调一次即可：
+   * 抬头 / 低头（以及可选的镜头朝向、视角模式）。壳层每帧调一次即可：
    *
-   *   renderer.setLook(input.getLook());     // { yaw, pitch }
+   *   renderer.setLook(input.getLook());          // 只有 { yaw, pitch } 的老壳
+   *   renderer.setLook(lookPayload(getLook()));   // { yaw, pitch, simYaw }（core/look.js）
    *
    * pitch 与 `src/input` 同一套约定：**正 = 往下看**，镜头随之抬高、视点压低；
    * 单位弧度，内部夹在 ±PITCH_LIMIT。不调用就维持静止机位的俯角。
    *
-   * yaw 是可选的，且必须是**项目唯一那套朝向约定**：yaw = 0 面向 -Z，与
-   * `sim/math.js` 的 forwardX/forwardZ 一致。壳层的输入 yaw 走的是相机系
-   * （`simYawToCameraYaw`），别原样丢进来 —— 不给 yaw 时镜头跟角色自己的朝向，
-   * 那条路一直是对的。
+   * 朝向只认一套空间：**sim 空间**，yaw = 0 面向 -Z，与 `sim/math.js` 的
+   * forwardX/forwardZ 一致。字段取用顺序：
    *
-   * @param {{pitch?: number, yaw?: number}|number} look
-   * @returns {{pitch: number|null, yaw: number|null}}
+   *   1. `simYaw` —— `core/look.js` 已经用 `cameraYawToSimYaw` 换算好的那份，**优先**；
+   *   2. `yaw`    —— 只在没有 simYaw 时用，此时它**必须已经是 sim 空间**。
+   *
+   * 输入层内部维护的是**相机方位角**（水平前向 = (cos yaw, sin yaw)），那个角原样
+   * 丢进来会把机位拧到角色脸前 / 左右镜像 —— 相机系角请先过 `cameraYawToSimYaw`。
+   * 两个字段都不给时镜头跟角色自己的朝向，那条路一直是对的。
+   *
+   * `lookMode` 一起收：payload 带了就等价于调一次 setLookMode。
+   *
+   * @param {{pitch?: number, yaw?: number, simYaw?: number, lookMode?: 'locked'|'free'}|number} look
+   * @returns {{pitch: number|null, yaw: number|null, lookMode: 'locked'|'free'}}
    */
   setLook(look = {}) {
     const o = typeof look === 'number' ? { pitch: look } : look || {};
@@ -254,9 +330,13 @@ export class YizhangRenderer {
     } else if (o.pitch === null) {
       this.lookPitch = null;
     }
-    if (Number.isFinite(o.yaw)) this.lookYaw = o.yaw;
+    // simYaw 在场就以它为准：同一份 payload 里的 yaw 是相机系的，用它会把镜头拧反
+    if (Number.isFinite(o.simYaw)) this.lookYaw = o.simYaw;
+    else if (o.simYaw === null) this.lookYaw = null;
+    else if (Number.isFinite(o.yaw)) this.lookYaw = o.yaw;
     else if (o.yaw === null) this.lookYaw = null;
-    return { pitch: this.lookPitch, yaw: this.lookYaw };
+    if (o.lookMode !== undefined) this.setLookMode(o.lookMode);
+    return { pitch: this.lookPitch, yaw: this.lookYaw, lookMode: this.lookMode };
   }
 
   /** setLook 的单值写法。 */
@@ -264,18 +344,60 @@ export class YizhangRenderer {
     return this.setLook({ pitch }).pitch;
   }
 
-  /** 当前实际用掉的俯角（含静止机位基准），主要给探针与冒烟台读。 */
+  /**
+   * 当前实际用掉的俯角与朝向，主要给探针与冒烟台读。
+   *
+   * `yaw` / `simYaw` 是同一个数：镜头朝向只有 sim 空间一套，这里报的就是喂进来
+   * 那份（没喂就是 null，此时镜头跟角色 yaw，实读走 `cameraYaw`）。
+   */
   getLook() {
     return {
       pitch: this.lookPitch ?? BASE_PITCH,
       yaw: this.lookYaw,
+      simYaw: this.lookYaw,
+      lookMode: this.lookMode,
       cameraPitch: this.cameraRig.state.pitchOut,
+      // 机位这一帧真正绕着的 sim yaw（阻尼后的值）
+      cameraYaw: this.cameraRig.state.yaw,
     };
   }
 
   /** 本帧要喂给相机的抬头量：绝对俯角减去静止机位基准。 */
   _pitchBias() {
     return this.lookPitch == null ? 0 : this.lookPitch - BASE_PITCH;
+  }
+
+  /**
+   * 本帧机位该绕着哪个朝向转（**sim 空间**）。
+   *
+   * locked：角色自己的 yaw —— 固定人物视角下人物面向 ≡ 视线，用它镜头必在背后，
+   *         绝不会绕到正脸；壳层没接线时它也正好是原来那条对的路。
+   * free  ：壳层喂的 lookYaw；没喂同样退回角色 yaw。
+   */
+  _followYaw(local) {
+    const charYaw = Number.isFinite(local?.yaw) ? local.yaw : 0;
+    if (this.lookMode === 'locked') return charYaw;
+    return this.lookYaw == null ? charYaw : this.lookYaw;
+  }
+
+  /**
+   * 跟随机位。传送（过门 / 结算回程 / 换人 / 开局第一帧）走 snap，其余走弹簧。
+   * @param {Vector3} focus 本帧焦点（已经写进 this._focus）
+   */
+  _followCamera(dt, focus, yaw) {
+    const jumped =
+      this._following &&
+      Math.hypot(focus.x - this._prevFocusX, focus.z - this._prevFocusZ) > TELEPORT_DIST;
+    this._prevFocusX = focus.x;
+    this._prevFocusZ = focus.z;
+    this._following = true;
+    if (this._snapPending || jumped) {
+      this._snapPending = false;
+      this.cameraRig.snap(focus, yaw, { pitchBias: this._pitchBias() });
+      return true;
+    }
+    this.cameraRig.update(dt, focus, yaw, this._vel, { pitchBias: this._pitchBias() });
+    return false;
   }
 
   _arenaChanged(radius) {
@@ -501,6 +623,10 @@ export class YizhangRenderer {
     // 不显式关掉的话，人在走道上时它照样每帧画满一整座岛。
     const inHub = this.hub.sync(v.hub, dt, this.time);
     this.island.setActive(!inHub);
+    // 过门（hub ↔ arena）：两区在世界里隔着 ~120m，机位必须吸附过去，不许弹簧飞越
+    const phase = inHub ? 'hub' : 'arena';
+    if (this._lastPhase !== null && phase !== this._lastPhase) this._snapPending = true;
+    this._lastPhase = phase;
     this._consumeEvents(v, raw.events);
 
     // 距离剔除的圆心取本帧本地玩家在 sim 里的坐标 —— this._focus 是上一帧算完镜头才写的，
@@ -539,11 +665,13 @@ export class YizhangRenderer {
         0,
         (local.pos.z - local.prev.z) / Math.max(dt, 1e-4)
       );
-      const yaw = this.lookYaw == null ? local.yaw : this.lookYaw;
-      this.cameraRig.update(dt, this._focus, yaw, this._vel, { pitchBias: this._pitchBias() });
+      this._followCamera(dt, this._focus, this._followYaw(local));
     } else {
       this.cameraRig.orbit(dt, this.time, this.arenaRadius * 1.35);
       this._focus.set(0, 0, 0);
+      // 观战 / 无本地玩家：下次跟人时机位还在岛外轨道上，得重新架
+      this._following = false;
+      this._snapPending = true;
     }
 
     this.vfx.ambientDrift(dt, this._focus);
