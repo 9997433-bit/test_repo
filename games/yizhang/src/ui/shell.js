@@ -315,7 +315,9 @@ export function createShell(opts) {
       })
     );
 
-    sheetBody.append(
+    // append 会把 null 变成字面量 "null" 贴到板上（没解锁新掌的那一局就中招），
+    // 条件块必须先滤掉再进 DOM。
+    const nodes = [
       title,
       h("p", { class: "yz-subtitle", text: payload.reasonText || "" }),
       h("div", {}, [resultRow(["选手", "杀", "坠", "连"], { head: true }), ...rows]),
@@ -323,11 +325,13 @@ export function createShell(opts) {
         ? h("p", { class: "yz-heading", text: `解锁：${payload.unlocked.join("、")}` })
         : null,
       actions([
+        // 同一副掌接着打：回裂岛，不走走道（main 的 restartArena → ENTRY.RESTART）
         button("再 来 一 局", "primary", () => {
           audio.play("uiSelect");
           if (callbacks.onRestart) callbacks.onRestart();
         }),
-        // GOAL §6 回程：打完不该逼玩家刷新页面才能重挑掌
+        // GOAL §6 回程：打完不该逼玩家刷新页面才能重挑掌。这条走的是 ENTRY.HUB，
+        // 与上面那颗按钮去处相反 —— 两颗按钮不许再是同一件事。
         button("回 安 全 区 换 掌", null, () => {
           audio.play("uiSelect");
           if (callbacks.onReturnHub) callbacks.onReturnHub();
@@ -336,8 +340,9 @@ export function createShell(opts) {
           audio.play("uiBack");
           if (callbacks.onQuit) callbacks.onQuit();
         }),
-      ])
-    );
+      ]),
+    ];
+    sheetBody.append(...nodes.filter(Boolean));
   }
 
   // ---------- 装配 ----------
