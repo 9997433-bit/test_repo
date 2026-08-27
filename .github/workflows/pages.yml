@@ -85,6 +85,7 @@ jobs:
             mkdir -p "site/$game"
             cp -a "src/games/$game/dist/." "site/$game/"
           done
+          find site -type f -name '*.map' -delete
           # 三国：冰河时代是纯静态 ESM，没有 dist；只覆盖本目录，不删其他游戏
           rm -rf site/sanguo-ice-age
           mkdir -p site/sanguo-ice-age
