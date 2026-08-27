@@ -1,6 +1,6 @@
-# 异掌 · 架构总纲（Round 3 · Fable-1 冻结版）
+# 异掌 · 架构总纲（手感轮 R1 · Fable-1 冻结版）
 
-> 状态：**冻结（R3）**。Round 2 十路已合入 `cursor/yizhang-db8d`，本文按**合并后的实际代码**定基：R2 裁定（ADR-16…22）除本文标注「修订于 R3」处外全部沿用，本轮新增 ADR-23（技能 id 词表与别名表）与 ADR-24（接线标志语义）。与旧版文档冲突处一律以本文 §10 的 ADR-16…24 为准。变更流程不变：先改本文与 `docs/API_CONTRACT.md`、在提交信息中声明，再改代码。
+> 状态：**冻结（手感轮 R1）**。Round 3 已全绿收口；本轮（手感轮，父分支 **`cursor/yizhang-feel-db8d`**）修四件用户直接可感的事：**键鼠整轴反转、角色皮肤、每掌独立 VFX、打击感**。R2/R3 裁定（ADR-16…24）除 **ADR-17 在本轮修订**外全部沿用；本轮新增 ADR-25（渲染朝向零补偿）、ADR-26（皮肤契约）、ADR-27（每掌 VFX 事件与残影导出）、ADR-28（hit-stop 归编排层）。与旧版文档冲突处一律以本文 §10 的最新裁定为准。变更流程不变：先改本文与 `docs/API_CONTRACT.md`（本轮已升 v4）、在提交信息中声明，再改代码。
 
 ## 0. 一句话架构
 
@@ -84,6 +84,7 @@ combat.tickStatuses（状态倒计时·掌意衰减·满条觉醒·返回延迟�
 - **插值归编排层**：`core/interp.js` 的 `lerpView(prev, cur, alpha)` 产出插值快照，renderer 直接绘制（修订 R1 ADR-12：不再把 alpha 附给 renderer）。瞬移（重生/换位/被拉）由 lerpView 按距离阈值或 view 标记跳过插值。
 - `ai.think` 目前**每个模拟 tick 调用一次**；降频到 10Hz 是允许的优化而非契约，`think` 必须容忍任意调用频率（内部自带计时记忆）。
 - 按键语义（冻结）：`slap` / `skill` 是**可长按**的持续位（sim 用冷却与相位机闸门）；`jump` / `dash` / `switchGlove` 是**边沿触发**——sim 在 `player.prev` 里自做上升沿检测，输入层长报 true 不会连发。
+- **hit-stop（ADR-28）**：`main.handleEvents` 后由 `core/juice.js` 折算定格时长、`loop.hold(seconds)` 暂停累加器——sim 只是「晚一点被 step」，确定性与 60Hz 固定步语义不受影响。单次 ≤ 0.12s、同帧取最长、仅 `p0` 参与的命中触发。
 
 ## 3. HUD DOM 与 WebGL 分层
 
@@ -133,6 +134,20 @@ combat.tickStatuses（状态倒计时·掌意衰减·满条觉醒·返回延迟�
 
 - `state.events` 每次 `step` 开头清空、步内追加（上限 `PHYSICS.maxEvents = 96`），`pushEvent` 自动盖 `t = state.time` 戳；`getView` 逐条浅拷贝进快照。
 - **sim 是唯一事件发射者（ADR-22，由桥执行）**：动作/命中/出局/碎地/胜负事件由 sim 直发；combat 在解算中 push 的事件先落进 combat-bridge 的暂存缓冲，由桥翻译成 sim 词表（`awaken/awakenEnd/parry/meteorImpact/ghostSlap`，并补 `tileBreak` 记账）后进 `state.events`，其余暂存事件丢弃（sim 已发等价事件）。`state.events` 里永远只有 `API_CONTRACT.md` §10 词表（camelCase：`slap` `hit` `ko` `tileBreak` …）。
+- **手感轮补充（ADR-27）**：`hit` 事件携带 `gloveId`（结算时攻击者激活掌，`HitRecord.gloveId` 优先）与 `skillId`（handler id，null = 素掌）；桥代发的三个 combat 事件补齐 `gloveId / skillId`。VFX / 音效按这两个 id 分派。
+
+### 4.5 皮肤与残影（手感轮新增）
+
+两条纯装饰数据流，都不回写模拟：
+
+```
+皮肤  save.skinId ──O4──► createMatch({skinId, botSkinIds}) ──O1──► player.skinId
+      （sim 视为不透明字符串）──getView──► view.players[].skinId ──O2──► resolveSkin 建外观
+残影  combat/skills.js 建 ghost{ttl0,…} ──O1 经桥 ghostsView（yaw ±π 还原）──►
+      view.combat.ghosts ──O2──► 半透明分身（必须可见）
+```
+
+细则见 ADR-26 / ADR-27 与 API_CONTRACT §3.2、§4.3、§5.1。
 
 ## 5. 移动端与自适应
 
@@ -154,7 +169,25 @@ moveZ = −sx·sin(θ) − sy·cos(θ)          // θ = cameraYaw
 Input.yaw = cameraYaw                    // 期望面朝 = 相机朝向；null = 保持当前朝向
 ```
 
-sim 收到的就是世界系（`moveSpace` 缺省 `'world'`；`'local'` 仅供测试）。**sim 不懂相机**。R2 合并后的达标方式是**唯一适配点**而非全量重写：契约面（`Input.yaw`、`view.players[].yaw`、`forwardX/forwardZ`、测试 helpers）一律 -Z 不变；内部基不同的模块各自只在一处换算——combat 内部 `yaw=0 朝 +Z`，唯一换算点是 `sim/combat-bridge.js`（`FACE.combatOffset = π`）；render 内部同为 `+Z` 基，唯一补偿点是 `core/view.js` 的 `toRenderView`（`RENDER_YAW_OFFSET = π`）；input 的相机方位角换算收敛在 `core/view.js` 的 `cameraYawToSimYaw / simYawToCameraYaw`。**除上述三处外任何文件不得再出现朝向换算**。
+sim 收到的就是世界系（`moveSpace` 缺省 `'world'`；`'local'` 仅供测试）。**sim 不懂相机**。
+
+**手感轮修订（ADR-25，冻结）：朝向换算只剩两处适配点。** R3 版本曾把 `core/view.js toRenderView`（`RENDER_YAW_OFFSET = π`）列为第三处，其前提「render 按 yaw=0 朝 +Z 搭建」是**错误的事实陈述**——`src/render/camera.js` 把机位放在 `focus + (sin yaw, cos yaw)·dist`（正是 -Z 约定下的「身后」），`src/render/characters.js` 的模型脸/鞋尖/掌心朝 -Z、`rotation.y` 直用，两者都是 **-Z 原生**。再加 π 的后果链条：相机吃 `simYaw + π` → 机位落到角色**正面** → 画面整体 180° 反 → W 朝镜头走、A/D 镜像、鼠标右移画面左转——这就是键鼠整轴反转的根因。裁定：**`RENDER_YAW_OFFSET` 冻结为 0**，`toRenderView` 对 yaw 恒等透传（导出名保留），render 直接消费 -Z yaw、**零补偿**。合法换算点只剩：
+
+1. `sim/combat-bridge.js`（combat 内部 `yaw=0 朝 +Z`，`FACE.combatOffset = ±π`；含 `view.combat.ghosts` 导出时的 yaw 还原，见 ADR-27）；
+2. `core/view.js` 的 `cameraYawToSimYaw / simYawToCameraYaw`（input 内部相机方位角 ↔ sim yaw）。
+
+**除上述两处外任何文件不得出现朝向换算；render 不是适配点。**
+
+#### 5.1.1 键鼠语义（验收线，冻结）
+
+- **W = 镜头水平前方**（屏幕深处、远离相机），S 后退，**A = 屏幕左，D = 屏幕右**；触屏摇杆与 WASD 同一套映射。
+- **鼠标右移（+dx）= 角色与镜头右转**（从上方 +Y 往下看为**顺时针**）。
+- 测试锚点（G1 按此锁死；θ = input 内部相机方位角，forward = `(cos θ, sin θ)`）：
+  - 纯 W：`sample(θ)` 的 `(moveX, moveZ) = (cos θ, sin θ)`——与相机水平前向同向同号；
+  - 纯 D：`(−sin θ, cos θ)`（屏幕右）；A/S 取反；
+  - `cameraYawToSimYaw` 对 θ **单调递减**（`ds/dθ = −1`）：+dx ⇒ θ 增大 ⇒ sim yaw 减小 ⇒ `forward(simYaw)` 从上方看顺时针转 ⇒ 右转；
+  - 换算后前向一致：`(−sin s, −cos s) = (cos θ, sin θ)`，其中 `s = cameraYawToSimYaw(θ)`。
+- 相机跟随成立判据：`RENDER_YAW_OFFSET = 0` 时相机机位在角色**身后**（`focus + (sin s, cos s)·dist`），屏幕前向 = 角色前向，W 远离相机。`core/view.test.js` 原「补 π」断言改为「yaw 原样透传」（O4）。
 
 分工不变：**ui 建 DOM（`data-yz-*` 标记），input 绑事件**。相机朝向状态（yaw/pitch）归 input 所有，导出 `getLook()` / `setLook()`；main 把 `getLook().yaw` 回传给 `sample`，render 读同一 yaw 摆相机。禁止锁敌自动瞄（种子红线）。
 
@@ -202,7 +235,7 @@ DPR 全局封顶 2（main 的 `applyResize` 计算并传 `renderer.resize`）。
 
 ## 10. 决策记录（ADR）
 
-R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「已废除/修订」；Round 3 的修订与新增（19/21/22 修订，23/24 新增）已并入下表。**实现一律以最新裁定为准。**
+R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「已废除/修订」；Round 3 的修订与新增（19/21/22 修订，23/24 新增）与**手感轮的修订与新增（17 修订，25–28 新增）**已并入下表。**实现一律以最新裁定为准。**
 
 1. **render/input/audio 模块级单例**：`createX` 初始化内部单例并返回句柄，模块级函数操作该单例。（沿用）
 2. **Input 坐标系**：input 层完成相机系→世界系换算，sim 不懂相机。（沿用，公式收紧见 ADR-17）
@@ -220,7 +253,7 @@ R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「�
 14. **HUD 节流**：main 以 ~30Hz 调 `updateHud`，内部再脏检查。（沿用，频率按实现修订）
 15. **AI 决策频率**：~~固定 10Hz~~ **放宽**：每 tick 调用是现状，降频是优化选项；`think` 必须与调用频率无关。
 16. **人类玩家 id = `p0`（新，冻结）**：sim 已定 `p0`、bot 为 `b0..b2`——**外壳跟随 sim**。`src/main.js` 的 `SELF_ID`、`core/fallback/sim.js` 的人类 id、render 的 `localId/followId` 缺省值全部改 `p0`。任何层不得再出现 `p1` 作为人类 id。
-17. **yaw = 0 面向 -Z（冻结；R3 补注）**：`forward = (-sin yaw, -cos yaw)`。相机 yaw、`Input.yaw`、`view.players[].yaw`、测试 helpers 同一约定；摇杆→世界系换算公式见 §5.1。R2 已达标，方式是**唯一适配点**：内部基不同的模块只在 `sim/combat-bridge.js`（combat ±π）、`core/view.js toRenderView`（render +π）、`core/view.js cameraYawToSimYaw`（相机方位角）三处换算，见 §5.1；不得新增第四处。
+17. **yaw = 0 面向 -Z（冻结；手感轮修订）**：`forward = (-sin yaw, -cos yaw)`。相机 yaw、`Input.yaw`、`view.players[].yaw`、测试 helpers 同一约定；摇杆→世界系换算公式见 §5.1。**sim / render / camera 全链同一基，render 零补偿**。合法换算点只剩两处：`sim/combat-bridge.js`（combat ±π，含 ghosts 导出还原）与 `core/view.js cameraYawToSimYaw / simYawToCameraYaw`（相机方位角）。R3 曾列的第三处（`toRenderView` +π）经 ADR-25 裁定废除；不得新增任何新的换算点。
 18. **台面拓扑 = sim 方格网格（新，冻结）**：`src/sim/arena.js` 的 2.5m 方格圆盘（约 208 块）是唯一拓扑，`view.arena` 的形状即渲染输入。理由：sim 侧支撑/伤害/重生/probe 全链已在此拓扑上通过，render 只需按 `origin/tileSize/cols + tiles[].x,z` 建板即可；而改 sim 迁就 72 扇环要重写 arena/floor/spawn 全部逻辑。**O1 保持、O2 消费、O3 走 `damageTileAt`，禁止发明第四套拓扑。**
 19. **依赖接线 = 静态桥（修订于 R3）**：`src/sim/deps.js` 静态 `import "../data/gloves.js"`（运行时权威掌表）与 `"./combat-bridge.js"`（其内静态 `import "../combat/index.js"`）——生产路径零动态注入，**import sim 即已接线**。`installData/installCombat/resetDeps` 保留**仅供测试替身**，`autoWireOptionalDeps` 已删除。main 启动断言 `getDeps().usingRealData && usingRealCombat` 为 true（为假 = 替身泄漏，亮降级横幅），传给 shell/render 的掌表与 MATCH 一律取自 `sim.getGloves()/getMatchConfig()`。**R3 必改**：`core/modules.js` 的 `wireSimDeps` 注入路径与 `alignSkillIds` 删除（O4）、`scripts/harness.mjs` 的 `installSimulationDependencies` 不再 install（G2）——向已接线的 sim 再 install 真实模块＝绕过桥，见 ADR-24。
 20. **isMatchOver 即时判定（新，冻结）**：`isMatchOver(state)` 是**纯读的活谓词**，不要求先 `step`：`over ⇔ state.match.over ∨ ∃p: p.kills ≥ killsToWin ∨ state.time ≥ matchSeconds`。调用不改 state、不发事件；`step` 内的 `updateMatch` 仍负责把结果缓存进 `state.match` 并发 `matchOver` 事件——**事件需要 step，布尔真值不需要**。语义细则见 API_CONTRACT §4。
@@ -228,3 +261,7 @@ R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「�
 22. **sim 是唯一事件发射者（修订于 R3：由桥执行）**：`state.events` 里只允许 API_CONTRACT §10 词表。combat 解算中 push 的事件被 combat-bridge 的暂存缓冲截获，翻译（`awaken/awakenEnd/parry/meteorImpact/ghostSlap` + `tileBreak` 记账）后由 sim 代发，未登记的暂存事件丢弃。O4 的 `core/view.js normalizeEvent` 是 shell 内部适配（`ko → killerId/victimId` 等），不改变线上词表。
 23. **技能 id：两套词表 + 一张别名表（新，冻结）**：数据 id（`quake_slam / wind_rush / frost_arc / coil_counter / phantom_swap / iron_pull / sky_fall`，木棉为哨兵 `"none"`、禁 null）是公共词表——`GloveDef.skillId`、图鉴、GDD 用它；handler id（`groundPound / dashSlap / frostArc / parry / blinkSwap / magnetPull / meteorSlam`）是 combat 的分派键——`skill` 事件与 `HitRecord.skillId` 携带它。两者之间**只有一张翻译表**：`src/sim/combat-bridge.js` 的 `SKILL_ALIAS`（`combatSkillId()` 是唯一运行时翻译点），全表冻结在 API_CONTRACT §3.1。重复副本 R3 删除：`data/skills.js` 的 `SKILL_COMBAT_ALIASES`（F3）、`core/modules.js` 的 `SKILL_ALIASES + alignSkillIds`（O4）。combat 内部的宽容归一化表（`combat/skills.js`）是防御性实现细节，不具规范地位、不得新增依赖。
 24. **接线标志语义（新，冻结）**：`usingRealCombat === true ⇔ combatMod === null ⇔ 生产静态桥在岗`；`usingRealData` 同理。`installCombat / installData` 传**任何非 null 模块**都会把标志置 false——即使传的是真实 `src/combat` 命名空间，因为绕过桥（朝向换算、命中翻译、事件消化全丢）就不是产线路径。所以「标志为 false」读作**「测试替身在场」**，不是「combat 缺席」。产线与探针的正确姿势是**什么都不装**、直接断言两标志为 true；R2 探针误报 `usingRealCombat: false` 的根因正是先 install 再测。
+25. **渲染朝向零补偿（手感轮新增，冻结）**：`core/view.js` 的 `RENDER_YAW_OFFSET` 必须为 **0**，`toRenderView` 对 `players[].yaw` 恒等透传（函数与导出名保留，方便未来 render 专属整形，但**不得再碰 yaw**）。依据与后果链见 §5.1；`camera.js` / `characters.js` 保持 -Z 原生搭建不动。**任何人不得用「再加一个偏移」的方式修方向问题**——方向不对时先查换算点是否只剩 ADR-17 列出的两处。`core/view.test.js` 的「补 π」断言随之改写（O4）。
+26. **皮肤 = 纯装饰数据流（手感轮新增，冻结）**：`src/data/skins.js`（F3）导出 `SKINS / SKIN_BY_ID / DEFAULT_SKIN_ID / resolveSkin`，词表与 SkinDef 形状冻结在 API_CONTRACT §3.2。数据流单向：存档 `save.skinId`（O4）→ `createMatch({ skinId, botSkinIds })`（O1，**sim 视 skinId 为不透明字符串**，不校验、不 import skins.js——「sim 不懂皮肤」，与「sim 不懂相机」同一哲学）→ `state.players[].skinId` → `getView` 导出 → render 按 `resolveSkin` 建外观变体（O2）、shell 大厅选择器读写（O4）。Bot 皮肤取自 `BOT_PERSONA_BY_ID[persona].skinId`（F3 配表、main 传入）；render 侧兜底链 `skinId → persona.skinId → DEFAULT_SKIN_ID`。皮肤**只影响外观**，禁止挂任何数值。
+27. **每掌 VFX = 事件驱动 + 按 id 分派（手感轮新增，冻结）**：命中/技能表现的分派键是**事件上的 `gloveId` / `skillId`**，不是事件 type 的猜测、更不是全掌共用一个光球。`hit` 事件补齐 `gloveId + skillId`（null = 素掌扇击）；桥代发的 `parry / meteorImpact / ghostSlap` 补齐 `gloveId / skillId`（词表见 API_CONTRACT §10）。分身残影从 combat 暂存区走桥导出：`combat-bridge.js` 新增 `ghostsView(state)`（把 `state.combat.ghosts` 的 +Z 基 yaw 还原成 -Z、整形成纯 JSON），`getView` 以 `view.combat.ghosts` 导出，render 画半透明分身——**残影必须在画面上可见**。O2 的分派纪律：8 掌扇击按 `gloveId` 八套可辨、7 技能按 `skillId` 分派；`GloveDef.vfx` 只是可选调参数据，**分派键永远是 id**。
+28. **hit-stop 归编排层（手感轮新增，冻结）**：打击定格的唯一实现位置是编排层的累加器（现有 `core/juice.js` 计算时长 + `loop.hold(seconds)` 暂停步进），**单次 ≤ 0.12s、同帧多段取最长不叠加、仅 `p0` 参与的命中触发**。禁止用缩放 dt 的方式实现（破坏 60Hz 固定步语义）、禁止 sim 内部感知 hit-stop。受击姿态僵直属 sim 已有的 `kbT` 失控窗口 + render 形变表现，不新增机制。
