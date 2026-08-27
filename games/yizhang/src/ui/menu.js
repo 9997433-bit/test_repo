@@ -101,7 +101,15 @@ export function skinSilhouette(skin) {
 
   return svg(
     "svg",
-    { viewBox: "0 0 40 52", width: "40", height: "52", class: "yz-skin-figure", "aria-hidden": "true" },
+    {
+      viewBox: "0 0 40 52",
+      width: "34",
+      height: "44",
+      class: "yz-skin-figure",
+      "aria-hidden": "true",
+      // 皮肤条在 flex 列里，收缩会把剪影压成 0 高
+      style: "flex:0 0 auto",
+    },
     parts
   );
 }
@@ -200,15 +208,45 @@ export function createMenu({
 
   const hint = h("p", { class: "yz-lock-note" });
 
-  const panel = h("div", { class: "yz-plate yz-panel yz-panel--wide" }, [
-    h("h2", { class: "yz-heading", text: "配 掌" }),
-    slotRow,
-    h("div", { class: "yz-scroll" }, [grid]),
-    hint,
-  ]);
+  // 板高按视口封顶（标题 + 底部按钮 + 页脚约 300px），矮屏也不会把「进裂岛」顶出画面；
+  // 被压缩时让掌格让位，皮肤条固定高度，两段都留在板内。
+  const panel = h(
+    "div",
+    {
+      class: "yz-plate yz-panel yz-panel--wide",
+      style: { flex: "0 1 auto", maxHeight: "calc(100vh - 270px)", minHeight: "0" },
+    },
+    [
+      h("h2", { class: "yz-heading", text: "配 掌" }),
+      slotRow,
+      // 掌格是这块板里唯一让高度的一段：矮屏先压它，皮肤条与「进裂岛」不动。
+      // 570px ≈ 标题 + 掌位 + 皮肤条 + 底部按钮 + 页脚的固定开销。
+      h(
+        "div",
+        {
+          class: "yz-scroll",
+          style: { flex: "0 0 auto", minHeight: "92px", maxHeight: "min(40vh, calc(100vh - 660px))" },
+        },
+        [grid]
+      ),
+      hint,
+    ]
+  );
 
   // ---- 选皮肤 ----
-  const skinGrid = h("div", { class: "yz-glove-grid yz-skin-grid" });
+  // 横向皮肤条塞在配掌板内：多一个整板会把「进裂岛」挤出视口（720p 笔记本就中招）。
+  const skinStrip = h("div", {
+    class: "yz-skin-strip",
+    style: {
+      display: "flex",
+      flex: "0 0 auto",
+      alignItems: "stretch",
+      gap: "8px",
+      overflowX: "auto",
+      padding: "2px",
+      scrollbarWidth: "thin",
+    },
+  });
   const skinTiles = new Map();
   for (const s of skinList) {
     const tile = h(
@@ -217,14 +255,20 @@ export function createMenu({
         class: "yz-plate yz-glove-tile yz-skin-tile",
         role: "button",
         tabindex: "0",
+        title: s.desc || "",
         dataset: { skin: s.id },
-        style: { alignItems: "center", textAlign: "center" },
+        style: {
+          flex: "0 0 auto",
+          width: "78px",
+          padding: "6px 4px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "2px",
+          textAlign: "center",
+        },
       },
-      [
-        skinSilhouette(s),
-        h("div", { class: "yz-glove-name", text: s.name || s.id }),
-        h("div", { class: "yz-glove-role", text: s.desc || "" }),
-      ]
+      [skinSilhouette(s), h("div", { class: "yz-glove-name", text: s.name || s.id })]
     );
     const choose = () => {
       if (state.skinId === s.id) return;
@@ -240,15 +284,12 @@ export function createMenu({
       }
     });
     skinTiles.set(s.id, tile);
-    skinGrid.appendChild(tile);
+    skinStrip.appendChild(tile);
   }
 
-  const skinHint = h("p", { class: "yz-lock-note" });
-  const skinPanel = h("div", { class: "yz-plate yz-panel yz-panel--wide" }, [
-    h("h2", { class: "yz-heading", text: "选 皮 肤" }),
-    h("div", { class: "yz-scroll" }, [skinGrid]),
-    skinHint,
-  ]);
+  // 皮肤说明进题头，不再单开一行小字：矮屏上每一行都是「进裂岛」的高度预算。
+  const skinHeading = h("h2", { class: "yz-heading", text: "选 皮 肤" });
+  panel.append(skinHeading, skinStrip);
 
   const startBtn = h("button", {
     class: "yz-btn yz-btn--primary",
@@ -265,13 +306,13 @@ export function createMenu({
   const foot = h("div", { class: "yz-foot" });
 
   const el = h("div", { class: "yz-screen yz-screen--deep" }, [
-    h("div", { class: "yz-home" }, [
+    // 矮屏兜底：内容超出一屏时整列可滚，「进裂岛」永远够得着
+    h("div", { class: "yz-home", style: { maxHeight: "100%", overflowY: "auto", width: "100%" } }, [
       h("div", {}, [
         h("h1", { class: "yz-title", text: "异 掌" }),
         h("p", { class: "yz-subtitle", text: "暮色裂岛 · 一场体面的巴掌架" }),
       ]),
       panel,
-      skinPanel,
       h("div", { class: "yz-menu" }, [startBtn, settingsBtn]),
     ]),
     foot,
@@ -307,7 +348,7 @@ export function createMenu({
 
     const skin = table.byId[state.skinId] || skinList[0];
     for (const [id, tile] of skinTiles) tile.classList.toggle("is-main", id === state.skinId);
-    skinHint.textContent = `当前皮肤：${skin.name || skin.id} · ${skin.desc || ""}（存档记住这一套，bot 会错开用别的）`;
+    skinHeading.textContent = `选 皮 肤 · ${skin.name || skin.id}（存档记住，bot 会错开用别的）`;
   }
 
   render();
