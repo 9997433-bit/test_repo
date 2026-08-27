@@ -1,24 +1,24 @@
-# 异掌 · 文件所有权与协作边界（手感轮 R1）
+# 异掌 · 文件所有权与协作边界（安全区大厅轮 Round 1）
 
-> 由 Fable-1 按手感轮编排（`.agent_workspace/yizhang-feel/`）更新，与该工作区的 GOAL/OWNERSHIP 对齐。写路径互不重叠是十代理并行的前提；本文为合并冲突仲裁依据。本轮主攻四件用户可感的事：**键鼠整轴反转（RENDER_YAW_OFFSET 归零）、角色皮肤、每掌独立 VFX、打击感**。
+> 本轮目标：**3D 安全区 → 走道选掌 → 传送门进裂岛**（`.agent_workspace/yizhang-hub/GOAL.md`），叠在手感轮之上。手感轮 ADR-25…28 沿用；大厅双区记 **ADR-29…32**（Fable-1 原文 25…28 已改号，避免与朝向/皮肤契约撞车）。O1 缺省 `phase:'hub'`，不以「缺省 arena」回退。
 
-游戏根：`games/yizhang/`　父分支：**`cursor/yizhang-feel-db8d`**（**所有子 PR 的 base，不是 `main`，也不是 `cursor/yizhang-db8d`**）。
-各代理在自己的云端分支提交，父调度器合回父分支。输出**首行**必须声明实际模型 slug，严禁静默降级。
+游戏根：`games/yizhang/`　父分支：**`cursor/yizhang-hub-db8d`**（**所有子 PR 的 base，不是 `main`**）。
+各代理在自己的云端分支提交，父调度器合回父分支。输出首行必须声明实际模型 slug，严禁静默降级。
 
 ## 1. 所有权表
 
-| 角色 | 模型 slug | 可写路径（相对 `games/yizhang/`） | 手感轮 R1 主攻 |
-| --- | --- | --- | --- |
-| Fable-1 架构 | `claude-fable-5-thinking-xhigh` | `docs/ARCHITECTURE.md`, `docs/API_CONTRACT.md`, `docs/OWNERSHIP.md` | 冻结朝向/输入不变量（ADR-25）；皮肤与 VFX 事件契约（ADR-26/27）；更新所有权表 |
-| Fable-2 美术 UX | `claude-fable-5-thinking-xhigh` | `docs/ART_DIRECTION.md`, `src/styles/**` | 皮肤选择器（`.yz-skin-*`）与每掌特效的视觉规范（形状语言 × 识别色表） |
-| Fable-3 玩法数据 | `claude-fable-5-thinking-xhigh` | `docs/GDD.md`, `src/data/**` | 新建 `skins.js`（§3.2 词表）；`bots.js` 每 persona 加 `skinId`；可选 `GloveDef.vfx` 调参 |
-| Fable-4 SOTA | `claude-fable-5-thinking-xhigh` | `docs/SOTA_CHECKLIST.md`, `docs/ACCEPTANCE.md` | 手感/皮肤/VFX/hit-stop 验收清单（对齐 GOAL 验收线） |
-| Opus-1 模拟 | `claude-opus-5-thinking-high-fast` | `src/sim/**` | `createMatch` 吃 `skinId/botSkinIds`；`getView` 导出 `players[].skinId` 与 `combat.ghosts`（桥 `ghostsView`）；`hit` 事件补 `gloveId/skillId`；桥代发事件补 id |
-| Opus-2 渲染 | `claude-opus-5-thinking-high-fast` | `src/render/**` | 保持 -Z 原生、零补偿消费 yaw；按 `resolveSkin` 建皮肤外观变体；8 掌扇击 + 7 技能 VFX 按 id 分派；画 `view.combat.ghosts` 残影；相机冲击/扬尘收束 |
-| Opus-3 技能 Bot | `claude-opus-5-thinking-high-fast` | `src/ai/**`, `src/combat/**` | ghost 建档补 `ttl0`；延迟命中 HitRecord 填 `gloveId`；残影可见时长调参；combat 事件带够翻译所需字段 |
-| Opus-4 壳层 | `claude-opus-5-thinking-high-fast` | `src/ui/**`, `src/core/**`, `src/input/**`, `src/audio/**`, `src/main.js`, `index.html` | **修反转**（`RENDER_YAW_OFFSET → 0` + `core/view.test.js` 改断言）；大厅皮肤选择器；`storage` 加 `skinId`；main 传 `skinId/botSkinIds`；hit-stop 加强（≤120ms） |
-| GPT-sol-1 单测 | `gpt-5.6-sol-xhigh-fast` | `tests/**` | 输入映射锁死（§14-15/16）、皮肤字段（§14-17/18）、VFX 事件形状（§14-19）单测 |
-| GPT-sol-2 探针 | `gpt-5.6-sol-xhigh-fast` | `scripts/**` | 探针不回归（`usingRealCombat: true`、kills≥1）；可选手感/事件形状探针 |
+| 角色 | 模型 slug | 可写路径（相对 `games/yizhang/`） | 提供（对外冻结面） | Round 1 主攻 |
+| --- | --- | --- | --- | --- |
+| Fable-1 架构 | `claude-fable-5-thinking-xhigh` | `docs/ARCHITECTURE.md`, `docs/API_CONTRACT.md`, `docs/OWNERSHIP.md` | 双区状态机、选掌/传送契约、ADR 裁定 | 本文与契约 v4（已交付） |
+| Fable-2 美术 UX | `claude-fable-5-thinking-xhigh` | `docs/ART_DIRECTION.md`, `src/styles/**` | `.yz-*` HUD/控件样式契约 | 台座/走道/传送门/`.yz-inspect` 说明牌/门提示视觉（§13.1 数据面） |
+| Fable-3 玩法数值 | `claude-fable-5-thinking-xhigh` | `docs/GDD.md`, `src/data/**` | `GLOVES/MATCH/isGloveUnlocked` 等表 + **`HUB` 大厅布局表** | `src/data/hub.js`：8 座坐标/朝向、`interactRadius`、门 AABB、bounds、spawn（§3.2 硬约束） |
+| Fable-4 SOTA 验收 | `claude-fable-5-thinking-xhigh` | `docs/SOTA_CHECKLIST.md`, `docs/ACCEPTANCE.md` | 验收清单 | 大厅流程验收（开局 hub、8 座可辨可装、传送、Bot 只在格斗区） |
+| Opus-1 模拟物理 | `claude-opus-5-thinking-high-fast` | `src/sim/**` | 契约四件套 + 生产桥 | `phase: hub\|arena` 状态机、安全区四禁、聚焦/interact 装备/未解锁拒绝、传送、计时域、`view.hub`（§4.2–4.4） |
+| Opus-2 WebGL 渲染 | `claude-opus-5-thinking-high-fast` | `src/render/**` | `createRenderer/sync/...` | 大厅场景：走道、台座、**手指朝上 +Y 展掌 + 每掌可辨 idle VFX**、传送门、phase 切换过渡、hub 相机跟随 |
+| Opus-3 技能与 Bot | `claude-opus-5-thinking-high-fast` | `src/ai/**`, `src/combat/**` | combat 四函数、`ai.think` | `think` 的 hub 守卫（`view.phase === 'hub'` ⇒ 零输入）；确认 combat 管线在 hub 不被触达；传送后战斗回归绿 |
+| Opus-4 主循环 UI 输入 | `claude-opus-5-thinking-high-fast` | `src/ui/**`, `src/core/**`, `src/input/**`, `src/audio/**`, `src/main.js`, `index.html` | loop、shell、input、audio、存档、fallback 件 | 开局进 hub（`startPhase:'hub'` + `unlockedGloveIds`）、E→interact 双义采样、触控「选」钮、hub HUD（§13.1）、`phaseChange` 过渡与三个新音名、`lerpView` 跳插值、hub 期不调 `think`、2D 菜单降为备选、fallback 件补 `phase/hub` 协议 |
+| GPT-sol-1 单测 | `gpt-5.6-sol-xhigh-fast` | `tests/**` | 确定性用例 | 不变量 14–19：hub 开局形状、靠近聚焦、interact 装备主/副、未解锁拒绝、传送、安全区免战；缺省 `startPhase` 零回归 |
+| GPT-sol-2 探针基准 | `gpt-5.6-sol-xhigh-fast` | `scripts/**` | `probe.mjs` / `bench.mjs` | 无头探针走完 **hub → 选掌 → 门 → 岛**，传送后打出 ≥1 kill；`usingRealCombat === true`；纯度扫描保持绿 |
 
 ## 2. 共享只读（需改时只追加、先在简报声明）
 
@@ -26,49 +26,54 @@
 端口 **4181**、`base: "./"`、vitest 配置已就位。新增 npm 依赖必须在简报声明理由（原则上除 `three` 外不加运行时依赖）。
 `src/sim/README.md` 归 O1，内容与 API_CONTRACT 冲突时以后者为准。
 
-## 3. 交接握手（手感轮 R1）
+## 3. 交接握手（大厅轮 Round 1）
 
-1. **朝向（ADR-25，根因修复）**：sim / render / camera 统一 `yaw=0 → -Z`。`core/view.js` 的 `RENDER_YAW_OFFSET` 归 **0**、`toRenderView` 对 yaw 恒等透传（O4 落地，导出名保留）；`camera.js` / `characters.js` 本就是 -Z 原生，**O2 不加任何补偿**。合法换算点只剩两处：`sim/combat-bridge.js`（combat ±π，含 `ghostsView` 还原）与 `core/view.js cameraYawToSimYaw / simYawToCameraYaw`。验收语义：**W = 镜头水平前方、A = 屏幕左、鼠标右移 = 右转**；锚点公式见 ARCHITECTURE §5.1.1，G1 按 §14-15/16 锁死。谁都不许用「再加一个偏移」救火。
-2. **皮肤（ADR-26）**：`src/data/skins.js` 导出 `SKINS / SKIN_BY_ID / DEFAULT_SKIN_ID / resolveSkin`（F3，词表 §3.2：`drifter/mason/crane/reed/nuo/wildhorn`）。存档 `yizhang-save-v1` 加 `skinId`（O4，旧档缺失补默认、不换 key）。数据流：save → `createMatch({ skinId, botSkinIds })`（O1，sim 视为不透明字符串）→ `view.players[].skinId` → render `resolveSkin` 建外观（O2）。Bot 皮肤 = `persona.skinId`（F3 配、main 传），三人互异。皮肤只换外观，禁止挂数值。
-3. **每掌 VFX（ADR-27）**：分派键 = 事件上的 `gloveId / skillId`。`hit` 事件补齐两 id（O1）；桥代发 `parry/meteorImpact/ghostSlap` 补齐（O1）；`HitRecord.gloveId` 可选（O3 在延迟命中填）。O2 按 gloveId 做 8 套可辨扇击 VFX、按 skillId 做技能 VFX——**禁止 8 掌共用光球/描边**。`GloveDef.vfx` 是可选纯数据调参（F3），不参与分派。
-4. **残影（ADR-27）**：`state.combat.ghosts` 经桥 `ghostsView(state)`（yaw ±π 还原回 -Z）进 `getView().combat.ghosts`（O1）；O3 建 ghost 时补 `ttl0`；O2 画半透明分身、按 `ttl/ttl0` 淡出——**残影必须在画面上可见**。
-5. **打击感（ADR-28）**：hit-stop 只住编排层累加器（`core/juice.js` + `loop.hold`，O4 调参强化），单次 ≤ 0.12s、同帧取最长、仅 `p0` 参与命中触发；禁止缩放 dt、禁止 sim 感知。O2 配套接触扬尘 + 短相机冲击（camera `impulse` 已有）；受击僵直走既有 `kbT` + render 形变，不加新机制。不要满屏红晕。
+上一轮（收官轮）的接线终态全部沿用：静态桥（ADR-19/24）、技能 id 一张表（ADR-23）、`p0`、-Z、方格拓扑、事件由 sim 独发。本轮八个握手点（详细语义一律以 `API_CONTRACT.md` v4 为准）：
 
-### 手感轮 R1 各角色必改清单
+1. **`view.phase ∈ {hub, arena}`（ADR-25）**：一份 `MatchState` 承载双区，`createMatch(opts.startPhase)` 缺省 `'arena'`（既有 197 测与探针零回归），**shell 开局必传 `'hub'`**。hub 时 bots 存在于数据但不 step 攻击、不被喂 think 输入。
+2. **安全区四禁（ADR-25）**：hub 不进 combat 管线（无击退/meter/状态/觉醒）、无掉落（`HUB.bounds` 硬钳制）、Bot 静默（O4 不调 think + O3 think 自守卫）、对局计时冻结（`secondsLeft ≡ matchSeconds`，`isMatchOver` 恒 false）。
+3. **`view.hub`（§4.3）**：`pedestals[]`（8 条：`gloveId/x/y/z/yaw/unlocked/selected/focused`）、`focusGloveId`、`portalReady`、`nearPortal`、`interactRadius`、`bounds/portal/spawn`。F3 的 `data/hub.js HUB` 表是唯一布局源（§3.2），O1 快照进 state、O2/O4 从 view 读，**禁止硬编码第二份坐标**。
+4. **输入增加 `interact`（ADR-28）**：边沿位；键鼠 E 双义（skill hold + interact edge，input 不懂 phase，sim 按 phase 只消费其一）；触控「选」钮 `setTouchButton('interact', down)` + `data-yz-interact`。O4 采样，O1 在聚焦展掌上结算。
+5. **装备规则（ADR-26，§4.4）**：主空→主、副空→副、双满→替换副；hub 内 `switchGlove` = 主副交换；未解锁 ⇒ `hubDeny{reason:'locked'}` 拒绝。解锁集 `opts.unlockedGloveIds` 由 shell 从存档换算注入，缺省 `['cotton']` fail-closed。
+6. **传送（ADR-27）**：`portalReady ⇔ mainChosen`；ready ∧ 进门 AABB ⇒ 同 tick `phase='arena'`、p0 写裂岛出生点（既有链路，`invulnT` 保护）、**loadout 保留**、发 `phaseChange`（携落点）；计时自 `enteredArenaAt` 起算。过渡表现归外壳（淡场/门内粒子，禁加载条）；`lerpView` 在 `prev.phase !== cur.phase` 时跳插值。
+7. **事件与音名**：词表新增 `hubEquip / hubDeny / phaseChange`（§10），音名新增 `equip / deny / portal`（§11）；聚焦变化不是事件（读 view diff）。O2 按新事件做 VFX，O4 加音效先登记。
+8. **HUD 契约（§13.1）**：`.yz-inspect` 说明牌（掌名/职能/一句话/识别色/槽位状态/解锁条件）、门提示两态（「先选一只掌」/「穿过传送门」）、配装指示。数据面冻结在契约，视觉归 F2。
 
-| 角色 | 必改 |
+### Round 1 各角色验收线
+
+| 角色 | 出口 |
 | --- | --- |
-| F2 styles | `.yz-skin-grid / .yz-skin-tile` 选择器样式契约；ART_DIRECTION 补每掌 VFX 形状语言表（8 掌 × 扇击/技能/命中）与六套皮肤配色规范 |
-| F3 data | 新建 `src/data/skins.js`（§3.2）；`bots.js` 三 persona 各加 `skinId`；可选 `GloveDef.vfx`；`data/index.js` 汇出 skins |
-| F4 验收 | ACCEPTANCE/SOTA 加朝向（W/A/鼠标语义）、皮肤（≥6 可辨 + 存档记忆 + Bot 不同装）、每掌 VFX（8 掌可辨、残影可见）、hit-stop（≤120ms、无红晕）验收行 |
-| O1 sim | `createMatch` 收 `skinId/botSkinIds` 存 `player.skinId`（不校验）；`getView` 导出 `skinId` 与 `combat.ghosts`（新增桥 `ghostsView`，±π 还原）；`applyHits` 的 `hit` 事件补 `gloveId/skillId`；桥 `digestEvents` 三事件补 id |
-| O2 render | 确认零补偿路径（吃透传 yaw）；`characters.js` 按 `resolveSkin` 出 build/headgear/back/palette 变体（识别色背件语义不变）；每掌 VFX 按 id 分派；ghosts 半透明渲染；扬尘/相机冲击收束；draw calls 预算复核（§8） |
-| O3 combat/ai | ghost 建档加 `ttl0`；延迟命中 `HitRecord.gloveId`；combat 事件字段补齐桥翻译所需（parry 的弹反者掌等）；残影 ttl/假挥时机调参保证可见可骗 |
-| O4 shell | `core/view.js`：`RENDER_YAW_OFFSET = 0`、`toRenderView` 透传；`core/view.test.js`「补 π」断言改「透传」；大厅皮肤选择器（menu，`onStart({ main, off, skinId })`）；`storage.js` DEFAULTS 加 `skinId` + 旧档兼容；main 传 `skinId/botSkinIds`、绑 render；hit-stop 调参 ≤120ms；新增音效先登记 §11 |
-| G1 tests | §14-14…19 全部落测：toRenderView 透传、W/D 映射公式、+dx 单调右转、SKINS 表形状、skinId 透传与存档往返、`hit` 事件 id、ghosts 形状与生命周期；**禁空 expect / 禁跳测** |
-| G2 probe | `probe.mjs` 保持 `usingRealCombat === true`、kills ≥ 1；可选：`hit` 事件带 `gloveId` 断言、`view.combat.ghosts` 存在断言；纯度扫描保持绿 |
+| O1 sim | 不变量 14–19 可测；缺省 `startPhase` 下既有 197 测全绿；`structuredClone`/确定性契约对 `phase/hub` 成立 |
+| O2 render | 开局相机跟在安全区角色身后（非裂岛中央）；8 座展掌手指朝上、idle VFX 可辨（禁纯色光球）；phase 切换有短过渡；draw calls 预算不破（ARCHITECTURE §8） |
+| O3 ai/combat | `think` hub 守卫落地；hub 期零战斗事件；传送后 bot 正常开打（probe kills ≥ 1 的前提） |
+| O4 shell | 开局即 hub（`startPhase:'hub'`）；E/触控同一套靠近+确认；hub HUD 三件套；`phaseChange` 过渡+音效；fallback 件补 `phase`/`hub: null` 协议面；2D 选掌板降为备选 |
+| F2 styles | `.yz-inspect`/门提示/配装指示样式；台座说明牌可读性（移动端字号、安全区内缩） |
+| F3 data | `HUB` 表过 §3.2 四条硬约束（8 座唯一、半径 1.6–2.2、与裂岛不重叠、几何包含关系） |
+| F4 验收 | 清单对齐 GOAL 验收线 + 本文出口；以「开局 hub + 传送后 Bot 才出现」为 L0 |
+| G1 tests | 不变量 14–19 用例 + 缺省零回归断言；禁空 expect、禁跳测 |
+| G2 probe | 探针剧本：hub 出生 → 走到展掌 → interact 装主掌 → 进门 → phase=arena → ≥1 kill；断言 `usingRealCombat === true` |
 
-出口验收线（GOAL）：`npm test` 全绿；`npm run probe` PASS 且 `wiredCombat: true`、kills≥1；`vite build` 通过；键鼠语义、≥6 皮肤、8 掌 VFX、hit-stop 按 GOAL 验收。
+**基线（本轮开工实测 @ 父分支）**：vitest **197/197 全绿（17 文件）**；`npm run probe` PASS（60s、2 kills、`usingRealCombat: true`、纯度扫描 30 文件）。R1 出口 = 基线不破 + 上表各角色出口全达成。
 
-## 4. 红线（沿袭种子与 R3，违者提交作废）
+## 4. 红线（沿袭种子与收官轮，违者提交作废）
 
-- 不改 `games/` 下其他游戏、不改仓库根业务、不碰 `.github/workflows` 与 `pages/`。**禁止再复制一份游戏目录。**
-- 不引入账号/后端/付费、不下载版权素材；音频全 WebAudio 合成、模型全低面数几何体。皮肤禁止贴图包。
-- 不模仿同仓库其他游戏的玩法/文案/架构文档；「异掌」是原创项目。
-- 禁止官方手套名、Roblox/Slap Battles 商标要素、方块人审美。
-- 公共 API（API_CONTRACT 列名者）改名/改签名 = 契约变更，必须先改文档并在简报声明，不许只改代码。
-- **禁止第三/第四套朝向换算点**（ADR-17/25 之外一律拒收）、禁止发明第二套台面拓扑与第二个人类 id（ADR-16/18）。
-- **禁止绕过 `combat-bridge` 直连 `src/combat`**（O3 自测除外）、禁止第二张技能 id 别名表（ADR-23）、禁止向已接线的 sim install 真实模块（ADR-24）。
-- 皮肤禁止挂数值（ADR-26）；VFX 禁止 8 掌共用光球、禁止发光描边与 Bloom 糊屏（视觉手册）；hit-stop 禁止进 sim（ADR-28）。
-- 视觉强制 `docs/VISUAL_HANDBOOK.md` 底座 B：暮蓝天空 + 暖黄裂纹，饱和只留给当前手套识别色；禁止塑料高光、系统字体 HUD。
+- 不改 `games/` 下其他游戏、不改仓库根业务、不碰 `.github/workflows` 与 `pages/`。
+- 不引入账号/后端/付费、不下载版权素材；音频全 WebAudio 合成、模型全低面数几何体。
+- 禁止官方手套名、Roblox/Slap Battles 商标要素、方块人审美、纯色光球展掌。
+- 公共 API（API_CONTRACT 列名者）改名/改签名 = 契约变更，必须先改文档并在简报声明。
+- **禁止发明第四套台面拓扑、第二个人类 id、第二套朝向约定**（ADR-16/17/18）；hub 与 arena 共用 yaw=0 → -Z，**禁止为大厅另起坐标系或第二套模拟**（ADR-25）。
+- **禁止绕过 `combat-bridge` 直连 `src/combat`**（O3 自测除外）、**禁止第二张技能 id 别名表**（ADR-23）、**禁止向已接线的 sim install 真实模块**（ADR-24）。
+- **大厅布局唯一来源是 `data/hub.js`**——sim/render/ui 硬编码台座坐标即拒收（ADR-26）；**解锁判定 fail-closed**——绕过 `unlockedGloveIds` 在 render/ui 层放行装备即拒收。
+- **禁止第二条传送路径**：切区只有「portalReady ∧ 门 AABB」一条（ADR-27）；ui 直接改 `state.phase` 或在 render 里改配装一律拒收。
+- 禁止引用已删除的 `src/sim/fallback-combat.js`。
 
 ## 5. 文档索引
 
 | 文档 | 作用 |
 | --- | --- |
-| `docs/ARCHITECTURE.md` | 模块图、tick 顺序、状态模型、移动端策略、ADR（16–24 沿用/修订 + 手感轮新增 25–28） |
-| `docs/API_CONTRACT.md` | 冻结导出面 v4、类型、技能 id 别名表 §3.1、皮肤契约 §3.2、生产桥契约 §5、事件词表 §10、存档 §12、不变量清单 §14 |
-| `docs/OWNERSHIP.md`（本文） | 写路径、手感轮握手与必改清单、红线 |
-| `docs/VISUAL_HANDBOOK.md` | 视觉质量基线（用户手册，强制底座 B） |
+| `docs/ARCHITECTURE.md` | 模块图、tick 顺序（含 hub 子步差异）、双区状态机 §4.5、ADR 16–28 |
+| `docs/API_CONTRACT.md` | 冻结导出面 v4：`HUB` 表 §3.2、`startPhase/unlockedGloveIds`、`state.hub`/`view.hub`、大厅交互语义 §4.4、事件/音名词表、hub HUD §13.1、不变量 1–19 |
+| `docs/OWNERSHIP.md`（本文） | 写路径、R1 握手与验收线、红线 |
+| `docs/VISUAL_HANDBOOK.md` | 视觉质量基线（用户手册，强制） |
 | `docs/ART_DIRECTION.md`（F2） / `docs/GDD.md`（F3） / `docs/SOTA_CHECKLIST.md`+`docs/ACCEPTANCE.md`（F4） | 各自轮内产出 |
-| `.agent_workspace/yizhang-feel/GOAL.md` | 本轮用户原话与验收线（编排工作区，只读） |
+| `.agent_workspace/yizhang-hub/GOAL.md` | 本轮用户目标与验收线（必读，只读） |
