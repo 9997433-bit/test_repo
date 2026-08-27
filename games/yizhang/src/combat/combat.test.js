@@ -329,7 +329,12 @@ describe("八掌主动技", () => {
     expect(res.swappedWith).toBe("B");
     expect(a.z).toBeCloseTo(before.bz, 6);
     expect(b.z).toBeCloseTo(before.az, 6);
-    expect(state.combat.ghosts).toHaveLength(1);
+    // 换位两端各留一具残影（vfx.js afterimage.skill.ghosts.count = 2）：
+    // 施法者的旧位姿一具、被换走那位的旧位姿一具，各自记在自己的 ownerId 上。
+    expect(state.combat.ghosts).toHaveLength(2);
+    expect(state.combat.ghosts.map((gh) => gh.ownerId)).toEqual(["A", "B"]);
+    expect(state.combat.ghosts[0].z).toBeCloseTo(before.az, 6);
+    expect(state.combat.ghosts[1].z).toBeCloseTo(before.bz, 6);
     expect(a.invulnT).toBeGreaterThan(0);
   });
 

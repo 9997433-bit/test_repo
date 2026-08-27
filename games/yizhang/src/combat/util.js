@@ -1,6 +1,6 @@
 // 异掌 · 战斗侧纯函数工具。不 import three，不碰 DOM。
 
-import { ARENA, HIT } from "./constants.js";
+import { ARENA, DEFAULT_GLOVE_ID, GHOSTS, HIT } from "./constants.js";
 // 安全区体积判定只有 sim 一份实现（`src/sim/hub.js`），这里直接用，不在 combat 抄第二份。
 import { inHubZone } from "../sim/hub.js";
 
@@ -141,6 +141,25 @@ export function opponentsOf(state, attacker) {
   return playerList(state).filter((p) => isTargetable(p, attacker) && !inSafeZone(state, p));
 }
 
+/**
+ * 当前生效掌 id（主槽 / 副槽）。事件与命中的 `gloveId` 分派键只能从这里取，
+ * 不许按事件类型反猜（陨掌落地不等于装着陨掌，残影假掌不等于还拿着分身）。
+ */
+export function activeGloveId(player) {
+  if (!player) return DEFAULT_GLOVE_ID;
+  const slot = num(player.activeSlot, 0);
+  const id = slot === 1 ? player.offhandId : player.gloveId;
+  return id || player.gloveId || player.offhandId || DEFAULT_GLOVE_ID;
+}
+
+/**
+ * 事件 / 命中上的 `gloveId`：出招那一刻记下的掌优先（延迟结算期间人可能已经换掌），
+ * 没记就回落到出招人此刻的生效掌。
+ */
+export function gloveIdFor(player, gloveId) {
+  return typeof gloveId === "string" && gloveId ? gloveId : activeGloveId(player);
+}
+
 export function hasStatus(player, kind) {
   const list = player && player.statuses;
   if (!Array.isArray(list)) return false;
@@ -216,6 +235,33 @@ export function combatOf(state) {
   if (!Array.isArray(c.ghosts)) c.ghosts = [];
   if (typeof c.seq !== "number") c.seq = 1;
   return c;
+}
+
+/**
+ * 记一具残影。`state.combat.ghosts` 是 `getView().combat.ghosts` 的唯一来源
+ * （桥的 `ghostsView` 逐条翻译），所以位姿、寿命、出处掌在这里一次填齐：
+ * 缺 `ttl0` 渲染就没有淡出基准，缺 `gloveId` O2 就只能按类型猜特效。
+ */
+export function pushGhost(state, ghost) {
+  const c = combatOf(state);
+  const ttl = Math.max(0, num(ghost.ttl, GHOSTS.defaultTtl));
+  const rec = {
+    ...ghost,
+    id: ghost.id || nextId(state, "ghost"),
+    ownerId: ghost.ownerId ?? null,
+    x: num(ghost.x),
+    y: num(ghost.y),
+    z: num(ghost.z),
+    yaw: num(ghost.yaw),
+    ttl,
+    ttl0: Math.max(ttl, num(ghost.ttl0, ttl)),
+    gloveId: gloveIdFor(playerById(state, ghost.ownerId), ghost.gloveId),
+    fake: !!ghost.fake,
+  };
+  c.ghosts.push(rec);
+  // 上限只防病态输入（每帧一次换位之类）：溢出丢最老的一具，view 的长度永远有界。
+  if (c.ghosts.length > GHOSTS.max) c.ghosts.splice(0, c.ghosts.length - GHOSTS.max);
+  return rec;
 }
 
 /** 时钟：宿主给了 `t`（testkit）或 `time`（src/sim）就跟宿主，否则 combat 自己攒。 */

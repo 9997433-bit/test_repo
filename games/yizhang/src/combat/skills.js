@@ -18,6 +18,7 @@ import {
   clamp01,
   combatOf,
   forwardFromYaw,
+  gloveIdFor,
   horizDir,
   inCone,
   lerp,
@@ -25,6 +26,7 @@ import {
   num,
   opponentsOf,
   pushEvent,
+  pushGhost,
 } from "./util.js";
 
 const VERTICAL_REACH = 3.5;
@@ -141,7 +143,7 @@ function noSkill(ctx) {
 // ---------------------------------------------------------------- 磐石 · 砸地
 
 function groundPound(ctx) {
-  const { state, attacker, cfg, now } = ctx;
+  const { state, attacker, glove, cfg, now } = ctx;
   lockSelf(attacker, now, cfg.selfRoot);
   attacker.vx = num(attacker.vx) * 0.2;
   attacker.vz = num(attacker.vz) * 0.2;
@@ -156,6 +158,7 @@ function groundPound(ctx) {
       now,
       kind: "skill",
       skillId: "groundPound",
+      gloveId: glove.id,
       dirOverride: dir,
       meterDealt: METER.onSkillHit,
     });
@@ -169,6 +172,7 @@ function groundPound(ctx) {
   pushEvent(state, {
     type: "skillCast",
     skillId: "groundPound",
+    gloveId: glove.id,
     attackerId: attacker.id,
     x: num(attacker.x),
     z: num(attacker.z),
@@ -182,7 +186,7 @@ function groundPound(ctx) {
 // ---------------------------------------------------------------- 疾风 · 冲刺扇
 
 function dashSlap(ctx) {
-  const { state, attacker, cfg, now } = ctx;
+  const { state, attacker, glove, cfg, now } = ctx;
   const f = forwardFromYaw(num(attacker.yaw));
   attacker.vx = f.x * cfg.speed;
   attacker.vz = f.z * cfg.speed;
@@ -194,6 +198,7 @@ function dashSlap(ctx) {
   c.dashes.push({
     id: nextId(state, "dash"),
     ownerId: attacker.id,
+    gloveId: glove.id,
     until: now + cfg.duration,
     speed: cfg.speed,
     dirX: f.x,
@@ -209,6 +214,7 @@ function dashSlap(ctx) {
   pushEvent(state, {
     type: "skillCast",
     skillId: "dashSlap",
+    gloveId: glove.id,
     attackerId: attacker.id,
     speed: cfg.speed,
     duration: cfg.duration,
@@ -234,7 +240,7 @@ export function steerDash(state, attackerId, yaw, now) {
 // ---------------------------------------------------------------- 冰霜 · 霜弧
 
 function frostArc(ctx) {
-  const { state, attacker, cfg, now } = ctx;
+  const { state, attacker, glove, cfg, now } = ctx;
   const hits = [];
   const statuses = [];
   if (cfg.freezeTime > 0) statuses.push({ kind: "freeze", t: cfg.freezeTime, mag: 1 });
@@ -247,6 +253,7 @@ function frostArc(ctx) {
       now,
       kind: "skill",
       skillId: "frostArc",
+      gloveId: glove.id,
       dirOverride: dir,
       meterDealt: METER.onSkillHit,
       statuses,
@@ -257,6 +264,7 @@ function frostArc(ctx) {
   pushEvent(state, {
     type: "skillCast",
     skillId: "frostArc",
+    gloveId: glove.id,
     attackerId: attacker.id,
     range: cfg.range,
     angleDeg: cfg.angleDeg,
@@ -270,7 +278,7 @@ function frostArc(ctx) {
 // ---------------------------------------------------------------- 弹簧 · 反击
 
 function parry(ctx) {
-  const { state, attacker, cfg, now } = ctx;
+  const { state, attacker, glove, cfg, now } = ctx;
   applyStatus(attacker, "parryWindow", cfg.window, {
     srcId: attacker.id,
     meta: {
@@ -286,6 +294,7 @@ function parry(ctx) {
   pushEvent(state, {
     type: "skillCast",
     skillId: "parry",
+    gloveId: glove.id,
     attackerId: attacker.id,
     window: cfg.window,
     awakened: !!cfg.awakened,
@@ -297,10 +306,14 @@ function parry(ctx) {
 // ---------------------------------------------------------------- 分身 · 残影换位
 
 function blinkSwap(ctx) {
-  const { state, attacker, cfg, now } = ctx;
+  const { state, attacker, glove, cfg, now } = ctx;
   const from = { x: num(attacker.x), y: num(attacker.y), z: num(attacker.z), yaw: num(attacker.yaw) };
   const candidates = coneTargets(state, attacker, cfg.range, 160);
   const target = candidates.length ? candidates[0].p : null;
+  // 换位对家的原位姿：残影留在「两端」，这一具是被换走的人留下的（ART/vfx afterimage.skill.ghosts）。
+  const swappedFrom = target
+    ? { x: num(target.x), y: num(target.y), z: num(target.z), yaw: num(target.yaw), id: target.id }
+    : null;
 
   if (target) {
     const tx = num(target.x);
@@ -331,17 +344,34 @@ function blinkSwap(ctx) {
   applyStatus(attacker, "invuln", cfg.invulnTime, { srcId: attacker.id });
 
   const c = combatOf(state);
-  const ghost = {
-    id: nextId(state, "ghost"),
+  const ttl = num(cfg.ghostTtl, 1.6);
+  // 残影是 `view.combat.ghosts` 的唯一来源：出处掌与淡出基准在落笔时就写死，
+  // 桥只做朝向换算，O2 拿到的每一具都能直接查 GLOVE_VFX_BY_ID[gloveId]。
+  const ghost = pushGhost(state, {
     ownerId: attacker.id,
+    gloveId: glove.id,
     x: from.x,
     y: from.y,
     z: from.z,
     yaw: from.yaw,
-    ttl: cfg.ghostTtl,
+    ttl,
     fake: num(cfg.fakeSlapAt) > 0,
-  };
-  c.ghosts.push(ghost);
+  });
+  const ghosts = [ghost];
+  if (swappedFrom) {
+    ghosts.push(
+      pushGhost(state, {
+        ownerId: swappedFrom.id,
+        gloveId: glove.id,
+        x: swappedFrom.x,
+        y: swappedFrom.y,
+        z: swappedFrom.z,
+        yaw: swappedFrom.yaw,
+        ttl,
+        fake: false,
+      }),
+    );
+  }
 
   if (num(cfg.fakeSlapAt) > 0) {
     c.pending.push({
@@ -349,6 +379,7 @@ function blinkSwap(ctx) {
       at: now + cfg.fakeSlapAt,
       ownerId: attacker.id,
       ghostId: ghost.id,
+      gloveId: glove.id,
       x: from.x,
       y: from.y,
       z: from.z,
@@ -361,9 +392,11 @@ function blinkSwap(ctx) {
   pushEvent(state, {
     type: "skillCast",
     skillId: "blinkSwap",
+    gloveId: glove.id,
     attackerId: attacker.id,
     swappedWith: target ? target.id : null,
     ghostId: ghost.id,
+    ghostIds: ghosts.map((gh) => gh.id),
     awakened: !!cfg.awakened,
     t: now,
   });
@@ -374,13 +407,14 @@ function blinkSwap(ctx) {
     tiles: [],
     swappedWith: target ? target.id : null,
     ghostId: ghost.id,
+    ghostIds: ghosts.map((gh) => gh.id),
   };
 }
 
 // ---------------------------------------------------------------- 磁掌 · 拉近
 
 function magnetPull(ctx) {
-  const { state, attacker, cfg, now } = ctx;
+  const { state, attacker, glove, cfg, now } = ctx;
   const picked = coneTargets(state, attacker, cfg.range, cfg.angleDeg).slice(0, Math.max(1, cfg.targets));
   const hits = [];
 
@@ -407,6 +441,7 @@ function magnetPull(ctx) {
       power: pull,
       kind: "skill",
       skillId: "magnetPull",
+      gloveId: glove.id,
       distance: dir.dist,
       pulled: true,
       hitX: num(p.x),
@@ -417,6 +452,7 @@ function magnetPull(ctx) {
       type: "skillHit",
       attackerId: attacker.id,
       targetId: p.id,
+      gloveId: glove.id,
       skillId: "magnetPull",
       power: pull,
       t: now,
@@ -426,6 +462,7 @@ function magnetPull(ctx) {
   pushEvent(state, {
     type: "skillCast",
     skillId: "magnetPull",
+    gloveId: glove.id,
     attackerId: attacker.id,
     pulled: hits.map((h) => h.id),
     awakened: !!cfg.awakened,
@@ -437,7 +474,7 @@ function magnetPull(ctx) {
 // ---------------------------------------------------------------- 陨掌 · 高空砸下
 
 function meteorSlam(ctx) {
-  const { state, attacker, cfg, now } = ctx;
+  const { state, attacker, glove, cfg, now } = ctx;
   attacker.vy = num(attacker.vy) + cfg.launchVy;
   attacker.grounded = false;
   if ("onGround" in attacker) attacker.onGround = false;
@@ -450,6 +487,8 @@ function meteorSlam(ctx) {
     kind: "meteorSlam",
     at: now + cfg.delay,
     ownerId: attacker.id,
+    // 腾空到落地有 0.85s，中途可能换掌：落点事件与命中都认起跳那一刻的掌。
+    gloveId: glove.id,
     radius: cfg.radius,
     impulse: cfg.impulse,
     impulseMin: cfg.impulseMin,
@@ -464,6 +503,7 @@ function meteorSlam(ctx) {
   pushEvent(state, {
     type: "skillCast",
     skillId: "meteorSlam",
+    gloveId: glove.id,
     attackerId: attacker.id,
     launchVy: cfg.launchVy,
     delay: cfg.delay,
@@ -479,6 +519,7 @@ export function resolveMeteorImpact(state, owner, q, now) {
   owner.vy = Math.min(num(owner.vy), -28);
   owner.airborneBy = null;
 
+  const gloveId = gloveIdFor(owner, q.gloveId);
   const hits = [];
   for (const { p, dir } of radialTargets(state, owner, q.radius)) {
     const k = clamp01(1 - dir.dist / q.radius);
@@ -490,6 +531,7 @@ export function resolveMeteorImpact(state, owner, q, now) {
         now,
         kind: "skill",
         skillId: "meteorSlam",
+        gloveId,
         dirOverride: dir,
         meterDealt: METER.onSkillHit,
       }),
@@ -509,6 +551,8 @@ export function resolveMeteorImpact(state, owner, q, now) {
   pushEvent(state, {
     type: "meteorImpact",
     attackerId: owner.id,
+    gloveId,
+    skillId: "meteorSlam",
     x: num(owner.x),
     z: num(owner.z),
     radius: q.radius,
@@ -522,6 +566,7 @@ export function resolveMeteorImpact(state, owner, q, now) {
 export function resolveGhostSlap(state, owner, q, now) {
   const hits = [];
   if (!owner) return hits;
+  const gloveId = gloveIdFor(owner, q.gloveId);
   const ghostPose = { x: q.x, y: q.y, z: q.z, yaw: q.yaw, id: owner.id };
   for (const p of opponentsOf(state, owner)) {
     const dir = horizDir(ghostPose, p);
@@ -537,10 +582,20 @@ export function resolveGhostSlap(state, owner, q, now) {
       power: q.impulse,
       kind: "ghost",
       skillId: "blinkSwap",
+      gloveId,
       decoy: true,
       attackerId: owner.id,
+      ghostId: q.ghostId ?? null,
     });
-    pushEvent(state, { type: "ghostSlap", attackerId: owner.id, targetId: p.id, t: now });
+    pushEvent(state, {
+      type: "ghostSlap",
+      attackerId: owner.id,
+      targetId: p.id,
+      gloveId,
+      skillId: "blinkSwap",
+      ghostId: q.ghostId ?? null,
+      t: now,
+    });
   }
   refreshDerived(owner);
   return hits;
