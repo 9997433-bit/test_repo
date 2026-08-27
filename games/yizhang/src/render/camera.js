@@ -95,6 +95,9 @@ export const CAMERA_SNAP_MAX_DIST = 20;
  * （切视角模式）那一下机位可能正落在锥外，此时闸松开、交给弹簧荡回来 —— 硬拽会
  * 当场把画面拽过半个圈，那就是一记 snap，正是切 V 时禁止发生的事。见 releaseBehind。
  *
+ * free 那边跟随角还会**自己**一帧跨过闸宽（鼠标增量没有速率限制），同样得让路，
+ * 否则就是绕焦点的一记横旋。带宽与 R2 硬顶同源，见 behindReleaseSlack。
+ *
  * 与 LOCKED_YAW_SPAN 迟滞硬顶并存：后者只夹 locked 的 behindYaw；本闸按跟随角本身咬合，
  * 两套都跑。函数名是 holdBehindLimit，避免盖掉 locked 导出的 holdBehind(angle, …)。
  */
@@ -108,6 +111,34 @@ export const BEHIND_LIMIT = Math.PI / 2.4;
  * 会把飞行路径拽成一记几十米的横跳 —— 比它要防的毛病还难看。
  */
 export const BEHIND_SHELL = 2;
+
+/**
+ * 背后闸的放手带（free 专用），带宽与 R2 硬顶同源：`lockedHoldSlack(dt)`。
+ *
+ * 闸只兜「转身把镜头挤出去了一点点」——那种偏离每帧只长一点，拽回去是无感的。
+ * 跟随角一帧跨过闸宽则是另一回事：那不是转身，是视线被瞬移，硬按下去机位要绕着
+ * 焦点整段横旋 —— 一帧转过 π 就是 2 × 7.1 × sin((π − 75°)/2) ≈ 11.2m 的甩镜，
+ * 比它要防的毛病还难看。所以整只松开，位置一帧不动，交给弹簧自己荡过去（≈ 0.1m/帧）。
+ *
+ * 两条判据（任一成立即让路），对应两种「跨过闸宽」的走法：
+ *   · 跟随角这一帧自己跳了超过带宽 —— 鼠标猛甩、壳层改写视线；
+ *   · 偏离已经超出闸宽 + 带宽 —— 与 R2 `holdBehind` 的 `off > LOCKED_YAW_SPAN + slack`
+ *     同式，兜住「角没跳但焦点被搬走了」这一路（人被瞬移到镜头边上，半径还没出壳层）。
+ *
+ * 带宽就是 30rad/s 那条线（60fps 下 0.5rad ≈ 28.6°/帧）：真人持续甩镜远在其下，
+ * 再快就当视线被瞬移；掉帧时 dt 变大、带宽跟着放宽，与 lockedHoldSlack 一致。
+ *
+ * 松开之后要等机位重新荡进锥内（偏离 ≤ BEHIND_LIMIT）才咬合，所以回程也不会
+ * 在带宽边界上再补一记甩镜。
+ *
+ * **只给 free。** locked 那边跟随角是角色自己的朝向（characters.js 还有 λ=16 转身阻尼），
+ * 一帧跨不过闸宽；而「固定人物视角永不绕到正脸」是硬承诺，那条路上闸就得是硬顶。
+ * free 的跟随角是壳层喂的 `lookYaw`：鼠标增量直接累加、没有速率限制，一帧跨半圈是常态，
+ * 而 free 本来就允许看到角色侧脸乃至正脸 —— 没有需要硬顶来守的承诺。
+ */
+export function behindReleaseSlack(dt) {
+  return lockedHoldSlack(dt);
+}
 
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
@@ -171,17 +202,23 @@ function desiredPos(out, focus, sy, cy, dist, pitch) {
 /**
  * 背后半平面闸，一帧一次。
  *
- * 三档，按序判：
+ * 四档，按序判：
  *   1. 机位飞在工作壳层之外（`radius > dist × BEHIND_SHELL`）—— 只可能是刚被传送
  *      又没走 snap，这时镜头正从老远处赶过来，「前后半平面」无从谈起。松闸，
  *      让弹簧走它自己的弧线（重生的甩镜手感就是这条，契约 §14-33 要求保留）。
- *   2. 机位在锥内 —— 咬合。此后就归第 3 档管。
- *   3. 咬合状态下越界 —— 按住：只旋转水平偏移，半径与高度一律不动，
+ *   2. 机位在锥内 —— 咬合。此后就归第 3、4 档管。
+ *   3. 跟随角一帧跨过了闸宽（`slack`，free 专用）—— 那不是转身，是视线被瞬移。
+ *      整只松开，位置一帧不动，弹簧自己走；硬按下去就是十来米的横旋。松开后要等
+ *      机位重新荡进锥内才咬合，所以回程也没有第二记甩镜（见 behindReleaseSlack）。
+ *   4. 咬合状态下越界 —— 按住：只旋转水平偏移，半径与高度一律不动，
  *      所以画面上是「转得跟手了一点」，不是「被吸走了」。
  *
+ * @param {number} step  跟随角这一帧自己转了多少（rad，取绝对值）
+ * @param {number|null} slack 放手带宽。free 走 behindReleaseSlack(dt)；
+ *                            locked 传 null —— 那边闸是硬顶，见 behindReleaseSlack。
  * @returns {boolean} 这一帧闸有没有真的按住机位
  */
-function holdBehindLimit(state, focus, yaw) {
+function holdBehindLimit(state, focus, yaw, step, slack) {
   const dx = state.pos.x - focus.x;
   const dz = state.pos.z - focus.z;
   const radius = Math.hypot(dx, dz);
@@ -192,8 +229,13 @@ function holdBehindLimit(state, focus, yaw) {
   }
   // 与 desiredPos 同一套极角：正后方 = (sin yaw, cos yaw)，故极角取 atan2(x, z)
   const dev = shortestAngle(yaw, Math.atan2(dx, dz));
-  if (Math.abs(dev) <= BEHIND_LIMIT) {
+  const off = Math.abs(dev);
+  if (off <= BEHIND_LIMIT) {
     state.behindHeld = true;
+    return false;
+  }
+  if (slack !== null && (step > slack || off > BEHIND_LIMIT + slack)) {
+    state.behindHeld = false;
     return false;
   }
   if (!state.behindHeld) return false;
@@ -264,6 +306,8 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
     behindPosHold: false,
     /** 背后半平面闸是否咬合（见 BEHIND_LIMIT / releaseBehind）。snap 落位即咬上。 */
     behindHeld: false,
+    /** 上一帧喂进来的跟随角。闸靠它算「这一帧跟随角自己跳了多少」，见 behindReleaseSlack。 */
+    followYaw: 0,
     shake: 0,
     shakeFreq: 26,
     fovKick: 0,
@@ -360,8 +404,19 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
           state.behindPosHold
         );
       }
-      // 重量归重量，脸前是禁区：闸咬合时滞后超过 BEHIND_LIMIT 就按住不许再往前荡
-      holdBehindLimit(state, focus, Number.isFinite(yaw) ? yaw : state.yaw);
+      // 重量归重量，脸前是禁区：闸咬合时滞后超过 BEHIND_LIMIT 就按住不许再往前荡。
+      // free 那边跟随角是没有速率限制的鼠标增量，一帧跨过闸宽就让路（behindReleaseSlack）；
+      // locked 有「永不绕到正脸」的硬承诺，且跟随角本身带阻尼，闸照旧是硬顶。
+      const followYaw = Number.isFinite(yaw) ? yaw : state.yaw;
+      const followStep = Math.abs(shortestAngle(state.followYaw, followYaw));
+      holdBehindLimit(
+        state,
+        focus,
+        followYaw,
+        followStep,
+        behindYaw === null ? behindReleaseSlack(dt) : null
+      );
+      state.followYaw = followYaw;
 
       // 视点前引：朝移动方向偏一点，构图不会永远把角色钉在正中
       if (vel) {
@@ -433,6 +488,7 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
       state.lead.set(0, 0, 0);
       // 落位就在正后方，背后闸当场咬合
       state.behindHeld = true;
+      state.followYaw = state.yaw;
       // 上一处的震动 / 变焦不跟着人过门
       state.shake = 0;
       state.fovKick = 0;

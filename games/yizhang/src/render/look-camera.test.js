@@ -26,7 +26,9 @@ import {
   BEHIND_SHELL,
   CAMERA_SNAP_MAX_DIST,
   CAMERA_SNAP_TELEPORT,
+  behindReleaseSlack,
   createCamera,
+  lockedHoldSlack,
   shortestAngle,
 } from './camera.js';
 import { YizhangRenderer } from './renderer.js';
@@ -419,7 +421,9 @@ describe('背后闸本身（BEHIND_LIMIT / BEHIND_SHELL / releaseBehind）', () 
     rig.impulse(1.4, 6.5); // 最重的一记震动
     let worstDev = 0;
     for (let i = 0; i < 180; i++) {
-      const yaw = i * 0.9; // 每帧转 51.5°，远超人手甩得动的速度
+      // 每帧转 0.25rad（15rad/s ≈ 860°/s）：比人手甩得动的还快，但还在放手带里，
+      // 闸得逐帧咬住。再快就归「视线被瞬移」管，见下面那组放手带的测。
+      const yaw = i * 0.25;
       rig.update(DT, focus, yaw, new Vector3());
       const dx = rig.state.pos.x - focus.x;
       const dz = rig.state.pos.z - focus.z;
@@ -428,5 +432,160 @@ describe('背后闸本身（BEHIND_LIMIT / BEHIND_SHELL / releaseBehind）', () 
       expect(behindness(rig.camera.position, focus, yaw)).toBeLessThan(0);
     }
     expect(worstDev).toBeLessThanOrEqual(BEHIND_LIMIT + 1e-9);
+    // 闸真的在咬：这个转速下机位一直贴在上限上，不是「压根没管」
+    expect(worstDev).toBeGreaterThan(BEHIND_LIMIT - 1e-3);
+  });
+
+  it('locked 的闸不带放手带：每帧 51.5° 的连续急转也照旧硬顶在上限内', () => {
+    const rig = createCamera({});
+    rig.snap(focus, 0);
+    rig.impulse(1.4, 6.5);
+    let worstDev = 0;
+    for (let i = 0; i < 180; i++) {
+      const yaw = i * 0.9; // 54rad/s ≈ 3100°/s，早已越过 free 的放手带
+      rig.update(DT, focus, yaw, new Vector3(), { behindYaw: yaw });
+      const dx = rig.state.pos.x - focus.x;
+      const dz = rig.state.pos.z - focus.z;
+      worstDev = Math.max(worstDev, Math.abs(shortestAngle(yaw, Math.atan2(dx, dz))));
+      expect(behindness(rig.camera.position, focus, yaw)).toBeLessThan(0);
+    }
+    expect(worstDev).toBeLessThanOrEqual(BEHIND_LIMIT + 1e-9);
+  });
+});
+
+// P1 O2：free 的跟随角是壳层喂的 lookYaw，而 lookYaw 是鼠标增量直接累加出来的
+// （src/input 的 applyLook：`state.yaw += dx * 0.0026 * sensitivity`，没有速率限制）。
+// 一帧 1209px 的猛拉就是 π —— 指针锁定下甩一把鼠标、或手机上一次划屏（触摸 0.0055rad/px，
+// 571px 即可）都到得了。闸这时若硬按，机位要绕着焦点旋过 (π − 75°)，7.1m 半径上就是
+// **一帧 11.2m** 的横移：比它要防的「镜头荡到脸前」还难看，而 free 本来就允许看正脸。
+//
+// 所以闸补了与 R2 硬顶同源的放手带（behindReleaseSlack = lockedHoldSlack）：跟随角一帧
+// 跨过闸宽就整只让路，位置一帧不动，弹簧自己荡回去。这一组把「让路」钉死，上一组
+// （闸本身）把「日常还咬」钉死，两组一起看才是完整的闸。
+describe('free 视线一帧跨过闸宽：闸让路，不绕焦点横旋（P1 O2）', () => {
+  const focus = new Vector3(0, 0, 0);
+  /** 修前这一记猛拉的实测单帧位移（m）—— 回归线就是拿它当参照。 */
+  const YANK_BEFORE = 11.2;
+  /** 「与切 V 同级」：切视角模式那条路弹簧最快的一帧也就 <1m（见上面的切 V 组）。 */
+  const SPRING_STEP = 1;
+
+  /** free 稳态起手：snap 落位 + 跑满弹簧，闸此时是咬合的。 */
+  function settled(yaw = 0) {
+    const rig = createCamera({});
+    rig.snap(focus, yaw);
+    for (let i = 0; i < 240; i++) rig.update(DT, focus, yaw, new Vector3());
+    expect(rig.state.behindHeld).toBe(true);
+    return rig;
+  }
+
+  /** 一帧把视线角改到 `to`，跑 `frames` 帧，返回过程中的峰值单帧位移。 */
+  function flick(rig, to, frames = 240, opts = {}) {
+    let prev = rig.state.pos.clone();
+    let maxStep = 0;
+    let first = 0;
+    for (let i = 0; i < frames; i++) {
+      rig.update(DT, focus, to, new Vector3(), opts);
+      const step = rig.state.pos.distanceTo(prev);
+      if (i === 0) first = step;
+      maxStep = Math.max(maxStep, step);
+      prev = rig.state.pos.clone();
+    }
+    return { first, maxStep };
+  }
+
+  it('一帧甩过 π：单帧位移与切 V 同级，不是十来米的横旋', () => {
+    const rig = settled();
+    const { first, maxStep } = flick(rig, Math.PI - 1e-6);
+    expect(first).toBeLessThan(SPRING_STEP);
+    expect(maxStep).toBeLessThan(SPRING_STEP);
+    // 修前这一帧是 11.2m：留个数量级的余量，别让它悄悄涨回去
+    expect(maxStep).toBeLessThan(YANK_BEFORE / 10);
+    // 让路 ≠ 不生效：弹簧自己把机位荡到新视线背后
+    expect(behindness(rig.camera.position, focus, Math.PI - 1e-6)).toBeLessThan(-6.5);
+    expect(rig.state.behindHeld).toBe(true);
+  });
+
+  it('从闸宽一路扫到 π：每一档都只走弹簧，没有一档横旋', () => {
+    for (const delta of [1.4, 1.6, 1.8, 2.0, 2.4, 2.8, Math.PI - 1e-6]) {
+      const rig = settled();
+      const { maxStep } = flick(rig, delta);
+      expect(maxStep, `Δyaw=${delta.toFixed(2)}`).toBeLessThan(SPRING_STEP);
+      expect(behindness(rig.camera.position, focus, delta)).toBeLessThan(-6.5);
+    }
+  });
+
+  it('让路那一帧机位原地不动（位移 = 纯弹簧步长），且闸当场松开', () => {
+    const rig = settled();
+    const before = rig.state.pos.clone();
+    rig.update(DT, focus, Math.PI - 1e-6, new Vector3());
+    expect(rig.state.behindHeld).toBe(false);
+    expect(rig.state.pos.distanceTo(before)).toBeLessThan(0.3);
+    // 回程只在重新进锥的那一帧咬合，所以没有第二记甩镜
+    let prev = rig.state.pos.clone();
+    let maxStep = 0;
+    for (let i = 0; i < 300; i++) {
+      rig.update(DT, focus, Math.PI - 1e-6, new Vector3());
+      maxStep = Math.max(maxStep, rig.state.pos.distanceTo(prev));
+      prev = rig.state.pos.clone();
+    }
+    expect(maxStep).toBeLessThan(SPRING_STEP);
+    expect(rig.state.behindHeld).toBe(true);
+  });
+
+  it('人被搬到镜头跟前（壳层内的 12m 瞬移）同样不横旋', () => {
+    const rig = settled();
+    const jumped = new Vector3(0, 0, 12); // 半径仍在 dist × BEHIND_SHELL 之内，壳层那档兜不住
+    let prev = rig.state.pos.clone();
+    let maxStep = 0;
+    for (let i = 0; i < 300; i++) {
+      rig.update(DT, jumped, 0, new Vector3());
+      maxStep = Math.max(maxStep, rig.state.pos.distanceTo(prev));
+      prev = rig.state.pos.clone();
+    }
+    // 修前这一路是 6.9m 的一步；现在只剩追人的弹簧（焦点跳 12m ⇒ 首帧约 1.2m）
+    expect(maxStep).toBeLessThan(1.5);
+    expect(behindness(rig.camera.position, jumped, 0)).toBeLessThan(-6.5);
+  });
+
+  it('locked 不受影响：同一记猛拉照旧被硬顶按在背后（永不绕到正脸）', () => {
+    const rig = settled();
+    let worst = -Infinity;
+    for (let i = 0; i < 240; i++) {
+      const yaw = Math.PI - 1e-6;
+      rig.update(DT, focus, yaw, new Vector3(), { behindYaw: yaw });
+      worst = Math.max(worst, behindness(rig.camera.position, focus, yaw));
+    }
+    expect(worst).toBeLessThan(-1);
+  });
+
+  it('放手带与 R2 硬顶同源（同一个 lockedHoldSlack，掉帧一起放宽）', () => {
+    expect(behindReleaseSlack(DT)).toBe(lockedHoldSlack(DT));
+    expect(behindReleaseSlack(1 / 20)).toBeGreaterThan(behindReleaseSlack(DT));
+    // 带宽落在「人手甩不到、瞬移必超」之间：60fps 下 0.5rad/帧 ≈ 30rad/s
+    expect(behindReleaseSlack(DT)).toBeCloseTo(0.5, 12);
+    expect(behindReleaseSlack(DT)).toBeLessThan(BEHIND_LIMIT);
+  });
+
+  it('壳层那条真链路：free 下 setLook 一帧改 π，不 snap 也不横旋', () => {
+    const r = rigged({ lookMode: 'free' });
+    const at = new Vector3(4, 0, -2);
+    const local = { yaw: 0.3 };
+    r.setLook({ simYaw: 0.3, pitch: 0, lookMode: 'free' });
+    follow(r, at, local, 240);
+    expect(r._snapPending).toBe(false);
+
+    // 鼠标一帧拉过 1209px（0.0026rad/px）：lookYaw 直接跳 π
+    r.setLook({ simYaw: 0.3 + Math.PI, pitch: 0 });
+    let prev = r.cameraRig.camera.position.clone();
+    let maxStep = 0;
+    for (let i = 0; i < 240; i++) {
+      expect(r._followCamera(DT, at, r._followYaw(local)), `第 ${i} 帧不该 snap`).toBe(false);
+      const now = r.cameraRig.camera.position;
+      maxStep = Math.max(maxStep, now.distanceTo(prev));
+      expect(now.distanceTo(at)).toBeLessThan(CAMERA_SNAP_MAX_DIST);
+      prev = now.clone();
+    }
+    expect(maxStep).toBeLessThan(SPRING_STEP);
+    expect(behindness(r.cameraRig.camera.position, at, 0.3 + Math.PI)).toBeLessThan(-6.5);
   });
 });
