@@ -8,6 +8,9 @@
 // 安全区多一枚「选」确认钮 .yz-hub-confirm：它是 .yz-touch 的直接子节点，
 // **不**进 .yz-cluster 的 grid-template-areas —— 塞进去会挤乱 F2 的栅格布点。
 // 显隐靠 .yz-touch[data-phase="hub"]（见 ui/hub.css），大厅里同时收起扇/技/换三钮。
+//
+// 右上另有一枚「视」切视角钮 .yz-tbtn--look（V 的触屏等价物），同样是 .yz-touch
+// 的直接子节点：它是相机/系统键不是战斗键，贴在 HUD 暂停钮左侧而不进右下簇。
 
 import { h, bindHoldButton, capturePointer } from "./dom.js";
 
@@ -111,8 +114,31 @@ export function createTouchLayer({ input, audio }) {
   const btnInteract = actionButton("interact", "选", "interact", false);
   btnInteract.classList.add("yz-hub-confirm");
 
+  // 视角切换钮：V 的触屏等价物。**不走 setTouchButton**——它不是发给 sim 的动作，
+  // 直连 input.toggleLookMode()（与 V 键同一条路径、同一道 enabled 闸：暂停 / 结算 /
+  // 失焦时输入层自己不切，UI 不再拦第二道）。切换回执只有 HUD 那枚 0.9s 的
+  // .yz-look-flash（onLookModeChange → shell.setLookMode 既有链路），本钮不加提示；
+  // 音效也跟「真的切了」走 —— 闸把这一下吞了就不响，免得听着像切了其实没切。
+  const btnLook = h(
+    "button",
+    { class: "yz-tbtn yz-tbtn--look", type: "button", "aria-label": "切换视角" },
+    [h("span", { text: "视" })]
+  );
+  bindHoldButton(
+    btnLook,
+    () => {
+      btnLook.classList.add("is-pressed");
+      const before = input.getLookMode ? input.getLookMode() : null;
+      const after = input.toggleLookMode();
+      if (audio && after !== before) audio.play("uiMove");
+    },
+    () => {
+      btnLook.classList.remove("is-pressed");
+    }
+  );
+
   const cluster = h("div", { class: "yz-cluster" }, [btnJump, btnSkill, btnDash, btnSwitch, btnSlap]);
-  const el = h("div", { class: "yz-touch", dataset: { phase: "arena" } }, [zone, cluster, btnInteract]);
+  const el = h("div", { class: "yz-touch", dataset: { phase: "arena" } }, [zone, cluster, btnInteract, btnLook]);
 
   function applyCooldown(node, remaining, max, disabled) {
     const cd = Math.max(0, remaining || 0);
@@ -133,6 +159,7 @@ export function createTouchLayer({ input, audio }) {
       dash: btnDash,
       jump: btnJump,
       interact: btnInteract,
+      look: btnLook,
     },
     /** @param {'hub'|'arena'} phase */
     setPhase(phase) {

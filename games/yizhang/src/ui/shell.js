@@ -69,6 +69,7 @@ export function createShell(opts) {
     quality: save.quality || "auto",
     muted: !!save.muted,
     sensitivity: save.lookSensitivity ?? 1,
+    invertY: !!save.invertY,
     pointerLock: save.pointerLock !== false,
     touch: save.touch || "auto",
     // 视角模式：开局值由 main 收敛（URL > 存档 > locked）后经 opts 传入，
@@ -236,6 +237,24 @@ export function createShell(opts) {
       settingRow(
         "视角灵敏度",
         h("span", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [slider, readout])
+      ),
+      // Y 轴反转：input.setInvertY / applyLook / 存档字段早就位（storage.js 缺省 false），
+      // 缺的只是这行开关。setInvertY 是既有公共 API，UI 直接调即时生效（与触控层调
+      // toggleLookMode 同一种「壳层只接线」姿势）；emitSettings 照发，落盘归 main。
+      settingRow(
+        "Y 轴反转",
+        segment(
+          [
+            [false, "关"],
+            [true, "开"],
+          ],
+          () => settings.invertY,
+          (v) => {
+            settings.invertY = v;
+            input.setInvertY(v);
+            emitSettings();
+          }
+        )
       ),
     ]);
   }

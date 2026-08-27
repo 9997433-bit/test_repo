@@ -440,6 +440,13 @@ html[data-yz-fallback] .yz-tbtn--jump {
   grid-area: jump;
 }
 
+/* 切视角钮（V 等价）：不进簇栅格，贴右上暂停钮左侧，与 styles/touch.css 同一布点 */
+html[data-yz-fallback] .yz-tbtn--look {
+  position: absolute;
+  top: var(--yz-inset-t);
+  right: calc(var(--yz-inset-r) + 56px);
+}
+
 html[data-yz-fallback] .yz-tbtn.is-pressed,
 html[data-yz-fallback] .yz-tbtn:active {
   filter: brightness(1.18);
