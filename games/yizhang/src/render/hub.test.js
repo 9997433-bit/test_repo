@@ -26,6 +26,39 @@ import { readHub, readView } from './view.js';
 /** 贴图库的替身：程序化贴图要 canvas，node 里没有，材质吃 null 也照样能建。 */
 const NO_TEXTURES = {};
 
+/**
+ * 「贴图确实接上了」这类断言需要一个非 null 的贴图。真程序化贴图要 canvas，
+ * 这里给一个够 cloneTex（clone / repeat.set / dispose）用的最小替身。
+ */
+function fakeTex() {
+  return {
+    repeat: { set() {} },
+    needsUpdate: false,
+    clone() {
+      return fakeTex();
+    },
+    dispose() {},
+  };
+}
+
+function fakeTextures() {
+  return {
+    turbulence: fakeTex(),
+    cliff: { rough: fakeTex(), albedo: fakeTex(), normal: fakeTex() },
+    crust: { rough: fakeTex(), albedo: fakeTex(), normal: fakeTex() },
+  };
+}
+
+/** 按材质名找一份材质。名字是比「碰巧有某张贴图」更稳的抓手。 */
+function findMaterial(hub, name) {
+  let found = null;
+  hub.root.traverse((o) => {
+    if (o.material?.name === name) found = o.material;
+  });
+  expect(found, `没找到名为 ${name} 的材质`).toBeTruthy();
+  return found;
+}
+
 function freshMatch(opts = {}) {
   sim.resetDeps();
   sim.installData({ GLOVES });
@@ -384,6 +417,38 @@ describe('传送门', () => {
       else expect(bloomCount, tier).toBeGreaterThan(0);
       hub.dispose();
     }
+  });
+
+  // 低档没有辉光支链收尾，凿刻若还按高档强度推就会把通道顶满，
+  // 门楣与门槛变成两条死白的板 —— 手册里禁的「发光贴片」。峰值必须跟着降。
+  it('凿刻的自发光峰值跟着画质走，低档不会被推成一块白板', () => {
+    const peak = (tier) => {
+      const { hub, state } = mount(tier);
+      const view = hubOf(state);
+      advance(hub, { ...view, portal: { ...view.portal, ready: true } }, 240);
+      const mat = findMaterial(hub, 'hub-rune');
+      const v = mat.emissiveIntensity;
+      hub.dispose();
+      return v;
+    };
+    const high = peak('high');
+    const low = peak('low');
+    expect(high).toBeGreaterThan(0.9);
+    expect(low).toBeLessThan(high);
+    expect(low).toBeGreaterThan(0.3); // 也不能低到「门开了」看不出来
+  });
+
+  it('凿刻带自发光贴图：槽里有深有浅，不是一整条均匀的亮带', () => {
+    const scene = new Scene();
+    const hub = createHubScene({
+      scene,
+      quality: QUALITY.low,
+      textures: fakeTextures(),
+      seed: 7,
+    });
+    advance(hub, hubOf(freshMatch()), 5);
+    expect(findMaterial(hub, 'hub-rune').emissiveMap).toBeTruthy();
+    hub.dispose();
   });
 });
 

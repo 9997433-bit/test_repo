@@ -182,6 +182,7 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
   // 中轴嵌线与门楣凿刻：唯一允许 emissive 的两处，强度由「主掌选没选」驱动
   const inlayMat = track(
     new MeshStandardMaterial({
+      name: 'hub-inlay',
       color: new Color(PALETTE.rockDeep),
       roughness: 0.62,
       metalness: 0.15,
@@ -190,16 +191,25 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
       envMapIntensity: 0.5,
     })
   );
+  // 凿刻不是一条均匀的亮带：emissiveMap 让槽里有深有浅，看得出是**凿出来的**。
+  // 少了这张图，低档（没有辉光柔化）会把它削成一块死白的板 —— 正是手册里禁的那种发光贴片。
   const runeMat = track(
     new MeshStandardMaterial({
+      name: 'hub-rune',
       color: new Color(0x1a1410),
+      roughnessMap: cloneTex(textures?.cliff?.rough, 1, 1),
       roughness: 0.5,
       metalness: 0.25,
       emissive: new Color(PALETTE.crackCore),
+      emissiveMap: cloneTex(textures?.turbulence, 1.6, 1.6),
       emissiveIntensity: 0.06,
       envMapIntensity: 0.6,
     })
   );
+
+  // 辉光在的时候，亮部由后期收尾，凿刻本身可以推得更足；
+  // 低档没有那条支链，同样的强度只会把通道顶到 1 变成白板，所以峰值收一档。
+  const runePeak = quality.bloom ? 1.35 : 0.72;
 
   const ringMat = track(
     new MeshStandardMaterial({
@@ -771,7 +781,7 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
     membraneMat.uniforms.uTime.value = time;
     // 凿刻与中轴嵌线一起亮：门通了这件事在走道另一头也看得见
     const flicker = 0.9 + Math.sin(time * 1.9) * 0.06 + Math.sin(time * 4.7 + 1.3) * 0.04;
-    runeMat.emissiveIntensity = (0.05 + portalReady * 1.35 * flicker) * (p.near ? 1.15 : 1);
+    runeMat.emissiveIntensity = (0.05 + portalReady * runePeak * flicker) * (p.near ? 1.15 : 1);
     inlayMat.emissiveIntensity = 0.04 + portalReady * 0.42 * flicker;
     portalLight.position.set(p.x, hub.floorY + p.radius * 0.9, p.z + 0.4);
     portalLight.intensity = portalReady * 13 * flicker;
