@@ -163,11 +163,19 @@ function skinify(rootGroup, skip) {
 
     if (mesh.layers.isEnabled(OCCLUDER_LAYER)) occGeos.push(g.clone());
 
+    // 顶点色材质（识别色漆，见 mats.paintSurface）先垫一份白，颜色由 writePaint 写
+    if (mesh.material.vertexColors && !g.attributes.color) {
+      const white = new Float32Array(n * 3).fill(1);
+      g.setAttribute('color', new BufferAttribute(white, 3));
+    }
+
     let b = buckets.get(mesh.material);
     if (!b) {
-      b = { geos: [], cast: false, receive: false, layers: 0, bloomSelf: false };
+      b = { geos: [], cast: false, receive: false, layers: 0, bloomSelf: false, verts: 0, ranges: [] };
       buckets.set(mesh.material, b);
     }
+    b.ranges.push({ source: mesh, start: b.verts, count: n });
+    b.verts += n;
     b.geos.push(g);
     b.cast ||= mesh.castShadow;
     b.receive ||= mesh.receiveShadow;
@@ -181,6 +189,7 @@ function skinify(rootGroup, skip) {
 
   const skeleton = new Skeleton(bones);
   const meshes = [];
+  const byMaterial = new Map();
   for (const [material, b] of buckets) {
     const geometry = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
     if (!geometry) continue;
@@ -190,10 +199,13 @@ function skinify(rootGroup, skip) {
     sm.receiveShadow = b.receive;
     sm.layers.mask = b.layers;
     if (b.bloomSelf) sm.userData.bloomSelf = true;
+    // 合并后每个源零件占哪一段顶点：识别色换色时照着这张表改顶点色
+    sm.userData.ranges = b.ranges;
     sm.boundingSphere = BODY_SPHERE.clone();
     rootGroup.add(sm);
     sm.bind(skeleton, rootGroup.matrixWorld);
     meshes.push(sm);
+    byMaterial.set(material, sm);
   }
 
   if (occGeos.length > 0) {
@@ -211,7 +223,25 @@ function skinify(rootGroup, skip) {
       meshes.push(shade);
     }
   }
-  return { meshes, skeleton };
+  return { meshes, skeleton, byMaterial };
+}
+
+/**
+ * 把三块识别色漆的颜色写进合批网格的顶点色。
+ *
+ * 背布片吃当前激活掌的色、右手漆条吃主掌色、左手吃副掌色 —— 和以前三份材质
+ * 各自带一个颜色时一模一样，只是颜色的落点从 uniform 换成了顶点属性。
+ * 换掌一帧几十个顶点，比多两个 drawcall 便宜得多。
+ */
+function writePaint(mesh, mats) {
+  const attr = mesh?.geometry?.attributes?.color;
+  if (!attr) return;
+  for (const r of mesh.userData.ranges) {
+    const col = mats[r.source.userData.tintSource]?.color;
+    if (!col) continue;
+    for (let i = r.start; i < r.start + r.count; i++) attr.setXYZ(i, col.r, col.g, col.b);
+  }
+  attr.needsUpdate = true;
 }
 
 function shortestAngle(a, b) {
@@ -333,11 +363,12 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     new MeshBasicMaterial({ color: 0x0d1017, transparent: true, opacity: 0.32, depthWrite: false })
   );
 
-  function makePaint(ident) {
+  function makePaint(ident, vertexColors = false) {
     // 识别色是「染过的粗布」，不是「喷了漆的塑料板」。给它布的织纹与法线、
     // 把粗糙度推到接近全漫反射，否则背板会在跟随镜头里烧成一张白纸。
     return new MeshStandardMaterial({
       color: ident,
+      vertexColors,
       // 织物只做了粗糙度与法线，没有 albedo：颜色就是识别色本身
       roughnessMap: textures.cloth.rough,
       normalMap: quality.normalMaps ? textures.cloth.normal : null,
@@ -452,13 +483,21 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       paint: makePaint(ident),
       paintMain: makePaint(identMain),
       paintOff: makePaint(identOff),
+      // 三块漆（背布片 = 当前激活掌、右手主掌漆条、左手副掌漆条）的材质参数
+      // 一字不差，差的只是颜色。所以渲染时共用这一份，各自的颜色写进顶点色
+      // （见 writePaint）—— 上面那三份仍旧是颜色的持有者与 applyTints 的写入口，
+      // 只是不再各占一个 drawcall。换掌在画面上照样是看得见的。
+      paintSurface: makePaint(0xffffff, true),
       seamMain: makeSeam(),
       seamOff: makeSeam(),
       ident,
     };
   }
 
-  /** side: +1 右手（主掌），-1 左手（副掌）。掌心与指节朝 -Z（正前方）。 */
+  /**
+   * side: +1 右手（主掌），-1 左手（副掌）。掌心与指节朝 -Z（正前方）。
+   * stripeMat 是漆条颜色的来源键（`paintMain` / `paintOff`，见 mats.paintSurface）。
+   */
   function buildGlove(mats, side, stripeMat, seamMat) {
     const g = new Group();
     const mitt = new Mesh(geo.mitt, mats.leather);
@@ -479,7 +518,8 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     g.add(knuckle);
 
     // 识别色只出现在这一道漆条上：右手主掌色、左手副掌色
-    const stripe = new Mesh(geo.stud, stripeMat);
+    const stripe = new Mesh(geo.stud, mats.paintSurface);
+    stripe.userData.tintSource = stripeMat;
     stripe.scale.set(3.4, 0.55, 1.2);
     stripe.position.set(0, 0.07, 0.24);
     g.add(stripe);
@@ -742,7 +782,8 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     // 大件投影，贴在身上的小件（皮带扣、背布片）中档不单独投影
     const CASTS = new Set(['cloth', 'clothDim', 'skin']);
     for (const [key, geometry] of bakedBody) {
-      const mesh = new Mesh(geometry, mats[key]);
+      const mesh = new Mesh(geometry, key === 'paint' ? mats.paintSurface : mats[key]);
+      if (key === 'paint') mesh.userData.tintSource = 'paint';
       mesh.castShadow = quality.shadows && (CASTS.has(key) || quality.propShadows);
       if (key === 'cloth') mesh.receiveShadow = quality.shadows;
       if (OCCLUDES.has(key)) markOccluder(mesh);
@@ -788,7 +829,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       const glove = buildGlove(
         mats,
         side,
-        isMain ? mats.paintMain : mats.paintOff,
+        isMain ? 'paintMain' : 'paintOff',
         isMain ? mats.seamMain : mats.seamOff
       );
       glove.position.y = -0.22;
@@ -809,9 +850,12 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     // 分节搭完了，最后按材质合成几份刚性蒙皮网格（见 skinify）。
     // 接地阴影是单独开关的半透片，不进这一份。
     const skinned = skinify(rootGroup, new Set([contact]));
+    const paintMesh = skinned.byMaterial.get(mats.paintSurface) ?? null;
+    writePaint(paintMesh, mats);
 
     return {
       rootGroup,
+      paintMesh,
       body,
       mats,
       legs,
@@ -844,6 +888,8 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     c.mats.paint.color.copy(ident);
     c.mats.paintMain.color.copy(identColor(p.mainTint ?? p.tint, isLocal));
     c.mats.paintOff.color.copy(identColor(p.offTint ?? p.tint, isLocal));
+    // 三块漆共用一份材质，颜色落在顶点色上（见 writePaint）
+    writePaint(c.paintMesh, c.mats);
     c.mats.cloth.color.copy(skinColor(c.look.cloth, isLocal)).lerp(ident, 0.12);
     c.activeGloveId = p.activeGloveId;
     c.mainId = p.mainId;

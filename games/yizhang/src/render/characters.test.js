@@ -307,6 +307,47 @@ describe('角色：按材质合批（L3-10 绘制预算）', () => {
     chars.dispose();
   });
 
+  it('三块识别色漆共用一份材质，颜色走顶点色，换掌照样看得见', () => {
+    const { chars } = mount('mid');
+    chars.reconcile(
+      [player('p0', 'reed', { tint: 0x63c6b4, mainTint: 0x63c6b4, offTint: 0xc94f43 })],
+      'p0'
+    );
+    const c = chars.get('p0');
+    const mesh = c.paintMesh;
+    expect(mesh).toBeTruthy();
+    expect(mesh.material).toBe(c.mats.paintSurface);
+    expect(mesh.material.vertexColors).toBe(true);
+
+    // 背布片 / 主掌漆条 / 副掌漆条，三段各写各的颜色
+    const sources = mesh.userData.ranges.map((r) => r.source.userData.tintSource).sort();
+    expect(sources).toEqual(['paint', 'paintMain', 'paintOff']);
+    const attr = mesh.geometry.attributes.color;
+    const readAt = (r) => [attr.getX(r.start), attr.getY(r.start), attr.getZ(r.start)];
+    for (const r of mesh.userData.ranges) {
+      const want = c.mats[r.source.userData.tintSource].color;
+      const got = readAt(r);
+      // 顶点属性是 float32，材质颜色是 float64，比到 6 位就够断言「写的是这个色」
+      expect(got[0], r.source.userData.tintSource).toBeCloseTo(want.r, 6);
+      expect(got[1], r.source.userData.tintSource).toBeCloseTo(want.g, 6);
+      expect(got[2], r.source.userData.tintSource).toBeCloseTo(want.b, 6);
+    }
+    // 副掌暖红、主掌青，两段顶点色分得开 —— 不是三段刷成同一个色
+    const off = mesh.userData.ranges.find((r) => r.source.userData.tintSource === 'paintOff');
+    const main = mesh.userData.ranges.find((r) => r.source.userData.tintSource === 'paintMain');
+    expect(readAt(off)).not.toEqual(readAt(main));
+
+    // 换掌：材质还是同一份，颜色跟着改
+    chars.reconcile(
+      [player('p0', 'reed', { tint: 0xe07840, mainTint: 0xe07840, offTint: 0xc94f43 })],
+      'p0'
+    );
+    expect(mesh.material).toBe(c.mats.paintSurface);
+    expect(readAt(main)[0]).toBeCloseTo(c.mats.paintMain.color.r, 6);
+    expect(readAt(main)[2]).toBeCloseTo(c.mats.paintMain.color.b, 6);
+    chars.dispose();
+  });
+
   it('辉光挡光走一份纯黑替身：平时不画，只在自发光通道里露面', () => {
     const { chars } = mount('mid');
     chars.reconcile([player('p0', 'mason')], 'p0');
