@@ -6,6 +6,7 @@
 
 import * as realData from "../data/gloves.js";
 import * as bridge from "./combat-bridge.js";
+import { normalizeHubLayout } from "./hub.js";
 
 const REAL_COMBAT = {
   resolveSlap: bridge.resolveSlap,
@@ -19,6 +20,7 @@ const BASE_GLOVE = BASE_GLOVE_BY_ID.cotton || realData.GLOVES[0];
 
 let dataMod = null;
 let combatMod = null;
+let hubMod = null;
 let cache = null;
 
 /** 手套字段补全，防止替身 data 少给字段把 sim 打成 NaN */
@@ -95,6 +97,7 @@ function rebuild() {
     MATCH,
     GLOVES,
     GLOVE_BY_ID,
+    HUB: normalizeHubLayout(hubMod),
     combat: {
       resolveSlap: pick("resolveSlap"),
       resolveSkill: pick("resolveSkill"),
@@ -103,6 +106,7 @@ function rebuild() {
     },
     usingRealData: !overrideGloves,
     usingRealCombat,
+    usingDataHub: !!hubMod,
   };
   return cache;
 }
@@ -119,6 +123,19 @@ export function getDeps() {
  */
 export function installData(mod) {
   dataMod = mod && !isRealData(mod) ? mod : null;
+  // 安全区布局表（Fable-3 的 `src/data/hub.js`）走同一个口子进来：真身识别只管掌表与
+  // MATCH，认出真身也不能把 HUB 丢掉，所以单独记一份。
+  if (mod && mod.HUB) hubMod = mod.HUB;
+  cache = null;
+  return getDeps();
+}
+
+/**
+ * 单独装安全区布局表。`src/data/hub.js` 合入之前，sim 用 `hub.js` 里的内置 8 座默认布局；
+ * 合入之后由装配层 `installHubLayout(dataHubModule.HUB)`（或整包 `installData`）接管。
+ */
+export function installHubLayout(layout) {
+  hubMod = layout && typeof layout === "object" ? (layout.HUB ?? layout) : null;
   cache = null;
   return getDeps();
 }
@@ -137,6 +154,7 @@ export function installCombat(mod) {
 export function resetDeps() {
   dataMod = null;
   combatMod = null;
+  hubMod = null;
   cache = null;
   return getDeps();
 }

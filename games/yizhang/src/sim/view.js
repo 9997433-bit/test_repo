@@ -2,6 +2,7 @@
 
 import { crackOf } from "./arena.js";
 import { resolveGlove } from "./deps.js";
+import { hubView } from "./hub.js";
 import { activeGloveId } from "./state.js";
 import { len2, round4 } from "./math.js";
 
@@ -72,6 +73,29 @@ function playerView(p) {
   };
 }
 
+/**
+ * 安全区快照。台座补上掌的名字 / 识别色 / 一句说明，UI 不用再去翻数据表；
+ * `selected` 是布尔（契约字段），`slot` 给出是主掌还是副掌。
+ */
+function hubSnapshot(state) {
+  const view = hubView(state);
+  view.pedestals = view.pedestals.map((ped) => {
+    const glove = resolveGlove(ped.gloveId);
+    return {
+      ...ped,
+      x: round4(ped.x),
+      y: round4(ped.y),
+      z: round4(ped.z),
+      yaw: round4(ped.yaw),
+      name: glove.name,
+      color: glove.color,
+      desc: glove.desc ?? null,
+      role: glove.role ?? null,
+    };
+  });
+  return view;
+}
+
 export function getView(state) {
   const c = state.config;
   return {
@@ -79,6 +103,8 @@ export function getView(state) {
     seed: state.seed,
     time: round4(state.time),
     tick: state.tick,
+    phase: state.phase,
+    hub: hubSnapshot(state),
     config: {
       dt: c.dt,
       arenaRadius: c.arenaRadius,

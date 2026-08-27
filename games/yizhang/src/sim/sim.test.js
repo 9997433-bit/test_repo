@@ -23,12 +23,18 @@ import {
   getPlayer,
   getMatchConfig,
   getGloves,
+  getHubLayout,
   damageTileAt,
   hasFloorUnder,
   applyKnockback,
+  enterArena,
+  enterHub,
+  installHubLayout,
+  playerInHub,
   resetDeps,
   installData,
   installCombat,
+  HUB_ZERO_INPUT,
   ZERO_INPUT,
   PHYSICS,
 } from "./index.js";
@@ -129,12 +135,26 @@ describe("createMatch", () => {
     expect(p.statuses).toEqual([]);
   });
 
-  it("所有人开局站在台上，脚下有台", () => {
-    const s = createMatch({ seed: 9 });
+  it("phase:'arena' 时所有人开局站在台上，脚下有台", () => {
+    const s = createMatch({ seed: 9, phase: "arena" });
     for (const p of s.players) {
       expect(p.alive).toBe(true);
       expect(Math.hypot(p.x, p.z)).toBeLessThan(s.config.arenaRadius);
       expect(hasFloorUnder(s, p.x, p.z)).toBe(true);
+    }
+  });
+
+  it("默认开局在安全区：真人在走道上，Bot 留在裂岛等着", () => {
+    const s = createMatch({ seed: 9 });
+    expect(s.phase).toBe("hub");
+
+    const human = getPlayer(s, "p0");
+    expect(playerInHub(s, human)).toBe(true);
+    expect(human.alive).toBe(true);
+
+    for (const bot of s.players.filter((p) => p.kind === "bot")) {
+      expect(playerInHub(s, bot)).toBe(false);
+      expect(hasFloorUnder(s, bot.x, bot.z)).toBe(true);
     }
   });
 });
@@ -603,6 +623,332 @@ describe("变长 dt", () => {
     expect(s.time).toBeLessThan(1);
     step(s, {}, -5);
     expect(Number.isFinite(s.time)).toBe(true);
+  });
+});
+
+describe("安全区 hub", () => {
+  const hubInput = (over = {}) => ({ ...HUB_ZERO_INPUT, ...over });
+
+  function hubMatch(over = {}) {
+    return createMatch({ seed: 31, botCount: 1, ...over });
+  }
+
+  function pedestalOf(state, gloveId) {
+    return state.hub.pedestals.find((ped) => ped.gloveId === gloveId);
+  }
+
+  /** 站到台座外侧一步远（台座本身是实体，站不进去） */
+  function standBy(p, ped) {
+    place(p, ped.x + (ped.x < 0 ? 1.4 : -1.4), 0, ped.z);
+  }
+
+  it("默认 phase=hub；skipHub / phase:'arena' 让旧探针直接进岛", () => {
+    expect(hubMatch().phase).toBe("hub");
+    expect(hubMatch({ phase: "arena" }).phase).toBe("arena");
+    expect(hubMatch({ skipHub: true }).phase).toBe("arena");
+
+    const s = hubMatch({ config: { skipHub: true } });
+    expect(s.phase).toBe("arena");
+    const p = getPlayer(s, "p0");
+    expect(playerInHub(s, p)).toBe(false);
+    expect(hasFloorUnder(s, p.x, p.z)).toBe(true);
+  });
+
+  it("interact 是可选输入键：ZERO_INPUT 形状不变，HUB_ZERO_INPUT 才多两个键", () => {
+    expect(Object.keys(ZERO_INPUT)).not.toContain("interact");
+    expect(HUB_ZERO_INPUT.interact).toBe(false);
+    expect(HUB_ZERO_INPUT.interactSlot).toBe(null);
+    for (const k of Object.keys(ZERO_INPUT)) expect(HUB_ZERO_INPUT).toHaveProperty(k);
+  });
+
+  it("走道里能走，撞到隐形墙就停，不会掉出去", () => {
+    const s = hubMatch();
+    const p = getPlayer(s, "p0");
+    const from = { x: p.x, z: p.z };
+
+    run(s, { p0: hubInput({ moveZ: -1 }) }, 1.0);
+    expect(p.z).toBeLessThan(from.z - 4); // 朝走道深处走出去了
+    expect(p.alive).toBe(true);
+    expect(p.grounded).toBe(true);
+
+    // 一路撞侧墙：被挡住，人还在
+    run(s, { p0: hubInput({ moveX: 1 }) }, 3);
+    const layout = s.hub.layout;
+    expect(p.x).toBeLessThanOrEqual(layout.origin.x + layout.walkway.halfWidth + 1e-6);
+    expect(p.alive).toBe(true);
+    expect(p.deaths).toBe(0);
+  });
+
+  it("安全区没有掉落 KO：整块裂岛碎光也不掉出局", () => {
+    const s = hubMatch();
+    const p = getPlayer(s, "p0");
+    for (const t of s.arena.tiles) damageTileAt(s, t.x, t.z, 1e4);
+    expect(hasFloorUnder(s, p.x, p.z)).toBe(false); // 脚下确实没有台块
+
+    run(s, { p0: hubInput({ moveZ: -1, jump: true }) }, 3);
+    expect(p.alive).toBe(true);
+    expect(p.deaths).toBe(0);
+    expect(p.y).toBe(s.hub.layout.floorY);
+  });
+
+  it("安全区不吃击退", () => {
+    const s = hubMatch();
+    const a = getPlayer(s, "p0");
+    const b = getPlayer(s, "b0");
+    // 把 bot 也搬进走道，正面站在人前 2m（yaw=0 面向 -Z）
+    place(b, a.x, 0, a.z - 2);
+    b.invulnT = 0;
+    a.invulnT = 0;
+    expect(playerInHub(s, b)).toBe(true);
+
+    run(s, { p0: hubInput({ slap: true, yaw: 0 }) }, 0.6);
+    expect(Math.hypot(b.vx, b.vz)).toBeLessThan(0.05);
+    expect(b.hitsTaken).toBe(0);
+    expect(b.knockScale).toBe(1);
+
+    // 直接灌冲量也一样不动
+    expect(applyKnockback(s, b, 30, 4, 0, "p0")).toBe(0);
+    expect(b.vx).toBe(0);
+    expect(b.alive).toBe(true);
+  });
+
+  it("安全区不碎地：在走道里砸地，裂岛台面一块没掉血", () => {
+    const s = hubMatch({ gloveId: "granite", unlocked: "all" });
+    const p = getPlayer(s, "p0");
+    expect(playerInHub(s, p)).toBe(true);
+
+    run(s, { p0: hubInput({ skill: true }) }, 0.5);
+    expect(s.arena.tiles.every((t) => t.hp === t.maxHp && t.alive)).toBe(true);
+    expect(s.stats.tilesBroken).toBe(0);
+    expect(s.arena.brokenCount).toBe(0);
+  });
+
+  it("靠近台座给焦点，interact 先装主掌再装副掌", () => {
+    const s = hubMatch({ unlocked: ["cotton", "frost", "magnet"] });
+    const p = getPlayer(s, "p0");
+
+    standBy(p, pedestalOf(s, "frost"));
+    step(s, { p0: hubInput() }, DT); // 只靠近，不按键
+    expect(getView(s).hub.focusGloveId).toBe("frost");
+    expect(s.hub.mainGloveId).toBe(null);
+    expect(getView(s).hub.portalReady).toBe(false);
+
+    step(s, { p0: hubInput({ interact: true }) }, DT);
+    expect(s.hub.mainGloveId).toBe("frost");
+    expect(p.gloveId).toBe("frost");
+    expect(s.hub.portalReady).toBe(true);
+    expect(s.events.some((e) => e.type === "hubEquip" && e.slot === "main")).toBe(true);
+
+    // 走到另一座：先主后副，第二只掌进副掌槽
+    standBy(p, pedestalOf(s, "magnet"));
+    step(s, { p0: hubInput() }, DT);
+    step(s, { p0: hubInput({ interact: true }) }, DT);
+    expect(s.hub.mainGloveId).toBe("frost");
+    expect(s.hub.offGloveId).toBe("magnet");
+    expect(p.gloveId).toBe("frost");
+    expect(p.offhandId).toBe("magnet");
+
+    const view = getView(s);
+    expect(view.hub.pedestals.find((x) => x.gloveId === "frost")).toMatchObject({
+      selected: true,
+      slot: "main",
+    });
+    expect(view.hub.pedestals.find((x) => x.gloveId === "magnet")).toMatchObject({
+      selected: true,
+      slot: "off",
+    });
+    expect(view.hub.pedestals.filter((x) => x.selected)).toHaveLength(2);
+  });
+
+  it("再按一次副掌台座就提为主掌，原主掌退到副掌", () => {
+    const s = hubMatch({ unlocked: ["cotton", "frost", "magnet"] });
+    const p = getPlayer(s, "p0");
+
+    standBy(p, pedestalOf(s, "frost"));
+    step(s, { p0: hubInput({ interact: true }) }, DT);
+    standBy(p, pedestalOf(s, "magnet"));
+    step(s, { p0: hubInput() }, DT);
+    step(s, { p0: hubInput({ interact: true }) }, DT);
+    expect([s.hub.mainGloveId, s.hub.offGloveId]).toEqual(["frost", "magnet"]);
+
+    step(s, { p0: hubInput() }, DT);
+    step(s, { p0: hubInput({ interact: true }) }, DT);
+    expect([s.hub.mainGloveId, s.hub.offGloveId]).toEqual(["magnet", "frost"]);
+    expect(p.gloveId).toBe("magnet");
+    expect(p.offhandId).toBe("frost");
+  });
+
+  it("interactSlot 可以直接指定槽位", () => {
+    const s = hubMatch({ unlocked: "all" });
+    const p = getPlayer(s, "p0");
+    standBy(p, pedestalOf(s, "meteor"));
+    step(s, { p0: hubInput({ interact: true, interactSlot: "off" }) }, DT);
+    expect(s.hub.offGloveId).toBe("meteor");
+    expect(s.hub.mainGloveId).toBe(null);
+    expect(s.hub.portalReady).toBe(false); // 只有副掌，门还不开
+  });
+
+  it("未解锁的掌选不中，只发 hubLocked", () => {
+    const s = hubMatch(); // 缺省只解锁 unlock:"default" 的木棉
+    const p = getPlayer(s, "p0");
+    const granite = pedestalOf(s, "granite");
+    expect(granite.unlocked).toBe(false);
+    expect(pedestalOf(s, "cotton").unlocked).toBe(true);
+
+    standBy(p, granite);
+    step(s, { p0: hubInput({ interact: true }) }, DT);
+    expect(s.hub.mainGloveId).toBe(null);
+    expect(p.gloveId).not.toBe("granite");
+    const locked = s.events.find((e) => e.type === "hubLocked");
+    expect(locked).toMatchObject({ gloveId: "granite", unlock: "unlock_granite" });
+
+    // 换到已解锁的台座（松手一帧制造新的边沿）就能选
+    standBy(p, pedestalOf(s, "cotton"));
+    step(s, { p0: hubInput() }, DT);
+    step(s, { p0: hubInput({ interact: true }) }, DT);
+    expect(s.hub.mainGloveId).toBe("cotton");
+  });
+
+  it("没选主掌时靠近传送门只提示，不进岛", () => {
+    const s = hubMatch();
+    const p = getPlayer(s, "p0");
+    const portal = s.hub.layout.portal;
+    place(p, portal.x, 0, portal.z);
+
+    step(s, { p0: hubInput() }, DT);
+    expect(s.phase).toBe("hub");
+    expect(s.events.find((e) => e.type === "hubPortalNear")).toMatchObject({ ready: false });
+
+    run(s, { p0: hubInput({ interact: true }) }, 1);
+    expect(s.phase).toBe("hub");
+    expect(getPlayer(s, "p0").kills).toBe(0);
+  });
+
+  it("选完主掌走到传送门 -> phase=arena，落在裂岛出生点，loadout 保留", () => {
+    const s = createMatch({
+      seed: 33,
+      botCount: 1,
+      gloveId: "frost",
+      offhandId: "magnet",
+      unlocked: "all",
+    });
+    const p = getPlayer(s, "p0");
+    expect(s.phase).toBe("hub");
+    expect(getView(s).hub.portalReady).toBe(true);
+
+    run(s, { p0: hubInput() }, 2); // 在大厅里磨蹭两秒，不该吃掉对局时长
+
+    let entered = null;
+    for (let i = 0; i < 60 * 10 && !entered; i++) {
+      step(s, { p0: hubInput({ moveZ: -1 }) }, DT);
+      entered = s.events.find((e) => e.type === "enterArena") || null;
+    }
+
+    expect(entered).not.toBeNull();
+    expect(s.phase).toBe("arena");
+    expect(playerInHub(s, p)).toBe(false);
+    expect(Math.hypot(p.x, p.z)).toBeLessThan(s.config.arenaRadius);
+    expect(hasFloorUnder(s, p.x, p.z)).toBe(true);
+    expect(p.gloveId).toBe("frost");
+    expect(p.offhandId).toBe("magnet");
+
+    const view = getView(s);
+    expect(view.phase).toBe("arena");
+    expect(view.match.secondsLeft).toBeCloseTo(s.config.matchSeconds, 3);
+    expect(view.hub.portalReady).toBe(true);
+  });
+
+  it("进岛之后裂岛规则照旧：会吃击退、会掉出局", () => {
+    const s = hubMatch({ gloveId: "cotton", unlocked: "all" });
+    enterArena(s);
+    expect(s.phase).toBe("arena");
+
+    const p = getPlayer(s, "p0");
+    p.invulnT = 0;
+    place(p, s.config.arenaRadius + 0.21, 0, 0);
+    p.grounded = false;
+    step(s, {}, DT);
+    expect(p.alive).toBe(false);
+    expect(p.deaths).toBe(1);
+  });
+
+  it("enterHub 能把人送回安全区再选（Round 2 回程）", () => {
+    const s = hubMatch({ gloveId: "frost", unlocked: "all" });
+    enterArena(s);
+    expect(s.phase).toBe("arena");
+
+    enterHub(s);
+    const p = getPlayer(s, "p0");
+    expect(s.phase).toBe("hub");
+    expect(playerInHub(s, p)).toBe(true);
+    expect(p.gloveId).toBe("frost"); // 装备保留
+    expect(s.events.some((e) => e.type === "enterHub")).toBe(true);
+  });
+
+  it("getView 导出 phase / hub.pedestals / focusGloveId / portalReady", () => {
+    const s = hubMatch();
+    const v = getView(s);
+
+    expect(v.phase).toBe("hub");
+    expect(v.hub.focusGloveId).toBe(null);
+    expect(v.hub.portalReady).toBe(false);
+    expect(v.hub.pedestals).toHaveLength(8);
+    expect(new Set(v.hub.pedestals.map((ped) => ped.gloveId)).size).toBe(8);
+    expect(v.hub.pedestals.filter((ped) => ped.row === "left")).toHaveLength(4);
+    expect(v.hub.pedestals.filter((ped) => ped.row === "right")).toHaveLength(4);
+
+    for (const ped of v.hub.pedestals) {
+      expect(Number.isFinite(ped.x + ped.y + ped.z + ped.yaw)).toBe(true);
+      expect(typeof ped.selected).toBe("boolean");
+      expect(ped.slot).toBe(null);
+      expect(ped.name).toBeTruthy();
+      expect(ped.color).toMatch(/^#/);
+      expect(typeof ped.unlocked).toBe("boolean");
+    }
+
+    // 纯 JSON，和 state 不共享引用
+    expect(JSON.parse(JSON.stringify(v))).toEqual(v);
+    v.hub.pedestals[0].selected = true;
+    expect(s.hub.pedestals[0].selected).toBe(null);
+  });
+
+  it("hub 状态可 structuredClone，同 seed 同输入结果一致", () => {
+    const script = (i) => ({
+      p0: hubInput({ moveX: Math.sin(i * 0.04), moveZ: -1, interact: i % 37 === 0 }),
+    });
+    const a = createMatch({ seed: 77, unlocked: "all" });
+    const b = createMatch({ seed: 77, unlocked: "all" });
+    for (let i = 0; i < 300; i++) {
+      step(a, script(i), DT);
+      step(b, script(i), DT);
+    }
+    expect(JSON.stringify(getView(a))).toBe(JSON.stringify(getView(b)));
+    expect(() => structuredClone(a)).not.toThrow();
+  });
+
+  it("布局表可由 data 侧接管（src/data/hub.js 合入后走这条路）", () => {
+    expect(getHubLayout().source).toBe("sim-default");
+    expect(getDeps().usingDataHub).toBe(false);
+
+    installHubLayout({
+      id: "hub-from-data",
+      origin: { x: 0, y: 0, z: -60 },
+      spawn: { x: 0, y: 0, z: -48, yaw: 0 },
+      portal: { x: 0, y: 0, z: -74, radius: 3 },
+      pedestals: [
+        { gloveId: "cotton", x: -3, y: 0, z: -55, yaw: 0, row: "left" },
+        { gloveId: "frost", x: 3, y: 0, z: -55, yaw: 0, row: "right" },
+      ],
+    });
+    expect(getDeps().usingDataHub).toBe(true);
+
+    const s = createMatch({ seed: 41, unlocked: "all" });
+    expect(s.hub.layout.id).toBe("hub-from-data");
+    expect(s.hub.pedestals).toHaveLength(2);
+    expect(getPlayer(s, "p0").z).toBeCloseTo(-48, 5);
+
+    resetDeps();
+    expect(getHubLayout().source).toBe("sim-default");
   });
 });
 

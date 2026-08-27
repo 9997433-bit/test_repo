@@ -4,6 +4,7 @@ import { isSupported } from "./arena.js";
 import { PHYSICS } from "./constants.js";
 import { damageFloor } from "./floor.js";
 import { getDeps } from "./deps.js";
+import { playerInHub, resolveHubGround, stepHub } from "./hub.js";
 import { decideMatch } from "./match.js";
 import {
   applyKnockback,
@@ -12,7 +13,7 @@ import {
   separatePlayers,
   statusMods,
 } from "./physics.js";
-import { activeGlove, getPlayer, pushEvent, respawnPlayer } from "./state.js";
+import { activeGlove, enterArena, getPlayer, pushEvent, respawnPlayer } from "./state.js";
 import { clamp, forwardX, forwardZ, len2, norm2 } from "./math.js";
 
 /** 缺省输入：不动、不出招；yaw = null 表示保持当前朝向 */
@@ -26,6 +27,13 @@ export const ZERO_INPUT = Object.freeze({
   dash: false,
   jump: false,
 });
+
+/**
+ * 安全区多出来的两个可选键。**没有**并进 `ZERO_INPUT`：`src/ai` 的键集断言拿 ZERO_INPUT
+ * 当基准，Bot 用不到 interact，硬塞进去只会让 Bot 的 Input 形状对不上。
+ * `interact`：E / 触控「选」；`interactSlot`：'main' | 'off'，不给就按「先主后副」。
+ */
+export const HUB_ZERO_INPUT = Object.freeze({ ...ZERO_INPUT, interact: false, interactSlot: null });
 
 function readInput(inputs, id) {
   const raw = inputs && inputs[id];
@@ -186,6 +194,17 @@ export function applyHits(state, attacker, hits, source) {
     if (!target || !target.alive || target === attacker) continue;
 
     const imp = hit.impulse || { x: 0, y: 0, z: 0 };
+
+    // 安全区不吃击退。combat 的 applied 命中已经把冲量写进速度了，这里退回去。
+    if (playerInHub(state, target)) {
+      if (hit.applied) {
+        target.vx -= imp.x || 0;
+        target.vy -= imp.y || 0;
+        target.vz -= imp.z || 0;
+      }
+      continue;
+    }
+
     if (hit.applied) {
       target.lastHitBy = attacker.id;
       target.lastHitT = state.time;
@@ -304,7 +323,7 @@ function knockOut(state, p, reason) {
 /** 判定并锁定胜负。判据与 isMatchOver 共用 decideMatch。 */
 function updateMatch(state) {
   const m = state.match;
-  m.secondsLeft = Math.max(0, state.config.matchSeconds - state.time);
+  m.secondsLeft = Math.max(0, state.config.matchSeconds - (state.time - (m.startTime || 0)));
   if (m.over) return;
 
   const decided = decideMatch(state);
@@ -364,7 +383,9 @@ function subStep(state, inputs, dt) {
 
   for (const p of state.players) {
     if (!p.alive) continue;
-    resolveGround(state, p, dt);
+    // 安全区是实心走道 + 隐形墙，裂岛才有台块与缺口
+    if (playerInHub(state, p)) resolveHubGround(state, p, dt);
+    else resolveGround(state, p, dt);
   }
 
   // 出招在位移之后结算，命中用的是当帧位置
@@ -372,8 +393,12 @@ function subStep(state, inputs, dt) {
     if (p.alive && p.attack.phase === "strike") resolveStrike(state, p);
   }
 
+  // 靠近台座 / 装备 / 传送门。传送会把 phase 切成 arena，所以放在掉落判定之前。
+  stepHub(state, frame, (p) => enterArena(state, p));
+
   for (const p of state.players) {
     if (!p.alive) continue;
+    if (playerInHub(state, p)) continue; // 安全区不判掉落 KO
     if (p.y < state.config.fallY) knockOut(state, p, "fell");
     else if (isOffDisk(state, p)) knockOut(state, p, "fell");
   }

@@ -2,6 +2,7 @@
 
 import { isSupported } from "./arena.js";
 import { PHYSICS } from "./constants.js";
+import { playerInHub } from "./hub.js";
 import { clamp, damp, forwardX, forwardZ, len2 } from "./math.js";
 
 /**
@@ -188,8 +189,9 @@ export function separatePlayers(state) {
   }
 }
 
-/** 施加击退冲量：水平速度冲量 + 小抬升 + 失控时间 + 受击倍率增长 */
+/** 施加击退冲量：水平速度冲量 + 小抬升 + 失控时间 + 受击倍率增长。安全区里的人不吃。 */
 export function applyKnockback(state, p, ix, iy, iz, fromId) {
+  if (playerInHub(state, p)) return 0;
   const mag = len2(ix, iz);
   p.vx += ix;
   p.vz += iz;
