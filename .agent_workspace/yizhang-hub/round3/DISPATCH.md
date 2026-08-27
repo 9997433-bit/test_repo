@@ -36,12 +36,18 @@
 | --- | --- | --- | --- |
 | F1 契约对齐 | `claude-fable-5-thinking-xhigh` | `bc-767c53b9-6eb1-528d-a057-ba8c2ed03105` | 已合入 `cursor/yizhang-hub-r3-f1-contract-db8d`（API_CONTRACT v4.2 + ADR-36） |
 | O4 结算回走道 | `claude-opus-5-thinking-high-fast` | `bc-83aeb01c-d8e2-54ab-8ce6-94ff66eb00b5` | 已合入 `cursor/yizhang-hub-r3-o4-shell-db8d`（再来一局≠回安全区文案+淡场） |
+| G1 锁表 | `gpt-5.6-sol-xhigh-fast` | `bc-6d9dd333-eb90-5729-aa76-67cb719e6260` | 已合入 `cursor/yizhang-hub-r3-g1-tests-db8d`（round3-hub-sota 8 条） |
 
 ### Wave 3
 
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
-| F3 GDD 同词 | `claude-fable-5-thinking-xhigh` | `bc-bc18f40e-23d7-5967-9a42-abfbf9c9a56b` | 已派出 |
+| F3 GDD 同词 | `claude-fable-5-thinking-xhigh` | `bc-bc18f40e-23d7-5967-9a42-abfbf9c9a56b` | 已合入 `cursor/yizhang-hub-r3-f3-gdd-db8d`（只改 GDD.md） |
 | O1 回程边角 | `claude-opus-5-thinking-high-fast` | `bc-d76b3f37-bde8-511d-b9f1-6c79fcc2d1f8` | 已合入 `cursor/yizhang-hub-r3-o1-sim-db8d`（enterHub 清 dash/锁/副槽） |
-| O3 拒战边角 | `claude-opus-5-thinking-high-fast` | `bc-27d2e448-c4de-51bc-a077-3b3812a39914` | 已派出 |
-| G1 锁表 | `gpt-5.6-sol-xhigh-fast` | `bc-6d9dd333-eb90-5729-aa76-67cb719e6260` | 已合入 `cursor/yizhang-hub-r3-g1-tests-db8d`（round3-hub-sota 8 条） |
+| O3 拒战边角 | `claude-opus-5-thinking-high-fast` | `bc-27d2e448-c4de-51bc-a077-3b3812a39914` | 已合入 `cursor/yizhang-hub-r3-o3-combat-db8d`（pending 顶闸；回程不再结算岛上招） |
+
+### Wave 4
+
+| 席位 | 模型 | Agent ID | 状态 |
+| --- | --- | --- | --- |
+| F4 签字 | `claude-fable-5-thinking-xhigh` | （派出后回填） | Round 3 全表复验；L3-10 按 O2 实测勾；只写 SOTA/ACCEPTANCE |
