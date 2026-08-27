@@ -5,6 +5,7 @@
 // 2. 动作分「按住型」和「边沿型」：扇击/技能按住可连发（由冷却兜底），
 //    跳/冲/换掌是边沿触发，按住不会每 0.4 秒自己切一次掌。
 // 3. 触屏区域在画布上 preventDefault，避免 iOS 边缘返回、下拉刷新、双指缩放抢走手势。
+//    这一拦与 enabled 无关：暂停时不收手势，但照样得拦，否则一划就退出对局。
 //
 // 两个角度空间不要混：本模块内部维护的是**相机方位角**（forward = (cos, sin)），
 // sample() 返回给 sim 的 `yaw` 已经换算成 **sim 约定**（yaw=0 面向 -Z）。
@@ -289,10 +290,14 @@ export function createInput(dom, canvas, opts = {}) {
 
   function onTouchStart(e) {
     fireGesture();
+    // 画布上的触摸只用来转视角；一律吃掉默认行为，防止系统边缘手势/下拉刷新介入。
+    // preventDefault 必须走在 enabled 闸**前面**：暂停 / 结算时输入是关的，但 iOS 的
+    // 边缘返回、下拉刷新不会跟着一起关 —— 玩家在暂停面板上从屏幕边一划就退出了对局。
+    // 拦手势与收手势是两件事：这里只负责拦，收手势仍旧被下面那道闸挡住。
+    // （touchstart / touchmove 都是 passive:false 注册的，见下方 bind，否则这行是空调用。）
+    e.preventDefault();
     if (!state.enabled) return;
     state.lastSource = "touch";
-    // 画布上的触摸只用来转视角；一律吃掉默认行为，防止系统边缘手势/下拉刷新介入。
-    e.preventDefault();
     if (state.lookTouchId === null && e.changedTouches.length) {
       const t = e.changedTouches[0];
       state.lookTouchId = t.identifier;
@@ -302,8 +307,10 @@ export function createInput(dom, canvas, opts = {}) {
   }
 
   function onTouchMove(e) {
-    if (!state.enabled) return;
+    // 同 onTouchStart：先拦系统手势，再看输入开没开。边缘返回是靠 touchmove 判的，
+    // 这一条比 touchstart 那条更关键。
     e.preventDefault();
+    if (!state.enabled) return;
     for (const t of e.changedTouches) {
       if (t.identifier !== state.lookTouchId) continue;
       applyLook(t.clientX - state.lookLast.x, t.clientY - state.lookLast.y, TOUCH_LOOK_SCALE);
