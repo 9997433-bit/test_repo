@@ -41,7 +41,7 @@
 
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
-| F3 GDD 同词 | `claude-fable-5-thinking-xhigh` | （派出后回填） | GDD §13 与 skins/vfx 同词，不改战斗数值 |
-| O1 回程边角 | `claude-opus-5-thinking-high-fast` | （派出后回填） | 计时域/enterHub；不回退空间闸 |
-| O3 拒战边角 | `claude-opus-5-thinking-high-fast` | （派出后回填） | 战斗事件/残影；hub 继续拒战 |
+| F3 GDD 同词 | `claude-fable-5-thinking-xhigh` | `bc-bc18f40e-23d7-5967-9a42-abfbf9c9a56b` | 已派出 |
+| O1 回程边角 | `claude-opus-5-thinking-high-fast` | `bc-d76b3f37-bde8-511d-b9f1-6c79fcc2d1f8` | 已派出 |
+| O3 拒战边角 | `claude-opus-5-thinking-high-fast` | `bc-27d2e448-c4de-51bc-a077-3b3812a39914` | 已派出 |
 | G1 锁表 | `gpt-5.6-sol-xhigh-fast` | `bc-6d9dd333-eb90-5729-aa76-67cb719e6260` | 已合入 `cursor/yizhang-hub-r3-g1-tests-db8d`（round3-hub-sota 8 条） |
