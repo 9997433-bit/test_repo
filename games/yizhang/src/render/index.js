@@ -15,6 +15,8 @@
 //   · 台面完全由 view.arena.tiles 长出来，数组里没有的格子就是洞
 //   · yaw = 0 面向 -Z，与 sim 的 forwardX/forwardZ 一致
 //   · 本地玩家缺省是 p0（sim 里人类固定排在 p0）
+//   · view.phase === 'hub' 时多画一层安全区（走道 / 台座 / 展示掌 / 传送门，见 ./hub.js），
+//     phase === 'arena' 时那棵子树整个关掉，裂岛的画法一行未改
 
 import { QUALITY, QUALITY_TIERS, PALETTE, GLOVE_TINT } from './config.js';
 import { DEFAULT_LOCAL_ID } from './view.js';

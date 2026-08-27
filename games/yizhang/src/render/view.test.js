@@ -227,9 +227,33 @@ describe('真实 getView → 渲染视图', () => {
     expect(after).toBeGreaterThan(before);
   });
 
+  it('readView 顺带把阶段与安全区读出来：hub 开局 active，进岛后关掉', () => {
+    const state = freshMatch();
+    const inHub = readView(sim.getView(state));
+    expect(inHub.phase).toBe('hub');
+    expect(inHub.hub.active).toBe(true);
+    expect(inHub.hub.pedestals.length).toBe(GLOVES.length);
+    // 台座的识别色跟手套表一致（渲染层的漆色不是自己编的）
+    for (const ped of inHub.hub.pedestals) {
+      expect(ped.tint, ped.gloveId).toBe(GLOVE_TINT[ped.gloveId]);
+    }
+    // 安全区整体挪到裂岛外面：两块空间在水平面上不重叠
+    expect(inHub.hub.walkway.maxZ).toBeLessThan(-inHub.arena.radius);
+    expect(inHub.hub.portal.z).toBeLessThan(inHub.hub.walkway.maxZ);
+
+    sim.enterArena(state);
+    const inArena = readView(sim.getView(state));
+    expect(inArena.phase).toBe('arena');
+    expect(inArena.hub.active).toBe(false);
+    // 裂岛那一份没受影响：台面照旧一块不少
+    expect(inArena.tiles.length).toBe(state.arena.tiles.length);
+  });
+
   it('残缺 / 空 view 不抛错', () => {
     expect(() => readView(null)).not.toThrow();
     expect(readView(null).tiles).toEqual([]);
+    expect(readView(null).hub.active).toBe(false);
+    expect(readView(null).phase).toBeNull();
     expect(readView({ players: [null, { id: 'x' }] }).players.length).toBe(1);
     expect(readView({ arena: { radius: 12 } }).arena.radius).toBe(12);
   });
