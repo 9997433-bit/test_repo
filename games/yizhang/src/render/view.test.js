@@ -149,6 +149,44 @@ describe('真实 getView → 渲染视图', () => {
     expect(breakEvent.x).toBeCloseTo(victim.x, 4);
   });
 
+  it('skinId 原样透传：sim 给什么就是什么，没给就是 null', () => {
+    const state = freshMatch({ skinId: 'reed', botSkinIds: ['wildhorn', 'crane', 'nuo'] });
+    const players = readView(sim.getView(state)).players;
+    expect(players.find((p) => p.id === 'p0').skinId).toBe('reed');
+    expect(players.filter((p) => p.kind === 'bot').map((p) => p.skinId)).toEqual([
+      'wildhorn',
+      'crane',
+      'nuo',
+    ]);
+    // 老 sim / 老存档没有这个字段：一律 null，剪影那层自己兜底
+    expect(readView(freshMatch()).players.every((p) => p.skinId === null)).toBe(true);
+    expect(readView({ players: [{ id: 'p0', skinId: '' }] }).players[0].skinId).toBeNull();
+    expect(readView({ players: [{ id: 'p0', skinId: 7 }] }).players[0].skinId).toBeNull();
+  });
+
+  it('combat.ghosts 恒可读：没有残影就是空数组，有就带 -Z 空间的 yaw', () => {
+    const state = freshMatch({ gloveId: 'afterimage' });
+    const raw = sim.getView(state);
+    expect(Array.isArray(raw.combat.ghosts)).toBe(true);
+    expect(readView(raw).ghosts).toEqual([]);
+
+    const ghosts = readView({
+      combat: {
+        ghosts: [
+          { id: 'g1', ownerId: 'p0', x: 1.5, y: 0, z: -2, yaw: 0.4, ttl: 0.7, ttl0: 1.2, fake: true, gloveId: 'afterimage' },
+          { id: 'g2', ownerId: 'p0', x: 'nope', z: 1 },
+        ],
+      },
+    }).ghosts;
+    expect(ghosts.length).toBe(1); // 坐标不是数的那条直接丢掉
+    expect(ghosts[0]).toMatchObject({ ownerId: 'p0', x: 1.5, z: -2, yaw: 0.4, fake: true });
+    expect(ghosts[0].ttl0).toBe(1.2);
+    // 没给 ttl0 时退回 ttl：淡出比例算得出来，不会除以 0
+    expect(readView({ combat: { ghosts: [{ x: 0, z: 0, ttl: 0.5 }] } }).ghosts[0].ttl0).toBe(0.5);
+    expect(readView({}).ghosts).toEqual([]);
+    expect(readView({ combat: null }).ghosts).toEqual([]);
+  });
+
   it('玩家字段：位置 / 朝向 / 双掌 / 觉醒 / 无敌都读得到', () => {
     const state = freshMatch();
     const p = state.players[0];

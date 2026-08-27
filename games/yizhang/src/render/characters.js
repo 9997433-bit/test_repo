@@ -12,12 +12,20 @@
 //   织物  —— 衣袖、绑带、护腕，粗糙度接近 1，轮廓上有绒毛感
 // 识别色只染布料和一道漆条，不去染皮革与金属：右手是主掌色、左手是副掌色、
 // 背布片是当前激活的那只 —— 换掌在画面上因此是看得见的。全场只有本地玩家吃满饱和度。
+//
+// 皮肤（`view.players[].skinId`）决定的是**形**，不是贴图：身高 / 体量 / 肩宽三个比例
+// 缩放同一套低面数几何体，再挂一件配件（兜帽 / 肩胄 / 斗篷 / 兽角 / 面具 / 背旗…）。
+// 解析在 ./skins.js，那里同时负责「表里查不到的 id」的兜底，所以四个人各带一个
+// skinId 时画面上就是四个不同的剪影，而不是四根同样的胶囊。
+// 换 skinId 会重建那一个角色（几何比例进了 group.scale，改不了就得重搭），
+// 换识别色仍然只改材质。
 
 import {
   BoxGeometry,
   CapsuleGeometry,
   CircleGeometry,
   Color,
+  ConeGeometry,
   CylinderGeometry,
   Group,
   Mesh,
@@ -31,11 +39,14 @@ import {
 } from 'three';
 import { FALLBACK_TINT, PALETTE } from './config.js';
 import { smoothstep } from './noise.js';
+import { resolveSkinLook, skinTable } from './skins.js';
 
 const BLOOM_LAYER = 1;
 const TAU = Math.PI * 2;
 /** 右手（side=+1）拿主掌 slot 0，左手拿副掌 slot 1。 */
 const MAIN_SIDE = 1;
+/** 同时在场的残影上限。分身掌一次最多剥两三个，留出余量就够。 */
+const GHOST_CAP = 6;
 
 function shortestAngle(a, b) {
   let d = (b - a) % TAU;
@@ -48,6 +59,10 @@ function damp(current, target, lambda, dt) {
   return current + (target - current) * (1 - Math.exp(-lambda * dt));
 }
 
+function clamp01(v) {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
 /** 非本地角色降饱和：全画面只保留一个饱和度峰值（手册 §5.11）。 */
 function identColor(tint, isLocal) {
   const c = new Color(Number.isFinite(tint) ? tint : FALLBACK_TINT);
@@ -57,7 +72,22 @@ function identColor(tint, isLocal) {
   return c.setHSL(hsl.h, hsl.s * 0.45, hsl.l * 0.92);
 }
 
-export function createCharacters({ scene, quality, textures }) {
+/**
+ * 皮肤的衣料色。它本来就该比识别色素得多，非本地角色再压一档：
+ * 「谁是我」靠饱和度峰值来读，不是靠谁的衣服更花。
+ */
+function skinColor(hex, isLocal, mix = 0.6) {
+  const c = new Color(typeof hex === 'string' ? hex : '#6d7280');
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  c.setHSL(hsl.h, hsl.s * (isLocal ? 0.75 : 0.4), hsl.l);
+  // 往场景基色收一把：八身衣服再不同也得是同一片暮空底下的
+  return c.lerp(new Color(PALETTE.cloth), 1 - mix);
+}
+
+export function createCharacters({ scene, quality, textures, skins = null }) {
+  // 皮肤表取一次就够：`src/data/skins.js` 落地后 resolveSkins 自己改吃真表
+  const table = skins || skinTable(null);
   const root = new Group();
   root.name = 'characters';
   scene.add(root);
@@ -89,6 +119,25 @@ export function createCharacters({ scene, quality, textures }) {
     tassel: keep(new BoxGeometry(0.045, 0.2, 0.02)),
     seam: keep(new TorusGeometry(0.318, 0.014, 4, seg + 6, Math.PI * 1.35)),
     contact: keep(new CircleGeometry(0.62, 16)),
+
+    // ---- 配件。每一件都要在灰度剪影里读得出，所以都是有厚度的形，不是贴片 ----
+    cap: keep(new SphereGeometry(0.235, seg + 2, seg, 0, TAU, 0, Math.PI * 0.36)),
+    hoodDeep: keep(new SphereGeometry(0.28, seg + 2, seg, 0, TAU, 0, Math.PI * 0.72)),
+    cowl: keep(new CylinderGeometry(0.31, 0.2, 0.22, seg + 2, 1, true)),
+    horn: keep(new ConeGeometry(0.062, 0.36, Math.max(4, seg - 4))),
+    // 面具是一块**弯**的板：开口朝 -Z 的部分圆柱，正面看有弧度，侧面看有厚度
+    maskShell: keep(
+      new CylinderGeometry(0.21, 0.18, 0.3, Math.max(6, seg), 1, true, Math.PI - 0.95, 1.9)
+    ),
+    brow: keep(new BoxGeometry(0.3, 0.045, 0.05)),
+    plate: keep(new BoxGeometry(0.27, 0.055, 0.25)),
+    cloakSheet: keep(new BoxGeometry(0.52, 0.98, 0.05)),
+    pole: keep(new CylinderGeometry(0.022, 0.018, 1.15, 5)),
+    flag: keep(new BoxGeometry(0.26, 0.74, 0.018)),
+    turbanRing: keep(new TorusGeometry(0.2, 0.078, 5, seg + 4)),
+    sashBand: keep(new BoxGeometry(0.17, 0.9, 0.05)),
+    wrapBand: keep(new CylinderGeometry(0.118, 0.118, 0.14, seg)),
+    bracerShell: keep(new CylinderGeometry(0.16, 0.135, 0.32, seg + 1)),
   };
 
   // 接地阴影：低画质关了实时阴影后，角色仍然要「踩在地上」而不是浮着
@@ -123,14 +172,14 @@ export function createCharacters({ scene, quality, textures }) {
     });
   }
 
-  function buildMaterials(tints, isLocal) {
+  function buildMaterials(tints, isLocal, look) {
     const ident = identColor(tints.active, isLocal);
     const identMain = identColor(tints.main, isLocal);
     const identOff = identColor(tints.off, isLocal);
 
     const clothOpts = {
       // 只借一点识别色的色相，明度仍然由布本身决定，否则浅色手套会把整身衣服洗白
-      color: new Color(PALETTE.cloth).lerp(ident, 0.12),
+      color: skinColor(look.cloth, isLocal).lerp(ident, 0.12),
       roughness: 0.96,
       metalness: 0,
       roughnessMap: textures.cloth.rough,
@@ -149,7 +198,7 @@ export function createCharacters({ scene, quality, textures }) {
       : new MeshStandardMaterial(clothOpts);
 
     const clothDim = new MeshStandardMaterial({
-      color: new Color(PALETTE.clothDim),
+      color: skinColor(look.trim, isLocal, 0.7).lerp(new Color(PALETTE.clothDim), 0.45),
       roughness: 0.98,
       metalness: 0,
       roughnessMap: textures.cloth.rough,
@@ -195,6 +244,15 @@ export function createCharacters({ scene, quality, textures }) {
       envMapIntensity: 0.4,
     });
 
+    // 配件上的一点点「这一身自己的颜色」：骨角、面具底、旗面。
+    // 它不是识别色 —— 识别色只归手套与背布片，配件抢不走那个峰值。
+    const accent = new MeshStandardMaterial({
+      color: skinColor(look.accent, isLocal, 0.72),
+      roughness: 0.72,
+      metalness: 0,
+      envMapIntensity: 0.45,
+    });
+
     return {
       cloth,
       clothDim,
@@ -202,6 +260,7 @@ export function createCharacters({ scene, quality, textures }) {
       leatherWorn,
       metal,
       skin,
+      accent,
       paint: makePaint(ident),
       paintMain: makePaint(identMain),
       paintOff: makePaint(identOff),
@@ -267,11 +326,171 @@ export function createCharacters({ scene, quality, textures }) {
     return g;
   }
 
-  function buildBody(tints, isLocal) {
-    const mats = buildMaterials(tints, isLocal);
+  /**
+   * 挂一件配件。
+   *
+   * 每一件都只用已有的共享几何体，所以「多一种皮肤」不会多一批 geometry；
+   * 区分度来自它挂在哪、朝哪、多大。返回值只是为了 dispose 时好回收。
+   *
+   * @param {string} kind ./skins.js 的 ACCESSORIES 之一
+   */
+  function addAccessory(kind, parts) {
+    const { body, head, cap, arms, mats } = parts;
+    const made = [];
+    const put = (mesh, parent) => {
+      mesh.castShadow = quality.shadows;
+      (parent ?? body).add(mesh);
+      made.push(mesh);
+      return mesh;
+    };
+
+    switch (kind) {
+      case 'hood': {
+        // 兜帽压得很低：帽沿盖过眉骨，转身时才露半张脸
+        cap.visible = false;
+        const hood = put(new Mesh(geo.hoodDeep, mats.cloth));
+        hood.position.set(0, 1.82, 0.03);
+        hood.rotation.x = 0.2;
+        hood.scale.set(1.06, 1.12, 1.12);
+        const cowl = put(new Mesh(geo.cowl, mats.clothDim));
+        cowl.position.y = 1.62;
+        break;
+      }
+
+      case 'turban': {
+        cap.visible = false;
+        const ring = put(new Mesh(geo.turbanRing, mats.cloth));
+        ring.position.y = 1.86;
+        ring.rotation.x = Math.PI / 2 + 0.12;
+        ring.scale.set(1.12, 1.12, 0.86);
+        const knot = put(new Mesh(geo.cap, mats.cloth));
+        knot.position.y = 1.92;
+        knot.scale.set(0.94, 0.7, 0.94);
+        // 垂在脑后的尾巾：走路时它会甩，说明头上包的是布不是盔
+        const tail = put(new Mesh(geo.tassel, mats.clothDim));
+        tail.position.set(0.05, 1.68, 0.2);
+        tail.scale.set(1.7, 1.5, 1.6);
+        break;
+      }
+
+      case 'horns': {
+        // 兽角朝两侧后翻：正面剪影变宽，侧面剪影多出两道折线
+        for (const side of [-1, 1]) {
+          const horn = put(new Mesh(geo.horn, mats.accent));
+          horn.position.set(side * 0.17, 1.9, 0.02);
+          horn.rotation.set(-0.5, 0, side * -0.75);
+          const tip = put(new Mesh(geo.horn, mats.accent));
+          tip.position.set(side * 0.3, 2.02, 0.16);
+          tip.rotation.set(-1.15, 0, side * -1.1);
+          tip.scale.setScalar(0.72);
+        }
+        break;
+      }
+
+      case 'mask': {
+        const shell = put(new Mesh(geo.maskShell, mats.accent));
+        shell.position.set(0, 1.79, -0.04);
+        shell.scale.set(1.06, 1.12, 1.06);
+        const brow = put(new Mesh(geo.brow, mats.clothDim));
+        brow.position.set(0, 1.9, -0.19);
+        brow.rotation.x = 0.22;
+        break;
+      }
+
+      case 'pauldron': {
+        // 片状薄甲一层层错开：肩线抬高，上半身读起来更方
+        for (const arm of arms) {
+          for (let i = 0; i < 3; i++) {
+            const plate = put(new Mesh(geo.plate, mats.metal), arm.shoulder);
+            plate.position.set(arm.side * (0.02 + i * 0.035), 0.06 - i * 0.075, 0);
+            plate.rotation.z = arm.side * (0.18 + i * 0.16);
+            plate.scale.setScalar(1 - i * 0.12);
+          }
+        }
+        break;
+      }
+
+      case 'cloak': {
+        // 一整片垂到膝弯，下摆被岛风扯开：转身时它慢半拍
+        const sheet = put(new Mesh(geo.cloakSheet, mats.cloth));
+        sheet.position.set(0, 1.06, 0.31);
+        sheet.rotation.x = -0.07;
+        sheet.scale.set(1, 1, 1);
+        const hemLeft = put(new Mesh(geo.cloakSheet, mats.clothDim));
+        hemLeft.position.set(-0.2, 0.62, 0.3);
+        hemLeft.rotation.set(-0.16, 0.24, 0.08);
+        hemLeft.scale.set(0.42, 0.5, 0.8);
+        const hemRight = put(new Mesh(geo.cloakSheet, mats.clothDim));
+        hemRight.position.set(0.2, 0.62, 0.3);
+        hemRight.rotation.set(-0.16, -0.24, -0.08);
+        hemRight.scale.set(0.42, 0.5, 0.8);
+        break;
+      }
+
+      case 'banner': {
+        // 背旗：瘦高的人再插一根杆，远处只看轮廓也知道是谁在绕边走
+        const pole = put(new Mesh(geo.pole, mats.leather));
+        pole.position.set(-0.12, 1.62, 0.34);
+        pole.rotation.z = 0.16;
+        const flag = put(new Mesh(geo.flag, mats.accent));
+        flag.position.set(-0.26, 1.86, 0.36);
+        flag.rotation.z = 0.16;
+        const clasp = put(new Mesh(geo.buckle, mats.metal));
+        clasp.position.set(-0.06, 1.3, 0.33);
+        break;
+      }
+
+      case 'sash': {
+        const band = put(new Mesh(geo.sashBand, mats.accent));
+        band.position.set(-0.05, 1.24, -0.28);
+        band.rotation.z = 0.42;
+        const knot = put(new Mesh(geo.buckle, mats.leather));
+        knot.position.set(-0.22, 0.94, -0.24);
+        const tail = put(new Mesh(geo.tassel, mats.clothDim));
+        tail.position.set(-0.24, 0.78, -0.2);
+        tail.scale.set(1.6, 2.2, 1.6);
+        break;
+      }
+
+      case 'bracer': {
+        // 厚护臂：小臂加粗一圈，挥掌时最先扫过视野的就是它
+        for (const arm of arms) {
+          const shell = put(new Mesh(geo.bracerShell, mats.leatherWorn), arm.wrist);
+          shell.position.y = -0.04;
+          const rim = put(new Mesh(geo.wrapBand, mats.metal), arm.wrist);
+          rim.position.y = -0.19;
+          rim.scale.set(1.35, 0.42, 1.35);
+        }
+        break;
+      }
+
+      case 'wrap':
+      default: {
+        // 最素的一档：旧布条缠小臂，腰上再绕一圈。它不该抢戏，但也不能什么都没有。
+        for (const arm of arms) {
+          const band = put(new Mesh(geo.wrapBand, mats.clothDim), arm.wrist);
+          band.position.y = -0.02;
+          band.scale.set(1.08, 1.5, 1.08);
+        }
+        const waist = put(new Mesh(geo.turbanRing, mats.clothDim));
+        waist.position.y = 0.92;
+        waist.rotation.x = Math.PI / 2;
+        waist.scale.set(1.32, 1.32, 0.5);
+        break;
+      }
+    }
+    return made;
+  }
+
+  function buildBody(tints, isLocal, look) {
+    const mats = buildMaterials(tints, isLocal, look);
     const rootGroup = new Group();
 
     const body = new Group();
+    // 皮肤的三个比例全部落在这一层：脚底仍然贴地（子件都从 y=0 往上搭），
+    // 所以高矮胖瘦换来换去，人都还站在台面上
+    const build = look.build;
+    body.scale.set(build.mass, build.height, build.mass);
     rootGroup.add(body);
 
     const hips = new Mesh(geo.hips, mats.clothDim);
@@ -318,11 +537,12 @@ export function createCharacters({ scene, quality, textures }) {
     head.castShadow = quality.shadows;
     body.add(head);
 
-    const hood = new Mesh(geo.hood, mats.cloth);
-    hood.position.y = 1.8;
-    hood.rotation.x = 0.16;
-    hood.castShadow = quality.shadows;
-    body.add(hood);
+    // 素帽是所有人的底：配件里真的盖住头的那几种（兜帽 / 头巾）会把它关掉
+    const cap = new Mesh(geo.cap, mats.cloth);
+    cap.position.y = 1.8;
+    cap.rotation.x = 0.16;
+    cap.castShadow = quality.shadows;
+    body.add(cap);
 
     const legs = [];
     for (const side of [-1, 1]) {
@@ -346,11 +566,15 @@ export function createCharacters({ scene, quality, textures }) {
       legs.push({ hip, knee, side });
     }
 
+    // 肩宽单独一档：躯干只加宽不加高，宽肩与瘦长在正面剪影上立刻分得开
+    torso.scale.x = 0.82 + build.shoulder * 0.18;
+    collar.scale.set(torso.scale.x, 1, 1);
+
     const arms = [];
     for (const side of [-1, 1]) {
       const isMain = side === MAIN_SIDE;
       const shoulder = new Group();
-      shoulder.position.set(side * 0.33, 1.46, 0);
+      shoulder.position.set(side * 0.33 * build.shoulder, 1.46, 0);
       body.add(shoulder);
       const upper = new Mesh(geo.upperArm, mats.cloth);
       upper.position.y = -0.2;
@@ -370,13 +594,31 @@ export function createCharacters({ scene, quality, textures }) {
       arms.push({ shoulder, wrist, glove, side, slot: isMain ? 0 : 1 });
     }
 
+    const accessory = addAccessory(look.accessory, { body, head, cap, arms, mats });
+
     const contact = new Mesh(geo.contact, contactMat.clone());
     contact.rotation.x = -Math.PI / 2;
     contact.position.y = 0.02;
     contact.renderOrder = 1;
+    // 体量大的人影子也大：接地阴影跟着剪影走，胖瘦才不会「脚下都是同一个圆」
+    contact.scale.setScalar(0.86 + build.mass * 0.18);
     rootGroup.add(contact);
 
-    return { rootGroup, body, mats, legs, arms, head, hood, torso, contact };
+    return {
+      rootGroup,
+      body,
+      mats,
+      legs,
+      arms,
+      head,
+      cap,
+      torso,
+      contact,
+      look,
+      accessory,
+      baseScale: { x: build.mass, y: build.height, z: build.mass },
+      contactScale: 0.86 + build.mass * 0.18,
+    };
   }
 
   const chars = new Map();
@@ -396,19 +638,21 @@ export function createCharacters({ scene, quality, textures }) {
     c.mats.paint.color.copy(ident);
     c.mats.paintMain.color.copy(identColor(p.mainTint ?? p.tint, isLocal));
     c.mats.paintOff.color.copy(identColor(p.offTint ?? p.tint, isLocal));
-    c.mats.cloth.color.copy(new Color(PALETTE.cloth)).lerp(ident, 0.12);
+    c.mats.cloth.color.copy(skinColor(c.look.cloth, isLocal)).lerp(ident, 0.12);
     c.activeGloveId = p.activeGloveId;
     c.mainId = p.mainId;
     c.offhandId = p.offhandId;
   }
 
   function spawn(player, isLocal) {
-    const built = buildBody(tintsOf(player), isLocal);
+    const look = resolveSkinLook(player.skinId, table);
+    const built = buildBody(tintsOf(player), isLocal, look);
     root.add(built.rootGroup);
     const c = {
       id: player.id,
       ...built,
       isLocal,
+      skinId: player.skinId ?? null,
       activeGloveId: player.activeGloveId,
       mainId: player.mainId,
       offhandId: player.offhandId,
@@ -437,6 +681,57 @@ export function createCharacters({ scene, quality, textures }) {
     c.contact.material.dispose();
   }
 
+  // ------------------------------------------------------------------ 残影
+
+  const ghostRoot = new Group();
+  ghostRoot.name = 'ghosts';
+  ghostRoot.visible = false;
+  root.add(ghostRoot);
+
+  const ghostPool = [];
+  let liveGhosts = 0;
+  const UNIT_SCALE = { x: 1, y: 1, z: 1 };
+  const GHOST_BASE = new Color(0x2b3040);
+  const FALLBACK_GHOST = new Color(FALLBACK_TINT);
+
+  /**
+   * 一具残影。躯干 / 头 / 两只手就够读出「是个人形」，不复刻配件与腿：
+   * 残影是印在空气里的动作，本来就该比本体少一层信息。
+   */
+  function makeGhost() {
+    const mat = new MeshStandardMaterial({
+      color: GHOST_BASE.clone(),
+      roughness: 0.95,
+      metalness: 0,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      envMapIntensity: 0.2,
+    });
+    const g = new Group();
+    const add = (geometry, y) => {
+      const m = new Mesh(geometry, mat);
+      m.position.y = y;
+      g.add(m);
+      return m;
+    };
+    add(geo.hips, 0.86);
+    add(geo.torso, 1.24);
+    add(geo.head, 1.79);
+    for (const side of [-1, 1]) {
+      const hand = new Mesh(geo.mitt, mat);
+      hand.position.set(side * 0.38, 1.02, -0.1);
+      hand.scale.set(0.88, 0.74, 1.02);
+      g.add(hand);
+    }
+    g.visible = false;
+    g.renderOrder = 2;
+    ghostRoot.add(g);
+    const rec = { group: g, mat };
+    ghostPool.push(rec);
+    return rec;
+  }
+
   return {
     root,
     chars,
@@ -452,8 +747,23 @@ export function createCharacters({ scene, quality, textures }) {
         if (!p || p.id == null) continue;
         seen.add(p.id);
         let c = chars.get(p.id);
-        if (!c) {
-          c = spawn(p, p.id === localId);
+        const isLocal = p.id === localId;
+        const skinId = p.skinId ?? null;
+        // 每帧只比一个字符串：剪影是 skinId 的纯函数（./skins.js），
+        // 没变就不必再解析一遍，更不必重建
+        if (c && (c.skinId !== skinId || c.isLocal !== isLocal)) {
+          // 换皮肤：比例进了 group.scale、配件是真的网格，只能拆掉重搭。
+          // 换饱和度档（本地玩家易主）同理 —— 材质是按 isLocal 烘出来的。
+          const keep = { pos: c.pos.clone(), prev: c.prev.clone(), yaw: c.yaw, speed: c.speed };
+          disposeChar(c);
+          chars.delete(p.id);
+          c = spawn(p, isLocal);
+          c.pos.copy(keep.pos);
+          c.prev.copy(keep.prev);
+          c.yaw = keep.yaw;
+          c.speed = keep.speed;
+        } else if (!c) {
+          c = spawn(p, isLocal);
         } else if (
           p.activeGloveId !== c.activeGloveId ||
           p.mainId !== c.mainId ||
@@ -575,16 +885,18 @@ export function createCharacters({ scene, quality, textures }) {
           tassel.rotation.z = damp(tassel.rotation.z, -arm.side * 0.2 - swing * 0.3, 10, dt);
         }
 
-        // 受击压扁：只有 3~4 帧，靠形变而不是闪红
+        // 受击压扁：只有 3~4 帧，靠形变而不是闪红。
+        // 压的是「在皮肤比例之上」的形变，收回去也要收回那份比例，不能归 1。
+        const bs = c.baseScale;
         if (c.hitT >= 0) {
           c.hitT += dt / 0.26;
           if (c.hitT >= 1) {
             c.hitT = -1;
-            c.body.scale.set(1, 1, 1);
+            c.body.scale.set(bs.x, bs.y, bs.z);
           } else {
             const k = Math.sin(c.hitT * Math.PI);
             const s = 1 + k * 0.16 * c.hitPower;
-            c.body.scale.set(s, 1 - k * 0.13 * c.hitPower, s * 0.94);
+            c.body.scale.set(bs.x * s, bs.y * (1 - k * 0.13 * c.hitPower), bs.z * s * 0.94);
             c.body.rotation.x -= k * 0.22 * c.hitPower;
           }
         }
@@ -603,7 +915,7 @@ export function createCharacters({ scene, quality, textures }) {
         // 重组无敌：不闪烁，改用「还没完全凝实」的半透
         const invuln = (p.invulnT ?? 0) > 0;
         const ghost = invuln ? 0.55 + 0.2 * Math.sin(time * 9) : 1;
-        for (const key of ['cloth', 'clothDim', 'leather', 'leatherWorn', 'skin']) {
+        for (const key of ['cloth', 'clothDim', 'leather', 'leatherWorn', 'skin', 'accent']) {
           const m = c.mats[key];
           if (!m) continue;
           const wantTransparent = ghost < 0.999;
@@ -619,14 +931,67 @@ export function createCharacters({ scene, quality, textures }) {
         c.contact.position.y = 0.02 - c.pos.y;
         const fade = 1 - Math.min(1, h / 3.2);
         c.contact.material.opacity = 0.34 * fade * fade * ghost;
-        c.contact.scale.setScalar(1 + h * 0.22);
+        c.contact.scale.setScalar(c.contactScale * (1 + h * 0.22));
         c.contact.visible = c.pos.y > -1.5 && fade > 0.02;
       }
+    },
+
+    // ------------------------------------------------------------ 分身残影
+
+    ghostRoot,
+    get ghostCount() {
+      return liveGhosts;
+    },
+
+    /**
+     * 画 `view.combat.ghosts`。
+     *
+     * 残影是「动作历史」，不是发光的复制人：同一副剪影、同一个体量，只是半透、
+     * 去饱和、边缘随寿命散开。yaw 已经由 sim 转进 -Z 空间（combat-bridge 的
+     * ghostsView 扣掉了 combat 的朝向偏移），所以这里直接给 rotation.y。
+     *
+     * @param {Array<{ownerId?:string,x:number,y:number,z:number,yaw:number,
+     *                ttl:number,ttl0?:number,fake?:boolean}>} list
+     */
+    syncGhosts(list) {
+      const arr = Array.isArray(list) ? list : [];
+      let n = 0;
+      for (const gh of arr) {
+        if (!gh || typeof gh !== 'object') continue;
+        if (n >= GHOST_CAP) break;
+        const rec = ghostPool[n] ?? makeGhost();
+        n++;
+
+        const owner = gh.ownerId != null ? chars.get(gh.ownerId) : null;
+        const ttl = Number.isFinite(gh.ttl) ? gh.ttl : 0;
+        const ttl0 = Number.isFinite(gh.ttl0) && gh.ttl0 > 0 ? gh.ttl0 : Math.max(ttl, 1e-3);
+        const k = clamp01(ttl / ttl0); // 1 = 刚剥离，0 = 散尽
+
+        rec.group.visible = true;
+        rec.group.position.set(gh.x ?? 0, gh.y ?? 0, gh.z ?? 0);
+        rec.group.rotation.y = gh.yaw ?? 0;
+        const b = owner?.baseScale ?? UNIT_SCALE;
+        // 越淡越松：散开的过程里整体轻微涨大，读起来是「化掉」不是「关掉」
+        const spread = 1 + (1 - k) * 0.07;
+        rec.group.scale.set(b.x * spread, b.y * spread, b.z * spread);
+
+        const tint = owner ? owner.mats.paint.color : FALLBACK_GHOST;
+        rec.mat.color.copy(GHOST_BASE).lerp(tint, 0.28);
+        // 假掌（会假挥的诱饵）比纯残影实一点：真假之间要留得出破绽
+        rec.mat.opacity = (gh.fake ? 0.46 : 0.3) * k * (0.5 + 0.5 * k);
+      }
+      for (let i = n; i < ghostPool.length; i++) ghostPool[i].group.visible = false;
+      liveGhosts = n;
+      ghostRoot.visible = n > 0;
+      return n;
     },
 
     dispose() {
       for (const c of chars.values()) disposeChar(c);
       chars.clear();
+      for (const g of ghostPool) g.mat.dispose();
+      ghostPool.length = 0;
+      liveGhosts = 0;
       scene.remove(root);
       for (const g of shared) g.dispose?.();
       contactMat.dispose();
