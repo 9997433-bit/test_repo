@@ -17,7 +17,9 @@ import * as sim from '../sim/index.js';
 import { GLOVES } from '../data/gloves.js';
 import { BOT_PERSONAS } from '../data/bots.js';
 import { OCCLUDER_LAYER, QUALITY } from './config.js';
-import { SLAP_PHASE, createCharacters } from './characters.js';
+import { CAMERA_SNAP_TELEPORT } from './camera.js';
+import { SLAP_PHASE, TELEPORT_DISTANCE, createCharacters } from './characters.js';
+import * as tuning from '../data/tuning.js';
 import { ACCESSORIES, EXTRA_LOOKS, resolveSkinLook, sameLook, skinTable } from './skins.js';
 import * as dataModule from '../data/index.js';
 import { readView } from './view.js';
@@ -28,9 +30,15 @@ function fakeTextures() {
   return { cloth: pair(), leather: pair(), metal: pair(), dust: null, ember: null };
 }
 
-function mount(tier = 'high', skins = null) {
+function mount(tier = 'high', skins = null, extra = {}) {
   const scene = new Scene();
-  const chars = createCharacters({ scene, quality: QUALITY[tier], textures: fakeTextures(), skins });
+  const chars = createCharacters({
+    scene,
+    quality: QUALITY[tier],
+    textures: fakeTextures(),
+    skins,
+    ...extra,
+  });
   return { scene, chars };
 }
 
@@ -646,5 +654,97 @@ describe('分身残影', () => {
     expect(() => chars.syncGhosts(v.ghosts)).not.toThrow();
     chars.dispose();
     sim.resetDeps();
+  });
+});
+
+describe('模型瞬移阈值 TELEPORT_DISTANCE（16 管模型、60 管机位）', () => {
+  const DT = 1 / 60;
+  /** 局内重生瞬移的上界：2 × arenaRadius（20m）。 */
+  const RESPAWN_JUMP = 40;
+
+  /** 把角色搬到 (0,0,z) 再走一帧，返回落点。 */
+  function stepTo(chars, z) {
+    chars.reconcile([player('p0', 'ash', { z })], 'p0');
+    chars.update(DT, 0);
+    return chars.get('p0').pos.z;
+  }
+
+  it('导出的是那一个数：16，且与机位阈值 60 分工不混（谁也别去凑谁）', () => {
+    expect(TELEPORT_DISTANCE).toBe(16);
+    // 重生级瞬移（≤ 40m）夹在两个阈值中间：模型必须跳、机位必须不 snap（契约 §14-33）
+    expect(TELEPORT_DISTANCE).toBeLessThan(RESPAWN_JUMP);
+    expect(CAMERA_SNAP_TELEPORT).toBeGreaterThan(RESPAWN_JUMP);
+    expect(TELEPORT_DISTANCE).toBeLessThan(CAMERA_SNAP_TELEPORT);
+  });
+
+  it('对照登记表 CHARACTERS.teleportDistance 与本文件同数（表是镜像，实现在这边）', () => {
+    // F1 的 CHARACTERS 段并进来之前，先守住同一套镜像模式在 CAMERA 行上成立；
+    // 段一落地，这条就变成硬对照——两边不同数当场红。
+    const registered = tuning.CHARACTERS?.teleportDistance;
+    if (registered === undefined) {
+      expect(tuning.CAMERA.snapTeleport).toBe(CAMERA_SNAP_TELEPORT);
+      return;
+    }
+    expect(registered).toBe(TELEPORT_DISTANCE);
+  });
+
+  it('过门 / 重生这种整跳直接出现在新位置，不滑步；速度也归零', () => {
+    const { chars } = mount();
+    chars.reconcile([player('p0', 'ash')], 'p0');
+
+    // 过门：安全区 z ≈ -120 → 裂岛原点
+    expect(stepTo(chars, -120)).toBe(-120);
+    expect(chars.get('p0').speed).toBe(0);
+    // 重生：40m 也在阈值之上，同样是瞬移
+    expect(stepTo(chars, -120 + RESPAWN_JUMP)).toBe(-120 + RESPAWN_JUMP);
+    chars.dispose();
+  });
+
+  it('阈值以内仍旧是弹簧插值：跳不过去，只走一截', () => {
+    const { chars } = mount();
+    chars.reconcile([player('p0', 'ash')], 'p0');
+
+    const z = stepTo(chars, -(TELEPORT_DISTANCE - 0.5));
+    expect(z).toBeLessThan(0);
+    expect(z).toBeGreaterThan(-(TELEPORT_DISTANCE - 0.5)); // 一帧只挪一截，没有跳
+    chars.dispose();
+  });
+});
+
+describe('呼吸初相：缺省随机，给 seed 才定序', () => {
+  const TAU = Math.PI * 2;
+  const crowd = [player('p0', 'ash'), player('p1', 'wildhorn'), player('p2', 'ember')];
+
+  function phasesWith(extra) {
+    const { chars } = mount('high', null, extra);
+    chars.reconcile(crowd, 'p0');
+    const out = crowd.map((p) => chars.get(p.id).breathe);
+    chars.dispose();
+    return out;
+  }
+
+  it('不给 seed 时初相照旧取自 Math.random（默认行为没被拿走）', () => {
+    // 每次开机一套新相位：两次缺省挂载不会给出同一组数
+    expect(phasesWith({})).not.toEqual(phasesWith({}));
+    // 而且取的确实是 Math.random —— 把它按住，相位就跟着按住的那个数走
+    const real = Math.random;
+    Math.random = () => 0.25;
+    try {
+      for (const b of phasesWith({})) expect(b).toBeCloseTo(0.25 * TAU, 12);
+    } finally {
+      Math.random = real;
+    }
+  });
+
+  it('给了 seed 就逐次可复现，换一颗种子换一套相位', () => {
+    const a = phasesWith({ seed: 20240501 });
+    expect(phasesWith({ seed: 20240501 })).toEqual(a);
+    expect(phasesWith({ seed: 7 })).not.toEqual(a);
+    // 一屋子人不许齐步呼吸：同一颗种子推出来的相位仍旧各不相同
+    expect(new Set(a).size).toBe(a.length);
+    for (const b of a) {
+      expect(b).toBeGreaterThanOrEqual(0);
+      expect(b).toBeLessThan(TAU);
+    }
   });
 });
