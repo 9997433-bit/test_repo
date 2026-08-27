@@ -171,6 +171,85 @@ describe("input.sample 的世界位移", () => {
   });
 });
 
+describe("安全区的 interact 采样", () => {
+  it("默认在裂岛：E 是技能，不发 interact", () => {
+    expect(input.getPhase()).toBe("arena");
+    press("KeyE");
+    const out = input.sample(0);
+    expect(out.skill).toBe(true);
+    expect(out.interact).toBe(true); // sim 在裂岛会忽略它，发不发都不影响判定
+    release("KeyE");
+  });
+
+  it("hub 里 E 只发 interact，不出技能也不出扇击", () => {
+    input.setPhase("hub");
+    press("KeyE");
+    canvas.emit("mousedown", { button: 0 });
+    const out = input.sample(0);
+    expect(out.interact).toBe(true);
+    expect(out.skill).toBe(false);
+    expect(out.slap).toBe(false);
+    release("KeyE");
+    globalThis.window.emit("mouseup", { button: 0 });
+  });
+
+  it("按住 E 会持续为真（边沿由 sim 的 prev.interact 判），松开即假", () => {
+    input.setPhase("hub");
+    press("KeyE");
+    expect(input.sample(0).interact).toBe(true);
+    expect(input.sample(0).interact).toBe(true);
+    release("KeyE");
+    expect(input.sample(0).interact).toBe(false);
+  });
+
+  it("同一帧内按下又松开的短点触不会漏（边沿补一次）", () => {
+    input.setPhase("hub");
+    press("KeyE");
+    release("KeyE");
+    expect(input.sample(0).interact).toBe(true);
+    expect(input.sample(0).interact).toBe(false);
+  });
+
+  it("触控「选」按钮与 E 走同一条 interact 通路，可指定槽位", () => {
+    input.setPhase("hub");
+    input.setTouchButton("interact", true, { slot: "off" });
+    const out = input.sample(0);
+    expect(out.interact).toBe(true);
+    expect(out.interactSlot).toBe("off");
+    input.setTouchButton("interact", false);
+    const after = input.sample(0);
+    expect(after.interact).toBe(false);
+    expect(after.interactSlot).toBe(null);
+  });
+
+  it("切区会清掉按住态：在大厅按着 E 过门，不会在裂岛立刻放技能", () => {
+    input.setPhase("hub");
+    press("KeyE");
+    expect(input.sample(0).interact).toBe(true);
+    input.setPhase("arena");
+    expect(input.sample(0).skill).toBe(false);
+  });
+
+  it("hub 里移动与跳/冲照旧：安全区只关掉出招", () => {
+    input.setPhase("hub");
+    press("KeyW");
+    press("Space");
+    const out = input.sample(0.7);
+    expect(Math.hypot(out.moveX, out.moveZ)).toBeCloseTo(1, 9);
+    expect(out.jump).toBe(true);
+    release("KeyW");
+    release("Space");
+  });
+
+  it("禁用输入时 interact 也不外泄", () => {
+    input.setPhase("hub");
+    press("KeyE");
+    input.setEnabled(false);
+    expect(input.sample(0).interact).toBe(false);
+    input.setEnabled(true);
+  });
+});
+
 describe("鼠标转向", () => {
   it("鼠标右移让角色右转（sim yaw 变小，前向倒向原来的右手边）", () => {
     const before = input.sample().yaw;

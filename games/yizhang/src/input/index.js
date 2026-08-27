@@ -9,6 +9,10 @@
 // 两个角度空间不要混：本模块内部维护的是**相机方位角**（forward = (cos, sin)），
 // sample() 返回给 sim 的 `yaw` 已经换算成 **sim 约定**（yaw=0 面向 -Z）。
 // 位移向量 moveX/moveZ 一律是世界系，sim 的 readMoveVector 默认就这么读。
+//
+// 阶段（phase）：安全区与裂岛共用这一套采样，只有两处差别 ——
+// hub 里 E / 触控「选」输出 `interact`（sim 自己做边沿），且扇击与技能一律不输出，
+// 免得在安全区里对着展掌开技能。切到 arena 后 E 回到技能位，interact 仍照发（sim 会忽略）。
 
 import { cameraYawToSimYaw } from "../core/view.js";
 
@@ -58,6 +62,10 @@ function emptyInput() {
     switchGlove: false,
     dash: false,
     jump: false,
+    // 安全区可选键。sim 的 ZERO_INPUT 故意没并进它们（Bot 的键集断言以 ZERO_INPUT 为准），
+    // 但 step 里的 readInput 是展开合并，多带两个字段不会打乱 Bot。
+    interact: false,
+    interactSlot: null,
   };
 }
 
@@ -67,14 +75,16 @@ export function createInput(dom, canvas, opts = {}) {
 
   const state = {
     enabled: true,
+    phase: opts.phase === "hub" ? "hub" : "arena",
     yaw: opts.yaw ?? -Math.PI / 2,
     pitch: opts.pitch ?? 0.32,
     sensitivity: opts.sensitivity ?? 1,
     invertY: !!opts.invertY,
     pointerLockWanted: opts.pointerLock !== false,
     keys: new Set(),
-    hold: { slap: false, skill: false },
-    edge: { jump: false, dash: false, switchGlove: false, slap: false, skill: false },
+    hold: { slap: false, skill: false, interact: false },
+    edge: { jump: false, dash: false, switchGlove: false, slap: false, skill: false, interact: false },
+    interactSlot: null,
     stick: { x: 0, z: 0, active: false },
     touchButtons: new Set(),
     lookTouchId: null,
@@ -128,9 +138,13 @@ export function createInput(dom, canvas, opts = {}) {
       case "KeyQ":
         pressEdge("switchGlove");
         break;
+      // E 一键两用：裂岛是主动技，安全区是「选/确认」。两边都置位，
+      // 由 sample() 按当前 phase 决定往外发哪一个，键位表里不必写两行。
       case "KeyE":
         state.hold.skill = true;
+        state.hold.interact = true;
         pressEdge("skill");
+        pressEdge("interact");
         break;
       case "KeyF":
         state.hold.slap = true;
@@ -143,7 +157,10 @@ export function createInput(dom, canvas, opts = {}) {
 
   function onKeyUp(e) {
     state.keys.delete(e.code);
-    if (e.code === "KeyE") state.hold.skill = false;
+    if (e.code === "KeyE") {
+      state.hold.skill = false;
+      state.hold.interact = false;
+    }
     if (e.code === "KeyF") state.hold.slap = false;
   }
 
@@ -151,6 +168,8 @@ export function createInput(dom, canvas, opts = {}) {
     state.keys.clear();
     state.hold.slap = false;
     state.hold.skill = false;
+    state.hold.interact = false;
+    state.interactSlot = null;
     state.dragging = false;
     state.lookTouchId = null;
     state.stick.x = 0;
@@ -280,17 +299,25 @@ export function createInput(dom, canvas, opts = {}) {
       state.stick.active = true;
       state.lastSource = "touch";
     },
-    /** 触控按钮：down=true 时按住型置位并补一次边沿。 */
-    setTouchButton(name, down) {
+    /**
+     * 触控按钮：down=true 时按住型置位并补一次边沿。
+     * @param {string} name slap | skill | switchGlove | dash | jump | interact
+     * @param {boolean} down
+     * @param {{slot?: 'main'|'off'}} [opts] 只有 interact 认：直接指定要装的槽位
+     */
+    setTouchButton(name, down, opts = {}) {
       state.lastSource = "touch";
       if (down) {
         fireGesture();
         state.touchButtons.add(name);
-        if (name === "slap" || name === "skill") state.hold[name] = true;
+        if (name === "slap" || name === "skill" || name === "interact") state.hold[name] = true;
+        if (name === "interact" && (opts.slot === "main" || opts.slot === "off")) {
+          state.interactSlot = opts.slot;
+        }
         pressEdge(name);
       } else {
         state.touchButtons.delete(name);
-        if (name === "slap" || name === "skill") state.hold[name] = false;
+        if (name === "slap" || name === "skill" || name === "interact") state.hold[name] = false;
       }
     },
     /** 采样一帧输入。cameraYaw 缺省时用输入层自己维护的偏航。 */
@@ -304,6 +331,8 @@ export function createInput(dom, canvas, opts = {}) {
         state.edge.switchGlove = false;
         state.edge.slap = false;
         state.edge.skill = false;
+        state.edge.interact = false;
+        state.interactSlot = null;
         return out;
       }
 
@@ -330,8 +359,14 @@ export function createInput(dom, canvas, opts = {}) {
       out.moveX = move.x;
       out.moveZ = move.z;
 
-      out.slap = state.hold.slap || state.edge.slap;
-      out.skill = state.hold.skill || state.edge.skill;
+      const inHub = state.phase === "hub";
+      // 安全区不出招：E 归「选/确认」，左键只用来抓指针锁定。
+      out.slap = inHub ? false : state.hold.slap || state.edge.slap;
+      out.skill = inHub ? false : state.hold.skill || state.edge.skill;
+      // interact 按「按住」发给 sim，边沿由 sim 的 p.prev.interact 判；
+      // 补上 edge 是为了同一帧内按下又抬起的短点触不会漏。
+      out.interact = state.hold.interact || state.edge.interact;
+      out.interactSlot = out.interact ? state.interactSlot : null;
       out.jump = state.edge.jump;
       out.dash = state.edge.dash;
       out.switchGlove = state.edge.switchGlove;
@@ -341,6 +376,8 @@ export function createInput(dom, canvas, opts = {}) {
       state.edge.switchGlove = false;
       state.edge.slap = false;
       state.edge.skill = false;
+      state.edge.interact = false;
+      if (!state.hold.interact) state.interactSlot = null;
       return out;
     },
     setEnabled(next) {
@@ -348,6 +385,25 @@ export function createInput(dom, canvas, opts = {}) {
       if (!state.enabled) clearKeys();
     },
     isEnabled: () => state.enabled,
+    /**
+     * 当前所处空间。'hub' 时屏蔽扇击/技能，E 与触控「选」走 interact。
+     * @param {'hub'|'arena'} next
+     */
+    setPhase(next) {
+      const phase = next === "hub" ? "hub" : "arena";
+      if (phase === state.phase) return state.phase;
+      state.phase = phase;
+      // 跨区时把按住态清干净：在大厅按着 E 走进传送门，不该在裂岛里立刻放技能
+      state.hold.slap = false;
+      state.hold.skill = false;
+      state.hold.interact = false;
+      state.edge.slap = false;
+      state.edge.skill = false;
+      state.edge.interact = false;
+      state.interactSlot = null;
+      return state.phase;
+    },
+    getPhase: () => state.phase,
     getLook: () => ({ yaw: state.yaw, pitch: state.pitch }),
     setLook(yaw, pitch) {
       if (typeof yaw === "number") state.yaw = yaw;
