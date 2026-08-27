@@ -6,7 +6,18 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import "../combat/index.js"; // 副作用：把真实战斗解算装进 sim
 import { think, resetBots, configureBots, BOT_PERSONAS } from "./bots.js";
-import { createMatch, forwardX, forwardZ, getPlayer, getView, step, ZERO_INPUT } from "../sim/index.js";
+import {
+  createMatch,
+  enterArena,
+  enterHub,
+  forwardX,
+  forwardZ,
+  getPlayer,
+  getView,
+  playerInHub,
+  step,
+  ZERO_INPUT,
+} from "../sim/index.js";
 
 const DT = 1 / 60;
 
@@ -268,6 +279,74 @@ describe("think() 吃 getView 快照", () => {
       expect(b.yaw).toBeCloseTo(before[i].yaw, 4);
       expect(b.yaw).not.toBe(0);
     });
+  });
+
+  it("hub 开局 Bot 不进走道：真人在台座间来回走，三只 Bot 一步都不挪窝", () => {
+    const state = createMatch({ seed: 945, botCount: 3, phase: "hub", unlocked: "all" });
+    const p0 = getPlayer(state, "p0");
+    const R = state.config.arenaRadius;
+    const ids = bots(state).map((b) => b.id);
+    const rng = counter(13);
+
+    // 开局就该是「真人在走道、Bot 在裂岛」这一对
+    expect(playerInHub(state, p0)).toBe(true);
+    for (const b of bots(state)) expect(playerInHub(state, b)).toBe(false);
+    const before = bots(state).map((b) => ({ x: b.x, z: b.z }));
+
+    const strayed = [];
+    for (let i = 0; i < 600; i++) {
+      const view = getView(state);
+      const inputs = {};
+      for (const id of ids) inputs[id] = think(view, id, rng);
+      // 真人在走道里晃：Bot 的目标评估一旦醒着，最近的那只就会朝他走过来
+      inputs.p0 = { moveX: Math.sin(i * 0.03), moveZ: -1 };
+      step(state, inputs, DT);
+      for (const b of bots(state)) {
+        if (playerInHub(state, b) || Math.hypot(b.x, b.z) > R) strayed.push(`${b.id}@${i}`);
+      }
+    }
+
+    expect(strayed).toEqual([]);
+    expect(state.phase).toBe("hub"); // 还没进门，整段都在安全区里
+    bots(state).forEach((b, i) => {
+      expect(Math.hypot(b.x - before[i].x, b.z - before[i].z), `${b.id} 挪了窝`).toBeLessThan(1e-6);
+    });
+  });
+
+  it("回安全区之后 Bot 也立刻停手：留在裂岛上的三只不再走、不再扇", () => {
+    const state = createMatch({ seed: 946, botCount: 3, phase: "hub", unlocked: "all" });
+    enterArena(state);
+    runBots(state, { seconds: 3, rng: counter(3) });
+    expect(state.stats.slaps).toBeGreaterThan(0); // 裂岛上确实打起来了
+
+    enterHub(state);
+    expect(getView(state).phase).toBe("hub");
+    const slapsAtReturn = state.stats.slaps;
+    const rng = counter(5);
+    const strayed = [];
+
+    for (let i = 0; i < 300; i++) {
+      const view = getView(state);
+      const inputs = {};
+      for (const b of bots(state)) {
+        const inp = think(view, b.id, rng);
+        inputs[b.id] = inp;
+        expect(inp).toMatchObject({
+          moveX: 0,
+          moveZ: 0,
+          slap: false,
+          skill: false,
+          switchGlove: false,
+          dash: false,
+          jump: false,
+        });
+      }
+      step(state, inputs, DT);
+      for (const b of bots(state)) if (playerInHub(state, b)) strayed.push(`${b.id}@${i}`);
+    }
+
+    expect(state.stats.slaps).toBe(slapsAtReturn); // 一记新的扇击都没起手
+    expect(strayed).toEqual([]); // 也没人跟着真人回走道
   });
 
   it("选掌不走 combat 判定：E 在大厅里只装掌，不放技能、不打人、不碎地", () => {

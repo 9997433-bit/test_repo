@@ -388,6 +388,12 @@ function tickDashes(state, now, sink) {
   for (const d of c.dashes) {
     const owner = playerById(state, d.ownerId);
     if (!owner || owner.alive === false) continue;
+    // 冲刺途中被送回安全区（对局结束的回程）：这一段当场作废。
+    // 这里绝不能再写 owner.vx/vz——写了就是顶着 22m/s 在走道上滑出去。
+    if (inSafeZone(state, owner)) {
+      owner.dashing = false;
+      continue;
+    }
     if (now >= d.until) {
       owner.dashing = false;
       owner.vx = num(owner.vx) * 0.45;
@@ -434,6 +440,10 @@ function runPending(state, now, sink) {
       continue;
     }
     const owner = playerById(state, q.ownerId);
+    // 出招人已经回到安全区：整笔延迟结算作废，不分种类。陨掌不在走道上砸坑、
+    // 残影不替他补刀、前摇里那一掌也不落下——大厅里不该留下任何战斗痕迹，
+    // 连 meteorImpact 这种纯表现事件都不许发（O2 会照着它在安全区画冲击波）。
+    if (inSafeZone(state, owner)) continue;
     if (q.kind === "meteorSlam") {
       const res = resolveMeteorImpact(state, owner, q, now);
       sink.hits.push(...res.hits);
@@ -441,7 +451,7 @@ function runPending(state, now, sink) {
     } else if (q.kind === "ghostSlap") {
       sink.hits.push(...resolveGhostSlap(state, owner, q, now));
     } else if (q.kind === "slap") {
-      if (owner && actorReady(owner) && !inSafeZone(state, owner)) {
+      if (owner && actorReady(owner)) {
         const table = gloveTable(state);
         const base = normalizeGlove(table[q.gloveId] || FALLBACK_GLOVE_BY_ID[q.gloveId]);
         const g = q.awakened ? awakenedStats(base) : base;

@@ -12,10 +12,20 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { AWAKEN, applyStatus, beginSlap, registerGloves, resolveSkill, resolveSlap, tickStatuses } from "./index.js";
+import {
+  AWAKEN,
+  applyStatus,
+  beginSlap,
+  canSkill,
+  canSlap,
+  registerGloves,
+  resolveSkill,
+  resolveSlap,
+  tickStatuses,
+} from "./index.js";
 import { FALLBACK_GLOVE_BY_ID, GHOSTS } from "./constants.js";
 import { normalizeSkillId } from "./skills.js";
-import { makePlayer, makeState, stepSim } from "./testkit.js";
+import { makePlayer, makeState, makeTiles, stepSim } from "./testkit.js";
 import { HUB } from "../data/hub.js";
 
 /** 8 只掌的 id 词表（契约 §2 GloveId）。 */
@@ -366,6 +376,21 @@ describe("残影：view.combat.ghosts 的源", () => {
     expect(state.combat.ghosts).toHaveLength(0);
   });
 
+  it("快照里塞回来的残影缺 ttl0：第一帧补上淡出基准，view 拿不到 ttl0 < ttl", () => {
+    const { state, a } = duel("afterimage", 4);
+    resolveSkill(state, a, undefined, 0); // 先把 state.combat 建出来
+    // 存档 / structuredClone 回灌的老残影可能只有 ttl（ttl0 是后加的字段）
+    state.combat.ghosts = [
+      { id: "g-restored", ownerId: "A", gloveId: "afterimage", x: 1, y: 0, z: 2, yaw: 0, ttl: 0.9 },
+    ];
+
+    tickStatuses(state, 1 / 60);
+    const [gh] = state.combat.ghosts;
+    expect(gh.ttl0).toBe(0.9);
+    expect(gh.ttl).toBeLessThan(gh.ttl0);
+    expect(gh.ttl).toBeGreaterThan(0);
+  });
+
   it("残影是纯 JSON，数量有上限", () => {
     const { state, a, b } = duel("afterimage", 4);
     for (let i = 0; i < GHOSTS.max * 2; i++) {
@@ -400,6 +425,24 @@ describe("安全区仍然一掌不接", () => {
     expect(state.combat ? state.combat.ghosts : []).toHaveLength(0);
   });
 
+  it("四道拒活口径一致：canSlap / canSkill 一律 false，两条起手报的都是 hub", () => {
+    // 磐石有主动技、冷却全好、没有任何状态：在裂岛上这一帧必定打得出去
+    const { state, a } = hubDuel("granite", 1.6);
+    expect(a.cd).toEqual({ slapAt: 0, skillAt: 0 });
+
+    expect(canSlap(state, a, undefined, 0)).toBe(false);
+    expect(canSkill(state, a, undefined, 0)).toBe(false);
+    // 拒的理由必须是 hub，不能含混成 cooldown / busy / no-skill——那几条一回裂岛就自己好了
+    expect(beginSlap(state, a, undefined, 0)).toMatchObject({ ok: false, reason: "hub" });
+    expect(resolveSkill(state, a, undefined, 0)).toMatchObject({ ok: false, reason: "hub" });
+    expect(resolveSlap(state, a, undefined, 0)).toHaveLength(0);
+    expect(state.events).toHaveLength(0);
+    // 拒活不留痕：冷却没被扣、后摇没被挂上，回裂岛第一帧照样能出手
+    expect(a.cd).toEqual({ slapAt: 0, skillAt: 0 });
+    expect(a.busyUntil).toBe(0);
+    expect(state.combat === undefined || state.combat.pending.length === 0).toBe(true);
+  });
+
   it("大厅里放技能一律 no-op（分身也不许留残影）", () => {
     for (const id of GLOVE_IDS) {
       const { state, a } = hubDuel(id, 1.6);
@@ -431,5 +474,124 @@ describe("安全区仍然一掌不接", () => {
     const hits = resolveSlap(state, a, undefined, 0);
     expect(hits).toHaveLength(1);
     expect(hits[0].gloveId).toBe("granite");
+  });
+});
+
+describe("回安全区：在飞的延迟结算不许落在走道上", () => {
+  /**
+   * 对局结束的回程（`src/sim/state.js` 的 enterHub）：phase 切 hub、人挪到走道出生点、
+   * 速度清零。它**不**清 `state.combat` 的 pending / dashes——那是 combat 自己的暂存区，
+   * 所以「出招在裂岛、结算在大厅」这一段只能由 combat 这边闸住。
+   */
+  function sendHome(state, p) {
+    state.phase = "hub";
+    state.hub = { layout: HUB };
+    p.x = HUB.spawn.x;
+    p.y = HUB.floorY;
+    p.z = HUB.spawn.z;
+    p.vx = 0;
+    p.vy = 0;
+    p.vz = 0;
+    state.events.length = 0;
+  }
+
+  /** 只推 combat 的钟：位移归宿主，这里盯的是 combat 往人身上写了什么。 */
+  function tick(state, seconds) {
+    for (let i = 0; i < Math.round(seconds * 60); i++) {
+      state.t += 1 / 60;
+      tickStatuses(state, 1 / 60);
+    }
+  }
+
+  it("疾风冲刺途中回程：不再往身上写冲刺速度，冲刺记录当场作废", () => {
+    const { state, a } = duel("gale", 4);
+    expect(resolveSkill(state, a, undefined, 0).ok).toBe(true);
+    expect(state.combat.dashes).toHaveLength(1);
+    expect(a.dashing).toBe(true);
+
+    sendHome(state, a);
+    tick(state, 1);
+
+    // 闸不住的话这里是 -22.7 m/s：人顶着冲刺速度从走道一头滑到另一头。
+    expect(a.vx).toBe(0);
+    expect(a.vz).toBe(0);
+    expect(a.dashing).toBe(false);
+    expect(state.combat.dashes).toHaveLength(0); // 作废，不是攒着等回裂岛再放
+    expect(state.events).toHaveLength(0);
+  });
+
+  it("陨掌腾空途中回程：不在走道上砸坑、不发 meteorImpact、不把人按回地面", () => {
+    const { state, a, b } = duel("meteor", 2.5, { state: { tiles: makeTiles(3, 8, 60) } });
+    expect(resolveSkill(state, a, undefined, 0).ok).toBe(true);
+    expect(state.combat.pending.map((q) => q.kind)).toEqual(["meteorSlam"]);
+
+    sendHome(state, a);
+    const foe = { vx: b.vx, vz: b.vz, impact: b.impact };
+    tick(state, 2);
+
+    expect(state.combat.pending).toHaveLength(0);
+    expect(state.events).toHaveLength(0); // meteorImpact 是纯表现事件，O2 照着它在走道上画冲击波
+    expect(a.vy).toBe(0); // 落地那一下会写 vy=-28
+    expect(state.tiles.every((t) => !t.broken && t.hp === t.maxHp)).toBe(true);
+    expect(b.vx).toBe(foe.vx);
+    expect(b.vz).toBe(foe.vz);
+    expect(b.impact).toBe(foe.impact);
+  });
+
+  it("残影假掌途中回程：留在裂岛上的对手不会被走道上的人补一掌", () => {
+    const { state, a, b } = duel("afterimage", 2);
+    a.awakenedT = AWAKEN.duration;
+    expect(resolveSkill(state, a, undefined, 0).ok).toBe(true);
+
+    const queued = state.combat.pending.filter((q) => q.kind === "ghostSlap");
+    expect(queued).toHaveLength(1);
+    // 残影留在裂岛上，对手就贴在它面前 0.8m —— 回程之前这一掌是实打实打得到的
+    b.x = queued[0].x;
+    b.z = queued[0].z + 0.8;
+    b.vx = 0;
+    b.vz = 0;
+    b.impact = 0;
+    b.invulnT = 0;
+    b.statuses = [];
+
+    sendHome(state, a);
+    tick(state, 1);
+
+    expect(state.combat.pending.some((q) => q.kind === "ghostSlap")).toBe(false);
+    expect(state.events.some((e) => e.type === "ghostSlap")).toBe(false);
+    expect(b.vx).toBe(0);
+    expect(b.vz).toBe(0);
+    expect(b.impact).toBe(0);
+  });
+
+  it("前摇里那一掌落在回程之后：人已经在走道上，掌就不落下", () => {
+    const { state, a, b } = duel("granite", 1.6);
+    expect(beginSlap(state, a, undefined, 0).ok).toBe(true);
+    expect(state.combat.pending.map((q) => q.kind)).toEqual(["slap"]);
+
+    sendHome(state, a);
+    const foe = { vx: b.vx, vz: b.vz, impact: b.impact };
+    tick(state, 1);
+
+    expect(state.combat.pending).toHaveLength(0);
+    expect(state.events).toHaveLength(0);
+    expect(b.vx).toBe(foe.vx);
+    expect(b.vz).toBe(foe.vz);
+    expect(b.impact).toBe(foe.impact);
+  });
+
+  it("回程前留下的残影照常淡出，不会在走道上冻成一排", () => {
+    const { state, a } = duel("afterimage", 4);
+    expect(resolveSkill(state, a, undefined, 0).ok).toBe(true);
+    const ttl0 = state.combat.ghosts[0].ttl0;
+    expect(ttl0).toBeGreaterThan(0);
+
+    sendHome(state, a);
+    tickStatuses(state, 0.25);
+    expect(state.combat.ghosts[0].ttl).toBeLessThan(ttl0);
+    expect(state.combat.ghosts[0].ttl0).toBe(ttl0);
+
+    tick(state, 3);
+    expect(state.combat.ghosts).toHaveLength(0);
   });
 });
