@@ -36,7 +36,7 @@
 | --- | --- | --- | --- |
 | F1 契约收口 | `claude-fable-5-thinking-xhigh` | `bc-3703b736-e805-5387-9504-a9ef41455e13` | 已派出 |
 | O2 渲染 | `claude-opus-5-thinking-high-fast` | `bc-164c2bad-45c0-51f0-9bb9-98d50a8065af` | 已派出 |
-| O4 壳 | `claude-opus-5-thinking-high-fast` | | 等槽 |
+| O4 壳 | `claude-opus-5-thinking-high-fast` | `bc-3b73fda9-42bc-5fba-ae6e-2ab33ced6c5c` | 已派出 |
 
 ### Wave 3
 
