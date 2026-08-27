@@ -6,3 +6,4 @@ export { TILE } from "./tiles.js";
 export { BOT_PERSONAS, BOT_PERSONA_BY_ID } from "./bots.js";
 export { UNLOCKS, UNLOCK_BY_ID, UNLOCK_BY_GLOVE } from "./unlocks.js";
 export { HUB } from "./hub.js";
+export { SKINS, SKIN_BY_ID, DEFAULT_SKIN_ID, resolveSkin } from "./skins.js";

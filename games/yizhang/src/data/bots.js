@@ -3,8 +3,8 @@
 //
 // skinId（契约 §3.2 规则 3，ADR-26）：纯装饰、不挂数值。三人互异且不等于
 // DEFAULT_SKIN_ID（'drifter'）——Bot 不得全员同一造型。id 取皮肤词表 v1 的冻结值
-// （wildhorn 荒角 / crane 鹤羽 / nuo 傩面）；`src/data/skins.js` 真表落地前，
-// 壳层 `core/skins.js assignSkins` 对表里不存在的 id 会安全回落轮转，不会破功。
+// （wildhorn 荒角 / crane 鹤羽 / nuo 傩面），逐 id 对应 `src/data/skins.js` 真表
+// （HUB-R2 已落地，src/data/skins.test.js 钉死三 id 可解析）。
 
 export const BOT_PERSONAS = [
   {

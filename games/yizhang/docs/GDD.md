@@ -211,7 +211,7 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 
 可战胜性由三个旋钮保证：`reactionSeconds`（感知延迟 0.2–0.28）、`mistakeRate`（.08–.18 随机失误）、`punishRead`（只有狸缘接近人类的抓后摇水平）。磐石 Bot（蛮古）0.42s 前摇 + 高失误率 = 木棉玩家的第一个「可学习」对手：引它挥空 → 绕背 → 两三掌送下岛。
 
-皮肤（契约 §3.2 规则 3，ADR-26）：`skinId` 纯装饰、不挂数值；三人互异且不等于默认皮肤 `drifter`，Bot 不得全员同一造型。id 取皮肤词表 v1 冻结值；`src/data/skins.js` 真表落地前，壳层 `assignSkins` 对表里查无此 id 的值安全回落轮转，行为不破。
+皮肤（契约 §3.2 规则 3，ADR-26）：`skinId` 纯装饰、不挂数值；三人互异且不等于默认皮肤 `drifter`，Bot 不得全员同一造型。id 取皮肤词表 v1 冻结值，逐 id 对应 `src/data/skins.js` 真表（HUB-R2 已落地，见 §13）；壳层 `assignSkins` 对表里查无此 id 的值仍会安全回落轮转，行为不破。
 
 ## 11. 调参指南（改哪个数字、动什么）
 
@@ -267,5 +267,43 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 | 走道太挤 / 太空 | `ROW_X 4.2`、`ROW_Z` 间距 6 | 座距恒 > 2 × interactRadius；ROW_X 恒 > interactRadius |
 | 误入传送门 | `PORTAL_RADIUS 2.4`、门−末排 z 距 6 | 门 AABB 与台座交互圈净距恒 > 0 |
 | 安全区整体搬家 | `HUB_Z −120` | zone 最近缘距裂岛圆心恒 > 22m |
+
+## 13. 皮肤真表（`skins.js`，HUB-R2，ADR-26；契约 §3.2）
+
+`src/data/skins.js` 是壳层 `core/skins.js` 头注预告的那份「真表」：导出 `SKINS` / `SKIN_BY_ID` / `DEFAULT_SKIN_ID`（`'drifter'`）/ `resolveSkin`，`data/index.js` 已转发。壳层 `resolveSkins(dataModule)` 拿到 `src/data` 命名空间即自动翻 `source:'data'`，兜底表（ash/kiln/… 六套原创 id）退役为数据缺席时的降级，两套不混用；兜底 id 不升格为默认皮肤。
+
+### 13.1 形状取舍（真表用哪套字段）
+
+场上有两套候选形状：壳层兜底表的**比例数值**形状（`build:{height,mass,shoulder}` + `cloth/trim/accent` + `accessory`），和契约 §3.2 冻结的**枚举组合**形状（`build/headgear/back/palette`）。真表**只用契约形状**，理由：
+
+- 契约已冻结且 O2 的实现策略围绕它设计——每个枚举值各做一次几何/材质件，F3 填组合表即可并行（§3.2 开篇）；比例数值形状无法保证「配件形制互异」这条灰度剪影底线。
+- 枚举可测：`build ∈ {slim,stock,broad}`、`headgear` 六选一、`back` 三选一，词表越界直接测试红（`src/data/skins.test.js`）。
+
+消费分两层，各管各的：**对象级**兜底走数据层 `resolveSkin(id)`（未知/缺省 → `SKIN_BY_ID[DEFAULT_SKIN_ID]`，契约 §14-17）；**id 级**归一（存档往返、`assignSkins` 分配）仍走壳层 `normalizeSkinId(id, resolveSkins(data))`，壳层零改动。
+
+### 13.2 皮肤表 v1（id 词表冻结于契约 §3.2；表序 = 大厅选择器顺序）
+
+| id | 名 | 定位 | build | headgear | back | 衣料底色 / 灰阶位 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `drifter` | 行脚 | **缺省**；风尘行脚客 | stock | hood | panel | 尘灰蓝 `#5d6572`，中间灰阶 |
+| `mason` | 石契 | 宽肩石匠 | broad | bare | pack | 赭土 `#8a6f4d`，中高灰阶 |
+| `crane` | 鹤羽 | 瘦高背旗（Bot fox） | slim | topknot | banner | 鹤羽灰白 `#b9bfc2`，全表最亮 |
+| `reed` | 苇笠 | 斗笠蓑客 | stock | strawHat | panel | 苇绿 `#4c6248`，中低灰阶 |
+| `nuo` | 傩面 | 傩戏面客（Bot bully；原创民俗剪影） | slim | mask | banner | 夜漆青黑 `#2f2b3a`，全表最暗 |
+| `wildhorn` | 荒角 | 兽角蛮客（Bot brute） | broad | horns | pack | 生革锈褐 `#6e4a33`，暗暖灰阶 |
+
+**灰度剪影判据**（测试锁死）：六套 `headgear` 互不相同——蒙掉颜色，头部剪影件就够认人；`build × back` 又把六套分成三族两两对照（stock+panel / slim+banner / broad+pack），族内靠 headgear 分（兜帽 vs 斗笠、发髻 vs 面具、光头 vs 荒角）。配色再补一层保险：衣料明度从鹤羽（最亮）到傩面（最暗）拉开阶梯。
+
+**纪律**：`skinId` 纯装饰、不挂数值（ADR-26，测试断言表内无战斗键）；`back` 件必须承载当前激活掌识别色（§3.2 规则 1，皮肤只换载体形状不能取消）；palette 全部压饱和——全屏唯一饱和峰值永远是当前掌识别色（ART §1.2）；Bot 三人格 wildhorn/crane/nuo 互异且 ≠ `drifter`（§3.2 规则 3）。新皮肤 / 新枚举值 = 先登记契约 §3.2 再进表。
+
+### 13.3 `trim` 微调参词表（F3/O2 协商制，先登记再用；O2 可安全忽略）
+
+| 键 | 类型 | 用于 | 语义 |
+| --- | --- | --- | --- |
+| `hoodDepth` | number | drifter | 兜帽前探深度系数（0..1，越大脸越藏） |
+| `packBulk` | number | mason | 行囊体积倍率（1 = 基准背包件） |
+| `bannerHeight` | number | crane / nuo | 背旗高度倍率（鹤羽 1.25 高扬、傩面 0.95 收敛） |
+| `hatRadius` | number | reed | 笠檐半径（米，剪影关键） |
+| `hornSpread` | number | wildhorn | 双角外张半距（米） |
 
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。
