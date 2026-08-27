@@ -17,6 +17,8 @@ Fable-3 出品。本文只做一件事：把 DESIGN_SEED 定下的核心循环�
 | `src/data/bots.js` | `BOT_PERSONAS` | 3 种 Bot 人格（含互异 `skinId`） |
 | `src/data/unlocks.js` | `UNLOCKS` | 局内解锁挑战 |
 | `src/data/hub.js` | `HUB` | 安全区大厅布局：8 座坐标/朝向、交互半径、走道 AABB、传送门（§12） |
+| `src/data/skins.js` | `SKINS` `SKIN_BY_ID` `DEFAULT_SKIN_ID` `resolveSkin` | 6 套皮肤真表（契约 §3.2 枚举组合，§13） |
+| `src/data/vfx.js` | `GLOVE_VFX` `GLOVE_VFX_BY_ID` `GLOVE_VFX_BY_SKILL` `resolveGloveVfx` | 每掌战斗 VFX 参数表（§14） |
 
 ---
 
@@ -279,7 +281,7 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 - 契约已冻结且 O2 的实现策略围绕它设计——每个枚举值各做一次几何/材质件，F3 填组合表即可并行（§3.2 开篇）；比例数值形状无法保证「配件形制互异」这条灰度剪影底线。
 - 枚举可测：`build ∈ {slim,stock,broad}`、`headgear` 六选一、`back` 三选一，词表越界直接测试红（`src/data/skins.test.js`）。
 
-消费分两层，各管各的：**对象级**兜底走数据层 `resolveSkin(id)`（未知/缺省 → `SKIN_BY_ID[DEFAULT_SKIN_ID]`，契约 §14-17）；**id 级**归一（存档往返、`assignSkins` 分配）仍走壳层 `normalizeSkinId(id, resolveSkins(data))`，壳层零改动。
+消费分两层，各管各的：**对象级**兜底走数据层 `resolveSkin(id)`（未知/缺省 → `SKIN_BY_ID[DEFAULT_SKIN_ID]`，契约 §14-17）；**id 级**归一（存档往返、`assignSkins` 分配）仍走壳层 `normalizeSkinId(id, resolveSkins(data))`，壳层零改动。渲染通路（契约 §3.2-6，v4.2 按实现登记）：真表经 `createRenderer(canvas, { data, skins })` 喂给 O2，render 侧先过壳层 `skinAppearance()` 把真表（枚举）与兜底表（比例数值）归一成同一份外观模型再落件——归一发生在壳层/render 域，本表的形状取舍不受影响。
 
 ### 13.2 皮肤表 v1（id 词表冻结于契约 §3.2；表序 = 大厅选择器顺序）
 
@@ -308,13 +310,13 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 
 ## 14. 每掌战斗 VFX 参数表（`vfx.js`，HUB-R2；Round 1 遗留 3）
 
-大厅 idle 特效已可辨（ART §13.4，O2 已渲染）；本表管**裂岛里的扇击与技能**——Round 1 里它们还是一套通用壳。`src/data/vfx.js` 导出 `GLOVE_VFX`（数组，GLOVES 图鉴顺序）/ `GLOVE_VFX_BY_ID` / `GLOVE_VFX_BY_SKILL` / `resolveGloveVfx`，`data/index.js` 已转发。
+大厅 idle 特效已可辨（ART §13.4，O2 已渲染）；本表管**裂岛里的扇击与技能**——Round 1 里它们还是一套通用壳。`src/data/vfx.js` 导出 `GLOVE_VFX`（数组，GLOVES 图鉴顺序）/ `GLOVE_VFX_BY_ID` / `GLOVE_VFX_BY_SKILL` / `resolveGloveVfx`，`data/index.js` 已转发。渲染域的**每掌一形分派词**（大厅 idle 八词 × 战斗八词）登记在 §14.3，与实现同词。
 
 **消费方式（O2 分派）**：扇击事件带 gloveId → `GLOVE_VFX_BY_ID[gloveId].slap`；技能事件线上的 `skillId` 是 §3.1 右列 handler id → `GLOVE_VFX_BY_SKILL[skillId]`（表内 `skill.skillId` 就登记为 handler id，木棉无主动技不在此表）；分身残影读 `view.combat.ghosts`（O1 导出），视觉规格取 afterimage 的 `skill.ghosts`；未知/缺省 gloveId `resolveGloveVfx` 回落木棉（与 `createMatch` 同一约定）。
 
 **职责边界**：判定几何（`slapRange`/`slapAngleDeg`/技能半径）的唯一事实源仍是 `gloves.js`/combat，O2 按 gloveId 自取——本表**不复制战斗数字**，只带视觉参数（形状关键词、粒子数、寿命秒、高度米、贴花种类）；识别色 `ident` 直接引用 `GLOVE_BY_ID[id].color`，不产生第三份色源（HUD/样式仍走 tokens.css，ART §1.3 注）。
 
-### 14.1 八掌速览（完整参数见 `vfx.js`；关键词与 ART §7 逐行对齐）
+### 14.1 八掌速览（完整参数见 `vfx.js`；关键词与 ART §16 逐掌对齐，通用纪律见 ART §7）
 
 | 掌 | 扇击 burst（主形） | trail（过程痕） | residue（残留） | 技能（handler id → 形） |
 | --- | --- | --- | --- | --- |
@@ -335,5 +337,27 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 4. **事后残留必查**：每掌 residue 有种类、数量 ≥1、寿命 >0——尘/屑/霜/烬至少留一样，打完不能像没发生（手册 §14-13）。
 
 **调参指南**：想让某掌特效更「重」，先动 residue `count`/`lifeSeconds`（残留即重量感），再动 burst 寿命；不要加发光、不要动三列关键词（改词 = 改识别语言，需过 F2 视觉规范）；改完跑 `src/data/vfx.test.js` 与 `src/data/skins.test.js`。
+
+### 14.3 渲染分派词表（HUB-R3 同词登记；分派词归 render 域，本表不复制进 `src/data`）
+
+数据参数（`vfx.js` 的 burst / trail / residue / decal 字段词）之外，渲染域另有两张**每掌一形**的分派表——参数、分派、终稿三处互引不出第四套词汇（ART §17.4 同款纪律），本节按实现原词登记：
+
+- **战斗分派** = `src/render/combat-vfx.js` 的 `COMBAT_VFX_KIND`：八键 = GLOVES 八 id（cotton / granite / gale / frost / spring / afterimage / magnet / meteor），八形互异；afterimage = `phase`，**不是** mirror（SOTA HG-06 / 契约 v4.2 已锁）。技能走 `SKILL_VFX_KIND` 同形放大（键 = §3.1 左列 data id，七条；木棉无主动技不在表），认不出退回持掌词（`combatVfxKind` 兜底 `fanwake`）——每掌技能与扇击同形，殊途同归。
+- **大厅 idle 分派** = `src/render/hub-vfx.js` 的 `IDLE_VFX_KIND`（八键八形，认不出退 `fluff`）；中文八词与 ART §17.1 底线形表同词。
+
+| 掌 | idle kind（中文八词，ART §17.1） | 战斗 kind（`COMBAT_VFX_KIND`） |
+| --- | --- | --- |
+| 木棉 cotton | `fluff` 棉絮 | `fanwake` 絮扇 |
+| 磐石 granite | `grit` 岩屑 | `slab` 岩楔 |
+| 疾风 gale | `streak` 风带 | `gust` 风刃 |
+| 冰霜 frost | `mist` 霜雾 | `rime` 霜弧 |
+| 弹簧 spring | `coil` 簧弧 | `recoil` 簧弹 |
+| 分身 afterimage | `ghost` 残影 | `phase` 错位 |
+| 磁掌 magnet | `pull` 磁弧 | `flux` 磁弧 |
+| 陨掌 meteor | `ember` 余烬 | `cinder` 陨坑 |
+
+idle 与战斗逐掌**押韵不复制**（ART §16.0 快慢架 / §17.4 对齐表）：`fluff`↔`fanwake`、`grit`↔`slab`、`streak`↔`gust`、`mist`↔`rime`、`coil`↔`recoil`、`ghost`↔`phase`、`pull`↔`flux`、`ember`↔`cinder`。
+
+分层一句话：`vfx.js`（§14 本表）管**参数**、`COMBAT_VFX_KIND` / `IDLE_VFX_KIND` 管**分派**、ART §16 管**终稿**。分派词活在 render 域，数据红线不变（`src/data` 禁 import three / DOM / Math.random）：本表不登记 render 词为字段，render 也不复制本表数字。
 
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。
