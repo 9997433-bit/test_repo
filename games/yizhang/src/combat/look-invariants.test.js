@@ -111,6 +111,16 @@ describe("扇击判定是水平锥，与视角无关", () => {
     for (const deg of [-49, -25, 0, 25, 49]) expect(shot({ deg }), `${deg}°`).toHaveLength(1);
     for (const deg of [-51, 51, 90, 180]) expect(shot({ deg }), `${deg}°`).toHaveLength(0);
   });
+
+  it("张角与够得着都只量水平：高差顶到闸上沿也不缩水", () => {
+    // 上面两条都摆在 1.6m / dy=0 的舒适位：`dy=2.1` 那组斜距才 2.64m，仍在 3.3m 的
+    // 够得着里，`deg=49` 那组高差是 0 —— 判定要是从「水平锥 + 独立高度闸」退回
+    // 球形 reach 或立体锥，两条都照样绿。这里把水平量各自顶到边上再加满高差：
+    // 斜距会涨到 3.89m（> 3.3m），立体夹角会涨到 66.6°（> 半角 50°），一退就翻。
+    const reach = FALLBACK_GLOVE_BY_ID.cotton.slapRange + ARENA.playerRadius;
+    expect(shot({ deg: 0, dist: reach - 0.02, dy: 2.1 }), "够得着贴边 + 满高差").toHaveLength(1);
+    expect(shot({ deg: 49, dist: 1.6, dy: 2.1 }), "张角贴边 + 满高差").toHaveLength(1);
+  });
 });
 
 /**

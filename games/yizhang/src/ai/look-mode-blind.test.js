@@ -198,6 +198,29 @@ describe("Bot 不感知 lookMode", () => {
     }
   });
 
+  it("瞄的也是水平角：目标窜到天上，emit 的 yaw 一个字节都不动", () => {
+    // think() 的 aimYaw 只吃 (dx, dz)。Bot 确实会为了高度起跳（brute 的 jump 看 target.y），
+    // 但**转身**不许跟着俯仰走：战斗层那片锥是水平的，高低由独立的高度闸管
+    // （`combat/look-invariants.test.js`）。Bot 一旦学会立体瞄准，emit 的角就和判定对不上，
+    // 又是一副「打别人打不到」。
+    const state = match(708, 1);
+    const bot = state.players.find((p) => p.kind === "bot");
+    const human = getPlayer(state, "p0");
+    bot.x = 0;
+    bot.z = 0;
+    bot.yaw = 0;
+    human.x = 2.4;
+    human.z = -1.1;
+
+    const yaws = [0, 1.1, 2.2, -2.2, 30].map((y) => {
+      human.y = y;
+      resetBots();
+      return think(getView(state), bot.id, counter(19)).yaw;
+    });
+    expect(Number.isFinite(yaws[0]), "yaw 不是有限角").toBe(true);
+    expect(new Set(yaws).size, `yaw 跟着高度变了：${yaws.join(" / ")}`).toBe(1);
+  });
+
   it("hub 期不吃视角字段的影响：塞了 free 也还是零输入", () => {
     const state = createMatch({ seed: 705, botCount: 3, phase: "hub", unlocked: "all" });
     const ids = botIds(state);
