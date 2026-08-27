@@ -75,7 +75,14 @@ export function horizDir(from, to) {
   return { x: dx / d, z: dz / d, dist: d };
 }
 
-/** 目标是否落在 attacker 面前 angleDeg 的扇形里。 */
+/**
+ * 目标是否落在 attacker 面前 angleDeg 的扇形里。
+ *
+ * 这是一片**水平**锥：只吃 yaw 与水平位移（horizDir 丢掉 y），俯仰、相机角、
+ * lookMode 一概不参与。上下够不够得着由调用方的高度闸单独管
+ * （`index.js` 的 `HIT.reachHeight`）——判定从来不是「从脚扫到头」的竖锥，
+ * 视角轮也不许拿 reach 数字去「修打不中」（`look-invariants.test.js`）。
+ */
 export function inCone(attacker, target, angleDeg) {
   const dir = horizDir(attacker, target);
   if (dir.dist === 0) return true;
@@ -125,6 +132,10 @@ export function isTargetable(target, attacker) {
  * 这个人此刻是不是站在安全区里：`phase === 'hub'` **且**人确实在安全区体积内。
  * 布局读的是 sim 写在 `state.hub.layout` 上的那一份（唯一来源是 `data/hub.js`），
  * combat 只负责「在安全区里就不打」。
+ *
+ * 与 `src/sim/hub.js` 的 `playerInHub` 是同一条闸，两边必须逐帧同答案：空挥闸是
+ * **空间**闸，不是 phase 闸。phase 还是 hub、人已经站在裂岛坐标上的那一段
+ * （回程 / 传送边界帧）照常出手，退化成「phase===hub 就不打」是回归。
  *
  * 宿主没有 hub 概念（combat testkit、老快照）时恒为 false，走裂岛老路径。
  */
