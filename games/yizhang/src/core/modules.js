@@ -199,7 +199,13 @@ export function wireSimDeps(sim, dataModule, combatModule) {
   return out;
 }
 
-/** 渲染契约里 sync/resize/setQuality/dispose 可能挂在实例上，也可能是模块级导出。 */
+/**
+ * 渲染契约里 sync/resize/setQuality/dispose 可能挂在实例上，也可能是模块级导出。
+ *
+ * setLook / setPitch 是视角喂入口（Round 1 遗留 4）：O2 还没开这两个方法时
+ * pick 给 null，`core/look.js feedLook` 会整只 no-op；哪天渲染器导出了，
+ * 这里不用改一行就接上（所以名字先占着，别因为「现在还没有」把它删掉）。
+ */
 export function bindRenderer(mod, instance) {
   const pick = (name) => {
     if (instance && typeof instance[name] === "function") return instance[name].bind(instance);
@@ -213,6 +219,8 @@ export function bindRenderer(mod, instance) {
     setQuality: pick("setQuality"),
     setSpectator: pick("setSpectator"),
     setMobile: pick("setMobile"),
+    setLook: pick("setLook"),
+    setPitch: pick("setPitch"),
     getStats: pick("getStats"),
     dispose: pick("dispose"),
     render: pick("render"),

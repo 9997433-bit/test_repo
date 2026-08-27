@@ -25,6 +25,8 @@ import {
   simYawToCameraYaw,
   toRenderView,
 } from "./core/view.js";
+import { feedLook } from "./core/look.js";
+import { ENTRY, resolveEntry } from "./core/entry.js";
 import { normalizeSkinId, resolveSkins } from "./core/skins.js";
 import { unlockedIdsFor } from "./core/hub-flow.js";
 import { createUnlockChecker, newlyUnlocked, unlockTextOf } from "./core/unlocks.js";
@@ -161,6 +163,15 @@ async function boot() {
     if (renderer.setSpectator) renderer.setSpectator(on);
   }
 
+  /**
+   * 每帧的视角喂入（Round 1 遗留 4）。渲染器没有 setLook / setPitch 时整只 no-op，
+   * O2 把 API 开出来的当帧就自动生效 —— 壳层不必再为一个 setter 走一遍装配。
+   * 换算与字段形状都在 core/look.js，这里只负责「每帧调一次」。
+   */
+  function feedRendererLook() {
+    return feedLook(renderer, input.getLook());
+  }
+
   function applyResize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = window.innerWidth;
@@ -200,7 +211,8 @@ async function boot() {
     callbacks: {
       onStart: (loadout) => startMatch(loadout),
       onResume: () => setPaused(false),
-      onRestart: () => startMatch(lastLoadout || shell.menu.getLoadout()),
+      // 「再来一局」进裂岛、「回安全区」进走道，两个按钮不是一件事（core/entry.js）
+      onRestart: () => restartArena(),
       onReturnHub: () => returnToHub(),
       onQuit: () => quitToMenu(),
       onPauseRequest: () => togglePause(),
@@ -536,9 +548,26 @@ async function boot() {
     startProbe();
   }
 
-  /** 回程：重开一局并落在安全区。装备沿用上一次的配装。 */
+  /** 三个入口共用的取值链：上一局 → 存档 → 2D 配掌板（core/entry.js）。 */
+  function entryFor(kind) {
+    return resolveEntry(kind, {
+      lastLoadout,
+      save,
+      menuLoadout: shell.menu.getLoadout(),
+    });
+  }
+
+  /**
+   * 结算「再 来 一 局」：**同一副掌直接回裂岛**（skipHub），不再赶人走一遍走道。
+   * 这是它和「回安全区换掌」唯一也是全部的区别（Round 1 遗留 6）。
+   */
+  function restartArena() {
+    startMatch(entryFor(ENTRY.RESTART));
+  }
+
+  /** 回程：重开一局并落在安全区。掌记在存档里，但走道上要重新挑，挑完门才放行。 */
   function returnToHub() {
-    startMatch({ ...(lastLoadout || shell.menu.getLoadout()), skipHub: false });
+    startMatch(entryFor(ENTRY.HUB));
     shell.toast("安 全 区 · 走道两侧挑掌", 1800);
   }
 
@@ -606,6 +635,8 @@ async function boot() {
     },
     draw(alpha, info) {
       if (probe && !info.paused) probe.feed(performance.now() / 1000);
+      // 视角先喂再画：观战/主菜单也照喂，镜头不会在没有本地玩家时卡住上下视角。
+      feedRendererLook();
       if (!curView) {
         if (renderer.sync) renderer.sync({ players: [], tiles: [], events: [] });
         return;
@@ -696,9 +727,12 @@ async function boot() {
     audio,
     loop,
     startMatch,
+    restartArena,
     returnToHub,
     quitToMenu,
     togglePause,
+    /** 手测/探针用：读一帧视角，并看它喂到了渲染器的哪个 setter 上。 */
+    feedLook: feedRendererLook,
     get phase() {
       return curView ? curView.phase : null;
     },
