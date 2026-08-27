@@ -13,8 +13,9 @@ import {
   WebGLRenderer,
 } from 'three';
 import { GLOBAL_DPR_CAP, QUALITY, resolveTier } from './config.js';
-import { createCamera } from './camera.js';
+import { BASE_PITCH, PITCH_LIMIT, createCamera } from './camera.js';
 import { createCharacters } from './characters.js';
+import { combatVfxKind, createCombatVfx, skillVfxKind } from './combat-vfx.js';
 import { createHubScene } from './hub.js';
 import { createIsland } from './island.js';
 import { createLighting } from './lighting.js';
@@ -46,6 +47,10 @@ export class YizhangRenderer {
     this.localId = this.forcedLocalId;
     this.spectator = !!opts.spectator;
     this.disposed = false;
+    // 抬头 / 低头。null = 壳层还没接线，镜头维持静止机位的俯角（camera.js 的 BASE_PITCH）。
+    // 语义与 src/input 的 getLook().pitch 一致：正 = 往下看。
+    this.lookPitch = Number.isFinite(opts.pitch) ? opts.pitch : null;
+    this.lookYaw = Number.isFinite(opts.lookYaw) ? opts.lookYaw : null;
 
     this.renderer = new WebGLRenderer({
       canvas,
@@ -117,6 +122,13 @@ export class YizhangRenderer {
       seed: this.seed,
     });
     this.vfx = createVfx({ scene: this.scene, quality: q, textures: this.textures, seed: this.seed });
+    // 每掌一套的战斗特效：分派键是 gloveId / skillId，见 ./combat-vfx.js
+    this.combatVfx = createCombatVfx({
+      scene: this.scene,
+      quality: q,
+      textures: this.textures,
+      seed: this.seed,
+    });
     this.post = createPost({ renderer: this.renderer, scene: this.scene, quality: q });
     if (this.view) {
       this.island.syncTiles(this.view.tiles, this.view.arena);
@@ -127,6 +139,8 @@ export class YizhangRenderer {
 
   _teardownWorld() {
     this.post?.dispose();
+    this.combatVfx?.dispose();
+    this.combatVfx = null;
     this.vfx?.dispose();
     this.hub?.dispose();
     this.characters?.dispose();
@@ -176,6 +190,7 @@ export class YizhangRenderer {
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const pixelScale = bh / (2 * Math.tan(fovRad / 2));
     this.vfx?.setPixelScale(pixelScale);
+    this.combatVfx?.setPixelScale(pixelScale);
     this.hub?.setPixelScale(pixelScale);
     return { width: w, height: h, pixelRatio: ratio };
   }
@@ -199,6 +214,53 @@ export class YizhangRenderer {
   /** main.js 的旧名字。语义与 setLocalId 相同。 */
   setFollow(id) {
     return this.setLocalId(id);
+  }
+
+  /**
+   * 抬头 / 低头（以及可选的镜头朝向）。壳层每帧调一次即可：
+   *
+   *   renderer.setLook(input.getLook());     // { yaw, pitch }
+   *
+   * pitch 与 `src/input` 同一套约定：**正 = 往下看**，镜头随之抬高、视点压低；
+   * 单位弧度，内部夹在 ±PITCH_LIMIT。不调用就维持静止机位的俯角。
+   *
+   * yaw 是可选的，且必须是**项目唯一那套朝向约定**：yaw = 0 面向 -Z，与
+   * `sim/math.js` 的 forwardX/forwardZ 一致。壳层的输入 yaw 走的是相机系
+   * （`simYawToCameraYaw`），别原样丢进来 —— 不给 yaw 时镜头跟角色自己的朝向，
+   * 那条路一直是对的。
+   *
+   * @param {{pitch?: number, yaw?: number}|number} look
+   * @returns {{pitch: number|null, yaw: number|null}}
+   */
+  setLook(look = {}) {
+    const o = typeof look === 'number' ? { pitch: look } : look || {};
+    if (Number.isFinite(o.pitch)) {
+      this.lookPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, o.pitch));
+    } else if (o.pitch === null) {
+      this.lookPitch = null;
+    }
+    if (Number.isFinite(o.yaw)) this.lookYaw = o.yaw;
+    else if (o.yaw === null) this.lookYaw = null;
+    return { pitch: this.lookPitch, yaw: this.lookYaw };
+  }
+
+  /** setLook 的单值写法。 */
+  setPitch(pitch) {
+    return this.setLook({ pitch }).pitch;
+  }
+
+  /** 当前实际用掉的俯角（含静止机位基准），主要给探针与冒烟台读。 */
+  getLook() {
+    return {
+      pitch: this.lookPitch ?? BASE_PITCH,
+      yaw: this.lookYaw,
+      cameraPitch: this.cameraRig.state.pitchOut,
+    };
+  }
+
+  /** 本帧要喂给相机的抬头量：绝对俯角减去静止机位基准。 */
+  _pitchBias() {
+    return this.lookPitch == null ? 0 : this.lookPitch - BASE_PITCH;
   }
 
   _arenaChanged(radius) {
@@ -243,6 +305,29 @@ export class YizhangRenderer {
     return null;
   }
 
+  /**
+   * 这一记是哪只掌打的。
+   *
+   * sim 的 `slap` / `slapStart` / `skill` 事件自带 gloveId，`hit` 没有 —— 那就问动手
+   * 的那个人现在拿的是哪只掌（渲染层本来就跟着 `activeGloveId` 在换识别色）。
+   */
+  _gloveOf(e, actor) {
+    return e.gloveId ?? actor?.activeGloveId ?? null;
+  }
+
+  /** 出掌的识别色，用来给特效做点缀（不整片染色，见 combat-vfx 的纪律）。 */
+  _tintOf(actor) {
+    return actor ? actor.mats.paint.color : null;
+  }
+
+  _strike(e, actor, at, dir, power, opts = {}) {
+    if (!at || !this.combatVfx) return null;
+    const gloveId = this._gloveOf(e, actor);
+    const kind = opts.skill ? skillVfxKind(e.skillId, gloveId) : combatVfxKind(gloveId);
+    this.combatVfx.strike(kind, at, dir, power, { ...opts, tint: this._tintOf(actor) });
+    return kind;
+  }
+
   _handleEvent(e) {
     const actor = e.actorId != null ? this.characters.get(e.actorId) : null;
     const target = e.targetId != null ? this.characters.get(e.targetId) : null;
@@ -267,18 +352,21 @@ export class YizhangRenderer {
 
       case 'slap': {
         if (actor) this.characters.playSlap(e.actorId, power);
-        // hits 是 sim 数出来的命中数：一掌扇空只有掌风，不该有冲击
+        // hits 是 sim 数出来的命中数：一掌扇空只有掌风，不该有冲击。
+        // 但「哪只掌扇空的」还是要看得出来，所以走的是这只掌自己的形，只是没有残留。
         if (e.hits === 0 && actor) {
           const at = this._tmp.copy(actor.pos).addScaledVector(dir, 1.4);
           at.y += 1.15;
-          this.vfx.slap(at, dir, power * 0.45);
+          this._strike(e, actor, at, dir, power * 0.7, { whiff: true });
         }
         break;
       }
 
       case 'hit': {
         const at = this._eventPos(e, actor, target, this._tmp);
+        // 通用的接触感（激波 + 尘）之上再叠这只掌自己的形：谁打的一眼可辨
         if (at) this.vfx.slap(at, dir, power);
+        if (at) this._strike(e, actor, at, dir, power);
         if (actor) {
           // 挥的是哪只手：把击退方向转回角色自身坐标系看左右
           const local = this._tmp3.copy(dir).applyAxisAngle(UP, -actor.yaw);
@@ -294,6 +382,7 @@ export class YizhangRenderer {
       case 'heavy': {
         const at = this._eventPos(e, actor, target, this._tmp);
         if (at) this.vfx.heavyImpact(at, power * 1.3, { dir });
+        if (at) this._strike(e, actor, at, dir, power * 1.3, { skill: true });
         if (target) this.characters.playHit(e.targetId, dir, power * 1.3);
         const scale = localHit ? 0.95 : localActed ? 0.62 : 0.28;
         this.cameraRig.impulse(scale * power, localHit ? 4.2 : 2.2);
@@ -303,7 +392,12 @@ export class YizhangRenderer {
       case 'skill': {
         const at = this._eventPos(e, actor, target, this._tmp);
         if (actor) this.characters.playSlap(e.actorId, power * 1.2);
-        if (at) this.vfx.heavyImpact(at, power * 1.15, { dir, crack: false });
+        const kind = at ? this._strike(e, actor, at, dir, power * 1.15, { skill: true }) : null;
+        // 只有真的砸地的两套（岩楔 / 陨坑）另外要一圈贴地压环与裂纹：
+        // 霜弧、磁弧、错位并不「砸」，再叠一层通用重击就把八掌又抹平了
+        if (at && (kind === 'slab' || kind === 'cinder')) {
+          this.vfx.heavyImpact(at, power * 1.15, { dir, crack: false });
+        }
         this.cameraRig.impulse(localActed ? 0.5 : 0.16, localActed ? 2.4 : 1);
         break;
       }
@@ -383,6 +477,8 @@ export class YizhangRenderer {
     this._arenaChanged(v.arena.radius);
 
     this.characters.reconcile(v.players, this.localId);
+    // 分身残影：sim 每帧给一份存活的快照，这里照着画半透复本（空数组就是没有）
+    this.characters.syncGhosts(v.ghosts);
     this.island.syncTiles(v.tiles, v.arena);
     // 安全区与裂岛在世界坐标里错开：hub 只在 phase === 'hub' 时长出来，
     // 走道永远不会画进格斗岛，裂岛也一直摆在原处（在大厅里远远看得见）
@@ -417,7 +513,8 @@ export class YizhangRenderer {
         0,
         (local.pos.z - local.prev.z) / Math.max(dt, 1e-4)
       );
-      this.cameraRig.update(dt, this._focus, local.yaw, this._vel);
+      const yaw = this.lookYaw == null ? local.yaw : this.lookYaw;
+      this.cameraRig.update(dt, this._focus, yaw, this._vel, { pitchBias: this._pitchBias() });
     } else {
       this.cameraRig.orbit(dt, this.time, this.arenaRadius * 1.35);
       this._focus.set(0, 0, 0);
@@ -425,6 +522,7 @@ export class YizhangRenderer {
 
     this.vfx.ambientDrift(dt, this._focus);
     this.vfx.update(dt, this.time);
+    this.combatVfx.update(dt, this.time);
     this.lighting.update(this.time, this._focus);
     this.sky.update(this.time, this.camera.position);
 
@@ -451,6 +549,9 @@ export class YizhangRenderer {
       geometries: info.memory.geometries,
       textures: info.memory.textures,
       characters: this.characters?.chars.size ?? 0,
+      ghosts: this.characters?.ghostCount ?? 0,
+      combat: this.combatVfx?.getStats() ?? null,
+      pitch: this.cameraRig.state.pitchOut,
       tiles: this.island?.tileCount ?? 0,
       localId: this.localId,
     };

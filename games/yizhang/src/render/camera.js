@@ -9,6 +9,22 @@ import { PerspectiveCamera, Vector3 } from 'three';
 
 const BASE_FOV = 54;
 
+/**
+ * 静止机位的俯角（弧度）。
+ *
+ * 鼠标上下看走的是 `update(..., { pitchBias })`：壳层拿到的 `input.getLook().pitch`
+ * 是**绝对**俯角（同一套约定：正 = 往下看、镜头抬高），减掉这个基准就是 bias。
+ * 换算收在 YizhangRenderer.setLook 里，这里只负责把两者相加后夹住。
+ */
+export const BASE_PITCH = 0.22;
+
+/** 与 src/input 的 PITCH_LIMIT（π/2.6）同量级：再多镜头就翻过头顶了。 */
+export const PITCH_LIMIT = Math.PI / 2.6;
+
+function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
 function damp(current, target, lambda, dt) {
   return current + (target - current) * (1 - Math.exp(-lambda * dt));
 }
@@ -21,7 +37,11 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
     pos: new Vector3(0, 6, 14),
     look: new Vector3(0, 1.4, 0),
     yaw: 0,
-    pitch: 0.22,
+    pitch: BASE_PITCH,
+    /** 壳层喂进来的抬头量（阻尼后的值）。update 每帧写，外部只读。 */
+    pitchBias: 0,
+    /** 本帧真正用掉的俯角 = pitch + pitchBias，夹在 ±PITCH_LIMIT。 */
+    pitchOut: BASE_PITCH,
     dist: 7.4,
     shake: 0,
     shakeFreq: 26,
@@ -60,11 +80,16 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
      * @param {Vector3} focus 玩家脚下位置
      * @param {number} yaw    玩家/输入朝向
      * @param {Vector3} vel   水平速度，用于视点前引
+     * @param {{pitchBias?: number}} [opts] pitchBias：叠在 BASE_PITCH 上的抬头/低头量
      */
     update(dt, focus, yaw, vel, opts = {}) {
       const airborne = Math.max(0, focus.y);
       state.yaw = damp(state.yaw, yaw, 7.5, dt);
-      const pitch = state.pitch + (opts.pitchBias ?? 0);
+      // 抬头/低头有阻尼：鼠标一格一格跳，镜头不能跟着一格一格跳
+      const wantBias = Number.isFinite(opts.pitchBias) ? opts.pitchBias : 0;
+      state.pitchBias = damp(state.pitchBias, wantBias, 14, dt);
+      const pitch = clamp(state.pitch + state.pitchBias, -PITCH_LIMIT, PITCH_LIMIT);
+      state.pitchOut = pitch;
 
       // 速度越快镜头拉远一点点，给出「被甩开」的感觉
       const speed = vel ? Math.hypot(vel.x, vel.z) : 0;
@@ -96,10 +121,11 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
         state.lead.x = damp(state.lead.x, vel.x * 0.16, 4, dt);
         state.lead.z = damp(state.lead.z, vel.z * 0.16, 4, dt);
       }
-      // 视点落在角色正前方一米多的地方，构图上人物就不会永远钉在画面正中
+      // 视点落在角色正前方一米多的地方，构图上人物就不会永远钉在画面正中。
+      // 抬头时视点跟着抬、低头时跟着压：镜头只是升降的话，画面里的地平线不会动。
       lookTarget.set(
         focus.x + state.lead.x - sy * 1.1,
-        focus.y + 1.45,
+        focus.y + 1.45 - Math.sin(pitch - state.pitch) * 2.4,
         focus.z + state.lead.z - cy * 1.1
       );
       state.look.x = damp(state.look.x, lookTarget.x, 9, dt);

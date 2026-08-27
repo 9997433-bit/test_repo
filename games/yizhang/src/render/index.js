@@ -17,8 +17,13 @@
 //   · 本地玩家缺省是 p0（sim 里人类固定排在 p0）
 //   · view.phase === 'hub' 时多画一层安全区（走道 / 台座 / 展示掌 / 传送门，见 ./hub.js），
 //     phase === 'arena' 时那棵子树整个关掉，裂岛的画法一行未改
+//   · view.players[].skinId 决定剪影（见 ./skins.js）：换 skinId 就换一个人，不是换贴图
+//   · view.combat.ghosts 是分身残影，渲染成半透复本（见 ./characters.js syncGhosts）
+//   · 抬头低头走 setLook({ pitch })：不调就维持静止机位的俯角
 
 import { QUALITY, QUALITY_TIERS, PALETTE, GLOVE_TINT } from './config.js';
+import { COMBAT_VFX_KIND, SKILL_VFX_KIND, combatVfxKind, skillVfxKind } from './combat-vfx.js';
+import { ACCESSORIES, resolveSkinLook } from './skins.js';
 import { DEFAULT_LOCAL_ID } from './view.js';
 import { YizhangRenderer } from './renderer.js';
 
@@ -97,6 +102,28 @@ export function setFollow(id) {
   return setLocalId(id);
 }
 
+/**
+ * 抬头 / 低头。壳层每帧把 `input.getLook()` 原样丢进来即可：
+ *
+ *   render.setLook(input.getLook());   // { yaw, pitch }
+ *
+ * pitch 与 `src/input` 同约定（正 = 往下看，弧度）。yaw 是可选的，且必须是
+ * 项目唯一那套朝向（yaw = 0 面向 -Z）；不给 yaw 时镜头跟角色自己的朝向。
+ */
+export function setLook(look) {
+  return active && !active.disposed ? active.setLook(look) : null;
+}
+
+/** setLook 的单值写法。 */
+export function setPitch(pitch) {
+  return active && !active.disposed ? active.setPitch(pitch) : null;
+}
+
+/** 当前俯角读数（含静止机位基准），探针与冒烟台用。 */
+export function getLook() {
+  return active && !active.disposed ? active.getLook() : null;
+}
+
 /** 探针 / 基准脚本用：当前档位、绘制调用、三角形数、台面块数。 */
 export function getStats() {
   return active && !active.disposed ? active.getStats() : null;
@@ -106,4 +133,19 @@ export function getRenderer() {
   return active;
 }
 
-export { QUALITY, QUALITY_TIERS, PALETTE, GLOVE_TINT, DEFAULT_LOCAL_ID, YizhangRenderer };
+export {
+  QUALITY,
+  QUALITY_TIERS,
+  PALETTE,
+  GLOVE_TINT,
+  DEFAULT_LOCAL_ID,
+  YizhangRenderer,
+  // 每掌一套的战斗特效：分派键与查询函数（UI / 验收脚本要对照 8 只掌时用得上）
+  COMBAT_VFX_KIND,
+  SKILL_VFX_KIND,
+  combatVfxKind,
+  skillVfxKind,
+  // 皮肤剪影：配件形制表与解析函数（皮肤选择器要预览剪影时用得上）
+  ACCESSORIES,
+  resolveSkinLook,
+};

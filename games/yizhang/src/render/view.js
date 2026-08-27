@@ -9,10 +9,11 @@
 //   view.tick / view.time / view.phase
 //   view.arena.{ radius, tileSize, cols, origin, floorY, brokenCount }
 //   view.arena.tiles[] : { i, x, z, zone, seam, hp, maxHp, alive, crack }
-//   view.players[]     : { id, kind, x, y, z, yaw, speed, alive, grounded,
+//   view.players[]     : { id, kind, skinId, x, y, z, yaw, speed, alive, grounded,
 //                          invulnT, respawnT, awakenedT, meter,
 //                          gloveId, offhandId, activeSlot, activeGloveId, gloveColor,
 //                          attackPhase, combo }
+//   view.combat.ghosts[]: { id, ownerId, x, y, z, yaw, ttl, ttl0, fake, gloveId }
 //   view.events[]      : { type, id, targetId, gloveId, skillId, x, y, z, power, hits, i }
 //   view.hub.{ origin, floorY, walkway, spawn, portal, portalReady, portalNear,
 //              interactRadius, pedestalRadius, pedestalHeight, focusGloveId,
@@ -156,6 +157,8 @@ export function readPlayers(view) {
     out.push({
       id: p.id,
       kind: p.kind ?? 'bot',
+      // 皮肤是不透明标签：渲染层只拿它去查剪影（./skins.js），不解释它的含义
+      skinId: typeof p.skinId === 'string' && p.skinId.length > 0 ? p.skinId : null,
       x: num(p.x),
       y: num(p.y),
       z: num(p.z),
@@ -178,6 +181,40 @@ export function readPlayers(view) {
       tint: gloveTint(activeGloveId, p.gloveColor ?? p.color),
       mainTint: gloveTint(mainId, activeSlot === 0 ? (p.gloveColor ?? p.color) : null),
       offTint: gloveTint(offhandId, activeSlot === 1 ? (p.gloveColor ?? p.color) : null),
+    });
+  }
+  return out;
+}
+
+/**
+ * 分身残影。sim 的 `view.combat.ghosts` 是 JSON 安全的一串快照（ADR-27），
+ * 没有残影时是空数组，所以渲染层恒可读。
+ *
+ * yaw 已经由 `sim/combat-bridge.js` 的 ghostsView 扣掉 combat 的朝向偏移，
+ * 落在与玩家同一套约定里（yaw = 0 面向 -Z），这里不再做第二次换算。
+ */
+export function readGhosts(view) {
+  const raw = Array.isArray(view?.combat?.ghosts)
+    ? view.combat.ghosts
+    : Array.isArray(view?.ghosts)
+      ? view.ghosts
+      : [];
+  const out = [];
+  for (const g of raw) {
+    if (!g || typeof g !== 'object') continue;
+    if (!Number.isFinite(g.x) || !Number.isFinite(g.z)) continue;
+    const ttl = Math.max(0, num(g.ttl));
+    out.push({
+      id: g.id ?? null,
+      ownerId: g.ownerId ?? null,
+      x: g.x,
+      y: num(g.y),
+      z: g.z,
+      yaw: num(g.yaw),
+      ttl,
+      ttl0: Math.max(ttl, num(g.ttl0, ttl)),
+      fake: g.fake === true,
+      gloveId: typeof g.gloveId === 'string' ? g.gloveId : null,
     });
   }
   return out;
@@ -417,6 +454,7 @@ export function readView(raw, opts = {}) {
     arena,
     tiles: readTiles(view, arena),
     players: readPlayers(view),
+    ghosts: readGhosts(view),
     events: readEvents(view),
   };
 }
