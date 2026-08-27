@@ -38,12 +38,10 @@ import {
   TorusGeometry,
   Vector2,
 } from 'three';
-import { PALETTE } from './config.js';
+import { BLOOM_LAYER, PALETTE, markOccluder } from './config.js';
 import { bakeByMaterial, createPalmFactory } from './hub-palm.js';
 import { createHubVfx } from './hub-vfx.js';
 import { mulberry32 } from './noise.js';
-
-const BLOOM_LAYER = 1;
 
 /** 掌浮在台帽上方多少米。低于这个高度会挡住漆环，高了就不像「摆在座上」。 */
 const PALM_HOVER = 0.62;
@@ -368,6 +366,8 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
       const mesh = new Mesh(geo, matOf[key] ?? rockMat);
       mesh.receiveShadow = quality.shadows;
       mesh.castShadow = key === 'rock' && quality.shadows;
+      // 走道与岩体挡得住门里透出来的光，嵌线自己就是光
+      if (key !== 'inlay') markOccluder(mesh);
       group.add(mesh);
       meshes.push(mesh);
     }
@@ -519,6 +519,8 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
     plinthMesh.receiveShadow = quality.shadows;
     plinthMesh.frustumCulled = false;
     plinthMesh.count = 0;
+    // 8 座石柱是走道上体量最大的东西，门里的光被它们挡住
+    markOccluder(plinthMesh);
     root.add(plinthMesh);
 
     ringMesh = new InstancedMesh(ringGeo, ringMat, cap);
@@ -541,12 +543,12 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
 
     const mainMark = new Mesh(markGeo.main, palm.paint);
     mainMark.visible = false;
-    mainMark.castShadow = quality.shadows;
+    mainMark.castShadow = quality.shadows && quality.propShadows;
     group.add(mainMark);
 
     const offMark = new Mesh(markGeo.off, palm.paint);
     offMark.visible = false;
-    offMark.castShadow = quality.shadows;
+    offMark.castShadow = quality.shadows && quality.propShadows;
     group.add(offMark);
 
     const effect = vfx.attach({
@@ -669,6 +671,7 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
       const mesh = new Mesh(geo, key === 'rune' ? runeMat : rockMat);
       mesh.castShadow = quality.shadows;
       mesh.receiveShadow = quality.shadows;
+      if (key !== 'rune') markOccluder(mesh);
       if (key === 'rune' && quality.bloom) {
         mesh.layers.enable(BLOOM_LAYER);
         mesh.userData.bloomSelf = true;

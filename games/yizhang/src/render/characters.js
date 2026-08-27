@@ -34,19 +34,55 @@ import {
   MeshStandardMaterial,
   SphereGeometry,
   TorusGeometry,
+  Object3D,
   Vector2,
   Vector3,
 } from 'three';
-import { FALLBACK_TINT, PALETTE } from './config.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { BLOOM_LAYER, FALLBACK_TINT, PALETTE, markOccluder } from './config.js';
 import { smoothstep } from './noise.js';
 import { resolveSkinLook, skinTable } from './skins.js';
-
-const BLOOM_LAYER = 1;
 const TAU = Math.PI * 2;
 /** 右手（side=+1）拿主掌 slot 0，左手拿副掌 slot 1。 */
 const MAIN_SIDE = 1;
 /** 同时在场的残影上限。分身掌一次最多剥两三个，留出余量就够。 */
 const GHOST_CAP = 6;
+/** 这几种配件自己就盖住了头顶，素帽不必再长出来（也就不进躯干那份烘焙）。 */
+const ACCESSORY_HIDES_CAP = new Set(['hood', 'turban']);
+
+/**
+ * 把一批「相对同一个父节点不动」的零件按材质烘成几份几何体。
+ *
+ * 分节还是分节做的 —— 形一点没变；变的是运行时不再一个零件一个 drawcall。
+ * 躯干上的皮带扣、指节上的铆钉不会相对躯干/掌移动，那它们就没有理由各自
+ * 占一次绘制调用。会动的部件（束带、四肢、掌）仍旧是独立节点。
+ *
+ * @param {Object3D} scaffold 只用来算变换的脚手架，烘完就丢
+ * @returns {Map<string, import('three').BufferGeometry>} 材质键 → 合并后的几何体
+ */
+function bakeRigid(scaffold) {
+  scaffold.updateWorldMatrix(true, true);
+  const buckets = new Map();
+  scaffold.traverse((o) => {
+    if (!o.isMesh) return;
+    const key = o.userData.matKey ?? 'cloth';
+    const g = o.geometry.clone();
+    g.applyMatrix4(o.matrixWorld);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(g);
+  });
+  const out = new Map();
+  for (const [key, list] of buckets) {
+    if (list.length === 1) {
+      out.set(key, list[0]);
+      continue;
+    }
+    const merged = mergeGeometries(list, false);
+    for (const g of list) g.dispose();
+    if (merged) out.set(key, merged);
+  }
+  return out;
+}
 
 function shortestAngle(a, b) {
   let d = (b - a) % TAU;
@@ -139,6 +175,28 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     wrapBand: keep(new CylinderGeometry(0.118, 0.118, 0.14, seg)),
     bracerShell: keep(new CylinderGeometry(0.16, 0.135, 0.32, seg + 1)),
   };
+
+  // 掌背上的金属件：一圈护条 + 三颗铆钉。它们相对掌永远不动，而且每只掌、每个人
+  // 都是同一份摆法，所以整个渲染层只烘这一份，8 只手共用。
+  geo.gloveMetal = keep(
+    (() => {
+      const scaffold = new Object3D();
+      const knuckle = new Mesh(geo.knuckle, null);
+      knuckle.userData.matKey = 'metal';
+      knuckle.rotation.set(Math.PI * 0.5, Math.PI, Math.PI * 0.02);
+      knuckle.position.set(0, 0.02, -0.06);
+      scaffold.add(knuckle);
+      for (let i = 0; i < 3; i++) {
+        const stud = new Mesh(geo.stud, null);
+        stud.userData.matKey = 'metal';
+        const a = -0.5 + i * 0.5;
+        stud.position.set(Math.sin(a) * 0.28, 0.16, -Math.cos(a) * 0.26);
+        stud.rotation.y = -a;
+        scaffold.add(stud);
+      }
+      return bakeRigid(scaffold).get('metal');
+    })()
+  );
 
   // 接地阴影：低画质关了实时阴影后，角色仍然要「踩在地上」而不是浮着
   const contactMat = keep(
@@ -284,19 +342,11 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     palm.position.set(0, -0.13, -0.06);
     g.add(palm);
 
-    const knuckle = new Mesh(geo.knuckle, mats.metal);
-    knuckle.rotation.set(Math.PI * 0.5, Math.PI, Math.PI * 0.02);
-    knuckle.position.set(0, 0.02, -0.06);
-    knuckle.castShadow = quality.shadows;
+    // 护条与三颗铆钉合成一份（见 geo.gloveMetal）：形没变，四个 drawcall 变一个
+    const knuckle = new Mesh(geo.gloveMetal, mats.metal);
+    // 掌的影子由 mitt 那一份给全了，金属件只是贴在它表面的一层
+    knuckle.castShadow = quality.shadows && quality.propShadows;
     g.add(knuckle);
-
-    for (let i = 0; i < 3; i++) {
-      const stud = new Mesh(geo.stud, mats.metal);
-      const a = -0.5 + i * 0.5;
-      stud.position.set(Math.sin(a) * 0.28, 0.16, -Math.cos(a) * 0.26);
-      stud.rotation.y = -a;
-      g.add(stud);
-    }
 
     // 识别色只出现在这一道漆条上：右手主掌色、左手副掌色
     const stripe = new Mesh(geo.stud, stripeMat);
@@ -307,7 +357,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     const cuff = new Mesh(geo.cuff, mats.cloth);
     cuff.position.set(0, 0.3, 0.02);
     cuff.rotation.x = -0.15;
-    cuff.castShadow = quality.shadows;
+    cuff.castShadow = quality.shadows && quality.propShadows;
     g.add(cuff);
 
     // 垂下来的束带：受重力，说明配饰有重量
@@ -335,10 +385,12 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
    * @param {string} kind ./skins.js 的 ACCESSORIES 之一
    */
   function addAccessory(kind, parts) {
-    const { body, head, cap, arms, mats } = parts;
+    const { body, arms, mats } = parts;
     const made = [];
     const put = (mesh, parent) => {
-      mesh.castShadow = quality.shadows;
+      // 配件在中档不投影：一顶帽子 / 一对角 / 一片肩甲的影子，在 1024 的贴图上
+      // 落不到一个纹素，却每件都要在阴影 pass 里占一个 drawcall
+      mesh.castShadow = quality.shadows && quality.propShadows;
       (parent ?? body).add(mesh);
       made.push(mesh);
       return mesh;
@@ -346,8 +398,8 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
 
     switch (kind) {
       case 'hood': {
-        // 兜帽压得很低：帽沿盖过眉骨，转身时才露半张脸
-        cap.visible = false;
+        // 兜帽压得很低：帽沿盖过眉骨，转身时才露半张脸。
+        // 素帽在 ACCESSORY_HIDES_CAP 里就已经不长了，这里不必再关一次。
         const hood = put(new Mesh(geo.hoodDeep, mats.cloth));
         hood.position.set(0, 1.82, 0.03);
         hood.rotation.x = 0.2;
@@ -358,7 +410,6 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       }
 
       case 'turban': {
-        cap.visible = false;
         const ring = put(new Mesh(geo.turbanRing, mats.cloth));
         ring.position.y = 1.86;
         ring.rotation.x = Math.PI / 2 + 0.12;
@@ -493,56 +544,81 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     body.scale.set(build.mass, build.height, build.mass);
     rootGroup.add(body);
 
-    const hips = new Mesh(geo.hips, mats.clothDim);
-    hips.position.y = 0.86;
-    hips.castShadow = quality.shadows;
-    body.add(hips);
+    // ---- 躯干这一段全是「相对身体不动」的零件：分节照做，最后按材质烘成几份 ----
+    //
+    // 髋 / 躯干 / 皮带 / 带扣 / 领口 / 背布底 / 背布识别色 / 头 / 素帽，一共九件，
+    // 九种摆法一件不少；但它们之间没有任何相对运动，所以没有理由各占一次绘制调用。
+    // 烘完剩六份（布 / 暗布 / 皮 / 金属 / 识别色 / 皮肤），一份材质一个 drawcall。
+    // 会动的东西 —— 四肢、掌、束带、配件 —— 仍旧各是各的节点。
+    const shoulderScaleX = 0.82 + build.shoulder * 0.18;
+    const hideCap = ACCESSORY_HIDES_CAP.has(look.accessory);
+    const scaffold = new Object3D();
+    const piece = (geometry, matKey, place) => {
+      const m = new Mesh(geometry, null);
+      m.userData.matKey = matKey;
+      place?.(m);
+      scaffold.add(m);
+      return m;
+    };
 
-    const torso = new Mesh(geo.torso, mats.cloth);
-    torso.position.y = 1.24;
-    torso.castShadow = quality.shadows;
-    torso.receiveShadow = quality.shadows;
-    body.add(torso);
-
+    piece(geo.hips, 'clothDim', (m) => {
+      m.position.y = 0.86;
+    });
+    // 肩宽单独一档：躯干只加宽不加高，宽肩与瘦长在正面剪影上立刻分得开
+    piece(geo.torso, 'cloth', (m) => {
+      m.position.y = 1.24;
+      m.scale.x = shoulderScaleX;
+    });
     // 胸前皮带把布压出褶：配饰要压变下面的织物
-    const strap = new Mesh(geo.strapChest, mats.leather);
-    strap.position.set(0.06, 1.26, -0.27);
-    strap.rotation.z = -0.24;
-    body.add(strap);
-    const buckle = new Mesh(geo.buckle, mats.metal);
-    buckle.position.set(0.12, 1.06, -0.3);
-    body.add(buckle);
-
-    const collar = new Mesh(geo.collar, mats.clothDim);
-    collar.position.y = 1.58;
-    body.add(collar);
-
+    piece(geo.strapChest, 'leather', (m) => {
+      m.position.set(0.06, 1.26, -0.27);
+      m.rotation.z = -0.24;
+    });
+    piece(geo.buckle, 'metal', (m) => {
+      m.position.set(0.12, 1.06, -0.3);
+    });
+    piece(geo.collar, 'clothDim', (m) => {
+      m.position.y = 1.58;
+      m.scale.set(shoulderScaleX, 1, 1);
+    });
     // 背上的掌印布片：跟随镜头看到的是后背，识别色必须在这里能读到。
     // 先垫一块更大的暗色底布再压识别色，边上就留出一圈缝线般的暗边 ——
     // 少了这一圈，纯色方块会像一张贴在背上的白纸。
-    const backing = new Mesh(geo.backPanel, mats.clothDim);
-    backing.position.set(0, 1.26, 0.305);
-    backing.rotation.x = -0.06;
-    backing.scale.set(1.22, 1.16, 0.6);
-    body.add(backing);
+    piece(geo.backPanel, 'clothDim', (m) => {
+      m.position.set(0, 1.26, 0.305);
+      m.rotation.x = -0.06;
+      m.scale.set(1.22, 1.16, 0.6);
+    });
+    piece(geo.backPanel, 'paint', (m) => {
+      m.position.set(0, 1.26, 0.315);
+      m.rotation.x = -0.06;
+    });
+    piece(geo.head, 'skin', (m) => {
+      m.position.y = 1.79;
+    });
+    // 素帽是所有人的底：兜帽 / 头巾这类真的盖住头顶的配件就不长它
+    if (!hideCap) {
+      piece(geo.cap, 'cloth', (m) => {
+        m.position.y = 1.8;
+        m.rotation.x = 0.16;
+      });
+    }
 
-    const backPanel = new Mesh(geo.backPanel, mats.paint);
-    backPanel.position.set(0, 1.26, 0.315);
-    backPanel.rotation.x = -0.06;
-    backPanel.castShadow = quality.shadows;
-    body.add(backPanel);
-
-    const head = new Mesh(geo.head, mats.skin);
-    head.position.y = 1.79;
-    head.castShadow = quality.shadows;
-    body.add(head);
-
-    // 素帽是所有人的底：配件里真的盖住头的那几种（兜帽 / 头巾）会把它关掉
-    const cap = new Mesh(geo.cap, mats.cloth);
-    cap.position.y = 1.8;
-    cap.rotation.x = 0.16;
-    cap.castShadow = quality.shadows;
-    body.add(cap);
+    const bakedBody = bakeRigid(scaffold);
+    const bodyParts = [];
+    // 躯干 / 髋 / 头挡在光前面时是真的挡得住：把带着它们的那几份登记成辉光遮挡体，
+    // 人站在传送门口或破洞边上时，光不会从身上透出来
+    const OCCLUDES = new Set(['cloth', 'clothDim', 'skin']);
+    // 大件投影，贴在身上的小件（皮带扣、背布片）中档不单独投影
+    const CASTS = new Set(['cloth', 'clothDim', 'skin']);
+    for (const [key, geometry] of bakedBody) {
+      const mesh = new Mesh(geometry, mats[key]);
+      mesh.castShadow = quality.shadows && (CASTS.has(key) || quality.propShadows);
+      if (key === 'cloth') mesh.receiveShadow = quality.shadows;
+      if (OCCLUDES.has(key)) markOccluder(mesh);
+      body.add(mesh);
+      bodyParts.push(mesh);
+    }
 
     const legs = [];
     for (const side of [-1, 1]) {
@@ -565,10 +641,6 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       knee.add(foot);
       legs.push({ hip, knee, side });
     }
-
-    // 肩宽单独一档：躯干只加宽不加高，宽肩与瘦长在正面剪影上立刻分得开
-    torso.scale.x = 0.82 + build.shoulder * 0.18;
-    collar.scale.set(torso.scale.x, 1, 1);
 
     const arms = [];
     for (const side of [-1, 1]) {
@@ -594,7 +666,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       arms.push({ shoulder, wrist, glove, side, slot: isMain ? 0 : 1 });
     }
 
-    const accessory = addAccessory(look.accessory, { body, head, cap, arms, mats });
+    const accessory = addAccessory(look.accessory, { body, arms, mats });
 
     const contact = new Mesh(geo.contact, contactMat.clone());
     contact.rotation.x = -Math.PI / 2;
@@ -610,9 +682,8 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       mats,
       legs,
       arms,
-      head,
-      cap,
-      torso,
+      // 躯干那一段烘成的几份网格：换角色时要连同这几份几何体一起回收
+      bodyParts,
       contact,
       look,
       accessory,
@@ -678,6 +749,8 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     for (const key of Object.keys(c.mats)) {
       c.mats[key]?.dispose?.();
     }
+    // 躯干那几份是这个角色自己烘的（肩宽、有没有素帽都写死在顶点里），跟着他一起走
+    for (const mesh of c.bodyParts) mesh.geometry.dispose();
     c.contact.material.dispose();
   }
 

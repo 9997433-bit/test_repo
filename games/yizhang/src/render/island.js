@@ -34,10 +34,8 @@ import {
   Vector2,
   Vector3,
 } from 'three';
-import { PALETTE } from './config.js';
+import { BLOOM_LAYER, PALETTE, markOccluder } from './config.js';
 import { fbm, makeValueNoise2D, mulberry32, smoothstep } from './noise.js';
-
-const BLOOM_LAYER = 1;
 
 /** 台面厚度。塌掉一块之后，邻块的断面要有厚度才读得出「这是个洞」。 */
 const DECK_DEPTH = 0.92;
@@ -323,6 +321,8 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   bedrock.name = 'bedrock';
   bedrock.receiveShadow = quality.shadows;
   bedrock.castShadow = false;
+  // 岩体 / 井壁 / 台面是井底光核唯一真正的遮挡体，辉光通道里少了它们就会漏光
+  markOccluder(bedrock);
   group.add(bedrock);
 
   // 挂在岛底的碎岩：不对称，破掉「完美圆锥」的读法
@@ -429,6 +429,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   // 井口刚好埋在台面底下：正上方看不见井沿，从破洞看下去却是一路到底
   shaft.position.y = -DECK_DEPTH - 8.0;
   shaft.name = 'crack-shaft';
+  markOccluder(shaft);
   group.add(shaft);
 
   // 光核缩到井底的一小口，从台面看下去只是深处的一点暖光
@@ -525,9 +526,11 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     deck.instanceMatrix.setUsage(DynamicDrawUsage);
     deck.castShadow = quality.shadows;
     deck.receiveShadow = quality.shadows;
-    // 台面本来就把镜头包在中间，逐实例剔除只会白花 CPU
+    // 台面本来就把镜头包在中间，逐实例剔除只会白花 CPU。
+    // 代价是它在安全区里也会照画不误，所以 setActive() 必须把整棵子树关掉。
     deck.frustumCulled = false;
     deck.count = 0;
+    markOccluder(deck);
     group.add(deck);
     return true;
   }
@@ -722,6 +725,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     const lip = new Mesh(lipGeo, railMat);
     lip.receiveShadow = quality.shadows;
     lip.castShadow = false;
+    markOccluder(lip);
     railGroup.add(lip);
   }
 
@@ -823,6 +827,25 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     tiles,
     core,
     arenaRadius: R,
+    /**
+     * 裂岛在不在场。
+     *
+     * 安全区在 z ≈ -120，裂岛在原点，两者永远不同框；而台面那块 InstancedMesh
+     * 关掉了视锥剔除（`deck.frustumCulled = false`），人在走道上时它照样每帧
+     * 画满一整座岛。所以走进安全区就把整棵子树摘掉 —— 与 hub.js 在 arena 里
+     * 关掉走道是同一条纪律：两区不同时付钱。
+     */
+    setActive(on) {
+      const want = !!on;
+      if (group.visible === want) return want;
+      group.visible = want;
+      return want;
+    },
+
+    get active() {
+      return group.visible;
+    },
+
     /** 还立着的块数。塌掉的记录会留在表里等落完，但它们已经是洞了。 */
     get tileCount() {
       let n = 0;

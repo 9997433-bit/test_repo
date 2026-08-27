@@ -8,6 +8,11 @@
 // 不跑自发光通道与模糊、合成着色器里也不编译 bloom 采样，一帧只剩「主渲染 + 合成」。
 // 色调映射链本身不受影响，低档与高档看到的是同一条 ACES 曲线。
 //
+// 中档留着辉光，但自发光通道只重画 OCCLUDER_LAYER（quality.bloomOccluders === 'tagged'）：
+// 遮挡这件事只有大块实体说了算 —— 台面挡住井底的光核、门柱与人挡住门里的光。
+// 一颗铆钉、一条束带对 1/4 分辨率再模糊两趟的遮罩没有可测量的贡献，却每样都要
+// 在这条通道里占一个 drawcall。高档仍旧整场重画，两档的差别是写在档位表里的。
+//
 // 色调映射与 sRGB 编码都在合成着色器里手写完成：主场景渲进的是线性 HDR 贴图，
 // three 对 render target 不做 tone mapping，这里统一处理，全流程只有一处曲线。
 
@@ -27,6 +32,7 @@ import {
   Vector2,
   WebGLRenderTarget,
 } from 'three';
+import { BLOOM_LAYER, OCCLUDER_LAYER } from './config.js';
 
 const FS_VERT = /* glsl */ `
   varying vec2 vUv;
@@ -159,6 +165,7 @@ export function createPost({ renderer, scene, quality }) {
 
   // 低档整条辉光链不成立：不建 render target、不重画自发光通道、合成着色器里连采样都不编译。
   const bloomOn = quality.bloom !== false && quality.bloomIterations > 0 && quality.bloomStrength > 0;
+  const occluders = quality.bloomOccluders === 'all' ? 'all' : 'tagged';
 
   let sceneRT = makeRT(size.x, size.y, { samples: quality.msaa });
   const bScale = quality.bloomScale;
@@ -285,6 +292,13 @@ export function createPost({ renderer, scene, quality }) {
   function renderEmissivePass(camera) {
     swapped.length = 0;
     const hidden = [];
+    // 'tagged' 档只画自发光体与登记过的遮挡体：相机的 layer 掩码一收窄，
+    // 剩下的东西连遍历带材质替换一起省掉，不是「画成黑的」而是根本不进这条通道。
+    const mask = camera.layers.mask;
+    if (occluders === 'tagged') {
+      camera.layers.set(BLOOM_LAYER);
+      camera.layers.enable(OCCLUDER_LAYER);
+    }
     scene.traverse((o) => {
       if (!o.visible) return;
       if (o.isPoints) {
@@ -295,7 +309,8 @@ export function createPost({ renderer, scene, quality }) {
         }
         return;
       }
-      if (!o.isMesh && !o.isInstancedMesh) return;
+      if (!o.isMesh && !o.isInstancedMesh && !o.isBatchedMesh) return;
+      if (!camera.layers.test(o.layers)) return;
       pushSwap(o);
     });
 
@@ -304,6 +319,7 @@ export function createPost({ renderer, scene, quality }) {
     renderer.clear(true, true, false);
     renderer.render(scene, camera);
 
+    camera.layers.mask = mask;
     for (const s of swapped) s.object.material = s.original;
     swapped.length = 0;
     for (const o of hidden) o.visible = true;
@@ -349,6 +365,7 @@ export function createPost({ renderer, scene, quality }) {
         composite: compositeMat,
         targets: 1 + (bloomOn ? 3 : 0),
         bloomSize: bloomOn ? [blurA.width, blurA.height] : null,
+        occluders,
       };
     },
 

@@ -67,6 +67,24 @@ export const GLOVE_TINT = {
 export const FALLBACK_TINT = 0x9aa2ad;
 
 /**
+ * 渲染层的两个自定义 layer。
+ *
+ * BLOOM —— 真正的自发光体。辉光通道只认这一层里的东西（手册 §2-14）。
+ * OCCLUDER —— 「挡得住辉光的实体」。辉光通道要知道谁挡在光前面，否则井底的光核
+ *   会透过台面糊出来；但把整场重画一遍只为拿这份遮挡，价钱比主渲染还贵
+ *   （见下面 QUALITY 的注释）。所以中档只重画这一层：大块的岩体 / 台面 / 走道 /
+ *   门柱 / 躯干。小配件对一张 1/4 分辨率再模糊两趟的遮罩没有可测量的贡献。
+ */
+export const BLOOM_LAYER = 1;
+export const OCCLUDER_LAYER = 2;
+
+/** 把一个网格登记成辉光通道的遮挡体。见 OCCLUDER_LAYER。 */
+export function markOccluder(obj) {
+  obj?.layers?.enable?.(OCCLUDER_LAYER);
+  return obj;
+}
+
+/**
  * 画质档。三档不是「同一套东西调数字」，而是明确的取舍：
  *  high — 阴影 + 完整粒子 + 布料 sheen + 高分辨率程序化贴图
  *  mid  — 阴影降级、粒子减半、材质退回 MeshStandard、贴图减半
@@ -82,6 +100,13 @@ export const FALLBACK_TINT = 0x9aa2ad;
  *   而这 256 个 drawcall 只改变了全画面 0.41% 的像素，峰值 +8/255。
  *   低档同一帧 165 drawcall = 主渲染 164 + 合成 1，辉光支链归零。
  * 关掉之后画面不是「少了效果」，而是回到手册的默认立场：亮部靠曝光与材质，不靠泛光。
+ *
+ * 中档保留辉光，但只重画**遮挡层**（bloomOccluders: 'tagged'，见 OCCLUDER_LAYER）：
+ * 井底光核仍旧被台面挡住、门里的光仍旧被门柱与人挡住，可是不用为了这份遮挡
+ * 把每一颗铆钉、每一条束带都再画一遍。高档维持整场重画，两档的取舍是明写的。
+ *
+ * propShadows 同理：中档的阴影贴图只有 1024，铆钉 / 漆环 / 冰棱投出来的影子
+ * 落不到一个纹素上，却每样都要在阴影 pass 里各占一个 drawcall。高档留着。
  */
 export const QUALITY = {
   high: {
@@ -91,6 +116,9 @@ export const QUALITY = {
     shadows: true,
     shadowMapSize: 2048,
     softShadows: true,
+    // 高档：小配件也投影，辉光通道也把整场当遮挡体重画一遍
+    propShadows: true,
+    bloomOccluders: 'all',
     rimLight: true,
     crackFillLight: true,
     // 程序化贴图
@@ -129,6 +157,9 @@ export const QUALITY = {
     shadows: true,
     shadowMapSize: 1024,
     softShadows: false,
+    // 中档：影子只留大件（躯干 / 四肢 / 台座 / 岩体），辉光遮挡只重画 OCCLUDER 层
+    propShadows: false,
+    bloomOccluders: 'tagged',
     rimLight: true,
     crackFillLight: true,
     texRock: 256,
@@ -163,6 +194,8 @@ export const QUALITY = {
     shadows: false,
     shadowMapSize: 512,
     softShadows: false,
+    propShadows: false,
+    bloomOccluders: 'tagged',
     rimLight: true,
     // 点光很便宜，而关掉它裂缝井就是一个纯黑的洞 —— 低配可以少粒子少阴影，
     // 但不能把场景的叙事光源整个拿掉。
