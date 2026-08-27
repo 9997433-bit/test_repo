@@ -476,10 +476,15 @@ async function boot() {
     recordMatch({ kills: (self && self.kills) || 0, deaths: (self && self.deaths) || 0, won });
     const unlocked = evaluateUnlocks(won);
 
+    // 「再来一局」到底沿用哪副掌，按钮下面那行小字要报出来 —— 用的就是按下去时
+    // 那条取值链（core/entry.js），不另算一遍，免得写的和真进局的不是同一副。
+    const restartEntry = entryFor(ENTRY.RESTART);
+
     shell.showResult({
       won,
       reasonText,
       unlocked,
+      restartLoadout: { main: restartEntry.main, off: restartEntry.off },
       rows: players.map((p) => ({
         name: p.name || p.id,
         kills: p.kills || 0,
@@ -571,7 +576,9 @@ async function boot() {
   /** 回程：重开一局并落在安全区。掌记在存档里，但走道上要重新挑，挑完门才放行。 */
   function returnToHub() {
     startMatch(entryFor(ENTRY.HUB));
-    shell.toast("安 全 区 · 走道两侧挑掌", 1800);
+    // 结算板上那行小字承诺的是「主副掌清空」：落地这一刻把同一句话再说一遍，
+    // 免得玩家以为掌位是掉了 bug（存档里的配装还在，只是走道上要重新挑）。
+    shell.toast("安 全 区 · 主副掌已解下，走道两侧重挑", 2000);
   }
 
   function quitToMenu() {

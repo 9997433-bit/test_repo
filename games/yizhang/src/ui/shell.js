@@ -4,6 +4,7 @@
 // src/styles 缺席时（html[data-yz-fallback]）兜底，见该文件顶部说明。
 
 import "./shell.css";
+import { ENTRY, entryCopy } from "../core/entry.js";
 import { h, clear } from "./dom.js";
 import { createMenu } from "./menu.js";
 import { createHud } from "./hud.js";
@@ -21,6 +22,16 @@ const KEYMAP = [
   ["跳跃", "SPACE"],
   ["暂停", "ESC"],
 ];
+
+// 「配掌面板」不是第三条回程：它退到 2D 备选配装台（GOAL《与 2D 菜单的关系》），
+// 既不进走道也不进裂岛。形状与 core/entry.js 的 entryCopy 一致，好走同一条渲染路。
+const MENU_COPY = Object.freeze({
+  kind: "menu",
+  label: "配 掌 面 板",
+  key: null,
+  where: "2D 备 选 台",
+  hint: "退到 2D 配掌台 · 一次看全八掌、换皮肤，不进走道",
+});
 
 function detectTouch() {
   if (typeof navigator === "undefined") return false;
@@ -224,23 +235,33 @@ export function createShell(opts) {
   }
 
   let sheetMode = null;
+  // 结算板的两个入口，供快捷键按名取用（键鼠与触控最终走同一条 click 路径）
+  let resultEntries = null;
 
   function openSheet(mode, payload) {
     sheetMode = mode;
+    resultEntries = null;
     clear(sheetBody);
     if (mode === "pause") renderPause();
     else if (mode === "settings") renderSettings();
     else if (mode === "result") renderResult(payload);
     sheet.hidden = false;
+    syncTouchVisibility();
+    // 键盘可达：板一开就把主入口交给焦点，Enter / 空格直接生效，Tab 顺着往下走。
+    if (resultEntries && resultEntries.restart) resultEntries.restart.focus();
   }
 
   function closeSheet() {
     sheet.hidden = true;
     sheetMode = null;
+    resultEntries = null;
+    syncTouchVisibility();
   }
 
   function actions(list) {
-    return h("div", { class: "yz-menu" }, list);
+    // .yz-menu 是壳层兜底那份的竖排容器，.yz-btn-stack 是 F2 同义类（styles/menus.css）：
+    // 两个名字一起挂，两套 CSS 谁在场都能把入口摞成一列。
+    return h("div", { class: "yz-menu yz-btn-stack" }, list);
   }
 
   function button(text, variant, onclick) {
@@ -249,7 +270,78 @@ export function createShell(opts) {
     return btn;
   }
 
+  /**
+   * 一个入口 = 一颗按钮 + 紧跟其后的一行去处说明。
+   *
+   * 「再来一局」和「回安全区换掌」只看四五个字的标题分不出去处（Round 1 遗留 6 的
+   * UX 尾巴）：说明这一行才写清楚一个带着掌回裂岛、一个空手回走道。文案统一在
+   * core/entry.js，这里只负责贴。类名全走 F2 合同（.yz-hintline / .yz-kbd），
+   * 排版胶水走内联样式，不新增 CSS。
+   */
+  function entryChoice({ copy, label, key, variant, onSelect }) {
+    const shortcut = key === undefined ? copy.key : key;
+    // 一颗入口只吃第一次点击：触屏的双击 / 幽灵点击不该开出两局。
+    // 回调自己抛了就把闸放回去，别把板锁死在一颗点不动的按钮上。
+    let taken = false;
+    const btn = button(label || copy.label, variant, () => {
+      if (taken) return;
+      taken = true;
+      try {
+        onSelect();
+      } catch (err) {
+        taken = false;
+        throw err;
+      }
+      btn.disabled = true;
+    });
+    btn.dataset.entry = copy.kind;
+    btn.title = copy.hint;
+    if (shortcut) btn.setAttribute("aria-keyshortcuts", shortcut);
+
+    // 键位章走 .yz-kbd：F2 在 [data-touch="1"] 下把这一类整类收起，
+    // 触屏上只剩说明文字，键鼠与触控共用同一行提示、同一颗按钮。
+    const hint = h(
+      "p",
+      {
+        class: "yz-hintline",
+        style: { display: "flex", alignItems: "baseline", justifyContent: "center", gap: "6px" },
+      },
+      [shortcut ? h("span", { class: "yz-kbd", text: shortcut }) : null, h("span", { text: copy.hint })]
+    );
+    hint.dataset.entry = copy.kind;
+
+    const el = h(
+      "div",
+      { dataset: { entry: copy.kind }, style: { display: "flex", flexDirection: "column", gap: "4px" } },
+      [btn, hint]
+    );
+    return { el, btn };
+  }
+
   function renderPause() {
+    // 暂停里的「回安全区」是**重开一局落走道**，正在打的这一局就此作废 —— 说明这
+    // 一行把这句话写出来，别让人以为是「原地回大厅、回头还能接着打」。
+    // 快捷键只给结算板：暂停板上还摆着滑块和分段器，一个手滑的 H 不该弃局。
+    const hubCopy = entryCopy(ENTRY.HUB, { from: "pause" });
+    const hub = entryChoice({
+      copy: hubCopy,
+      label: "回 安 全 区",
+      key: null,
+      onSelect: () => {
+        audio.play("uiSelect");
+        if (callbacks.onReturnHub) callbacks.onReturnHub();
+      },
+    });
+    // 3D 走道是主路径，2D 配掌板退居这里：想一次看全八掌 / 改皮肤还是走它。
+    const menuEntry = entryChoice({
+      copy: MENU_COPY,
+      key: null,
+      onSelect: () => {
+        audio.play("uiSelect");
+        if (callbacks.onQuit) callbacks.onQuit();
+      },
+    });
+
     sheetBody.append(
       h("h2", { class: "yz-title", text: "暂 停" }),
       settingsBlock(),
@@ -259,15 +351,8 @@ export function createShell(opts) {
           audio.play("uiSelect");
           if (callbacks.onResume) callbacks.onResume();
         }),
-        // 3D 走道是主路径，2D 配掌板退居这里：想一次看全八掌 / 改皮肤还是走它。
-        button("回 安 全 区", null, () => {
-          audio.play("uiSelect");
-          if (callbacks.onReturnHub) callbacks.onReturnHub();
-        }),
-        button("配 掌 面 板", null, () => {
-          audio.play("uiSelect");
-          if (callbacks.onQuit) callbacks.onQuit();
-        }),
+        hub.el,
+        menuEntry.el,
       ])
     );
   }
@@ -284,6 +369,11 @@ export function createShell(opts) {
         }),
       ])
     );
+  }
+
+  function nameOfGlove(id) {
+    const glove = id && gloveById ? gloveById[id] : null;
+    return (glove && glove.name) || "";
   }
 
   function resultRow(cells, mods = {}) {
@@ -315,6 +405,40 @@ export function createShell(opts) {
       })
     );
 
+    // 两个回程入口。文案 core/entry.js 说了算；「再来一局」那句会把**将要沿用的
+    // 那副掌**报出来（main 用同一条 resolveEntry 链算出来传进来），玩家不用先猜
+    // 「同一副掌」是哪一副。去处相反的两颗按钮到这里才真的分得清（Round 1 遗留 6）。
+    const gear = payload.restartLoadout || {};
+    const restart = entryChoice({
+      copy: entryCopy(ENTRY.RESTART, {
+        mainName: nameOfGlove(gear.main),
+        offName: nameOfGlove(gear.off),
+      }),
+      variant: "primary",
+      onSelect: () => {
+        audio.play("uiSelect");
+        if (callbacks.onRestart) callbacks.onRestart();
+      },
+    });
+    // GOAL §7 回程：打完不该逼玩家刷新页面才能重挑掌。这条走的是 ENTRY.HUB，
+    // 与上面那颗按钮去处相反 —— 两颗按钮不许再是同一件事。
+    const hub = entryChoice({
+      copy: entryCopy(ENTRY.HUB, { from: "result" }),
+      onSelect: () => {
+        audio.play("uiSelect");
+        if (callbacks.onReturnHub) callbacks.onReturnHub();
+      },
+    });
+    const menuEntry = entryChoice({
+      copy: MENU_COPY,
+      variant: "ghost",
+      onSelect: () => {
+        audio.play("uiBack");
+        if (callbacks.onQuit) callbacks.onQuit();
+      },
+    });
+    resultEntries = { restart: restart.btn, hub: hub.btn, menu: menuEntry.btn };
+
     // append 会把 null 变成字面量 "null" 贴到板上（没解锁新掌的那一局就中招），
     // 条件块必须先滤掉再进 DOM。
     const nodes = [
@@ -324,23 +448,7 @@ export function createShell(opts) {
       payload.unlocked && payload.unlocked.length
         ? h("p", { class: "yz-heading", text: `解锁：${payload.unlocked.join("、")}` })
         : null,
-      actions([
-        // 同一副掌接着打：回裂岛，不走走道（main 的 restartArena → ENTRY.RESTART）
-        button("再 来 一 局", "primary", () => {
-          audio.play("uiSelect");
-          if (callbacks.onRestart) callbacks.onRestart();
-        }),
-        // GOAL §6 回程：打完不该逼玩家刷新页面才能重挑掌。这条走的是 ENTRY.HUB，
-        // 与上面那颗按钮去处相反 —— 两颗按钮不许再是同一件事。
-        button("回 安 全 区 换 掌", null, () => {
-          audio.play("uiSelect");
-          if (callbacks.onReturnHub) callbacks.onReturnHub();
-        }),
-        button("配 掌 面 板", "ghost", () => {
-          audio.play("uiBack");
-          if (callbacks.onQuit) callbacks.onQuit();
-        }),
-      ]),
+      actions([restart.el, hub.el, menuEntry.el]),
     ];
     sheetBody.append(...nodes.filter(Boolean));
   }
@@ -366,11 +474,22 @@ export function createShell(opts) {
   let screen = "menu";
   let phase = "arena";
 
+  /**
+   * 暂停 / 结算板压在屏幕上时收起触控层：摇杆和扇击钮就在结算板按钮底下，
+   * 半透明板上摸一把很容易先摸到它们。板一关就按当前页面还原，触屏与键鼠
+   * 看到的是同一块板、同一组入口。
+   */
+  function syncTouchVisibility() {
+    const hide = screen === "menu" || !sheet.hidden;
+    if (hide && !touch.el.hidden) touch.reset();
+    touch.el.hidden = hide;
+  }
+
   function setScreen(next) {
     screen = next;
     menu.el.hidden = next !== "menu";
     hud.el.hidden = next === "menu";
-    touch.el.hidden = next === "menu";
+    syncTouchVisibility();
     if (next === "menu") closeSheet();
   }
 
@@ -384,6 +503,30 @@ export function createShell(opts) {
     if (value === "arena") hubUi.reset();
     return value;
   }
+
+  /**
+   * 结算板的键鼠快捷键：R 回裂岛、H 回走道，Enter 落在主入口上。
+   * 一律走按钮自己的 click —— 触控点按、鼠标点击、键盘敲键最终是同一条路径，
+   * 「只生效一次」的闸也就只有一处（entryChoice 的 once）。
+   * 暂停板不给快捷键：那上面还摆着滑块与分段器，手滑一个 H 不该弃掉这一局。
+   */
+  function onSheetKey(e) {
+    if (sheet.hidden || sheetMode !== "result" || !resultEntries) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const target = e.target;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+
+    const key = e.key === "Enter" ? "Enter" : String(e.key || "").toLowerCase();
+    let btn = null;
+    if (key === "r") btn = resultEntries.restart;
+    else if (key === "h") btn = resultEntries.hub;
+    // 焦点已经在板上某颗按钮时，Enter 归它自己（原生行为），别抢过来跳回主入口
+    else if (key === "Enter" && !sheetBody.contains(document.activeElement)) btn = resultEntries.restart;
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    btn.click();
+  }
+  document.addEventListener("keydown", onSheetKey);
 
   setScreen("menu");
   hud.el.dataset.phase = phase;
@@ -479,6 +622,7 @@ export function createShell(opts) {
       if (sheetMode === "pause" || sheetMode === "settings") openSheet(sheetMode);
     },
     destroy() {
+      document.removeEventListener("keydown", onSheetKey);
       menu.el.remove();
       hud.el.remove();
       touch.el.remove();
