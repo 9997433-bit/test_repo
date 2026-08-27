@@ -8,7 +8,7 @@ import {
   validateRoster,
 } from './harness.mjs';
 
-const MODEL_SLUG = 'gpt-5.6-sol-xhigh-fast';
+const MODEL_SLUG = process.env.MODEL_SLUG || 'yizhang-probe';
 const EXPECTED_GLOVE_IDS = [
   'cotton',
   'granite',
