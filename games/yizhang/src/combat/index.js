@@ -50,6 +50,7 @@ import {
   forwardFromYaw,
   horizDir,
   inCone,
+  inSafeZone,
   isBehind,
   num,
   opponentsOf,
@@ -204,6 +205,7 @@ function actorReady(attacker) {
 
 export function canSlap(state, attacker, glove, now = clockOf(state)) {
   if (!actorReady(attacker)) return false;
+  if (inSafeZone(state, attacker)) return false;
   if (simDrivenPlayer(attacker)) return true;
   const cd = cooldownsOf(attacker);
   return now >= cd.slapAt && now >= num(attacker.busyUntil);
@@ -211,6 +213,7 @@ export function canSlap(state, attacker, glove, now = clockOf(state)) {
 
 export function canSkill(state, attacker, glove, now = clockOf(state)) {
   if (!actorReady(attacker)) return false;
+  if (inSafeZone(state, attacker)) return false;
   const g = effectiveGlove(state, attacker, glove);
   if (g.skillId === "none") return false;
   if (simDrivenPlayer(attacker)) return num(attacker.skillCd) <= 0;
@@ -302,6 +305,8 @@ function doSlap(state, attacker, g, now, chargeCooldown) {
 export function resolveSlap(state, attacker, glove, now = clockOf(state)) {
   if (!state || !attacker) return hitList([]);
   if (!actorReady(attacker)) return hitList([]);
+  // 安全区不进战斗管线：选掌用的 E / 点击不该在这里变成一记掌，连挥空事件都不发。
+  if (inSafeZone(state, attacker)) return hitList([]);
   const g = applyAwaken(attacker, resolveGlove(state, attacker, glove));
 
   // sim 自己跑前后摇：它只在 strike 那一帧调过来，这里再闸一次冷却只会吃掉命中。
@@ -318,6 +323,7 @@ export function resolveSlap(state, attacker, glove, now = clockOf(state)) {
  */
 export function beginSlap(state, attacker, glove, now = clockOf(state)) {
   if (!state || !attacker || !actorReady(attacker)) return { ok: false, reason: "cannot-act" };
+  if (inSafeZone(state, attacker)) return { ok: false, reason: "hub" };
   const g = applyAwaken(attacker, resolveGlove(state, attacker, glove));
   const cd = cooldownsOf(attacker);
   if (now < cd.slapAt || now < num(attacker.busyUntil)) return { ok: false, reason: "cooldown" };
@@ -342,6 +348,8 @@ export function resolveSkill(state, attacker, glove, now = clockOf(state)) {
   const empty = (reason, skillId = "none") => ({ ok: false, skillId, reason, hits: [], tiles: [] });
   if (!state || !attacker) return empty("no-actor");
   if (!actorReady(attacker)) return empty("cannot-act");
+  // 安全区不进战斗管线：E 在大厅里是「装备这只掌」，不是放技能。
+  if (inSafeZone(state, attacker)) return empty("hub");
 
   const g = applyAwaken(attacker, resolveGlove(state, attacker, glove));
   if (g.skillId === "none") return empty("no-skill", "none");
@@ -428,7 +436,7 @@ function runPending(state, now, sink) {
     } else if (q.kind === "ghostSlap") {
       sink.hits.push(...resolveGhostSlap(state, owner, q, now));
     } else if (q.kind === "slap") {
-      if (owner && actorReady(owner)) {
+      if (owner && actorReady(owner) && !inSafeZone(state, owner)) {
         const table = gloveTable(state);
         const base = normalizeGlove(table[q.gloveId] || FALLBACK_GLOVE_BY_ID[q.gloveId]);
         const g = q.awakened ? awakenedStats(base) : base;
@@ -474,6 +482,10 @@ export function tickStatuses(state, dt) {
       p.dashing = false;
       continue;
     }
+
+    // 安全区四禁之一：不进 combat 管线。掌意不衰减、觉醒不自动触发、状态原样冻着，
+    // 玩家在大厅里挑多久掌都不影响进岛那一刻的战斗状态。
+    if (inSafeZone(state, p)) continue;
 
     tickPlayerStatuses(p, dt);
 
@@ -567,6 +579,7 @@ export {
   yawTo,
   isBehind,
   inCone,
+  inSafeZone,
   horizDir,
   playerList,
   playerById,

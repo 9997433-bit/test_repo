@@ -1,6 +1,8 @@
 // 异掌 · 战斗侧纯函数工具。不 import three，不碰 DOM。
 
 import { ARENA, HIT } from "./constants.js";
+// 安全区体积判定只有 sim 一份实现（`src/sim/hub.js`），这里直接用，不在 combat 抄第二份。
+import { inHubZone } from "../sim/hub.js";
 
 export const TAU = Math.PI * 2;
 
@@ -119,8 +121,24 @@ export function isTargetable(target, attacker) {
   return true;
 }
 
+/**
+ * 这个人此刻是不是站在安全区里：`phase === 'hub'` **且**人确实在安全区体积内。
+ * 布局读的是 sim 写在 `state.hub.layout` 上的那一份（唯一来源是 `data/hub.js`），
+ * combat 只负责「在安全区里就不打」。
+ *
+ * 宿主没有 hub 概念（combat testkit、老快照）时恒为 false，走裂岛老路径。
+ */
+export function inSafeZone(state, player) {
+  if (!state || !player) return false;
+  if (state.phase !== "hub") return false;
+  const layout = state.hub && state.hub.layout;
+  if (!layout || !layout.zone || !layout.origin) return false;
+  return inHubZone(layout, num(player.x), num(player.y), num(player.z));
+}
+
 export function opponentsOf(state, attacker) {
-  return playerList(state).filter((p) => isTargetable(p, attacker));
+  // 安全区里的人不进命中列表：选掌时不该被扇，也不该被拉、被冻、被砸。
+  return playerList(state).filter((p) => isTargetable(p, attacker) && !inSafeZone(state, p));
 }
 
 export function hasStatus(player, kind) {

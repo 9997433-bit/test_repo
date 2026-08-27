@@ -1,12 +1,12 @@
 // Bot 只吃 getView 的快照。这份测试把 think() 接到真正的 src/sim 上跑，
 // 断言字段名对得上（time / skillCd / statuses / arena.tiles）、坐标系对得上、
-// 三种人格在同一局里依然是三种打法。
+// 三种人格在同一局里依然是三种打法，以及安全区里全员休眠、传送进岛后立刻回血。
 
 import { beforeEach, describe, expect, it } from "vitest";
 
 import "../combat/index.js"; // 副作用：把真实战斗解算装进 sim
 import { think, resetBots, configureBots, BOT_PERSONAS } from "./bots.js";
-import { createMatch, forwardX, forwardZ, getView, step, ZERO_INPUT } from "../sim/index.js";
+import { createMatch, forwardX, forwardZ, getPlayer, getView, step, ZERO_INPUT } from "../sim/index.js";
 
 const DT = 1 / 60;
 
@@ -22,8 +22,9 @@ function counter(seed = 1) {
   };
 }
 
+/** 裂岛局。`createMatch` 缺省开在安全区，格斗行为的用例一律显式要 arena。 */
 function match(seed = 900, botCount = 3) {
-  const state = createMatch({ seed, gloveId: "cotton", offhandId: "spring", botCount });
+  const state = createMatch({ seed, gloveId: "cotton", offhandId: "spring", botCount, phase: "arena" });
   return state;
 }
 
@@ -226,6 +227,127 @@ describe("think() 吃 getView 快照", () => {
     }
     expect(maxR).toBeLessThan(R);
     expect(bot.deaths).toBe(0);
+  });
+
+  it("安全区里的人不该被 Bot 惦记：phase=hub 时 think 一律零输入", () => {
+    const state = createMatch({ seed: 941, botCount: 3, phase: "hub", unlocked: "all" });
+    expect(getView(state).phase).toBe("hub");
+    const ids = bots(state).map((b) => b.id);
+    const before = bots(state).map((b) => ({ x: b.x, z: b.z, yaw: b.yaw }));
+    const seen = [];
+    const rng = counter(7);
+
+    for (let i = 0; i < 300; i++) {
+      const view = getView(state);
+      const inputs = {};
+      for (const id of ids) {
+        const inp = think(view, id, rng);
+        inputs[id] = inp;
+        expect(inp).toMatchObject({
+          moveX: 0,
+          moveZ: 0,
+          slap: false,
+          skill: false,
+          switchGlove: false,
+          dash: false,
+          jump: false,
+        });
+      }
+      step(state, inputs, DT);
+      seen.push(...state.events.map((e) => e.type));
+    }
+
+    for (const type of ["slapStart", "slap", "slapWhiff", "hit", "skill", "ko", "tileBreak"]) {
+      expect(seen, `hub 期不该有 ${type}`).not.toContain(type);
+    }
+    expect(state.stats).toMatchObject({ slaps: 0, hits: 0, kos: 0, tilesBroken: 0 });
+    // yaw 也没被 think 拧过：Bot 站在裂岛上原地待命，不是齐刷刷扭到 yaw=0
+    // （回给 sim 的是快照里那个 round4 过的 yaw，只差一次量化，不会持续漂）
+    bots(state).forEach((b, i) => {
+      expect(Math.hypot(b.x - before[i].x, b.z - before[i].z)).toBeLessThan(1e-6);
+      expect(b.yaw).toBeCloseTo(before[i].yaw, 4);
+      expect(b.yaw).not.toBe(0);
+    });
+  });
+
+  it("选掌不走 combat 判定：E 在大厅里只装掌，不放技能、不打人、不碎地", () => {
+    const state = createMatch({ seed: 942, botCount: 3, phase: "hub", unlocked: "all" });
+    const p0 = getPlayer(state, "p0");
+    const ped = state.hub.pedestals.find((x) => x.gloveId === "granite");
+
+    // 站到磐石台座旁（交互圈内、台座实体外），主掌还没挑
+    p0.x = ped.x > 0 ? ped.x - 1.3 : ped.x + 1.3;
+    p0.z = ped.z;
+    expect(state.hub.mainGloveId).toBe(null);
+
+    const seen = [];
+    // 键鼠 E 是双义键：sim 同时看到 skill 与 interact，只有 interact 该生效
+    for (let i = 0; i < 30; i++) {
+      step(state, { p0: { skill: i % 2 === 0, interact: i % 2 === 0, yaw: 0 } }, DT);
+      seen.push(...state.events.map((e) => e.type));
+    }
+
+    expect(state.hub.mainGloveId).toBe("granite");
+    expect(seen).toContain("hubEquip");
+    for (const type of ["skill", "hit", "tileBreak", "meteorImpact", "awaken"]) {
+      expect(seen, `选掌不该触发 ${type}`).not.toContain(type);
+    }
+    expect(state.arena.tiles.every((t) => t.alive && t.hp === t.maxHp)).toBe(true);
+    expect(state.stats).toMatchObject({ hits: 0, tilesBroken: 0 });
+    // 技能的自推进 / 位移也没发生：人还站在台座旁
+    expect(Math.hypot(p0.vx, p0.vz)).toBeLessThan(0.05);
+    expect(p0.skillCd).toBe(0);
+  });
+
+  it("大厅里对着人乱挥也打不到：没有 hit、没有击退、没有掌意", () => {
+    const state = createMatch({ seed: 944, botCount: 3, phase: "hub", unlocked: "all" });
+    const p0 = getPlayer(state, "p0");
+    const victim = getPlayer(state, "b0");
+    // 把一只 bot 也搬进走道，正面站在人前 1.5m（yaw=0 面向 -Z）
+    victim.x = p0.x;
+    victim.z = p0.z - 1.5;
+    victim.y = 0;
+    victim.invulnT = 0;
+    p0.invulnT = 0;
+
+    const seen = [];
+    for (let i = 0; i < 120; i++) {
+      step(state, { p0: { slap: true, yaw: 0 } }, DT);
+      seen.push(...state.events.map((e) => e.type));
+    }
+
+    for (const type of ["hit", "slapWhiff", "ko"]) {
+      expect(seen, `安全区不该有 ${type}`).not.toContain(type);
+    }
+    expect(state.stats.hits).toBe(0);
+    expect(victim.hitsTaken).toBe(0);
+    expect(victim.knockScale).toBe(1);
+    expect(victim.meter).toBe(0);
+    expect(p0.meter).toBe(0);
+    expect(Math.hypot(victim.vx, victim.vz)).toBeLessThan(0.05);
+  });
+
+  it("传送进裂岛后战斗立刻回归：同一批 Bot 开始扇人", () => {
+    const state = createMatch({ seed: 943, botCount: 3, phase: "hub", unlocked: "all" });
+    const p0 = getPlayer(state, "p0");
+    const ped = state.hub.pedestals.find((x) => x.gloveId === "granite");
+
+    p0.x = ped.x > 0 ? ped.x - 1.3 : ped.x + 1.3;
+    p0.z = ped.z;
+    step(state, { p0: { interact: true } }, DT);
+    expect(state.hub.portalReady).toBe(true);
+
+    // 走进门（唯一一条切区路径：portalReady ∧ 进门触发区）
+    p0.x = state.hub.layout.portal.x;
+    p0.z = state.hub.layout.portal.z;
+    step(state, { p0: {} }, DT);
+    expect(state.phase).toBe("arena");
+    expect(getView(state).phase).toBe("arena");
+
+    const log = runBots(state, { seconds: 8, rng: counter(29) });
+    expect(log.moveFrames).toBeGreaterThan(600);
+    expect(log.slaps).toBeGreaterThan(10);
+    expect(state.stats.hits).toBeGreaterThan(0);
   });
 
   it("三种人格的交战距离仍然分得开：fox 站得比 brute 远", () => {
