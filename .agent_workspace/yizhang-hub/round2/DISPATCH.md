@@ -43,8 +43,8 @@
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
 | O3 事件 gloveId | `claude-opus-5-thinking-high-fast` | `bc-dc9f84ad-2799-5b6e-878a-cdb77c163940` | 已派出 |
-| F2 美术 | `claude-fable-5-thinking-xhigh` | | 等槽 |
-| G1 单测 | `gpt-5.6-sol-xhigh-fast` | `bc-0d44a383-0d29-5279-97f3-b3d3bf78d03a` | 已派出 |
+| F2 美术 | `claude-fable-5-thinking-xhigh` | `bc-cb346ed2-5e7a-5891-bad0-882b43b9dac6` | 已派出 |
+| G1 单测 | `gpt-5.6-sol-xhigh-fast` | `bc-0d44a383-0d29-5279-97f3-b3d3bf78d03a` | 已合入 `cursor/yizhang-hub-r2-g1-tests-db8d`（tests/round2-hub-contract.test.js 5 条） |
 
 ### Wave 4
 
