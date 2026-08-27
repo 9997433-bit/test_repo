@@ -92,6 +92,7 @@
   /* ---- 触控尺寸（dp≈px） ---- */
   --yz-touch-min: 48px;
   --yz-touch-slap: 72px;
+  --yz-touch-confirm: 80px; /* 大厅「选」确认钮（≥72dp，竖屏降 76px） */
 
   /* ---- 安全区留白（取安全区与网格的较大值） ---- */
   --yz-inset-t: max(var(--yz-s1), env(safe-area-inset-top, 0px));

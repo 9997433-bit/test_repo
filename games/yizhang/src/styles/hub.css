@@ -1,0 +1,482 @@
+/* ============================================================
+   异掌 · 安全区大厅 HUD（F2 正装主题，合同见 ART_DIRECTION §14）
+   接管 src/ui/hub.css（O4 兜底件）同名类的**外观**：本文件由
+   styles/index.css 末位 @import，经 loadSiblingStyles() 注入
+   <head> 末尾，恒晚于 O4 的静态 import——同权重后到胜出；
+   styles 缺席时 O4 件独立成活，两边类名一字不差。
+   纪律：
+   · 只写外观，不写行为门：一切 display 显隐（#hud[data-phase]
+     切换、战斗件让位、「选」钮出没）都留在 O4 文件里。
+   · 识别色四处点缀：说明牌漆线 / role 小字 / 配装主掌菱标 /
+     「选」钮描沿；ready 门提示的暖金是一屏唯一金。
+   · 全部锚点走 --yz-inset-*（safe-area 已封装）；
+     触控确认 ≥72dp（--yz-touch-confirm）。
+   ============================================================ */
+
+/* ---- 区名带：碑额式——展示字 + 两侧刻线，不抢走道纵深 ---- */
+.yz-hub-title {
+  position: absolute;
+  top: var(--yz-inset-t);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: var(--yz-s1);
+  padding: var(--yz-s-h) calc(var(--yz-s2) + var(--yz-s-h));
+  white-space: nowrap;
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-sm);
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: var(--yz-bone-300);
+}
+
+.yz-hub-title::before,
+.yz-hub-title::after {
+  content: "";
+  align-self: center;
+  width: 22px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--yz-steel-500));
+}
+
+.yz-hub-title::after {
+  background: linear-gradient(270deg, transparent, var(--yz-steel-500));
+}
+
+.yz-hub-title small {
+  font-family: var(--yz-font-text);
+  font-weight: 400;
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+  color: var(--yz-text-mute);
+}
+
+/* ---- 靠近说明牌：台座铭牌。玻璃板 + 左沿识别色旧漆线 ----
+   识别色只给漆线与染晕，不给整块底色——饱和峰值留给 3D 里那只掌。 */
+.yz-inspect {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b) + 132px);
+  transform: translate(-50%, 10px);
+  width: min(360px, calc(100vw - 2 * var(--yz-inset-l)));
+  padding: calc(var(--yz-s1) + var(--yz-s-h)) var(--yz-s2) var(--yz-s2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--yz-s-h);
+  opacity: 0;
+  visibility: hidden;
+  /* visibility 压到过渡末尾：退场也有完整淡出，而非瞬灭 */
+  transition:
+    opacity var(--yz-t-med) var(--yz-ease),
+    transform var(--yz-t-med) var(--yz-ease),
+    visibility 0s linear var(--yz-t-med);
+}
+
+.yz-inspect.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition:
+    opacity var(--yz-t-med) var(--yz-ease),
+    transform var(--yz-t-med) var(--yz-ease),
+    visibility 0s;
+}
+
+/* 旧漆线：两端剥落渐隐，中段有微高光芯（漆刷过两遍的那种旧） */
+.yz-inspect::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 8%;
+  bottom: 8%;
+  width: 3px;
+  border-radius: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--yz-accent) 14%,
+    color-mix(in oklab, var(--yz-accent) 84%, var(--yz-bone-100)) 30%,
+    var(--yz-accent) 55%,
+    color-mix(in oklab, var(--yz-accent) 72%, var(--yz-ink-900)) 86%,
+    transparent
+  );
+}
+
+/* 漆光染晕：极低透明度漫进玻璃左缘，交代「漆是发色的实物」 */
+.yz-inspect::after {
+  content: "";
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  width: 56px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--yz-accent) 13%, transparent),
+    transparent
+  );
+}
+
+.yz-inspect-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--yz-s1);
+}
+
+.yz-inspect-name {
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-lg);
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  color: var(--yz-bone-100);
+}
+
+.yz-inspect-role {
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.12em;
+  color: color-mix(in oklab, var(--yz-accent) 78%, var(--yz-bone-100));
+}
+
+.yz-inspect-desc {
+  margin: 0;
+  font-family: var(--yz-font-text);
+  font-size: var(--yz-fs-sm);
+  line-height: 1.7;
+  color: var(--yz-text-dim);
+}
+
+/* 操作行：发丝分隔线上一行「键帽 + 意图 + 槽位」 */
+.yz-inspect-cta {
+  display: flex;
+  align-items: center;
+  gap: var(--yz-s1);
+  margin-top: var(--yz-s-h);
+  padding-top: var(--yz-s1);
+  border-top: 1px solid rgb(154 164 176 / 0.14);
+  font-size: var(--yz-fs-sm);
+  color: var(--yz-bone-100);
+}
+
+/* 确认键帽：金属小键帽（拉丝钢面 + 顶部受光 + 底压暗），非 OS kbd。
+   键鼠写 E、触屏写「选」（O4 改文本）；刻意不复用 .yz-kbd——
+   那一类在 [data-touch="1"] 下整类隐藏，会连「选」一起吞掉。 */
+.yz-inspect-key {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 6px;
+  text-align: center;
+  font-family: var(--yz-font-num);
+  font-weight: 600;
+  font-size: var(--yz-fs-xs);
+  line-height: 1.5;
+  color: var(--yz-bone-100);
+  border: 1px solid var(--yz-ink-950);
+  border-radius: var(--yz-r1);
+  background:
+    linear-gradient(180deg, rgb(240 235 223 / 0.1), rgb(240 235 223 / 0) 55%),
+    linear-gradient(180deg, var(--yz-steel-700), var(--yz-ink-800));
+  box-shadow:
+    inset 0 1px 0 rgb(240 235 223 / 0.22),
+    0 1px 2px rgb(4 7 12 / 0.5);
+}
+
+.yz-inspect-cta-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.yz-inspect-slot {
+  flex: 0 0 auto;
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.14em;
+  color: var(--yz-gold-300);
+}
+
+/* 未解锁：整牌去饱和，漆线退成素刻钢槽（还没资格上漆），染晕熄灭 */
+.yz-inspect.is-locked {
+  filter: saturate(0.25);
+}
+
+.yz-inspect.is-locked::before {
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--yz-steel-700) 18%,
+    var(--yz-steel-500) 50%,
+    var(--yz-steel-700) 82%,
+    transparent
+  );
+}
+
+.yz-inspect.is-locked::after {
+  background: none;
+}
+
+.yz-inspect.is-locked .yz-inspect-name {
+  color: var(--yz-bone-300);
+}
+
+.yz-inspect.is-locked .yz-inspect-cta {
+  color: var(--yz-text-mute);
+}
+
+/* ---- 当前配装条：主 / 副两槽 + 菱形槽标 ----
+   条上 data-glove = 主掌 id（O4 每帧贴），主槽菱标吃识别色；
+   副槽钢色实心 = 已定，空槽只留框——一眼读出「还缺哪只」。 */
+.yz-loadout-strip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b) + 84px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--yz-s1) + var(--yz-s-h));
+  padding: var(--yz-s-h) var(--yz-s2);
+  white-space: nowrap;
+}
+
+.yz-loadout-slot {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--yz-fs-sm);
+  color: var(--yz-text-dim);
+}
+
+.yz-loadout-slot::before {
+  content: "";
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  background: var(--yz-steel-300);
+  border: 1px solid var(--yz-ink-950);
+  box-shadow: inset 0 1px 0 rgb(240 235 223 / 0.3);
+}
+
+/* DOM 序固定：第一枚 span 槽 = 主掌（ui/hub.js） */
+.yz-loadout-slot:first-of-type::before {
+  background: var(--yz-accent);
+  border-color: color-mix(in oklab, var(--yz-accent) 55%, var(--yz-ink-950));
+}
+
+.yz-loadout-slot.is-empty::before {
+  background: transparent;
+  border-color: var(--yz-steel-500);
+  box-shadow: none;
+}
+
+.yz-loadout-slot i {
+  font-style: normal;
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.16em;
+  color: var(--yz-text-mute);
+}
+
+.yz-loadout-slot b {
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--yz-bone-100);
+}
+
+.yz-loadout-slot.is-empty b {
+  color: var(--yz-text-mute);
+}
+
+.yz-loadout-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 0;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--yz-steel-700) 30%,
+    var(--yz-steel-700) 70%,
+    transparent
+  );
+}
+
+/* ---- 传送门提示：门楣线随状态换材质 ----
+   钢线 = 常态；金线 + 金字 = 就绪（一屏唯一金）；
+   门前 .is-near = 骨白 + 明度呼吸（禁缩放弹跳）。 */
+.yz-portal-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b) + 44px);
+  transform: translateX(-50%);
+  padding: var(--yz-s-h) var(--yz-s2);
+  max-width: min(420px, calc(100vw - 2 * var(--yz-inset-l)));
+  text-align: center;
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-sm);
+  letter-spacing: 0.1em;
+  text-indent: 0.1em;
+  color: var(--yz-text-mute);
+  transition:
+    color var(--yz-t-med) var(--yz-ease),
+    border-color var(--yz-t-med) var(--yz-ease);
+}
+
+.yz-portal-hint::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 46%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--yz-steel-500), transparent);
+  transition:
+    background var(--yz-t-med) var(--yz-ease),
+    height var(--yz-t-med) var(--yz-ease);
+}
+
+.yz-portal-hint.is-ready {
+  color: var(--yz-gold-300);
+  border-color: var(--yz-gold-700);
+}
+
+.yz-portal-hint.is-near {
+  color: var(--yz-bone-100);
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  animation: yz-breathe 1.4s var(--yz-ease) infinite;
+}
+
+.yz-portal-hint.is-ready::before {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--yz-gold-500) 30%,
+    var(--yz-gold-300) 50%,
+    var(--yz-gold-500) 70%,
+    transparent
+  );
+}
+
+/* 门前且主掌已选（配装条 data-glove 非空）：门楣线披金、框沿转旧金。
+   「先选一只掌」的 near 态不披金——金只给「可以走了」。 */
+.yz-loadout-strip:not([data-glove=""]) ~ .yz-portal-hint.is-near {
+  border-color: var(--yz-gold-700);
+}
+
+.yz-loadout-strip:not([data-glove=""]) ~ .yz-portal-hint.is-near::before {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--yz-gold-500) 30%,
+    var(--yz-gold-300) 50%,
+    var(--yz-gold-500) 70%,
+    transparent
+  );
+}
+
+/* ---- 触控「选」确认钮：大厅唯一主操作 ----
+   基材质来自 .yz-tbtn（玻璃盘 + 钢圈 + 机加工内槽，touch.css）；
+   这里提尺寸到 80dp（≥72dp）并给识别色描沿——大厅收起扇/技/换后，
+   它就是触控层的唯一饱和点缀。display 出没归 O4 行为门，不在此声明。 */
+.yz-touch .yz-hub-confirm {
+  position: absolute;
+  right: var(--yz-inset-r);
+  bottom: calc(var(--yz-inset-b) + 150px);
+  width: var(--yz-touch-confirm, 80px);
+  height: var(--yz-touch-confirm, 80px);
+  font-size: var(--yz-fs-xl);
+  color: color-mix(in oklab, var(--yz-accent) 55%, var(--yz-bone-100));
+  border-color: color-mix(in oklab, var(--yz-accent) 48%, var(--yz-steel-700));
+}
+
+/* ---- 门内过渡：金芯快闪 → 慢淡回。禁加载条、禁死白。 ----
+   三层：骨白热芯（小）→ 暖金门光（中）→ 暮蓝压边（大）。 */
+.yz-warp {
+  position: fixed;
+  inset: 0;
+  z-index: var(--yz-z-modal);
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(26% 38% at 50% 50%, rgb(240 235 223 / 0.32), rgb(240 235 223 / 0) 70%),
+    radial-gradient(58% 46% at 50% 52%, rgb(238 198 120 / 0.52), rgb(238 198 120 / 0) 64%),
+    radial-gradient(120% 100% at 50% 50%, rgb(11 16 28 / 0.2), rgb(8 12 20 / 0.98) 74%);
+  transition: opacity var(--yz-t-slow) var(--yz-ease);
+}
+
+.yz-warp.is-on {
+  opacity: 1;
+  transition-duration: var(--yz-t-fast);
+}
+
+/* ---- 竖屏：下半屏让给摇杆 / 按钮簇（与 hud.css 掌意条同一策略）----
+   配装条与门提示上移到区名带下方；说明牌留底部但抬到「选」钮
+   纵向区间（bottom+150 起 76px）之上；区名带收起副标题防挤压暂停钮。 */
+@media (orientation: portrait) {
+  .yz-hub-title {
+    padding: var(--yz-s-h) var(--yz-s2);
+  }
+
+  .yz-hub-title small {
+    display: none;
+  }
+
+  .yz-loadout-strip {
+    bottom: auto;
+    top: calc(var(--yz-inset-t) + 44px);
+  }
+
+  .yz-portal-hint {
+    bottom: auto;
+    top: calc(var(--yz-inset-t) + 82px);
+    max-width: min(420px, calc(100vw - 2 * var(--yz-inset-l)));
+  }
+
+  .yz-inspect {
+    bottom: calc(var(--yz-inset-b) + 236px);
+    width: min(332px, calc(100vw - 2 * var(--yz-inset-l)));
+  }
+
+  .yz-touch .yz-hub-confirm {
+    width: 76px;
+    height: 76px;
+    font-size: var(--yz-fs-lg);
+  }
+}
+
+/* ---- 矮横屏（手机横持 ≤480px 高）：信息柱整体下压一档 ---- */
+@media (max-height: 480px) {
+  .yz-hub-title {
+    letter-spacing: 0.22em;
+    text-indent: 0.22em;
+  }
+
+  .yz-inspect {
+    bottom: calc(var(--yz-inset-b) + 118px);
+    width: min(340px, calc(100vw - 2 * var(--yz-inset-l)));
+  }
+
+  .yz-inspect-desc {
+    line-height: 1.55;
+  }
+
+  .yz-loadout-strip {
+    bottom: calc(var(--yz-inset-b) + 76px);
+  }
+
+  .yz-portal-hint {
+    bottom: calc(var(--yz-inset-b) + 40px);
+  }
+}
