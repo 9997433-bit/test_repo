@@ -10,10 +10,14 @@
 
 ## Round 2
 
+**十席除 O2 机位复核外均已合入。** F4 签 PASS-WITH-WARNINGS（LK-04 PASS；O2 DEFER）。简报：`round2/BRIEF.md`。
+
+## Round 3
+
 | 波 | 席位 | 状态 |
 | --- | --- | --- |
-| W1 | F1 契约 / O4 free 分派 / G1 单测 | 派发中 |
-| W2–W4 | F2 F3 F4 / O1 O2 O3 / G2 | 排队 |
+| W1 | F1 契约收口 / O2 机位补交 / G2 切模式探针 | 派发中 |
+| W2–W4 | F2 F3 F4 / O1 O3 O4 / G1 | 排队 |
 
 ## 基线（开工 @ 7340300）
 
