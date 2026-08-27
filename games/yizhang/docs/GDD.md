@@ -361,15 +361,15 @@ idle 与战斗逐掌**押韵不复制**（ART §16.0 快慢架 / §17.4 对齐�
 
 分层一句话：`vfx.js`（§14 本表）管**参数**、`COMBAT_VFX_KIND` / `IDLE_VFX_KIND` 管**分派**、ART §16 管**终稿**。分派词活在 render 域，数据红线不变（`src/data` 禁 import three / DOM / Math.random）：本表不登记 render 词为字段，render 也不复制本表数字。
 
-## 15. 固定人物视角与机位（`CAMERA`，LOOK-R1/R2；契约 v4.3 ADR-37…39）
+## 15. 固定人物视角与机位（`CAMERA`，LOOK-R1/R2；契约 v4.4 ADR-37…39）
 
 ### 15.1 视角模式 `lookMode`
 
-值域冻结为两词 `'locked' | 'free'`（第三值先登记契约再用）。**产品缺省 `lookMode = 'locked'` = 固定人物视角**：镜头钉在角色身后，**人物水平面向 ≡ 相机水平前向**——`Input.yaw = cameraYawToSimYaw(θ)` 由 sim 直赋、无平滑，等式逐 tick 精确成立（契约不变量 §14-30）；上下看（pitch）不受影响，照走 ADR-35 通路。
+值域冻结为两词 `'locked' | 'free'`（第三值先登记契约再用）。**产品缺省 `lookMode = 'locked'` = 固定人物视角**：镜头钉在角色身后、绕不到正脸（渲染侧硬顶兜底，§15.3），**人物水平面向 ≡ 相机水平前向**——`Input.yaw = cameraYawToSimYaw(θ)` 由 sim 直赋、无平滑，等式逐 tick 精确成立（契约不变量 §14-30）；上下看（pitch）不受影响，照走 ADR-35 通路。
 
-`free` 为**可切换**的自由视角（LOOK-R2 已落地，LK-04 收口）：镜头与面向解耦——分派整只收在 `input.sample()`：**移动矢量非零**时送 `yawFromDir(moveX, moveZ)`，面朝走向（= 世界系移动方向 `atan2(−moveX, −moveZ)`，§14-31）；**零位移**送 `yaw: null`，sim 见非有限值保持当前朝向——静止转镜头，人一动不动；W+S 对消的合零矢量同样落回 null，不会原地翻身。**locked 仍 1:1**：恒送 `cameraYawToSimYaw(θ)`，与视角轮之前的既有行为逐字一致（`input/index.test.js`「Input.yaw 按 lookMode 分派」与 `sim/look-yaw.test.js` 两侧锁死）。两种模式下移动换算是同一条公式：W 永远朝镜头水平前方。运行时权威只住在 input（`getLook().lookMode`）；sim 与 renderer 都不感知 lookMode（ADR-38），渲染侧只有机位 yaw 来源差（locked 用角色 yaw / free 用喂入的 `simYaw`）。
+`free` 为**可切换**的自由视角（LOOK-R2 已落地，LK-04 收口）：镜头与面向解耦——分派整只收在 `input.sample()`：**移动矢量非零**时送 `yawFromDir(moveX, moveZ)`，面朝走向（= 世界系移动方向 `atan2(−moveX, −moveZ)`，§14-31）；**零位移**送 `yaw: null`，sim 见非有限值保持当前朝向——静止转镜头，人一动不动；W+S 对消的合零矢量同样落回 null，不会原地翻身。**locked 仍 1:1**：恒送 `cameraYawToSimYaw(θ)`，与视角轮之前的既有行为逐字一致（`input/index.test.js`「Input.yaw 按 lookMode 分派」与 `sim/look-yaw.test.js` 两侧锁死）。两种模式下移动换算是同一条公式：W 永远朝镜头水平前方。运行时权威只住在 input（`getLook().lookMode`）；sim 与 view 快照不感知 lookMode，renderer 持有的只是随帧镜像（ADR-38 v4.4 措辞），驱动的唯一分支是机位跟随角选源（契约 §14-35）：locked 用角色 yaw / free 用喂入的 `simYaw`。free 下面向与视线是**两个独立的角**，画面里角色可以露出侧面甚至正脸——这是特性不是回归；locked 的「绕不到正脸」另有渲染侧硬顶兜底（§15.3）。
 
-**切换四通道**（初值链左优先：URL > 存档 > 缺省 locked）：
+**切换四通道**（初值链左优先：URL > 存档 > 缺省 locked；任一通道切换都只换跟随角选源、**不传送机位**，见 §15.4）：
 
 | 通道 | 行为 |
 | --- | --- |
@@ -398,8 +398,27 @@ idle 与战斗逐掌**押韵不复制**（ART §16.0 快慢架 / §17.4 对齐�
 | `snapTeleport` | 60 | = 契约 `CAMERA_SNAP_TELEPORT`（§7.1） |
 | `snapMaxDist` | 20 | = 契约 `CAMERA_SNAP_MAX_DIST`（§7.1） |
 
-**过门机位 snap（ADR-39）**：hub（z ≈ −120）与裂岛（原点）错开 ~120m，过门 / 开局 / 换跟随目标一律 `snapCamera()` 吸附，时序冻结为 `input.setLook → feedLook → snapCamera`（契约 §13.2，顺序反了 = snap 到旧角度）。自动保险：跟随目标单帧位移 > `snapTeleport 60` 时渲染器自 snap，局内重生瞬移（≤ 2×arenaRadius = 40m）不得触发、弹簧甩镜手感保留；snap 后相机-目标距离 ≤ `snapMaxDist 20` 且机位在身后半平面（§14-32/33）。注：render 侧尚未导出同名契约常量，内部现以更敏感的 `TELEPORT_DIST 16` 判传送——按契约收敛归 O2/G1，本表只登记契约值、不复制内部判据。
+**过门机位 snap（ADR-39）**：hub（z ≈ −120）与裂岛（原点）错开 ~120m，过门 / 开局 / 换跟随目标一律 `snapCamera()` 吸附，时序冻结为 `input.setLook → feedLook → snapCamera`（契约 §13.2，顺序反了 = snap 到旧角度）。自动保险：跟随目标单帧位移 > `snapTeleport 60` 时渲染器自 snap，局内重生瞬移（≤ 2×arenaRadius = 40m）不得触发、弹簧甩镜手感保留；snap 后相机-目标距离 ≤ `snapMaxDist 20` 且机位在身后半平面（§14-32/33）。吸附名单只认「世界位置换了一处」的传送时刻——**切视角模式不在名单里**（§15.4）。注：render 侧尚未导出同名契约常量，内部现以更敏感的 `TELEPORT_DIST 16` 判传送——按契约收敛归 O2/G1，本表只登记契约值、不复制内部判据。
 
 **调参指南**：想镜头更贴身 / 更远先动 `restDist`（`dist` 初值同步 ±，两值保持 0.3 内）；想更「跟手」升 `posDamping`/`lookDamping`，但保持 look > pos（先看后到的次序别倒，`tuning.test.js` 锁死）；snap 两阈值是契约面，改值先过 §7.1 再动表。任何一处改完跑 `src/data/tuning.test.js`——它对照 render 实现逐项断言，两边不同数先红。
+
+### 15.3 locked 绕不到正脸：背后半平面硬顶（LOOK-R2 O2 已合入，`render/camera.js`；按实现登记）
+
+**产品承诺**：固定人物视角下镜头永远待在角色**背后**，任何转法都绕不到正脸。§15.1 的跟随角选源只保证**目标**机位在背后；弹簧阻尼只是「慢一点」，720°/s 级快速转身时实际机位仍会被甩出背后半平面——所以渲染侧另有一条**硬顶**，它是钳制不是又一层弹簧。
+
+- **几何**：背后半平面按 `LOCKED_YAW_SPAN = π/2 − 0.1` rad（≈ 84°）判——机位方位角允许落后角色面向至多这个夹角。0.1 rad 余量让「机位到角色前向的投影」恒为确定的负数（restDist 7.1 上约 −0.7m），断言拿到的不是可正可负的 0。
+- **夹两处**：目标 yaw 与机位本体各夹各的——机位弹簧（λ 6.2）比 yaw 弹簧（7.5）跟得还慢，只夹 yaw 时持续快转仍能把实际机位甩出界。机位收回时绕 focus **只转不推**：半径与高度不动，构图（距离、俯角）不变，读感是「镜头被转身推着走」。
+- **迟滞（整只让路）**：**上一帧还在半平面里**才拽得动这一帧（yaw 与机位各记各的迟滞位）；生效带宽 = `LOCKED_HOLD_RATE 30 rad/s` × dt 夹进 [0.25, 1.2] rad。30 rad/s ≈ 1700°/s，真人甩鼠标的持续转速远在其下——常规转速（≤270°/s）下硬顶逐位不介入、手感一行没改；一帧落后超出带宽 = 朝向被瞬移（切 V 那一帧壳层还没把角色转到视线上、重生改写朝向），硬拽就是一记甩镜，硬顶整只让路、归位交给弹簧。
+- **free 不夹**：renderer 只在 locked 时把角色 yaw 当 `behindYaw` 传进 `camera.update`，free 不传——自由视角本来就允许绕到侧面 / 正脸（契约 §14-35 双分支）。
+
+锁测：`render/look.test.js`「locked 背后半平面硬顶（camera.js）」与「同一角色 yaw，free 与 locked 的机位分野」（720°/s 甩视角 locked 恒在背后、free 同一甩法不受硬顶；常规转速逐位不介入）。`LOCKED_YAW_SPAN` / `LOCKED_HOLD_*` 是 O2 域实现常量，本节按实现登记；`CAMERA` 表（§15.2）字段不扩——既有列仍与 `render/camera.js` 逐项同数（`tuning.test.js` 在锁），render 侧改这几只常量时回修本节。
+
+### 15.4 切视角模式不传送机位（LOOK-R2 O2 已合入；按实现登记）
+
+locked ↔ free 换的是「机位绕谁转」（§14-35 选源），角色还站在原地——镜头顺着弹簧转过去即可，**不吸附**。snap（§15.2，ADR-39）只给「世界位置整个换了一处」的传送时刻：过门 hub ↔ arena、结算回程、换跟随目标、观战切回跟随、开局第一帧，外加单帧位移超阈值的自动保险；`renderer.setLookMode` 与 payload 携 `lookMode` 都**不武装吸附**——硬吸一下就成了过门那种瞬移。
+
+- free 里把视线转到正脸再切回 locked：归位走**纯弹簧**——§15.3 的硬顶因「落后太多 = 朝向被瞬移」整只让路，逐帧走位与纯弹簧逐位相同，不甩镜、不飞跃。
+- 切模式与过门互不干扰：换区照常武装吸附，切模式帧与同区帧都不武装——两件事各归各。
+- 锁测：`render/look.test.js`「切视角模式不吸附机位」四测。实机复核走冒烟台（`render/smoke.js`）：`?look=locked|free` 定起始模式，运行时按 V（与壳层同键位）来回切，镜头只顺弹簧转过去。
 
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。
