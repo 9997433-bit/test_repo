@@ -37,7 +37,9 @@ const LOCKED_FORWARD_MAX_ANGLE_RADIANS =
   (LOCKED_FORWARD_MAX_ANGLE_DEGREES * Math.PI) / 180;
 const LOCKED_TARGET_MAX_ANGLE_RADIANS = 1e-9;
 const LOOK_TURN_MIN_ANGLE_RADIANS = 0.5;
-const LOOK_YAW_MAX_ERROR_RADIANS = 1e-9;
+const INPUT_YAW_MAX_ERROR_RADIANS = 1e-9;
+// getView() 的公开契约把 yaw round4；容差略高于最坏 0.00005rad 量化误差。
+const VIEW_YAW_MAX_ERROR_RADIANS = 0.0001;
 const LOCKED_CAMERA_MAX_BEHINDNESS = -3;
 const DEFAULT_PROBE_SEEDS = Object.freeze([
   0x1a2b3c4d,
@@ -609,7 +611,7 @@ function runLookModeBehaviorProbe(
       shortestAngle(lockedInputAfter.yaw, lockedPlayerAfter.yaw),
     );
     if (
-      lockedYawError > LOOK_YAW_MAX_ERROR_RADIANS ||
+      lockedYawError > VIEW_YAW_MAX_ERROR_RADIANS ||
       Math.abs(
         shortestAngle(lockedPlayerBefore.yaw, lockedPlayerAfter.yaw),
       ) < LOOK_TURN_MIN_ANGLE_RADIANS
@@ -687,7 +689,7 @@ function runLookModeBehaviorProbe(
     const freeStationaryYawDelta = Math.abs(
       shortestAngle(freeYawBefore, freeStationaryPlayer.yaw),
     );
-    if (freeStationaryYawDelta > LOOK_YAW_MAX_ERROR_RADIANS) {
+    if (freeStationaryYawDelta > VIEW_YAW_MAX_ERROR_RADIANS) {
       throw new Error(
         `free view turn rotated a stationary player by ` +
           `${formatDegrees(freeStationaryYawDelta)}°`,
@@ -711,7 +713,7 @@ function runLookModeBehaviorProbe(
     const emittedFreeMoveError = Math.abs(
       shortestAngle(movementYaw, freeMovingInput.yaw),
     );
-    if (emittedFreeMoveError > LOOK_YAW_MAX_ERROR_RADIANS) {
+    if (emittedFreeMoveError > INPUT_YAW_MAX_ERROR_RADIANS) {
       throw new Error(
         `moving free input yaw missed its travel direction by ` +
           `${formatDegrees(emittedFreeMoveError)}°`,
@@ -726,7 +728,7 @@ function runLookModeBehaviorProbe(
     const freeMoveYawError = Math.abs(
       shortestAngle(movementYaw, freeMovingPlayer.yaw),
     );
-    if (freeMoveYawError > LOOK_YAW_MAX_ERROR_RADIANS) {
+    if (freeMoveYawError > VIEW_YAW_MAX_ERROR_RADIANS) {
       throw new Error(
         `moving free player yaw missed its travel direction by ` +
           `${formatDegrees(freeMoveYawError)}°`,
