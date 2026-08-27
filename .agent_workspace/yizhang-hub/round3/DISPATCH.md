@@ -36,4 +36,4 @@
 | --- | --- | --- | --- |
 | F1 契约对齐 | `claude-fable-5-thinking-xhigh` | `bc-767c53b9-6eb1-528d-a057-ba8c2ed03105` | 已派出 |
 | O4 结算回走道 | `claude-opus-5-thinking-high-fast` | `bc-83aeb01c-d8e2-54ab-8ce6-94ff66eb00b5` | 已派出 |
-| G1 锁表 | `gpt-5.6-sol-xhigh-fast` | `bc-6d9dd333-eb90-5729-aa76-67cb719e6260` | 已派出 |
+| G1 锁表 | `gpt-5.6-sol-xhigh-fast` | `bc-6d9dd333-eb90-5729-aa76-67cb719e6260` | 已合入 `cursor/yizhang-hub-r3-g1-tests-db8d`（round3-hub-sota 8 条） |
