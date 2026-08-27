@@ -126,11 +126,28 @@ export function createInput(dom, canvas, opts = {}) {
     state.edge[name] = true;
   }
 
-  /** V 键（与触控/菜单共用）的模式切换：翻一下并通知壳层（落存档 + HUD 提示）。 */
+  /**
+   * V 键（与触控钮 / 调试共用）的模式切换：翻一下并通知壳层（落存档 + HUD 回执）。
+   * 三条边角纪律：
+   *   · 禁用期间整只不切 —— 暂停 / 结算 / 失焦时 V 键与触控钮走的是这同一条路，
+   *     手滑一下不该把视角模式换掉。设置面板那条静默路走 setLookMode，不受此限。
+   *   · 先翻 state 再通知 —— `sample()` 每帧现读 `state.lookMode`，所以同一回合里
+   *     后面那次采样立刻按新模式分派，不用等下一帧。
+   *   · 壳层回调抛错不连坐 —— 存档写不进去（无痕模式 / 配额满）不该把这次翻转
+   *     炸回调用方：模式已经翻了，画面继续，只留一条 warn。
+   */
   function toggleLookMode() {
+    if (!state.enabled) return state.lookMode;
     state.lookMode = state.lookMode === "locked" ? "free" : "locked";
-    if (onLookModeChange) onLookModeChange(state.lookMode);
-    return state.lookMode;
+    const mode = state.lookMode;
+    if (onLookModeChange) {
+      try {
+        onLookModeChange(mode);
+      } catch (err) {
+        console.warn("[yizhang] onLookModeChange 抛错", err);
+      }
+    }
+    return mode;
   }
 
   function onKeyDown(e) {
@@ -171,7 +188,8 @@ export function createInput(dom, canvas, opts = {}) {
         pressEdge("slap");
         break;
       // V 独占一键切视角模式：不与 E/WASD/空格/Q/F 任何既有键位冲突，
-      // 长按不振荡（e.repeat 在上面已经整只提前返回）。
+      // 长按不振荡（e.repeat 在上面已经整只提前返回）；禁用态更早就返回了，
+      // 这里到得了就说明这一下算数。
       case "KeyV":
         toggleLookMode();
         break;
@@ -349,6 +367,7 @@ export function createInput(dom, canvas, opts = {}) {
      * 采样一帧输入。cameraYaw 缺省时用输入层自己维护的偏航。
      * `out.yaw` 按 lookMode 分派：locked 恒 1:1 送相机角的 sim 版；free 先按「保持朝向」
      * 起手（null），下面算出位移非零再改成走向角。禁用输入 = 零位移，free 下自然是 null。
+     * 分派现读 `state.lookMode`，不缓存：本回合按下的 V 到这里就已经是新模式。
      */
     sample(cameraYaw) {
       const out = emptyInput();
