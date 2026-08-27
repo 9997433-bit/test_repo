@@ -45,7 +45,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BLOOM_LAYER, FALLBACK_TINT, OCCLUDER_LAYER, PALETTE, markOccluder } from './config.js';
-import { smoothstep } from './noise.js';
+import { mulberry32, smoothstep } from './noise.js';
 import { resolveSkinLook, skinTable } from './skins.js';
 const TAU = Math.PI * 2;
 /** 右手（side=+1）拿主掌 slot 0，左手拿副掌 slot 1。 */
@@ -105,8 +105,18 @@ const CULL_DISTANCE = 80;
  *
  * 位置是弹簧插值的（damp 22），过门那 120m 会被它摊成一秒的「滑行」：镜头已经
  * 吸附到裂岛，人还在从安全区滑过来。正常位移一帧最多一米出头，这条线不会误伤。
+ *
+ * 登记在 `src/data/tuning.js` 的 `CHARACTERS.teleportDistance`——照 `CAMERA` ↔ `camera.js`
+ * 的老规矩，表是**登记不是接管**：实现权威在本文件，这里改值要回修那张表，对照断言
+ * 见本文件测试与 `src/data/tuning.test.js`。导出是为了让对照方直接读这一个数，
+ * 而不是各处再抄一遍 16。
+ *
+ * 16 **故意不等于**契约 `CAMERA_SNAP_TELEPORT = 60`（`./camera.js`）：本值管**模型**，
+ * 60 管**机位**。局内重生瞬移最远 2×arenaRadius = 40m，正夹在两者之间——人必须直接
+ * 出现在新位置（16 < 40），机位却不许 snap（60 > 40，弹簧甩镜的手感留着，契约 §14-33）。
+ * 两个数谁也别去凑谁。
  */
-const TELEPORT_DISTANCE = 16;
+export const TELEPORT_DISTANCE = 16;
 /** 这几种配件自己就盖住了头顶，素帽不必再长出来（也就不进躯干那份烘焙）。 */
 const ACCESSORY_HIDES_CAP = new Set(['hood', 'turban']);
 
@@ -378,9 +388,17 @@ function skinColor(hex, isLocal, mix = 0.6) {
   return c.lerp(new Color(PALETTE.cloth), 1 - mix);
 }
 
-export function createCharacters({ scene, quality, textures, skins = null }) {
+/**
+ * @param {object} opts
+ * @param {number|null} [opts.seed] 呼吸初相的可选种子。缺省（不给 / 给 null）仍是
+ *   `Math.random()`：一屋子人站桩时起伏不同步，那是有意的默认行为。给了有限数就换成
+ *   同一颗种子推出来的定序（`mulberry32`，同 island / vfx 的做法），跑分与回归要的是
+ *   逐次可复现——只影响初相，呼吸本身一个数没变。
+ */
+export function createCharacters({ scene, quality, textures, skins = null, seed = null }) {
   // 皮肤表取一次就够：`src/data/skins.js` 落地后 resolveSkins 自己改吃真表
   const table = skins || skinTable(null);
+  const breatheRand = Number.isFinite(seed) ? mulberry32(seed + 131) : Math.random;
   const root = new Group();
   root.name = 'characters';
   scene.add(root);
@@ -1064,7 +1082,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       slapPower: 1,
       hitT: -1,
       awaken: 0,
-      breathe: Math.random() * TAU,
+      breathe: breatheRand() * TAU,
     };
     chars.set(player.id, c);
     return c;
