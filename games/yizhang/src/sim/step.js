@@ -4,7 +4,7 @@ import { isSupported } from "./arena.js";
 import { PHYSICS } from "./constants.js";
 import { damageFloor } from "./floor.js";
 import { getDeps } from "./deps.js";
-import { playerInHub, resolveHubGround, stepHub } from "./hub.js";
+import { playerInHub, resolveHubGround, stepHub, swapHubLoadout } from "./hub.js";
 import { decideMatch } from "./match.js";
 import {
   applyKnockback,
@@ -98,23 +98,35 @@ function handleActions(state, p, input, mods) {
   const glove = activeGlove(p);
   const busy = p.attack.phase === "windup" || p.attack.phase === "strike";
 
-  // Q 换掌：0.4s 收掌锁
-  if (edge("switchGlove") && p.switchLockT <= 0 && !busy && mods.canAct) {
-    p.activeSlot = p.activeSlot === 0 ? 1 : 0;
-    p.switchLockT = state.config.switchLock;
-    p.attack.phase = "idle";
-    p.attack.t = 0;
-    p.slapCd = Math.max(p.slapCd, state.config.switchLock * 0.5);
-    pushEvent(state, {
-      type: "switch",
-      id: p.id,
-      slot: p.activeSlot,
-      gloveId: activeGlove(p).id,
-    });
+  /**
+   * 安全区空挥闸：站在安全区体积里的人不启动扇击 / 主动技 / 冲刺。
+   * combat 早就拒绝在安全区结算，但闸门在 sim 这边——不拦住的话，大厅按住鼠标照样
+   * 发 `slapStart`/`slap`（hits:0）并把 `stats.slaps` 记上去。走、看、跳、换掌、
+   * interact 不受影响。
+   */
+  const gated = playerInHub(state, p);
+
+  // Q 换掌：arena 是槽位切换 + 0.4s 收掌锁；hub 是主副交换、无锁（契约 §4.4）
+  if (edge("switchGlove")) {
+    if (gated) {
+      swapHubLoadout(state, p);
+    } else if (p.switchLockT <= 0 && !busy && mods.canAct) {
+      p.activeSlot = p.activeSlot === 0 ? 1 : 0;
+      p.switchLockT = state.config.switchLock;
+      p.attack.phase = "idle";
+      p.attack.t = 0;
+      p.slapCd = Math.max(p.slapCd, state.config.switchLock * 0.5);
+      pushEvent(state, {
+        type: "switch",
+        id: p.id,
+        slot: p.activeSlot,
+        gloveId: activeGlove(p).id,
+      });
+    }
   }
 
   // Shift 短冲
-  if (edge("dash") && p.dashCd <= 0 && p.dashT <= 0 && mods.canMove) {
+  if (!gated && edge("dash") && p.dashCd <= 0 && p.dashT <= 0 && mods.canMove) {
     let dx = input.moveX || 0;
     let dz = input.moveZ || 0;
     const l = len2(dx, dz);
@@ -141,7 +153,14 @@ function handleActions(state, p, input, mods) {
   }
 
   // 扇击：可按住连扇，有前摇后摇
-  if (input.slap && mods.canAct && p.attack.phase === "idle" && p.slapCd <= 0 && p.switchLockT <= 0) {
+  if (
+    !gated &&
+    input.slap &&
+    mods.canAct &&
+    p.attack.phase === "idle" &&
+    p.slapCd <= 0 &&
+    p.switchLockT <= 0
+  ) {
     p.attack.phase = "windup";
     p.attack.t = Math.max(0.01, glove.windup);
     p.attack.gloveId = glove.id;
@@ -152,7 +171,7 @@ function handleActions(state, p, input, mods) {
   }
 
   // E 主动技
-  if (edge("skill") && mods.canAct && p.attack.phase === "idle" && p.skillCd <= 0) {
+  if (!gated && edge("skill") && mods.canAct && p.attack.phase === "idle" && p.skillCd <= 0) {
     const deps = getDeps();
     const res = deps.combat.resolveSkill(state, p, glove, state.time);
     if (res && res.ok) {

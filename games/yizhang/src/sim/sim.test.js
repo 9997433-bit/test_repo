@@ -106,7 +106,8 @@ describe("依赖与纯净性", () => {
         return { hits: [] };
       },
     });
-    const s = createMatch({ seed: 7, botCount: 1 });
+    // 扇击要真的进 combat：安全区里的空挥闸不启动扇击，得先进裂岛
+    const s = createMatch({ seed: 7, botCount: 1, phase: "arena" });
     run(s, { p0: input({ slap: true }) }, 0.5);
     expect(called).toBeGreaterThan(0);
 
@@ -334,8 +335,15 @@ describe("扇击", () => {
 });
 
 describe("换掌", () => {
+  // 裂岛语义：activeSlot 切换 + 收掌锁。安全区那套（主副交换、无锁）在 hub-actions.test.js。
   it("Q 切换主副掌，0.4s 收掌锁", () => {
-    const s = createMatch({ seed: 2, botCount: 0, gloveId: "cotton", offhandId: "granite" });
+    const s = createMatch({
+      seed: 2,
+      botCount: 0,
+      gloveId: "cotton",
+      offhandId: "granite",
+      phase: "arena",
+    });
     const p = getPlayer(s, "p0");
     step(s, { p0: input({ switchGlove: true }) }, DT);
     expect(p.activeSlot).toBe(1);
@@ -353,7 +361,7 @@ describe("换掌", () => {
   });
 
   it("收掌锁期间不能扇", () => {
-    const s = createMatch({ seed: 2, botCount: 0, offhandId: "granite" });
+    const s = createMatch({ seed: 2, botCount: 0, offhandId: "granite", phase: "arena" });
     const p = getPlayer(s, "p0");
     step(s, { p0: input({ switchGlove: true }) }, DT);
     step(s, { p0: input({ slap: true }) }, DT);
@@ -983,7 +991,7 @@ describe("真身识别", () => {
       },
     });
     expect(getDeps().usingRealCombat).toBe(false);
-    const s = createMatch({ seed: 7, botCount: 1 });
+    const s = createMatch({ seed: 7, botCount: 1, phase: "arena" });
     run(s, { p0: input({ slap: true }) }, 0.5);
     expect(called).toBeGreaterThan(0);
   });
