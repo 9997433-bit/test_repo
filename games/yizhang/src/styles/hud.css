@@ -113,7 +113,10 @@
 
 /* ---- 战况列（左上，与右上播报对称）：全员击杀数 ----
    行钩子：.is-me 本机、.is-dead 重组中；身份色走行内 --row-color
-   （渲染层 player.color），或在行上设 data-glove 用识别色。 */
+   （渲染层 player.color），或在行上设 data-glove 用识别色。
+   侧走视线合同（ART §18.6，LOOK-R2）：free 下侧着走是常态，注视区
+   是横贯全宽的水平中带——侧带列硬顶在半屏之上。常态由 JS 封顶
+   （战况 ≤4 行），这两行只是失效保险；纵向 clip、横向不裁。 */
 .yz-score {
   position: absolute;
   top: calc(var(--yz-inset-t) + 56px);
@@ -123,6 +126,9 @@
   align-items: flex-start;
   gap: var(--yz-s-h);
   min-width: 0;
+  max-height: calc(50vh - 56px - var(--yz-inset-t));
+  overflow-x: visible;
+  overflow-y: clip;
 }
 
 .yz-score-row {
@@ -166,7 +172,9 @@
   font-weight: 600;
 }
 
-/* ---- 击杀播报（右上，纵向堆叠，右滑入） ---- */
+/* ---- 击杀播报（右上，纵向堆叠，右滑入） ----
+   同上：半屏硬顶是 §18.6 的失效保险（JS 常态封顶 ≤5 条 · 4.2s 自清）；
+   overflow-x 留 visible，条目右滑入场不受裁。 */
 .yz-feed {
   position: absolute;
   top: calc(var(--yz-inset-t) + 56px);
@@ -176,6 +184,9 @@
   align-items: flex-end;
   gap: var(--yz-s-h);
   max-width: 44vw;
+  max-height: calc(50vh - 56px - var(--yz-inset-t));
+  overflow-x: visible;
+  overflow-y: clip;
 }
 
 .yz-feed-item {
@@ -490,7 +501,10 @@
    状态钩子：#hud[data-look="locked"|"free"]——O4 随 input.getLookMode()
    贴的装饰镜像（权威仍在 input，ADR-38）。锁视角的常驻指示只有
    准星两侧两道 1px 短刻：读作「面向已夹紧到视线」，低对比、
-   无文字、无圈无光；free / 未贴属性 = 裸点，与旧 DOM 完全同相。 */
+   无文字、无圈无光；free / 未贴属性 = 裸点，与旧 DOM 完全同相。
+   LOOK-R2 复核：free 恒裸点是合同的另一半——不给 free 加第二枚
+   常驻指示（面向箭头 / 罗盘 / 准星偏移都算）。准星标的是视线中心，
+   不是掌的朝向；侧走时朝向读角色本体（§18.2 / §18.6）。 */
 #hud[data-look="locked"] .yz-reticle::before,
 #hud[data-look="locked"] .yz-reticle::after {
   content: "";
@@ -510,7 +524,9 @@
   right: -9px;
 }
 
-/* V 切换一瞬反馈：准星下方一行小字（「视角锁定 / 自由视角」）。
+/* V 切换一瞬反馈：准星下方一行小字（「视角锁定 / 自由视角」——
+   文案终稿 = GDD §15.1，与 ui/hud.js 的 LOOK_LABEL 同词，
+   LOOK-R2 对账一致）。
    低对比骨白灰 + 极薄暗底，无框、无金、无发光——是确认回执不是
    通知，所以比 .yz-toast 更矮更静。常驻节点：JS 写文本 + 加
    .is-on，约 0.9s 后移除（连按 V 重置计时即可，不排队）；
@@ -712,9 +728,10 @@
     height: 24px;
   }
 
-  /* 坞占了左上，战况列让到坞下方 */
+  /* 坞占了左上，战况列让到坞下方；锚点下移后半屏硬顶同步收紧（§18.6） */
   [data-touch="1"] .yz-score {
     top: calc(var(--yz-inset-t) + 190px);
+    max-height: calc(50vh - 190px - var(--yz-inset-t));
   }
 
   .yz-feed {
