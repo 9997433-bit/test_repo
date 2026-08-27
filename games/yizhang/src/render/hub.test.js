@@ -484,6 +484,37 @@ describe('阶段切换与资源', () => {
     }
   });
 
+  // hub.js 头部按项列了绘制调用预算，实测 49。那份清单只有被盯着才不会过期：
+  // 这里把上限钉死，免得以后「再加一个小网格」或者哪只掌没合批悄悄把预算涨上去。
+  it('安全区子树的绘制调用维持在预算内（8 座全开、主副都选上）', () => {
+    const { hub, state } = mount('high');
+    const view = hubOf(state);
+    advance(
+      hub,
+      {
+        ...view,
+        mainGloveId: 'granite',
+        offGloveId: 'meteor',
+        pedestals: view.pedestals.map((p) => ({
+          ...p,
+          slot: p.gloveId === 'granite' ? 'main' : p.gloveId === 'meteor' ? 'off' : null,
+          selected: p.gloveId === 'granite' || p.gloveId === 'meteor',
+        })),
+      },
+      60
+    );
+
+    let draws = 0;
+    hub.root.traverse((o) => {
+      if (!o.visible) return;
+      // 实例网格 8 座只算一次 —— 合批的意义就在这儿
+      if (o.isInstancedMesh || o.isMesh || o.isPoints || o.isLine) draws++;
+    });
+    expect(draws).toBeGreaterThan(24); // 8 掌 ×3 份材质，低于这个数说明掌没建全
+    expect(draws).toBeLessThanOrEqual(52); // 实测 49，留一点余量
+    hub.dispose();
+  });
+
   it('台座数量变少（替身掌表）时多余的座会被回收', () => {
     sim.resetDeps();
     sim.installData({ GLOVES: GLOVES.slice(0, 3) });
