@@ -386,11 +386,15 @@ describe('切视角模式不吸附机位', () => {
   it('归位途中硬顶让路：机位从正脸转回背后，逐帧走位与纯弹簧逐位相同', () => {
     // 角色**不转身**地停在那里（冒烟台 ?tour=0 就是这个局面），镜头得自己从正脸绕回去。
     // 这一段路上硬顶必须整只让路：拽一把就是一记甩镜，而不是「镜头有重量」。
+    // 生产路径切 V 会 releaseBehind()（renderer.setLookMode），把 R3 咬合闸也松开；
+    // 这里直接打 camera.update，要自己松，否则 snap 留下的 behindHeld 会按住半圈。
     const held = createCamera({});
     const spring = createCamera({});
     const at = new Vector3(0, 0, 0);
     held.snap(at, Math.PI);
     spring.snap(at, Math.PI);
+    held.releaseBehind();
+    spring.releaseBehind();
 
     let maxStep = 0;
     let prev = held.state.pos.clone();
@@ -448,7 +452,7 @@ describe('locked 背后半平面硬顶（camera.js）', () => {
     expect(lockedHoldSlack(1 / 30)).toBeGreaterThan(slack);
   });
 
-  it('rig：给了 behindYaw 才夹，不给（free）就让它绕过去', () => {
+  it('rig：behindYaw 才夹 yaw；不给时 yaw 可落后，位置仍被 R3 咬合闸按住', () => {
     const focus = new Vector3(0, 0, 0);
     const face = 0.4;
     const held = createCamera({});
@@ -467,9 +471,10 @@ describe('locked 背后半平面硬顶（camera.js）', () => {
       );
       expect(behindness(held.state.pos, focus, yaw)).toBeLessThan(0);
     }
-    // 没夹的那台被甩到了半平面外面 —— 硬顶不是摆设
+    // R2 迟滞只夹 locked 的 yaw：没传 behindYaw 时方位角可以落后出半平面
     expect(Math.abs(shortestAngle(yaw, loose.state.yaw))).toBeGreaterThan(LOCKED_YAW_SPAN);
-    expect(behindness(loose.state.pos, focus, yaw)).toBeGreaterThan(0);
+    // R3 咬合闸按跟随角按住机位（两闸都跑），所以位置仍在背后，不会翻到正脸
+    expect(behindness(loose.state.pos, focus, yaw)).toBeLessThan(0);
   });
 
   it('常规转速（≤270°/s）下硬顶逐位不介入：手感一行没改', () => {
