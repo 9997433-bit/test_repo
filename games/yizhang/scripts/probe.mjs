@@ -27,7 +27,9 @@ const HANG_TIMEOUT_MS = 5_000;
 const MOVEMENT_EPSILON_SQUARED = 1e-8;
 const HUB_SCRIPT_TIMEOUT_STEPS = 60 * 20;
 const DEFAULT_PROBE_SEEDS = Object.freeze([
-  0x1a2b3c4d, 0x5eed1234, 0xc0ffee42,
+  0x1a2b3c4d,
+  0x5eed1234,
+  0xc0ffee42,
 ]);
 const MODEL_SLUG = process.env.MODEL_SLUG || 'yizhang-probe';
 
@@ -55,7 +57,10 @@ async function superviseProbe(seeds) {
     arenaKills: minimumMetric(passedRuns, 'arenaKills'),
     movedPlayers: minimumMetric(passedRuns, 'movedPlayers'),
     p99StepMs: maximumMetric(passedRuns, 'p99StepMs'),
-    ai: passedRuns.every((run) => run.ai === 'think') ? 'think' : 'unavailable',
+    ai:
+      allPassed && passedRuns.every((run) => run.ai === 'think')
+        ? 'think'
+        : 'unavailable',
     wiredCombat:
       allPassed && passedRuns.every((run) => run.wiredCombat === true),
     runs,
