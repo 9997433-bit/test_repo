@@ -94,6 +94,23 @@ function damp(current, target, lambda, dt) {
   return current + (target - current) * (1 - Math.exp(-lambda * dt));
 }
 
+const hsl = { h: 0, s: 0, l: 0 };
+
+/**
+ * 识别色漆的明暗档。
+ *
+ * 不能直接 `multiplyScalar(boost)`：木棉这类本来就亮的识别色乘完会削顶，
+ * 三个通道一起顶到 1 就洗成白的，八座的色相全丢了。改成只抬 HSL 的亮度、
+ * 保住色相，焦点态因此是「更亮的那个金」而不是「白」。
+ * 压暗时同步褪色 —— 没点亮的座是块石头，不是暗着的彩漆。
+ */
+function identShade(out, base, boost) {
+  base.getHSL(hsl);
+  const l = boost >= 1 ? hsl.l + (0.95 - hsl.l) * (1 - 1 / boost) : hsl.l * boost;
+  const s = hsl.s * Math.min(1, boost * 0.85 + 0.15);
+  return out.setHSL(hsl.h, s, Math.min(0.9, Math.max(0.02, l)));
+}
+
 /** 走道尺寸变了才需要重铺；每帧比对这个签名就够。 */
 function walkwaySignature(hub) {
   const w = hub.walkway;
@@ -703,11 +720,11 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
 
       const focused = ped.focused && ped.unlocked;
       // 漆的亮度：焦点最亮，选中次之，未解锁压成石色 —— 全靠反射率，不靠自发光
-      const boost = !ped.unlocked ? 0.34 : focused ? 1.55 : ped.slot ? 1.2 : 0.9;
+      const boost = !ped.unlocked ? 0.3 : focused ? 1.7 : ped.slot ? 1.25 : 0.82;
       const key = `${boost.toFixed(2)}`;
       if (rec.ringKey !== key) {
         rec.ringKey = key;
-        tmpColor.copy(rec.identBase).multiplyScalar(boost);
+        identShade(tmpColor, rec.identBase, boost);
         ringMesh.setColorAt(i, tmpColor);
         if (ringMesh.instanceColor) ringMesh.instanceColor.needsUpdate = true;
         rec.palm.paint.color.copy(tmpColor);

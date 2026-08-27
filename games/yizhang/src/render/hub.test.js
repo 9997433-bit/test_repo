@@ -14,10 +14,10 @@
 // 所以这里给一份空贴图库 —— 材质允许 map 为 null，形状与状态照样能验。
 
 import { describe, expect, it } from 'vitest';
-import { Scene, Vector3 } from 'three';
+import { Color, Scene, Vector3 } from 'three';
 import * as sim from '../sim/index.js';
 import { GLOVES } from '../data/gloves.js';
-import { QUALITY } from './config.js';
+import { GLOVE_TINT, QUALITY } from './config.js';
 import { createHubScene } from './hub.js';
 import { IDLE_VFX_KIND, idleVfxKind } from './hub-vfx.js';
 import { PALM_SHAPE, createPalmFactory, palmFingerAxis } from './hub-palm.js';
@@ -250,6 +250,41 @@ describe('台座状态：focus 抬起、主副可分', () => {
     // 没被聚焦的座没有跟着抬
     expect(hub.pedestals.get('frost').palm.group.position.y).toBeLessThan(idleY + 0.05);
     hub.dispose();
+  });
+
+  // 回归：焦点漆原先是 identBase.multiplyScalar(boost)。Color 自己不截断，所以在对象里
+  // 看不出问题，可一上屏帧缓冲就把 >1 的通道削平 —— 木棉的红会顶到 1.31、冰霜的绿蓝顶到
+  // 1.17/1.47，两只都褪成同一种白，八座的识别色就废了。断言「提亮后仍留在可显示范围内」。
+  it('漆提亮后不越界：焦点态不会被帧缓冲削顶褪成白色', () => {
+    const hsl = { h: 0, s: 0, l: 0 };
+    // 木棉（亮金）与冰霜（亮青）是最容易削顶的两只
+    for (const gloveId of ['cotton', 'frost']) {
+      const { hub, state } = mount('high');
+      const view = hubOf(state);
+      advance(hub, view, 30);
+      const idle = hub.pedestals.get(gloveId).palm.paint.color.clone();
+
+      advance(
+        hub,
+        {
+          ...view,
+          focusGloveId: gloveId,
+          pedestals: view.pedestals.map((p) => ({ ...p, focused: p.gloveId === gloveId })),
+        },
+        60
+      );
+
+      const lit = hub.pedestals.get(gloveId).palm.paint.color;
+      expect(lit.r + lit.g + lit.b).toBeGreaterThan(idle.r + idle.g + idle.b); // 确实更亮
+      for (const ch of [lit.r, lit.g, lit.b]) expect(ch).toBeLessThanOrEqual(1);
+      lit.getHSL(hsl);
+      expect(hsl.s).toBeGreaterThan(0.25); // 还是有色的，不是灰白
+      new Color(GLOVE_TINT[gloveId]).getHSL(hsl);
+      const baseHue = hsl.h;
+      lit.getHSL(hsl);
+      expect(Math.abs(hsl.h - baseHue)).toBeLessThan(0.02); // 色相没跑
+      hub.dispose();
+    }
   });
 
   it('主掌与副掌的标记不一样：主掌一整圈，副掌只有半圈', () => {

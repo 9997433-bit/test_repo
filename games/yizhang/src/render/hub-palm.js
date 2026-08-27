@@ -274,17 +274,19 @@ export function createPalmFactory({ quality, textures }) {
     return x;
   };
 
+  // 展示掌比角色手上那副亮一档：它是常年被人摸的陈列品（PALETTE.leather 往 leatherWorn 靠），
+  // 而且玩家会凑到跟前看。纯 PALETTE.leather 在暮色天空前只剩一个黑剪影，分节全看不见。
   const leather = keep(
     new MeshStandardMaterial({
-      color: new Color(PALETTE.leather),
+      color: new Color(PALETTE.leather).lerp(new Color(PALETTE.leatherWorn), 0.5),
       map: null,
       roughnessMap: textures?.leather?.rough ?? null,
       normalMap: quality.normalMaps ? textures?.leather?.normal ?? null : null,
       normalScale: new Vector2(0.85, 0.85),
-      roughness: 0.8,
+      roughness: 0.76,
       metalness: 0,
       vertexColors: true,
-      envMapIntensity: 0.45,
+      envMapIntensity: 0.6,
     })
   );
 
