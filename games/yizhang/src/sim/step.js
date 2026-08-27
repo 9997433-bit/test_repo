@@ -259,6 +259,8 @@ export function applyHits(state, attacker, hits, source) {
       x: hit.hitX ?? target.x,
       y: target.y,
       z: hit.hitZ ?? target.z,
+      gloveId: hit.gloveId || attacker.attack.gloveId || activeGlove(attacker).id,
+      skillId: hit.skillId || null,
     });
   }
 

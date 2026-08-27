@@ -151,6 +151,9 @@ function digestEvents(state, list) {
           id: e.parrierId,
           targetId: e.attackerId,
           power: e.power || 0,
+          gloveId: e.gloveId || null,
+          skillId: e.skillId || "parry",
+          attackerGloveId: e.attackerGloveId || null,
         });
         break;
       case "meteorImpact":
@@ -160,10 +163,17 @@ function digestEvents(state, list) {
           x: e.x,
           z: e.z,
           radius: e.radius,
+          gloveId: e.gloveId || null,
+          skillId: e.skillId || null,
         });
         break;
       case "ghostSlap":
-        push(state, { type: "ghostSlap", id: e.attackerId, targetId: e.targetId });
+        push(state, {
+          type: "ghostSlap",
+          id: e.attackerId,
+          targetId: e.targetId,
+          gloveId: e.gloveId || null,
+        });
         break;
       default:
         // slap / slapWhiff / skillHit / skillCast / kill / respawn：sim 自己已经发过等价事件
@@ -207,6 +217,7 @@ function toSimHits(raw) {
       impulse: { x: imp.x || 0, y: imp.y || 0, z: imp.z || 0 },
       applied: true,
       skillId: h.skillId || null,
+      gloveId: typeof h.gloveId === "string" ? h.gloveId : null,
     });
   }
   return out;

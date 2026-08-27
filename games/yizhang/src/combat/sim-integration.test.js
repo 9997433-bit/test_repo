@@ -165,6 +165,7 @@ describe("扇击经 sim.step", () => {
     const hit = events.find((e) => e.type === "hit" && e.targetId === target.id);
     expect(hit).toBeTruthy();
     expect(hit.id).toBe(attacker.id);
+    expect(hit.gloveId).toBe("cotton");
     expect(target.hitsTaken).toBe(1);
     expect(Math.hypot(target.vx, target.vz)).toBeGreaterThan(1);
   });
