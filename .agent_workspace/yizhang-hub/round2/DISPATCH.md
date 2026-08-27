@@ -35,7 +35,7 @@
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
 | F1 契约收口 | `claude-fable-5-thinking-xhigh` | `bc-3703b736-e805-5387-9504-a9ef41455e13` | 已合入 `cursor/yizhang-hub-r2-f1-contract-db8d`（v4.1 + ADR-33…35；空挥闸按 O1 空间闸补记） |
-| O2 渲染 | `claude-opus-5-thinking-high-fast` | `bc-164c2bad-45c0-51f0-9bb9-98d50a8065af` | 已派出 |
+| O2 渲染 | `claude-opus-5-thinking-high-fast` | `bc-164c2bad-45c0-51f0-9bb9-98d50a8065af` | 已合入 `cursor/yizhang-hub-r2-o2-render-db8d`；父调度补真表握手（`skinAppearance` + `createRenderer({data,skins})`） |
 | O4 壳 | `claude-opus-5-thinking-high-fast` | `bc-3b73fda9-42bc-5fba-ae6e-2ab33ced6c5c` | 已合入 `cursor/yizhang-hub-r2-o4-shell-db8d`（pitch 喂入、再来一局≠回安全区、皮肤真表选择器） |
 
 ### Wave 3
@@ -48,4 +48,6 @@
 
 ### Wave 4
 
-F4 复验（等前面合入）
+| 席位 | 模型 | Agent ID | 状态 |
+| --- | --- | --- | --- |
+| F4 复验 | `claude-fable-5-thinking-xhigh` | （派出后回填） | 只写 `docs/SOTA_CHECKLIST.md` / `docs/ACCEPTANCE.md`；保留手感 §10/§11 与大厅 §11/§12；重勾 HV、HG-02（已绿）、皮肤 mesh、pitch、空挥、再来一局≠回安全区 |
