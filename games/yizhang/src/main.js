@@ -255,16 +255,27 @@ async function boot() {
     input.setLookMode(next.lookMode);
     // 收敛后的那个值才是镜像与一瞬反馈的依据：设置板这条路与 V 键走同一枚反馈
     shell.setLookMode(input.getLookMode());
+    // Y 轴反转：面板那一格即时打过 input.setInvertY 了，缺的是落盘这一段 ——
+    // 不写进存档，刷新一下开关就弹回「关」。
+    // 面板没报这一项（老壳层、或只带部分字段的 payload）就沿用存档现值：
+    // updateSave 是展开合并、saveSave 又走 JSON.stringify，`invertY: undefined`
+    // 会把这个 key 整只从存档里抹掉，下次 loadSave 补默认值 false ——
+    // 那等于一次不相干的设置改动顺手把玩家开着的反转关了。
+    const invertY = typeof next.invertY === "boolean" ? next.invertY : !!save.invertY;
     save = updateSave({
       quality: next.quality,
       muted: next.muted,
       lookSensitivity: next.sensitivity,
+      invertY,
       pointerLock: next.pointerLock,
       touch: next.touch,
       lookMode: input.getLookMode(),
     });
     audio.setMuted(next.muted);
     input.setSensitivity(next.sensitivity);
+    // 与 sensitivity / pointerLock 同一种姿势：面板是入口，applySettings 是收口，
+    // 从别处进来的 payload 也能把运行值摆正（对面板那格来说是幂等的复读）。
+    input.setInvertY(invertY);
     input.setPointerLock(next.pointerLock);
     if (next.quality === "auto") {
       if (!probe || probe.done) startProbe();
