@@ -455,6 +455,8 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 **编排层补记（F2 合入后）**：`docs/ART_DIRECTION.md` §13/§14 与 `src/styles/hub.css` 已合入（后注入压制 O4 `ui/hub.css` 兜底）。洞 2 的「F2 缺席」关闭；Round 2 只剩「devtools 逐类核对生效来源 / O4 收缩为结构 fallback」。洞 3 仍开。
 
+**编排层补记（G2 @ `9767c02`）**：`scripts/probe.mjs` 显式 `phase:'hub'`。本机复跑 `npm run probe` **PASS**（3600 步，hub→arena，`arenaKills:1`，`wiredCombat:true`，`hubJourney.equippedAtStep=51` / `enteredArenaAtStep=227`）。洞 3 / HG-02 关闭。harness 缺省仍为 arena。
+
 | 用户目标 | 现状基线（Fable-4 实测） | L1 可玩线（Round 1 全绿即达） | SOTA 线（Round 2/3 才算兑现） |
 |---|---|---|---|
 | 开局在另一区域（安全区） | sim/壳层全链在：缺省 `phase='hub'`、p0 落走道 (0,−106)、免战免掉落、Bot 留裂岛；**3D 画面无走道**（O2 缺席，「盲走」） | HB-01 + HV-01 几何桩：脚下有可见走道 | 场景光影/磨损/暮蓝暖黄按 R 表评审；灰度剪影可读 |
