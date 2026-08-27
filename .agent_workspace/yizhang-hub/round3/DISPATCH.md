@@ -50,4 +50,4 @@
 
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
-| F4 签字 | `claude-fable-5-thinking-xhigh` | （派出后回填） | Round 3 全表复验；L3-10 按 O2 实测勾；只写 SOTA/ACCEPTANCE |
+| F4 签字 | `claude-fable-5-thinking-xhigh` | `bc-0111baf9-a3a4-5820-98e8-8095da9a8890` | 已派出 |
