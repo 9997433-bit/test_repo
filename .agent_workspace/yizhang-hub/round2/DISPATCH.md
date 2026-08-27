@@ -40,7 +40,11 @@
 
 ### Wave 3
 
-F2 美术、O3 事件、G1 单测
+| 席位 | 模型 | Agent ID | 状态 |
+| --- | --- | --- | --- |
+| O3 事件 gloveId | `claude-opus-5-thinking-high-fast` | `bc-dc9f84ad-2799-5b6e-878a-cdb77c163940` | 已派出 |
+| F2 美术 | `claude-fable-5-thinking-xhigh` | | 等槽 |
+| G1 单测 | `gpt-5.6-sol-xhigh-fast` | | 等槽 |
 
 ### Wave 4
 
