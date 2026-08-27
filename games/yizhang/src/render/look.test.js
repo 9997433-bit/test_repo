@@ -1,9 +1,11 @@
 // 固定人物视角 / 机位吸附 / yaw 空间的判决性单测。
 //
 // 三条要证的事（GOAL：yizhang-look）：
-//   a) setLook 吃的是 **simYaw**。同一份 payload 里的 `yaw` 是相机方位角，
-//      原样当 sim yaw 用会把机位拧到角色脸前 —— 这里连「拧反了长什么样」一起断言，
-//      免得下次有人把优先级改回去还以为两个字段等价。
+//   a) setLook 吃的是 **simYaw**。水平角离开输入层前就已经换算成 sim 空间，
+//      所以真货 payload 的 `yaw` 与 `simYaw` 是同一个数（core/look.js）；
+//      两个字段真不一样时（老壳 / 手搓 payload）以 simYaw 为准。相机方位角
+//      原样当 sim yaw 用会把机位拧到角色脸前 —— 这里连「拧反了长什么样」一起
+//      断言，免得下次有人把相机系角重新喂回 lookYaw。
 //   b) 过门（hub z ≈ -120 ↔ arena 原点）机位是**吸附**过去的，不是弹簧飞越 120m。
 //   c) lookMode === 'locked' 时镜头在角色**背后**，不是正脸。
 //
@@ -17,6 +19,8 @@ import { YizhangRenderer } from './renderer.js';
 import { forwardFromYaw } from './view.js';
 // 壳层每帧喂进来的就是这份 payload（core/look.js）。用真货喂，才算证明了整条链路。
 import { lookPayload } from '../core/look.js';
+// 相机方位角 → sim 角的唯一换算处：反证里要自己造一个「没换算过」的角。
+import { cameraYawToSimYaw } from '../core/view.js';
 
 const HUB_Z = -120;
 
@@ -49,19 +53,34 @@ function follow(r, focus, local, frames = 180) {
 }
 
 describe('setLook 的 yaw 空间', () => {
-  it('simYaw 优先：同一份 payload 里的相机系 yaw 不许当 sim yaw 用', () => {
+  it('真货 payload：两个字段都是 sim 空间的同一个数，收进来的就是它', () => {
     const r = rigged();
     const payload = lookPayload({ yaw: 0.8, pitch: 0.3 });
 
-    // 前提：两个字段真的不是一个数，否则这条测试什么都没测
-    expect(Math.abs(shortestAngle(payload.yaw, payload.simYaw))).toBeGreaterThan(0.5);
+    // 契约：水平角离开输入层前必须已经是 sim 空间，相机系角不出输入层
+    expect(payload.yaw).toBe(payload.simYaw);
+    expect(payload.simYaw).toBeCloseTo(cameraYawToSimYaw(0.8), 12);
 
     const out = r.setLook(payload);
     expect(out.yaw).toBeCloseTo(payload.simYaw, 12);
     expect(r.lookYaw).toBeCloseTo(payload.simYaw, 12);
-    // getLook 报的是「实际在用的 sim yaw」，不是喂进来的相机系角
+    // getLook 报的是「实际在用的 sim yaw」，两个口同值
     expect(r.getLook().simYaw).toBeCloseTo(payload.simYaw, 12);
     expect(r.getLook().yaw).toBeCloseTo(payload.simYaw, 12);
+  });
+
+  it('simYaw 优先：两个字段真不一样时，yaw 不许顶替 simYaw', () => {
+    const r = rigged();
+    // 手搓一份「yaw 还是相机方位角」的 payload（老壳 / 第三方调用者）
+    const cameraYaw = 0.8;
+    const simYaw = cameraYawToSimYaw(cameraYaw);
+    // 前提：两个字段真的不是一个数，否则这条测试什么都没测
+    expect(Math.abs(shortestAngle(cameraYaw, simYaw))).toBeGreaterThan(0.5);
+
+    const out = r.setLook({ yaw: cameraYaw, pitch: 0.3, simYaw });
+    expect(out.yaw).toBeCloseTo(simYaw, 12);
+    expect(r.lookYaw).toBeCloseTo(simYaw, 12);
+    expect(r.getLook().yaw).toBeCloseTo(simYaw, 12);
   });
 
   it('只有 yaw（老壳）时按 sim 空间收；显式 null 交还给角色朝向', () => {
@@ -101,27 +120,43 @@ describe('lookMode', () => {
   });
 
   it('相机系 yaw 当 sim yaw 用就会绕到脸前 —— 这正是要修的那个 bug', () => {
-    // 反证：把 payload.yaw（相机方位角）原样喂进 lookYaw。
-    // 取 θ = π/4：此时相机系角与它对应的 sim 角正好差 π，机位整个翻到正脸。
-    const payload = lookPayload({ yaw: Math.PI / 4, pitch: 0 });
-    const wrong = rigged({ lookMode: 'free', lookYaw: payload.yaw });
-    const right = rigged({ lookMode: 'free', lookYaw: payload.simYaw });
+    // 反证：绕过输入层，把一个**没换算过**的相机方位角直接塞进 setLook 的 sim 口
+    // （只给 yaw、不给 simYaw，正是老壳那条路）。取 θ = π/4：此时相机系角与它
+    // 对应的 sim 角正好差 π，机位整个翻到正脸。
+    const cameraYaw = Math.PI / 4;
+    const simYaw = cameraYawToSimYaw(cameraYaw);
+    const wrong = rigged({ lookMode: 'free' });
+    const right = rigged({ lookMode: 'free' });
+    wrong.setLook({ yaw: cameraYaw });
+    right.setLook({ simYaw });
 
     const wrongPos = follow(wrong, focus, local);
     const rightPos = follow(right, focus, local);
     // 相机系角对应的「身后」正好落在这套 sim 朝向的前半平面上
-    expect(behindness(wrongPos, focus, payload.simYaw)).toBeGreaterThan(3);
-    expect(behindness(rightPos, focus, payload.simYaw)).toBeLessThan(-3);
+    expect(behindness(wrongPos, focus, simYaw)).toBeGreaterThan(3);
+    expect(behindness(rightPos, focus, simYaw)).toBeLessThan(-3);
   });
 
   it('free：用喂进来的 sim yaw；没喂就跟角色朝向（未接线时的老路仍然对）', () => {
     const r = rigged({ lookMode: 'free' });
     expect(r._followYaw(local)).toBeCloseTo(SIM_YAW, 12); // 没喂
-    r.setLook(lookPayload({ yaw: 0.15, pitch: 0 }));
-    expect(r._followYaw(local)).toBeCloseTo(lookPayload({ yaw: 0.15 }).simYaw, 12);
+    // 整份 payload 带着 lookMode，自由视角这帧得是 free，否则喂进去的朝向不算数
+    const payload = lookPayload({ yaw: 0.15, pitch: 0, lookMode: 'free' });
+    r.setLook(payload);
+    expect(r.lookMode).toBe('free');
+    expect(r._followYaw(local)).toBeCloseTo(payload.simYaw, 12);
 
     const pos = follow(r, focus, local);
     expect(behindness(pos, focus, r.lookYaw)).toBeLessThan(-3);
+  });
+
+  it('payload 里的 lookMode 说了算：缺省 locked 会把 free 掰回固定人物视角', () => {
+    const r = rigged({ lookMode: 'free' });
+    // 输入层没报模式时 lookPayload 收成 locked，渲染器就该跟着回 locked，
+    // 此时喂进来的朝向让位给角色自己的 yaw（镜头钉背后）
+    r.setLook(lookPayload({ yaw: 0.15, pitch: 0 }));
+    expect(r.lookMode).toBe('locked');
+    expect(r._followYaw(local)).toBeCloseTo(SIM_YAW, 12);
   });
 
   it('缺省 locked，且「没喂朝向」时仍然跟角色自己的 yaw', () => {
