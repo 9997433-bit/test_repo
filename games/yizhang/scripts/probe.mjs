@@ -14,6 +14,7 @@ import {
   findNonFinite,
   getWiredCombat,
   getPlayers,
+  loadHeadlessLookRenderer,
   loadOptionalAi,
   loadSimulation,
   makeProbeInputs,
@@ -26,6 +27,14 @@ const P99_WARNING_MS = 50;
 const HANG_TIMEOUT_MS = 5_000;
 const MOVEMENT_EPSILON_SQUARED = 1e-8;
 const HUB_SCRIPT_TIMEOUT_STEPS = 60 * 20;
+// 视角契约阈值：snap 后水平机位必须在角色 20m 内，禁止 hub→arena 的 ~120m 飞越。
+const CAMERA_SNAP_MAX_DIST = 20;
+// locked 下角色前向与相机水平前向近似同向；同时钉点积与夹角，避免单一指标误读。
+const LOCKED_FORWARD_MIN_DOT = 0.999;
+const LOCKED_FORWARD_MAX_ANGLE_DEGREES = 3;
+const LOCKED_FORWARD_MAX_ANGLE_RADIANS =
+  (LOCKED_FORWARD_MAX_ANGLE_DEGREES * Math.PI) / 180;
+const LOCKED_TARGET_MAX_ANGLE_RADIANS = 1e-9;
 const DEFAULT_PROBE_SEEDS = Object.freeze([
   0x1a2b3c4d,
   0x5eed1234,
@@ -56,6 +65,12 @@ async function superviseProbe(seeds) {
     kills: minimumMetric(passedRuns, 'kills'),
     arenaKills: minimumMetric(passedRuns, 'arenaKills'),
     movedPlayers: minimumMetric(passedRuns, 'movedPlayers'),
+    cameraSnapMaxDist: maximumMetric(passedRuns, 'cameraSnapMaxDist'),
+    lockedForwardMinDot: minimumMetric(passedRuns, 'lockedForwardMinDot'),
+    lockedForwardMaxAngleDeg: maximumMetric(
+      passedRuns,
+      'lockedForwardMaxAngleDeg',
+    ),
     p99StepMs: maximumMetric(passedRuns, 'p99StepMs'),
     ai:
       allPassed && passedRuns.every((run) => run.ai === 'think')
@@ -149,6 +164,8 @@ function superviseProbeSeed(seed) {
           `PROBE PASS [${seedLabel}]: ${PROBE_STEPS} steps ` +
             `(${result.simulatedSeconds}s), ` +
             `hub→${result.phase}, ${result.arenaKills} arena kill(s), ` +
+            `camera snap ≤${result.cameraSnapMaxDist.toFixed(3)}m, ` +
+            `locked dot ≥${result.lockedForwardMinDot.toFixed(6)}, ` +
             `real combat ` +
             (result.wiredCombat === undefined
               ? 'status unavailable'
@@ -231,6 +248,7 @@ async function executeProbeWorker() {
     heartbeat('loading');
     const simulation = await loadSimulation();
     const ai = await loadOptionalAi();
+    const lookModules = await loadHeadlessLookRenderer();
     if (!ai) {
       throw new Error('AI module is required to verify bot think() calls');
     }
@@ -257,6 +275,9 @@ async function executeProbeWorker() {
     }
 
     const initialPlayers = validateRoster(view);
+    const lookProbe = createLookProbe(lookModules);
+    observeLockedTarget(lookProbe, view, 'opening first frame');
+    snapAndObserveCamera(lookProbe, view, 'opening first frame');
     const initialById = new Map(
       initialPlayers.map((player) => [player.id, positionOf(player)]),
     );
@@ -291,6 +312,18 @@ async function executeProbeWorker() {
       state = nextState ?? state;
       view = simulation.getView(state);
       observeHubJourney(hubJourney, previousView, view, stepIndex + 1);
+      observeLockedTarget(
+        lookProbe,
+        view,
+        `simulation step ${stepIndex + 1}`,
+      );
+      if (previousView.phase === 'hub' && view.phase === 'arena') {
+        snapAndObserveCamera(lookProbe, view, 'hub→arena first frame', {
+          requireDistantPreviousCamera: true,
+        });
+      } else {
+        followCamera(lookProbe, view);
+      }
 
       if (
         view.phase === 'hub' &&
@@ -335,6 +368,7 @@ async function executeProbeWorker() {
     }
 
     validateHubJourney(hubJourney, view);
+    validateLookProbe(lookProbe);
 
     if (entityUpdates === 0) {
       throw new Error(
@@ -397,6 +431,10 @@ async function executeProbeWorker() {
         kills,
         arenaKills,
         movedPlayers: movedPlayerIds.size,
+        cameraSnapMaxDist: lookProbe.maximumSnapDistance,
+        lockedForwardMinDot: lookProbe.minimumForwardDot,
+        lockedForwardMaxAngleDeg:
+          (lookProbe.maximumForwardAngle * 180) / Math.PI,
         maxMovement: Math.sqrt(maximumMovementSquared),
         entityUpdateSteps: entityUpdates,
         p99StepMs: sortedDurations[p99Index],
@@ -414,6 +452,15 @@ async function executeProbeWorker() {
           enteredArenaAtStep: hubJourney.enteredArenaStep,
           killsAtArenaEntry: hubJourney.killsAtArena,
         },
+        lookProbe: {
+          cameraSnapMaxDist: CAMERA_SNAP_MAX_DIST,
+          lockedForwardMinDot: LOCKED_FORWARD_MIN_DOT,
+          lockedForwardMaxAngleDeg: LOCKED_FORWARD_MAX_ANGLE_DEGREES,
+          openingCameraDistance: lookProbe.openingCameraDistance,
+          arenaEntryCameraDistance: lookProbe.arenaEntryCameraDistance,
+          arenaEntryPreSnapDistance: lookProbe.arenaEntryPreSnapDistance,
+          checks: lookProbe.checks,
+        },
         purityFilesScanned: purity.filesScanned,
       },
     });
@@ -423,6 +470,242 @@ async function executeProbeWorker() {
       message: errorMessage(error),
     });
   }
+}
+
+/**
+ * 只装真实相机链，不创建 DOM/WebGL。方法来自 YizhangRenderer 原型，
+ * cameraRig 来自生产 createCamera()，因此 getLook/snapCamera/_followCamera 都是真路径。
+ */
+function createLookProbe({ YizhangRenderer, createCamera }) {
+  const renderer = Object.create(YizhangRenderer.prototype);
+  renderer.cameraRig = createCamera({});
+  renderer.camera = renderer.cameraRig.camera;
+  renderer.lookPitch = null;
+  renderer.lookYaw = null;
+  renderer.lookMode = 'locked';
+  renderer._vel = { x: 0, y: 0, z: 0 };
+  renderer._snapPending = true;
+  renderer._following = false;
+  renderer._prevFocusX = 0;
+  renderer._prevFocusZ = 0;
+  renderer._lastPhase = null;
+
+  if (renderer.setLookMode('locked') !== 'locked') {
+    throw new Error('headless renderer refused locked look mode');
+  }
+  const look = renderer.getLook();
+  if (look?.lookMode !== 'locked') {
+    throw new Error(
+      `renderer.getLook() did not report locked mode: ${String(look?.lookMode)}`,
+    );
+  }
+
+  return {
+    renderer,
+    maximumSnapDistance: 0,
+    minimumForwardDot: 1,
+    maximumForwardAngle: 0,
+    openingCameraDistance: null,
+    arenaEntryCameraDistance: null,
+    arenaEntryPreSnapDistance: null,
+    checks: {
+      lockedTargets: 0,
+      snappedFrames: 0,
+    },
+  };
+}
+
+function observeLockedTarget(probe, view, label) {
+  const player = humanPlayer(view, label);
+  const look = probe.renderer.getLook();
+  if (look?.lookMode !== 'locked') {
+    throw new Error(
+      `${label}: renderer left locked mode (${String(look?.lookMode)})`,
+    );
+  }
+
+  const targetYaw = probe.renderer._followYaw(player);
+  const targetAngle = Math.abs(shortestAngle(player.yaw, targetYaw));
+  if (targetAngle > LOCKED_TARGET_MAX_ANGLE_RADIANS) {
+    throw new Error(
+      `${label}: locked camera target differs from player yaw by ` +
+        `${formatDegrees(targetAngle)}° (max ` +
+        `${formatDegrees(LOCKED_TARGET_MAX_ANGLE_RADIANS)}°)`,
+    );
+  }
+
+  const playerForward = horizontalForward(player.yaw);
+  const targetForward = horizontalForward(targetYaw);
+  const dot =
+    playerForward.x * targetForward.x + playerForward.z * targetForward.z;
+  if (dot < LOCKED_FORWARD_MIN_DOT) {
+    throw new Error(
+      `${label}: locked player/target forward dot ${dot.toFixed(9)} < ` +
+        `${LOCKED_FORWARD_MIN_DOT}`,
+    );
+  }
+  probe.checks.lockedTargets += 1;
+}
+
+function followCamera(probe, view) {
+  const player = humanPlayer(view, 'camera follow');
+  return probe.renderer._followCamera(
+    DT,
+    positionOf(player),
+    probe.renderer._followYaw(player),
+  );
+}
+
+function snapAndObserveCamera(
+  probe,
+  view,
+  label,
+  { requireDistantPreviousCamera = false } = {},
+) {
+  const player = humanPlayer(view, label);
+  const focus = positionOf(player);
+  const beforeDistance = horizontalDistance(
+    probe.renderer.camera.position,
+    focus,
+  );
+  if (
+    requireDistantPreviousCamera &&
+    beforeDistance <= CAMERA_SNAP_MAX_DIST
+  ) {
+    throw new Error(
+      `${label}: route did not exercise a distant camera jump; ` +
+        `${beforeDistance.toFixed(3)}m <= ${CAMERA_SNAP_MAX_DIST}m`,
+    );
+  }
+
+  if (probe.renderer.snapCamera() !== true) {
+    throw new Error(`${label}: renderer.snapCamera() did not arm a snap`);
+  }
+  const snapped = probe.renderer._followCamera(
+    DT,
+    focus,
+    probe.renderer._followYaw(player),
+  );
+  if (snapped !== true) {
+    throw new Error(`${label}: armed camera did not snap on the next frame`);
+  }
+
+  const distance = horizontalDistance(probe.renderer.camera.position, focus);
+  if (distance >= CAMERA_SNAP_MAX_DIST) {
+    throw new Error(
+      `${label}: camera remained ${distance.toFixed(3)}m from player ` +
+        `(CAMERA_SNAP_MAX_DIST=${CAMERA_SNAP_MAX_DIST}m)`,
+    );
+  }
+
+  assertLockedCameraForward(probe, player, label);
+  probe.maximumSnapDistance = Math.max(
+    probe.maximumSnapDistance,
+    distance,
+  );
+  probe.checks.snappedFrames += 1;
+
+  if (label === 'opening first frame') {
+    probe.openingCameraDistance = distance;
+  } else if (label === 'hub→arena first frame') {
+    probe.arenaEntryPreSnapDistance = beforeDistance;
+    probe.arenaEntryCameraDistance = distance;
+  }
+}
+
+function assertLockedCameraForward(probe, player, label) {
+  const direction = probe.renderer.camera.position.clone();
+  probe.renderer.camera.getWorldDirection(direction);
+  const horizontalLength = Math.hypot(direction.x, direction.z);
+  if (!(horizontalLength > 0)) {
+    throw new Error(`${label}: camera has no finite horizontal forward`);
+  }
+
+  const cameraForward = {
+    x: direction.x / horizontalLength,
+    z: direction.z / horizontalLength,
+  };
+  const playerForward = horizontalForward(player.yaw);
+  const rawDot =
+    playerForward.x * cameraForward.x + playerForward.z * cameraForward.z;
+  const dot = Math.max(-1, Math.min(1, rawDot));
+  const angle = Math.acos(dot);
+
+  probe.minimumForwardDot = Math.min(probe.minimumForwardDot, dot);
+  probe.maximumForwardAngle = Math.max(probe.maximumForwardAngle, angle);
+  if (
+    dot < LOCKED_FORWARD_MIN_DOT ||
+    angle > LOCKED_FORWARD_MAX_ANGLE_RADIANS
+  ) {
+    throw new Error(
+      `${label}: locked player/camera horizontal forwards diverged ` +
+        `(dot=${dot.toFixed(9)}, angle=${formatDegrees(angle)}°, ` +
+        `minDot=${LOCKED_FORWARD_MIN_DOT}, ` +
+        `maxAngle=${LOCKED_FORWARD_MAX_ANGLE_DEGREES}°)`,
+    );
+  }
+
+  const look = probe.renderer.getLook();
+  const yawAngle = Math.abs(shortestAngle(player.yaw, look.cameraYaw));
+  if (yawAngle > LOCKED_FORWARD_MAX_ANGLE_RADIANS) {
+    throw new Error(
+      `${label}: renderer.getLook().cameraYaw differs from player yaw by ` +
+        `${formatDegrees(yawAngle)}°`,
+    );
+  }
+}
+
+function validateLookProbe(probe) {
+  if (
+    !Number.isFinite(probe.openingCameraDistance) ||
+    !Number.isFinite(probe.arenaEntryCameraDistance) ||
+    !Number.isFinite(probe.arenaEntryPreSnapDistance)
+  ) {
+    throw new Error('look probe did not observe opening and hub→arena snaps');
+  }
+  if (probe.checks.snappedFrames !== 2) {
+    throw new Error(
+      `look probe expected 2 snapped frames; got ${probe.checks.snappedFrames}`,
+    );
+  }
+  if (probe.checks.lockedTargets < 2) {
+    throw new Error('look probe did not exercise locked camera targeting');
+  }
+}
+
+function humanPlayer(view, label) {
+  const player = getPlayers(view).find((candidate) => candidate?.id === 'p0');
+  if (!player) {
+    throw new Error(`${label}: look probe cannot find human player p0`);
+  }
+  if (
+    !Number.isFinite(player.x) ||
+    !Number.isFinite(player.y) ||
+    !Number.isFinite(player.z) ||
+    !Number.isFinite(player.yaw)
+  ) {
+    throw new Error(`${label}: human player has a non-finite camera pose`);
+  }
+  return player;
+}
+
+function horizontalForward(yaw) {
+  return { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+}
+
+function horizontalDistance(left, right) {
+  return Math.hypot(left.x - right.x, left.z - right.z);
+}
+
+function shortestAngle(from, to) {
+  let difference = (to - from) % (Math.PI * 2);
+  if (difference > Math.PI) difference -= Math.PI * 2;
+  else if (difference < -Math.PI) difference += Math.PI * 2;
+  return difference;
+}
+
+function formatDegrees(radians) {
+  return ((radians * 180) / Math.PI).toFixed(6);
 }
 
 function createHubJourney(view) {

@@ -19,6 +19,8 @@ const ZERO_INPUT = Object.freeze({
 
 const SIMULATION_URL = new URL('../src/sim/index.js', import.meta.url);
 const AI_URL = new URL('../src/ai/bots.js', import.meta.url);
+const RENDERER_URL = new URL('../src/render/renderer.js', import.meta.url);
+const CAMERA_URL = new URL('../src/render/camera.js', import.meta.url);
 const PROBE_URL = new URL('./probe.mjs', import.meta.url);
 const FORBIDDEN_PURITY_DIRECTORIES = new Set(['render', 'ui']);
 const STATIC_MODULE_SPECIFIER =
@@ -63,11 +65,49 @@ export async function loadSimulation() {
 }
 
 /**
- * 静态遍历探针、生产 sim 与 AI 的本地依赖图。这里只读源码，不执行被扫描模块；
- * render/ui 一旦进入图就明确失败，避免无头探针悄悄带上 DOM/WebGL。
+ * Node 不创建 WebGLRenderer，只把真实 Renderer 原型与真实 camera rig 装在一起。
+ * 与 loadSimulation 一样保留模块覆盖口，便于探针故障注入；默认模块会进入纯度扫描。
+ */
+export async function loadHeadlessLookRenderer() {
+  let renderer;
+  let camera;
+  try {
+    [renderer, camera] = await Promise.all([
+      import(moduleSpecifier('YIZHANG_RENDERER_MODULE', RENDERER_URL)),
+      import(moduleSpecifier('YIZHANG_CAMERA_MODULE', CAMERA_URL)),
+    ]);
+  } catch (error) {
+    throw new Error(
+      `could not load headless look renderer: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+
+  if (typeof renderer.YizhangRenderer !== 'function') {
+    throw new Error(
+      'renderer module must export class YizhangRenderer for look probe',
+    );
+  }
+  if (typeof camera.createCamera !== 'function') {
+    throw new Error(
+      'camera module must export function createCamera() for look probe',
+    );
+  }
+
+  return {
+    YizhangRenderer: renderer.YizhangRenderer,
+    createCamera: camera.createCamera,
+  };
+}
+
+/**
+ * 静态遍历探针、生产 sim/AI 与显式白名单相机链的本地依赖图。这里只读源码；
+ * sim/AI 若经普通依赖越界到 render/ui 会失败，白名单相机链则只供无头装配。
  */
 export async function scanProbePurity() {
-  const pending = [PROBE_URL, SIMULATION_URL];
+  // renderer/camera 是显式白名单入口：只加载模块与相机数学，不调用 WebGL 构造器。
+  // 其它被测图若通过普通 import 越界到 render/ 或 ui/，assertPureSpecifier 仍会失败。
+  const pending = [PROBE_URL, SIMULATION_URL, RENDERER_URL, CAMERA_URL];
   if (existsSync(AI_URL)) {
     pending.push(AI_URL);
   }
