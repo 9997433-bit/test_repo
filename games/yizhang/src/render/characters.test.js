@@ -17,7 +17,7 @@ import * as sim from '../sim/index.js';
 import { GLOVES } from '../data/gloves.js';
 import { BOT_PERSONAS } from '../data/bots.js';
 import { OCCLUDER_LAYER, QUALITY } from './config.js';
-import { createCharacters } from './characters.js';
+import { SLAP_PHASE, createCharacters } from './characters.js';
 import { ACCESSORIES, EXTRA_LOOKS, resolveSkinLook, sameLook, skinTable } from './skins.js';
 import * as dataModule from '../data/index.js';
 import { readView } from './view.js';
@@ -413,6 +413,153 @@ describe('角色：按材质合批（L3-10 绘制预算）', () => {
       if (sm === shade) continue;
       expect(sm.layers.isEnabled(OCCLUDER_LAYER)).toBe(false);
     }
+    chars.dispose();
+  });
+});
+
+describe('扇击：横抽，不是上撩', () => {
+  /**
+   * 跑完一次出掌，逐帧记下出掌进度、两只掌的世界坐标与拧腰角。
+   *
+   * 角色站在原点、yaw=0（面向 -Z），所以世界坐标就是角色自身坐标：
+   * **+X 是角色的右手边、-X 是左手边**，跟随镜头架在他身后，屏幕右也是 +X。
+   */
+  function slapTrack(chars, id, side) {
+    const c = chars.get(id);
+    chars.playSlap(id, 1, side);
+    const step = 1 / 120;
+    const frames = [];
+    const v = new Vector3();
+    let time = 0;
+    for (let i = 0; i < 200; i++) {
+      time += step;
+      chars.update(step, time);
+      c.rootGroup.updateMatrixWorld(true);
+      const hands = {};
+      const shoulders = {};
+      for (const arm of c.arms) {
+        hands[arm.side] = arm.glove.getWorldPosition(v).clone();
+        shoulders[arm.side] = arm.shoulder.getWorldPosition(v).clone();
+      }
+      frames.push({ t: c.slapT, torso: c.body.rotation.y, hands, shoulders });
+      if (c.slapT < 0) break;
+    }
+    return frames;
+  }
+
+  /** 命中段 = 加速扫的那 0.18（归一），判定就落在这一段末尾。 */
+  function strikeFrames(frames) {
+    return frames.filter((f) => f.t >= SLAP_PHASE.windupEnd && f.t <= SLAP_PHASE.strikeEnd);
+  }
+
+  function axisTravel(frames, side) {
+    let dx = 0;
+    let dy = 0;
+    let dz = 0;
+    for (let i = 1; i < frames.length; i++) {
+      const a = frames[i - 1].hands[side];
+      const b = frames[i].hands[side];
+      dx += Math.abs(b.x - a.x);
+      dy += Math.abs(b.y - a.y);
+      dz += Math.abs(b.z - a.z);
+    }
+    return { dx, dy, dz };
+  }
+
+  it('命中段掌是横着走的：位移几乎全在角色左右轴上，不是往上撩', () => {
+    const { chars } = mount();
+    // 三副体型一起验：横扇是骨骼曲线的事，不该只在某一副比例上成立
+    for (const skinId of ['nuo', 'crane', 'wildhorn']) {
+      chars.reconcile([player('p0', skinId)], 'p0');
+      for (const side of [1, -1]) {
+        const strike = strikeFrames(slapTrack(chars, 'p0', side));
+        const label = `${skinId}/${side}`;
+        expect(strike.length, label).toBeGreaterThan(8);
+
+        const head = strike[0];
+        const tail = strike[strike.length - 1];
+        const from = head.hands[side];
+        const to = tail.hands[side];
+        // 左 → 右：掌从肩的左边起手（宽肩壮汉是横过胸口，不一定过得了中线），
+        // 穿过身前，甩到肩的右边去
+        expect(from.x - head.shoulders[side].x, label).toBeLessThan(-0.25);
+        expect(to.x - tail.shoulders[side].x, label).toBeGreaterThan(0.25);
+        // 纵向几乎不动：命中段整段起伏不到 5 厘米
+        expect(Math.abs(to.y - from.y), label).toBeLessThan(0.05);
+
+        const ys = strike.map((f) => f.hands[side].y);
+        expect(Math.max(...ys) - Math.min(...ys), label).toBeLessThan(0.08);
+
+        // 主轴是角色的左右轴：净位移里 x 比前后大、比上下大一个数量级以上。
+        // 改之前恰好反过来 —— 那时 y 才是最大的一路（净 +0.55m 的上撩）。
+        expect(to.x - from.x, label).toBeGreaterThan(0.55);
+        expect(to.x - from.x, label).toBeGreaterThan(Math.abs(to.y - from.y) * 8);
+        expect(to.x - from.x, label).toBeGreaterThan(Math.abs(to.z - from.z));
+
+        // 逐帧行程同理：横向走过的路是纵向的十倍不止
+        const travel = axisTravel(strike, side);
+        expect(travel.dx, label).toBeGreaterThan(0.55);
+        expect(travel.dx, label).toBeGreaterThan(travel.dy * 10);
+
+        // 一路往右推，中途不折返（折返读出来就是「抡了一圈」）。
+        // 收势最后几帧掌已经甩到臂展尽头，弧线开始回卷，那一小段留 1cm 容差。
+        const cut = Math.floor(strike.length * 0.8);
+        for (let i = 1; i < strike.length; i++) {
+          const prev = strike[i - 1].hands[side].x;
+          const cur = strike[i].hands[side].x;
+          if (i <= cut) expect(cur, `${label}@${i}`).toBeGreaterThan(prev);
+          else expect(cur, `${label}@${i}`).toBeGreaterThan(prev - 0.01);
+        }
+      }
+    }
+    chars.dispose();
+  });
+
+  it('主掌副掌都横扇，方向一致；换手只换哪条胳膊在抽', () => {
+    const { chars } = mount();
+    chars.reconcile([player('p0', 'reed')], 'p0');
+    const spans = {};
+    for (const side of [1, -1]) {
+      const strike = strikeFrames(slapTrack(chars, 'p0', side));
+      const from = strike[0].hands[side];
+      const to = strike[strike.length - 1].hands[side];
+      spans[side] = to.x - from.x;
+      // 出掌的那只手横过身体中线：起手在左半边，收势在右半边
+      expect(from.x, `${side}`).toBeLessThan(0);
+      expect(to.x, `${side}`).toBeGreaterThan(0);
+      // 拧腰跟着掌走：蓄势朝左（正 yaw），出掌那下甩到右（负 yaw）
+      expect(strike[0].torso, `${side}`).toBeGreaterThan(0);
+      expect(strike[strike.length - 1].torso, `${side}`).toBeLessThan(0);
+    }
+    // 两只手的扫掠幅度同量级，不存在「只改了一边」
+    expect(spans[1]).toBeGreaterThan(0.5);
+    expect(spans[-1]).toBeGreaterThan(0.5);
+    expect(Math.abs(spans[1] - spans[-1])).toBeLessThan(Math.min(spans[1], spans[-1]) * 0.6);
+    chars.dispose();
+  });
+
+  it('横扇没有牺牲够得着：掌仍旧伸到身前半米开外，收势回得干净', () => {
+    const { chars } = mount();
+    chars.reconcile([player('p0', 'nuo')], 'p0');
+    const frames = slapTrack(chars, 'p0', 1);
+    const reach = Math.min(...frames.map((f) => f.hands[1].z));
+    // 面向 -Z，所以「够得远」= z 足够负
+    expect(reach).toBeLessThan(-0.55);
+    // 掌扫过身前时是抬到胸口高度的，不是从脚边捞上来
+    const strike = strikeFrames(frames);
+    for (const f of strike) {
+      expect(f.hands[1].y).toBeGreaterThan(0.95);
+      expect(f.hands[1].y).toBeLessThan(1.7);
+    }
+    // 收完手回到身侧垂着：一次出掌之后姿势不许留在半空
+    const c = chars.get('p0');
+    expect(c.slapT).toBe(-1);
+    for (let i = 0; i < 30; i++) chars.update(1 / 60, 5 + i / 60);
+    for (const arm of c.arms) {
+      expect(Math.abs(arm.shoulder.rotation.y)).toBeLessThan(0.02);
+      expect(Math.abs(arm.shoulder.rotation.x)).toBeLessThan(0.05);
+    }
+    expect(Math.abs(c.body.rotation.y)).toBeLessThan(0.02);
     chars.dispose();
   });
 });

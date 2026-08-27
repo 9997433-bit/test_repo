@@ -50,6 +50,45 @@ import { resolveSkinLook, skinTable } from './skins.js';
 const TAU = Math.PI * 2;
 /** 右手（side=+1）拿主掌 slot 0，左手拿副掌 slot 1。 */
 const MAIN_SIDE = 1;
+
+/**
+ * 出掌曲线的三段（归一到一次出掌的时长，秒）。
+ *
+ * 命中落在加速段那一小段里，所以这张表是导出的：单测按它取「命中段」的关键帧，
+ * 断言那几帧的掌位移是横的。
+ */
+export const SLAP_PHASE = Object.freeze({
+  duration: 0.62,
+  windupEnd: 0.34,
+  strikeEnd: 0.52,
+});
+
+/**
+ * 扇是**横抽**，不是上勾。
+ *
+ * 一巴掌看起来往哪扇，全在下面这几个数上：
+ *   · 位移只走肩关节的 yaw（`SLAP_COIL_YAW` / `SLAP_SWEEP_YAW`）。归一进度往前推，
+ *     yaw 从正走到负，掌就从角色左侧扫到右侧 —— 跟随镜头里正是屏幕左 → 右。
+ *     归一进度两段不等长（前摇 -0.9、跟随 +1.7），要的角度却大致对称（左 49°、
+ *     右 58°），所以蓄势与跟随各带一个系数。
+ *   · `SLAP_RAISE_PITCH` 只在前摇里把手臂端到胸高，命中段恒定不动 —— 肩的俯仰
+ *     一旦在命中段里变，掌就是在「撩」而不是在「抽」。
+ *   · `SLAP_ARC_PITCH` 是掌面带的那点弧：正前方最高、两端各低几厘米。命中段的
+ *     纵向行程因此只有 ~1.5cm，横向是 ~1.1m，两者差着两个数量级。
+ */
+const SLAP_COIL_YAW = 0.95;
+const SLAP_SWEEP_YAW = 0.54;
+const SLAP_RAISE_PITCH = 1.4;
+const SLAP_ARC_PITCH = 0.16;
+/** 拧腰与扫掠同向：先往左蓄，出掌那下甩到右。 */
+const SLAP_TORSO_YAW = 0.26;
+/** 出掌时手腕沿手臂长轴滚这么多，把掌面（本地 -Z）转到迎着扫掠方向。 */
+const SLAP_PALM_ROLL = -Math.PI / 2;
+
+/** 归一进度 → 肩关节横扫角。正 = 掌在角色左侧，负 = 右侧。 */
+function sweepYaw(swing) {
+  return -swing * (swing < 0 ? SLAP_COIL_YAW : SLAP_SWEEP_YAW);
+}
 /** 同时在场的残影上限。分身掌一次最多剥两三个，留出余量就够。 */
 const GHOST_CAP = 6;
 /**
@@ -909,6 +948,10 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     for (const side of [-1, 1]) {
       const isMain = side === MAIN_SIDE;
       const shoulder = new Group();
+      // YXZ：先绕 Z 把手臂抬离身侧，再绕 X 端到胸前，最后绕 Y 横扫。
+      // 默认的 XYZ 序会让「横扫」发生在「端平」之前 —— 那时手臂还垂着，绕 Y 只是
+      // 拧了一下胳膊，掌根本不横移，剩下能出位移的就只有绕 X 的上撩。
+      shoulder.rotation.order = 'YXZ';
       shoulder.position.set(side * 0.33 * build.shoulder, 1.46, 0);
       body.add(shoulder);
       const upper = matMesh(geo.upperArm, mats, 'cloth');
@@ -926,7 +969,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       );
       glove.position.y = -0.22;
       wrist.add(glove);
-      arms.push({ shoulder, wrist, glove, side, slot: isMain ? 0 : 1 });
+      arms.push({ shoulder, wrist, glove, side, slot: isMain ? 0 : 1, roll: 0 });
     }
 
     const accessory = addAccessory(look.accessory, { body, arms, mats });
@@ -1217,44 +1260,63 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
           leg.knee.rotation.x = -Math.max(0, -Math.sin(phase - 0.6)) * 0.85 * gait;
         }
 
-        // 出掌曲线：0~0.34 前摇（反向蓄），0.34~0.52 加速扫，之后收掌
+        // 出掌曲线：0~0.34 前摇（掌横过胸前蓄到角色左侧），0.34~0.52 加速横抽
+        // （左 → 右），之后收掌。两条曲线分工写死：
+        //   swing —— 归一进度，唯一驱动横扫角的量（见 sweepYaw）
+        //   raise —— 把手臂端到胸高的包络。命中段恒为 1，所以那一段没有纵向行程
         let slapSwing = 0;
-        let slapTorso = 0;
+        let slapRaise = 0;
         if (c.slapT >= 0) {
-          c.slapT += dt / (0.62 / c.slapPower);
+          c.slapT += dt / (SLAP_PHASE.duration / c.slapPower);
           const t = c.slapT;
           if (t >= 1) {
             c.slapT = -1;
-          } else if (t < 0.34) {
-            const k = t / 0.34;
+          } else if (t < SLAP_PHASE.windupEnd) {
+            const k = t / SLAP_PHASE.windupEnd;
             slapSwing = -0.9 * smoothstep(0, 1, k);
-            slapTorso = -0.34 * smoothstep(0, 1, k);
-          } else if (t < 0.52) {
-            const k = (t - 0.34) / 0.18;
+            // 抬手在前摇的前四分之三就到位，剩下那段是纯粹的横向蓄势：
+            // 「抬手」与「横扫」混在一起读出来就是一记上撩
+            slapRaise = smoothstep(0, 1, clamp01(k / 0.75));
+          } else if (t < SLAP_PHASE.strikeEnd) {
+            const k = (t - SLAP_PHASE.windupEnd) / (SLAP_PHASE.strikeEnd - SLAP_PHASE.windupEnd);
             slapSwing = -0.9 + 2.6 * smoothstep(0, 1, k);
-            slapTorso = -0.34 + 0.72 * smoothstep(0, 1, k);
+            slapRaise = 1;
           } else {
-            const k = (t - 0.52) / 0.48;
-            slapSwing = 1.7 * (1 - smoothstep(0, 1, k));
-            slapTorso = 0.38 * (1 - smoothstep(0, 1, k));
+            const k = (t - SLAP_PHASE.strikeEnd) / (1 - SLAP_PHASE.strikeEnd);
+            const fall = 1 - smoothstep(0, 1, k);
+            slapSwing = 1.7 * fall;
+            slapRaise = fall;
           }
         }
-        c.body.rotation.y = slapTorso * c.slapSide;
+        // 拧腰跟着掌走：蓄势时肩线转向左，出掌那下甩回右。与出的是哪只手无关 ——
+        // 两只掌扇的都是同一个方向，腰没有理由反着拧。
+        c.body.rotation.y = -slapSwing * SLAP_TORSO_YAW;
 
         for (const arm of c.arms) {
           const phase = c.stride + (arm.side > 0 ? 0 : Math.PI);
           const walk = Math.sin(phase) * 0.5 * gait;
           const isSwingArm = arm.side === c.slapSide;
-          const swing = isSwingArm ? slapSwing : slapSwing * -0.22;
-          // 摆臂与挥掌都是「往 -Z 送」，所以是正的 rotation.x
-          arm.shoulder.rotation.x = walk + swing * 0.55;
-          arm.shoulder.rotation.z = arm.side * (0.16 + Math.abs(swing) * 0.42);
-          arm.shoulder.rotation.y = arm.side * swing * 0.9;
-          arm.wrist.rotation.x = 0.28 + Math.abs(walk) * 0.4 - swing * 0.5;
-          // 束带滞后于手：布料二次运动
+          // 出掌的那只手横抽，另一只反向小幅平衡；左右手扇的都是「左 → 右」，
+          // 换手只换哪条胳膊在抽，不换扫掠方向
+          const swing = isSwingArm ? slapSwing : slapSwing * -0.3;
+          const raise = isSwingArm ? slapRaise : slapRaise * 0.24;
+          const sweep = sweepYaw(swing);
+          // 掌心走的是一段浅弧：正前方最高，两端各低几厘米
+          const arc = SLAP_ARC_PITCH * (Math.cos(sweep) - 1);
+          // 摆臂仍旧是「往 -Z 送」的正 rotation.x；出掌那份俯仰只负责把手端起来
+          arm.shoulder.rotation.x = walk + raise * (SLAP_RAISE_PITCH + arc);
+          arm.shoulder.rotation.z = arm.side * (0.16 + raise * 0.1);
+          // 横扫：命中段的位移全部由这一路给
+          arm.shoulder.rotation.y = sweep;
+          arm.wrist.rotation.x = 0.28 + Math.abs(walk) * 0.4 - raise * 0.34;
+          // 掌面迎着扫掠方向。滚过去的过程慢半拍，收势时掌还在往前带 ——
+          // 这一路只转不移（腕的 Y 轴就是手臂长轴），不参与位移
+          arm.roll = damp(arm.roll, SLAP_PALM_ROLL * raise, 16, dt);
+          arm.wrist.rotation.y = arm.roll;
+          // 束带滞后于手：布料二次运动。横扇的时候它往扫掠的反方向甩
           const tassel = arm.glove.userData.tassel;
-          tassel.rotation.x = damp(tassel.rotation.x, swing * 0.8 + gait * 0.3, 12, dt);
-          tassel.rotation.z = damp(tassel.rotation.z, -arm.side * 0.2 - swing * 0.3, 10, dt);
+          tassel.rotation.x = damp(tassel.rotation.x, raise * 0.45 + gait * 0.3, 12, dt);
+          tassel.rotation.z = damp(tassel.rotation.z, -arm.side * 0.2 + sweep * 0.6, 10, dt);
         }
 
         // 受击压扁：只有 3~4 帧，靠形变而不是闪红。
