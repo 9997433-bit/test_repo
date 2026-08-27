@@ -2,8 +2,8 @@
 
 维护者：Fable-4（SOTA 验收）。指标定义与阈值以同目录 `SOTA_CHECKLIST.md` 的 ID 为唯一事实源，本文只定义**执行顺序、证据要求、否决规则、判定模板**，不重复定义数值。
 
-> **当前生效轮次：安全区大厅轮（Hub Round 1–3，父分支 `cursor/yizhang-hub-db8d`）—— 执行规程见 §12，指标见 SOTA_CHECKLIST §11。**
-> §11 是手感轮（`cursor/yizhang-feel-db8d`）的规程，其方向脚本（§11.4）与皮肤/VFX 评审段被 §12 的回归段引用；§1–§10 是骨架→精品系列的存档规程，§2 命令与 §8 性能协议仍被引用。均不得删改。
+> **当前生效轮次：固定人物视角轮（Look Round 1–3，父分支 `cursor/yizhang-look-db8d`）—— 执行规程见 §13，指标见 SOTA_CHECKLIST §12。**
+> §12 是大厅轮（`cursor/yizhang-hub-db8d`，视角轮分支即由其拉出）的规程，其大厅脚本（§12.4）被 §13 回归段引用；§11 是手感轮规程（方向脚本 §11.4 被 §13.4 沿用）；§1–§10 是骨架→精品系列的存档规程，§2 命令与 §8 性能协议仍被引用。均不得删改。
 
 ## 1. 范围与环境
 
@@ -511,3 +511,108 @@ npm run build   # HG-03：退出码 0
 - 洞 1–10 销号：1/2/3/4/5/6/7/9/10 **关**（洞 7 由「已测记警告」转关，实测入预算）；洞 8 **延后真机**。
 - 修复指派：无实现缺口待派；真机段到位后由 F4 复跑 §12.4/§12.5 补验即可销全部 WARNING。
 - 证据包：命令原文（上列）+ 预算逐帧 JSON 两份（走查 1500 帧 / 纯 arena 900 帧）+ 盲辨预跑截图 40 张（8 座 ×3 连拍 + cotton/meteor 近距与跟随相机复核 ×16）随本轮验收 PR 描述提交；截图存验收工作台，不入 `games/yizhang/src`。
+
+---
+
+## 13. 固定人物视角轮（Look Round 1–3）验收规程
+
+指标 ID 与阈值以 SOTA_CHECKLIST **§12** 为唯一事实源（LG 回归门 / LK 视角行为 / LT 测试锁 / LR 红线）。
+验收对象：`games/yizhang/**` 合入 **`cursor/yizhang-look-db8d`** 的状态（或待合子分支）。每轮 6 步顺序执行；任何一步 FAIL 即出 REJECT 报告，后续步骤照跑用于收集修复清单。**LG 回归门任何一项红 → 直接 REJECT，不再往下记分。**
+**判读口径**：全项目只有两套角空间（契约 §1-11）——相机系 θ（input 内部）与 sim 系（yaw=0 → -Z，sim/render/camera 共用）；凡写进 `renderer.lookYaw` / `Input.yaw` / `p.yaw` 的水平角必须已是 sim 空间。
+
+### 13.1 第 1 步 · 拉取安装与隔离（LG-04）
+
+```sh
+git fetch origin cursor/yizhang-look-db8d && git checkout <被验分支>
+cd games/yizhang && npm ci
+git diff --name-only origin/main...HEAD | grep -v '^games/yizhang/' | grep -v '^\.agent_workspace/'
+```
+
+最后一条只允许剩共享只读文件的已声明改动；出现其他 `games/*`、`pages/`、workflow → FR-03/LG-04 即时否决。
+
+### 13.2 第 2 步 · 静态检查（LG-05、LR-01…03 静态面）
+
+```sh
+rg -n "RENDER_YAW_OFFSET" src/core/view.js        # LR-01：恒 0，禁止回 Math.PI
+rg -ln "cameraYawToSimYaw|simYawToCameraYaw" src  # 换算实现只在 core/view.js，其余只 import
+rg -n "yawFromDir" src/input src/main.js src/core # LK-04 产出分派在场性（Round 1 已知零命中）
+rg -n "yz-look" src/ui src/main.js src/core       # LK-09 DOM 在场性（Round 1 已知零命中，CSS 在 styles/hud.css）
+rg -n "googleapis|gstatic" src dist index.html    # LG-05：零命中
+git diff <基线>..HEAD --stat -- src/ai docs/GDD.md # O3/F3 席合入判读（零 diff = 未合，相关条目按 DEFER 记）
+```
+
+### 13.3 第 3–5 步 · 测试 / 探针 / 构建（LG-01/02/03、LT 表）
+
+```sh
+npm test        # LG-01：退出码 0，通过数 ≥557
+npm run probe   # LG-02：3/3 seed pass + lookProbe 三读数（snap ≤20m、pre-snap >20m、locked dot ≥0.999）
+npm run build   # LG-03：退出码 0
+```
+
+- LT 在场速查：`ls src/core/look.test.js src/render/look.test.js src/sim/look-yaw.test.js tests/look-round1-invariants.test.js`；抽读断言内容防空壳（§4 规则 4；LR-04）。
+- **防假达标复核（判决性断言核对）**：LT-01/02 必须包含「取 θ 使相机系角 ≠ sim 角」的反证（如 θ=0 ⇒ simYaw=−π/2、θ=π/4 ⇒ 机位翻正脸）；probe 的 snap 断言必须以 `arenaEntryPreSnapDistance > 20` 为前提——路线没压过远跳，「snap 后 ≤20m」是空话。
+- probe 复跑规则：任何动 look 链（feedLook/setLook/camera/snap）、phase 传送、出生朝向的 PR 合入后必须复跑本步。
+
+### 13.4 第 6 步 · 视角手动脚本（实机，全程录屏；Round 1 无桌面环境可延后但必须如实标注）
+
+`npm run dev`（4181 端口），开始一局后按序执行：
+
+1. **开局背后**：出生在走道，镜头已在角色背后正对纵深——无首帧从裂岛方向飞来的镜头漂移（LK-01）。
+2. **方向回归**：W=屏幕深处、S=向相机、A/D=屏幕左右、鼠标右移右转（沿用 §11.4 手感轮方向脚本六步；LG-05 朝向常量防回潮的实机面）。
+3. **locked 面向锁**：缺省 locked 下原地转镜头 360°——人物面向随镜头 1:1 同转、镜头始终在背后、绕不到正脸（LK-03）。
+4. **横扇读向**：对着镜头前方目标出掌——掌从屏幕左横抽到右、命中就在准星指向（LK-05/06）；故意把目标留在正后方出掌——空挥。
+5. **V 切换**：按 V——出现模式提示（Round 1 为 toast 顶班；`.yz-look-flash` DOM 落地后按 CSS 类复验），free 下鼠标可独立看、人物面向跟走向（LK-04 收口后）；再按 V 切回，机位无跳切（切换不动 yaw/pitch）。
+6. **过门吸附**：选掌穿门——短淡场后机位已架在裂岛出生点身后，无 ~120m 弹簧飞跃帧；结算回安全区同验（LK-02）。
+7. **存档链**：切到 free 后刷新页面——大厅记住 free；URL `?look=locked` 强制覆盖但不回写存档（LK-08）。
+8. **触控仿真**（Round 3 换真机）：右侧拖动转视角在 locked 下同样转人物；触控切换入口（若有）同验。
+
+### 13.5 判定模板（视角轮）
+
+```markdown
+# 异掌视角轮 Round <N> 验收判定
+- 被验分支/commit：
+- 验收人/日期：
+- 结论：PASS | PASS-WITH-WARNINGS | REJECT
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| LG 回归门 | x/6 | |
+| LK 视角行为 | x/9 | |
+| LT 测试锁 | x/8 | |
+| LR/HR/FR/R 否决 | 命中列表 | |
+
+- 六条用户验收线：开局背后 / 过门不飞跃 / locked 面向=视线 / free 可解耦 / 横扇读向 / 打人朝向一致 —— 逐条 PASS/FAIL/DEFER
+- WARNING 清单：
+- 修复指派（按 .agent_workspace/yizhang-look/OWNERSHIP.md）：
+- 证据包链接：
+```
+
+**修复指派对照（视角轮 OWNERSHIP）**：sim 朝向直赋/出生朝向 → Opus-1；setLook/snap/机位 → Opus-2；Bot 与观战 → Opus-3；feedLook/V 键/URL/存档/HUD DOM/free 产出分派 → Opus-4；lookMode 契约与 ADR → Fable-1；锁视角 HUD 视觉 → Fable-2；GDD 视角章 → Fable-3；tests → GPT-sol-1；scripts/探针 → GPT-sol-2。
+
+### 13.6 异掌视角轮 Round 1 验收判定（F4 验收席）
+
+- 被验分支/commit：`cursor/yizhang-look-db8d` @ `4ca6ac9`（W1–W3 已合席位：F1 契约 v4.3 / F2 锁视角样式 / O1 sim 直赋与出生朝向 / O2 setLook+snap / O4 feedLook+V 键通道 / G1 单测 / G2 探针；未合：O4 HUD DOM 与 free 产出、F3 GDD、O3 席）；基线 `7340300`（大厅轮收口态，557 测）。
+- 验收人/日期：Fable-4 验收席 / 2026-08-27（全套命令实跑：`npm ci` → 静态检查 → `npm test` → `npm run probe` → `npm run build`）。工作分支 `cursor/yizhang-look-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md` 与本文件）。
+- 结论：**PASS-WITH-WARNINGS**（唯一 FAIL 为 LK-04 free 产出半边，属 §12.0 Round 1 门槛明示的允许延后项；未合席位全部按 DEFER 如实登记，无一装绿；红线零命中）。
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| LG 回归门 | 6/6 | 无 |
+| LK 视角行为 | 7/9 | **LK-04 FAIL**：`sample()` 不分模式恒送 `cameraYawToSimYaw(θ)`，free 无 `yawFromDir`/null 分派，行为等同 locked（sim/render 两半有测且绿）；**LK-09 DEFER**：`.yz-look-flash` CSS 已合、DOM 零消费，toast 顶班 |
+| LT 测试锁 | 6/8 | LT-07（free 产出分派）、LT-08（look-flash DOM）缺席——连锁 LK-04/09，Round 2 生效项 |
+| LR/HR/FR/R 否决 | 零命中 | 无 |
+
+**六条用户验收线**：开局背后 **PASS** / 过门不飞跃 **PASS** / locked 面向=视线 **PASS** / free 可解耦 **FAIL（DEFER→O4，Round 2 收口）** / 横扇读向 **PASS** / 打人朝向一致 **PASS**。
+
+**命令实测原文摘要**：
+
+- `npm test`：**Test Files 44 passed (44) / Tests 631 passed (631)**，退出码 0（基线 557/40 → 631/44，零减量；视角新测 90 条：`core/look.test.js` 21、`render/look.test.js` 15、`sim/look-yaw.test.js` 19、`tests/look-round1-invariants.test.js` 5、`input/index.test.js` 30 含 lookMode 组）。
+- `npm run probe`：退出码 0，`{"status":"pass","seedCount":3,…,"cameraSnapMaxDist":7.1,"lockedForwardMinDot":1,"lockedForwardMaxAngleDeg":0,"wiredCombat":true}`；三 seed 逐条——`0x1a2b3c4d`：kills 1、p99 0.125；`0x5eed1234`：kills 2、p99 0.110；`0xc0ffee42`：kills 2、p99 0.103；三条均 `openingCameraDistance:7.1`、`arenaEntryPreSnapDistance:127.0–127.2`（真实压过远跳）、`arenaEntryCameraDistance:7.1`、`snappedFrames:2`、`lockedTargets:3601`、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`。
+- `npm run build`：退出码 0；主 chunk 680.55kB / gzip 188.19kB（>500kB 警告既知，含 three）。
+- 静态面：`RENDER_YAW_OFFSET = 0`（`core/view.js`）；换算实现唯一（`cameraYawToSimYaw/simYawToCameraYaw` 只实现在 `core/view.js`，其余 10 文件均 import）；`rg googleapis|gstatic src dist index.html` 零命中；`rg yawFromDir src/input src/main.js src/core` 零命中（LK-04 缺口实锤）；`rg "yz-look" src/ui src/main.js src/core` 零命中（LK-09 缺口实锤）；`git diff --stat 基线..HEAD -- src/ai docs/GDD.md` 零 diff（O3/F3 未合实锤）；隔离 diff 过滤后零残留。
+
+**验证方式限定（诚实口径）**：本轮无交互桌面环境——§13.4 实机八步（转视角手感、V 切换目视、过门淡场帧、触屏）**未做**；以 90 条视角单测 + 三 seed lookProbe 逐帧断言（3601 帧 locked dot=1.0、开局/过门双 snap 点、127m 远跳前提）替代并如实标注。实机段归 Round 2/3。
+
+- WARNING 清单：实机段延后（§13.4 八步）；free≡locked 用户可感差（V 能切、有提示、落存档，但 free 行为无差——建议设置面板标注或随 O4 收口一并交付）；W2 hit-stop 零余量哨兵结转（§11.9）。
+- 修复指派：LK-04 free 产出分派 + LK-09 `.yz-look-flash` DOM → Opus-4（连带 LT-07/08 → GPT-sol-1）；GDD 视角章（默认 lookMode/键位文案/机位 tuning）→ Fable-3；Bot lookMode 不变性显式锁测 + 观战 orbit 复验 → Opus-3；用户「打不中」专项合入后复跑 LK-05/06 防回退 → F4 复验。
+- 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（无桌面环境，如实标注）。
