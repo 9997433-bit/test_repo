@@ -10,31 +10,42 @@ import { OCCLUDER_LAYER, QUALITY } from './config.js';
 import { createIsland } from './island.js';
 
 const pair = () => ({ rough: null, normal: null, albedo: null });
-/** 贴图库的键很多（cliff / rock / crust / …），一律给一份空的就够验结构。 */
-const fakeTextures = () =>
-  new Proxy({}, { get: (_t, k) => (k === 'crack' || k === 'noise' ? null : pair()) });
+/**
+ * 贴图库的键很多（cliff / rock / crust / …），一律给一份空的就够验结构。
+ * crack 单独一说：裂纹贴花的生成看的是「这张图在不在」，要验贴花就得给个真值。
+ */
+const fakeTextures = (crack = null) =>
+  new Proxy({}, { get: (_t, k) => (k === 'crack' ? crack : k === 'noise' ? null : pair()) });
 
 const triangles = (geo) =>
   (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
 
-function mount(tier = 'mid') {
+/** 一块 tile 的最小形状。key 是 syncTiles 认板子的凭据，缺了十二块会挤成一块。 */
+const makeTile = (i, broken = false, crack = 0) => ({
+  key: `t${i}`,
+  index: i,
+  x: (i % 4) * 2.5 - 5,
+  z: Math.floor(i / 4) * 2.5 - 5,
+  alive: !broken,
+  broken,
+  crack,
+});
+
+const ARENA = { radius: 20, tileSize: 2.5, origin: -20, cols: 16 };
+
+function mount(tier = 'mid', crack = null) {
   const scene = new Scene();
   const island = createIsland({
     scene,
     quality: QUALITY[tier],
-    textures: fakeTextures(),
+    textures: fakeTextures(crack),
     arenaRadius: 20,
     seed: 7,
   });
-  const arena = { radius: 20, tileSize: 2.5, origin: -20, cols: 16 };
-  const tiles = Array.from({ length: 12 }, (_, i) => ({
-    index: i,
-    x: (i % 4) * 2.5 - 5,
-    z: Math.floor(i / 4) * 2.5 - 5,
-    alive: true,
-    crack: 0,
-  }));
-  island.syncTiles(tiles, arena);
+  island.syncTiles(
+    Array.from({ length: 12 }, (_, i) => makeTile(i)),
+    ARENA
+  );
   island.update(1 / 60, 0);
   return { scene, island };
 }
@@ -85,6 +96,43 @@ describe('裂岛：辉光通道的低面替身', () => {
     // 两者共用同一份实例矩阵，条数每帧对齐，不会画到空位上
     expect(shade.instanceMatrix).toBe(deck.instanceMatrix);
     expect(shade.count).toBe(deck.count);
+    island.dispose();
+  });
+});
+
+describe('裂岛：裂纹贴花池化', () => {
+  it('一整场的裂纹是一块实例网格，淡入淡出走每实例的 aFade', () => {
+    const { scene, island } = mount('mid', { isTexture: true });
+    const decals = scene.getObjectByName('tile-damage');
+    expect(decals.isInstancedMesh).toBe(true);
+    // 池子一次开满预算：打到最后十二片裂纹也只有一个 drawcall
+    expect(decals.count).toBe(QUALITY.mid.decalBudget);
+    // 一片都没有时整块不画
+    expect(decals.visible).toBe(false);
+
+    const fade = decals.geometry.attributes.aFade;
+    expect(fade.isInstancedBufferAttribute).toBe(true);
+    expect(fade.count).toBe(QUALITY.mid.decalBudget);
+
+    // 打裂两块板：各占一个槽位，透明度从 0 涨上来之后才真的露面
+    island.crackTile({ tileIndex: 1 }, 0.6);
+    island.crackTile({ tileIndex: 2 }, 0.6);
+    for (let i = 0; i < 60; i++) island.update(1 / 60, i / 60);
+    expect(decals.visible).toBe(true);
+    expect(fade.array[0]).toBeGreaterThan(0.1);
+    expect(fade.array[1]).toBeGreaterThan(0.1);
+    // 没用到的槽位是干净的 0，不会在台面上糊出一片
+    expect(fade.array[QUALITY.mid.decalBudget - 1]).toBe(0);
+
+    // 板塌下去，裂纹跟着收回池子，槽位可以再用
+    island.syncTiles(
+      Array.from({ length: 12 }, (_, i) => makeTile(i, i === 1 || i === 2, i === 1 || i === 2 ? 1 : 0)),
+      ARENA
+    );
+    island.update(1 / 60, 2);
+    expect(fade.array[0]).toBe(0);
+    expect(fade.array[1]).toBe(0);
+    expect(decals.visible).toBe(false);
     island.dispose();
   });
 });

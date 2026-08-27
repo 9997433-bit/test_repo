@@ -282,9 +282,10 @@ describe('角色：按材质合批（L3-10 绘制预算）', () => {
     expect(parts.length).toBeGreaterThanOrEqual(25);
 
     // 但每帧真正要画的只有合批后的那几份（+ 接地阴影），mid 档预算 120 是给
-    // 「4 个人 + 8 座 + 天光 + 特效」分的，一个人不能占掉三分之一
+    // 「4 个人 + 8 座 + 天光 + 特效」分的，一个人不能占掉三分之一。
+    // 中档并完是：布 / 皮 / 素面 / 金属 / 识别色漆 / 主副两道缝线，加接地阴影。
     const live = drawables(c.rootGroup);
-    expect(live.length).toBeLessThanOrEqual(14);
+    expect(live.length).toBeLessThanOrEqual(9);
     expect(live.filter((o) => o.isSkinnedMesh).length).toBe(live.length - 1);
     // 合批网格用的就是原来那几份材质，没有偷偷换成统一材质
     const mats = new Set(Object.values(c.mats));
@@ -345,6 +346,56 @@ describe('角色：按材质合批（L3-10 绘制预算）', () => {
     expect(mesh.material).toBe(c.mats.paintSurface);
     expect(readAt(main)[0]).toBeCloseTo(c.mats.paintMain.color.r, 6);
     expect(readAt(main)[2]).toBeCloseTo(c.mats.paintMain.color.b, 6);
+    chars.dispose();
+  });
+
+  it('布/皮/素面各并成一份，六套皮肤的衣料色仍旧一色一段', () => {
+    const { chars } = mount('mid');
+    chars.reconcile([player('p0', 'nuo')], 'p0');
+    const c = chars.get('p0');
+
+    // 并完之后：布与暗布同一份材质，皮与旧皮同一份，皮肤与配饰同一份
+    const clothMesh = c.skinned.byMaterial.get(c.mats.clothSurface);
+    const leatherMesh = c.skinned.byMaterial.get(c.mats.leatherSurface);
+    const plainMesh = c.skinned.byMaterial.get(c.mats.plainSurface);
+    for (const mesh of [clothMesh, leatherMesh, plainMesh]) {
+      expect(mesh).toBeTruthy();
+      expect(mesh.material.vertexColors).toBe(true);
+      // 合并材质自己是白的，颜色全在顶点上，否则会给每一段再乘一层色
+      expect(mesh.material.color.getHex()).toBe(0xffffff);
+    }
+    // 原来那几份材质没被删：它们仍旧是颜色的持有者
+    expect(c.skinned.byMaterial.has(c.mats.cloth)).toBe(false);
+    expect(c.mats.cloth.color).toBeTruthy();
+
+    const colorAt = (mesh, key) => {
+      const r = mesh.userData.ranges.find((x) => x.source.userData.tintSource === key);
+      const a = mesh.geometry.attributes.color;
+      return r ? [a.getX(r.start), a.getY(r.start), a.getZ(r.start)] : null;
+    };
+    // 衣料色与滚边色是两段不同的顶点色 —— 并材质不是「把两件衣服刷成一个色」
+    const cloth = colorAt(clothMesh, 'cloth');
+    const trim = colorAt(clothMesh, 'clothDim');
+    expect(cloth).not.toEqual(trim);
+    expect(cloth[0]).toBeCloseTo(c.mats.cloth.color.r, 6);
+    expect(trim[2]).toBeCloseTo(c.mats.clothDim.color.b, 6);
+    // 掌面的旧皮比腰带的皮亮：两段皮也分得开
+    expect(colorAt(leatherMesh, 'leather')).not.toEqual(colorAt(leatherMesh, 'leatherWorn'));
+    // 骨角 / 面具的配饰本色不会被皮肤色吃掉
+    expect(colorAt(plainMesh, 'accent')).not.toEqual(colorAt(plainMesh, 'skin'));
+    chars.dispose();
+  });
+
+  it('高档的布带织物菲涅尔，所以那一档不并布 —— 换来的画质不往中档塞', () => {
+    const { chars } = mount('high');
+    chars.reconcile([player('p0', 'nuo')], 'p0');
+    const c = chars.get('p0');
+    expect(c.mats.clothSurface).toBe(null);
+    expect(c.mats.cloth.sheen).toBeGreaterThan(0);
+    // 布与暗布在高档各画各的，识别色漆与皮照旧并
+    expect(c.skinned.byMaterial.has(c.mats.cloth)).toBe(true);
+    expect(c.skinned.byMaterial.has(c.mats.clothDim)).toBe(true);
+    expect(c.skinned.byMaterial.has(c.mats.leatherSurface)).toBe(true);
     chars.dispose();
   });
 

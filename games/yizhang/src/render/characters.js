@@ -131,6 +131,8 @@ const SURFACE_OF = {
   clothDim: 'clothSurface',
   leather: 'leatherSurface',
   leatherWorn: 'leatherSurface',
+  skin: 'plainSurface',
+  accent: 'plainSurface',
   paint: 'paintSurface',
   paintMain: 'paintSurface',
   paintOff: 'paintSurface',
@@ -153,6 +155,7 @@ const GHOSTABLE = [
   'leatherSurface',
   'skin',
   'accent',
+  'plainSurface',
 ];
 
 function matMesh(geometry, mats, key) {
@@ -550,6 +553,16 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       envMapIntensity: 0.56,
     });
 
+    // 皮肤与配饰本色是全身仅有的两份不带贴图的材质，差的是颜色与 0.06 的粗糙度。
+    // 骨角、面具底、旗面照旧是「这一身自己的颜色」，只是不再自己占一个 drawcall。
+    const plainSurface = new MeshStandardMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      roughness: 0.69,
+      metalness: 0,
+      envMapIntensity: 0.42,
+    });
+
     return {
       cloth,
       clothDim,
@@ -560,6 +573,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       metal,
       skin,
       accent,
+      plainSurface,
       paint: makePaint(ident),
       paintMain: makePaint(identMain),
       paintOff: makePaint(identOff),
