@@ -1,8 +1,22 @@
-# 异掌 · 公共 API 契约 v4（安全区大厅轮 · 叠手感轮，冻结）
+# 异掌 · 公共 API 契约 v4.1（安全区大厅轮 Round 2 · 契约向实现收口，冻结）
 
-> 手感轮改四处：渲染朝向零补偿、皮肤契约、每掌 VFX / ghosts、hit-stop 边界。大厅轮追加：`Input.interact`、`HUB` 布局、`phase/hub` 视图、`hubEquip/hubDeny/phaseChange`。O1 缺省 `phase:'hub'`；旧测靠空间规则或 `skipHub`。大厅 ADR 记为 29…32（手感轮已占用 25…28）。
+> 手感轮改四处：渲染朝向零补偿、皮肤契约、每掌 VFX / ghosts、hit-stop 边界。大厅轮追加：`Input.interact`、`HUB` 布局、`phase/hub` 视图、`hubEquip/hubLocked/hubFocus/hubPortalNear/enterArena/enterHub`。O1 缺省 `phase:'hub'`；旧测靠空间规则或 `skipHub`。大厅 ADR 记为 29…32（手感轮已占用 25…28）；Round 2 新增 ADR-33…35（空挥闸 / skinId+ghosts 导出 / 相机 pitch，见 ARCHITECTURE §10）。
+>
+> **v4.1 修订说明（SOTA_CHECKLIST §11.6 洞 4 收口，方向 = 契约向实现修）**：v4 与已被 330 测锁定的实现存在七处名/义漂移，本版全部按**实现的名字**改写（见下方「§0 名义漂移收口表」）。旧名一律是**从未实装的死名**（aliases-not-used）：不得对其写测试、写分派表或写音效映射。
 >
 > **变更规则**：已列出的导出（名字、参数、返回形状）不得改动或删除；追加新导出/新可选字段允许，但必须先在本文登记再写代码。类型用 TS 记法描述形状，实现是纯 JS。
+
+## 0. 名义漂移收口表（v4 旧名 → 实现名，v4.1 起以右列为准）
+
+| # | v4 旧名（死名，勿用） | 实现名（本文全文已改用） | 出处 |
+| --- | --- | --- | --- |
+| ① | `createMatch` 选项 `startPhase`（并注「缺省 `'arena'`」）、`unlockedGloveIds` | `phase` / `skipHub`（**缺省 `'hub'`**）、`unlocked`（别名 `unlockedGloves` 也认） | `sim/state.js resolvePhase`、`sim/hub.js resolveUnlocked` |
+| ② | 事件 `phaseChange{from,to,yaw}` | `enterArena{id,x,y,z}` / `enterHub{id,x,y,z}` | `sim/state.js enterArena/enterHub` |
+| ③ | 事件 `hubDeny{reason:'locked'}` | `hubLocked{gloveId,unlock}` | `sim/hub.js equipFromPedestal` |
+| ④ | HubView `nearPortal`、`mainChosen/offChosen` | `portalNear`、`mainGloveId/offGloveId` | `sim/hub.js hubView` |
+| ⑤ | 传送触发「进 `portal.aabb`」 | 圆形 `portal.radius`（数据表可同时给 aabb，**sim 只读 radius**） | `sim/hub.js nearPortal` |
+| ⑥ | 装备规则「已落位 ⇒ 无声 no-op」 | 副掌上再按 = **提为主掌**（原主退副）；仅「已是主掌再按主」才 no-op（发 `changed:false` 回执） | `sim/hub.js equipFromPedestal` |
+| ⑦ | 音效映射 `hubEquip→equip / hubDeny→deny / phaseChange→portal` | 按 §11 实测表：`hubFocus→uiMove`、`hubEquip→switchGlove`、`hubLocked→uiBack`、`enterArena→matchStart`；未列出的事件保持静默 | `src/main.js handleEvents` |
 
 ## 1. 总则与硬性不变量
 
@@ -38,11 +52,16 @@ interface Input {
   switchGlove: boolean;   // ↓ 四个由 sim 做上升沿检测，长按不连发
   dash: boolean;
   jump: boolean;
-  interact: boolean;      // HUB-R1 新增（ADR-28）：hub = 装备聚焦展掌；arena = no-op（R2 回程预留）。
-                          // 键鼠 E 同时置位 skill(hold) 与 interact(edge)，sim 按 phase 只消费其一。
+  interact: boolean;      // HUB-R1 新增（ADR-32）：hub = 装备最近台座；arena = no-op（R2 回程预留）。
+                          // input 以持续位上报（含 edge 补帧防短点触漏拍），sim 在 p.prev.interact
+                          // 做上升沿。键鼠 E 双义（skill hold + interact），由 input.setPhase 分流：
+                          // hub 下 sample 把 slap/skill 归零、只出 interact（§8）。
+  interactSlot?: 'main'|'off'|null;   // HUB-R1：触控槽位钮直接指定要装的槽；缺省 null = 「先主后副」
   moveSpace?: 'world'|'local';   // 缺省 'world'；'local' 按玩家 yaw 旋转，仅测试用
 }
-// 缺省玩家视为 ZERO_INPUT：{ moveX:0, moveZ:0, yaw:null, 其余 false（含 interact）}
+// 缺省玩家视为零输入。sim 导出两份基准：`ZERO_INPUT` **不含** interact 键（Bot 键集全等断言
+// 的基准，禁止把 interact 塞进去）；`HUB_ZERO_INPUT` = ZERO_INPUT + { interact:false,
+// interactSlot:null }（hub 测试/壳层基准）。缺省语义上 interact 视为 false。
 ```
 
 **摇杆→世界系换算**（input 层职责，θ = cameraYaw，`sx` 屏幕右为正、`sy` 屏幕前为正）：
@@ -174,44 +193,57 @@ interface SkinDef {
 3. Bot 皮肤：`BOT_PERSONAS` 每个 persona 带 `skinId`（建议 brute→`wildhorn`、fox→`crane`、bully→`nuo`，终值 F3 定），三人互异且不与 `DEFAULT_SKIN_ID` 相同——**Bot 不得全员同一造型**。
 4. 新皮肤 / 新枚举值（headgear、back、build 扩档）= 先在本表登记，再写代码。禁止贴图包、禁止下载素材，全部低面数几何 + 程序化材质。
 5. 枚举值的视觉终稿归 F2/O2（`docs/ART_DIRECTION.md` 补规范），本表只冻结 id 与形状语言的语义。
-### 3.3 `HUB` 安全区大厅布局表（HUB-R1，Fable-3；`src/data/hub.js`，ADR-30）
+### 3.3 `HUB` 安全区大厅布局表（HUB-R1，Fable-3；`src/data/hub.js`，ADR-30；v4.1 按实现名收口）
 
-大厅布局是**数据不是代码**（ADR-26）：具体数值归 F3，本节只冻结形状与硬约束。sim 经 `deps.js` 静态引入并在 `createMatch` 时快照进 `state.hub.layout`；render/ui 从 `view.hub` 读，**禁止任何模块硬编码第二份坐标**。
+大厅布局是**数据不是代码**（ADR-26）：具体数值归 F3，本节只冻结形状与硬约束。接线实况：`src/data/index.js` 汇总导出 `HUB`，装配层（`core/modules.js wireSimDeps → sim.installData`，deps 真身识别不翻假标志）或测试的 `installHubLayout` 把它交给 sim；数据表缺席时 sim 用 `sim/hub.js DEFAULT_HUB_LAYOUT`（同形状同坐标）兜底，`getDeps().usingDataHub` 报真源。`createMatch` 时经 `normalizeHubLayout` 补全并快照进 `state.hub.layout`；render/ui 从 `view.hub` 读，**禁止任何模块硬编码第二份坐标**。
 
 ```ts
 export const HUB: HubLayout;
 
-interface HubLayout {
+interface HubLayout {                   // sim normalizeHubLayout 后的消费形状
+  id: string; source: string;           // 布局来源标记（'data' | 'sim-default'）
+  origin: { x: number; y: number; z: number };    // 安全区参考原点（走道中心，z ≈ -120）
   floorY: number;                       // 大厅地面高度（y）
-  spawn: { x: number; z: number; yaw: number };   // p0 出生点（走道一端），yaw 面向门
-  bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
-                                        // 可走范围 AABB，sim 硬钳制（安全区走不出去、掉不下去）
+  spawn: { x: number; y: number; z: number; yaw: number };  // p0 出生点，yaw=0 面向门（-Z）
+  walkway: { halfWidth: number; minZ: number; maxZ: number };
+                                        // 可走范围（隐形墙），sim 硬钳制（安全区走不出去、掉不下去）
+  zone: { halfWidth: number; minZ: number; maxZ: number; minY: number; maxY: number };
+                                        // 「算不算在安全区里」的判定体积（比走道宽一圈 + 竖直范围）；
+                                        // 免战/免掉落按实体是否在 zone 内生效，见 §4.4
   interactRadius: number;               // 靠近交互半径，1.6..2.2
   portal: {
-    x: number; z: number; yaw: number;  // 门中心与朝向（渲染/说明牌用）
-    aabb: { minX: number; maxX: number; minZ: number; maxZ: number };   // 传送触发区
+    x: number; y: number; z: number;    // 门中心
+    radius: number;                     // ⑤ 传送触发 = 圆形半径（sim 唯一读取的触发字段）
+    yaw?: number;                       // 门面朝向（渲染/说明牌用，sim 不读）
+    aabb?: { minX: number; maxX: number; minZ: number; maxZ: number };
+                                        // 兼容字段：radius 的外切矩形，数据表可给，sim 不读
   };
+  pedestalRadius: number;               // 台座实体碰撞半径（走不过去）
+  pedestalHeight: number;               // 座体净高
   pedestals: HubPedestal[];             // 恰好 8 条，走道两侧各 4 座
 }
 interface HubPedestal {
   gloveId: GloveId;                     // 8 只掌一一对应，gloveId 全表唯一
   x: number; z: number; yaw: number;    // 台座位置与展掌朝向（yaw 遵守 ADR-17）
-  y?: number;                           // 展掌悬浮高度，缺省 HUB.floorY + 台座高（F3 定）
+  y?: number;                           // 展掌悬浮高度，缺省 floorY（F3 实表给 floorY+台座高+0.4）
+  row?: 'left'|'right'; index?: number; // 排位标记（render 按排布光用，缺省由 x 推导）
 }
 ```
+
+数据表可以额外携带 `bounds`（= walkway 的 minX/maxX 写法）等派生副本供文档/验收对照，sim 的 `normalizeHubLayout` 只认上表字段——**触发判定的唯一事实源是 `portal.radius` 圆与 `walkway` 钳制**。
 
 硬约束（F4 验收 / G1 契约测引用）：
 
 1. `pedestals.length === 8`，`gloveId` 覆盖全部 8 只掌且不重复；顺序 = `GLOVES` 图鉴顺序。
 2. `interactRadius ∈ [1.6, 2.2]`；相邻台座间距 > `2 × interactRadius`（聚焦无歧义）。
-3. 大厅全部几何（bounds ∪ portal.aabb ∪ 各台座）与裂岛圆盘（半径 20 + 2m 缓冲）**不重叠**——O2 双场景同世界摆放不穿帮。建议走道沿 -Z 推进：spawn 在 +Z 端、门在 -Z 端，与 yaw=0 → -Z 同向（开局镜头即面向走道纵深）。
-4. `spawn`、全部台座、`portal.aabb` 都在 `bounds` 内；门 AABB 不与任何台座的交互半径相交。
+3. 大厅全部几何（zone ∪ 门触发圆 ∪ 各台座）与裂岛圆盘（半径 20 + 2m 缓冲）**不重叠**——O2 双场景同世界摆放不穿帮。走道沿 -Z 推进：spawn 在 +Z 端、门在 -Z 端，与 yaw=0 → -Z 同向（开局镜头即面向走道纵深）。
+4. `spawn`、全部台座、门触发圆都在 `walkway` 内；门触发圆不与任何台座的交互半径相交。
 
 ## 4. `src/sim`（Opus-1 所有；入口 `src/sim/index.js`）
 
 ### 4.0 依赖接线（ADR-19/24，冻结）
 
-`src/sim/deps.js` **静态 import** `../data/gloves.js`（运行时权威掌表）、`../data/hub.js`（大厅布局，HUB-R1 新增）与 `./combat-bridge.js`（其内静态 import `../combat/index.js`）——生产路径零动态注入，**import sim 即已接线**。`getDeps()` 返回 `{ MATCH, GLOVES, GLOVE_BY_ID, HUB, combat, usingRealData, usingRealCombat }`：
+`src/sim/deps.js` **静态 import** `../data/gloves.js`（运行时权威掌表）与 `./combat-bridge.js`（其内静态 import `../combat/index.js`）——生产路径零动态注入，**import sim 即已接线**。大厅布局是唯一例外：sim 不静态 import `data/hub.js`（防 data 侧缺席拖垮 sim），内置 `DEFAULT_HUB_LAYOUT` 兜底，装配层 `wireSimDeps → installData(dataModule)`（或 `installHubLayout(HUB)`）把 F3 真表装进来——deps 的真身识别对携带 `HUB` 的真实 data 模块**不翻假标志**，`usingDataHub` 单独报布局真源。`getDeps()` 返回 `{ MATCH, GLOVES, GLOVE_BY_ID, HUB, combat, usingRealData, usingRealCombat, usingDataHub }`：
 
 - **`usingRealCombat === true ⇔ 未装替身（combatMod === null）⇔ 生产静态桥在岗**。`installCombat(mod)` 传任何非 null 模块都置 false——即使传真实 `src/combat` 命名空间，因为绕过桥（朝向换算、命中翻译、事件消化）就不是产线路径（ADR-24）。**false 读作「测试替身在场」，不是「combat 缺席」**。
 - `usingRealData` 同理（仅当替身给出非空 `GLOVES` 才为 false）。`installData` 会经 `normalizeGlove` 用真实 cotton 补全替身缺字段，防 sim 吃 NaN。替身可携 `HUB` 覆盖布局（测试用），缺席回落真实表。
@@ -224,21 +256,30 @@ interface HubPedestal {
 ```ts
 export function createMatch(opts: {
   seed: number;
-  gloveId: GloveId; offhandId: GloveId;     // 人类主/副掌；非法 id 回落 cotton。
-                                            // startPhase:'hub' 时是「预选」：进局即持有，但未算「已选」
-                                            // （chosen 位 false，portalReady false，见 §4.4）
+  gloveId?: GloveId|null; offhandId?: GloveId|null;
+                                            // 人类主/副掌；非法/缺省回落 cotton（副掌回落首个异掌）。
+                                            // hub 开局下传**有效** gloveId = 主掌「已选」：
+                                            // hub.mainGloveId 直接落位、portalReady 即 true（存档配装
+                                            // 带进走道当初始装）。要走「先选掌才开门」的产品流程，
+                                            // 传 null / 不传（main.startMatch 实况，见 §4.4）。
   botCount?: number;                         // 默认 3
   botPersonas?: Persona[];                   // 默认 brute→fox→bully 循环
   skinId?: string;                           // 手感轮新增：人类皮肤。sim 视为不透明字符串原样存取，
-                                             // 不校验、不 import skins.js（ADR-26）；缺省存 null
+                                             // 不校验、不 import skins.js（ADR-26/34）；缺省存 null
   botSkinIds?: (string|null)[];              // 手感轮新增：与 bot 序号对齐（b0 取 [0]…）。
                                              // 编排层从 BOT_PERSONA_BY_ID[persona].skinId 取值传入
-  config?: Partial<MatchConst>;              // 测试用覆盖
-  startPhase?: 'hub'|'arena';                // HUB-R1 新增（ADR-25）。缺省 'arena'——既有测试/探针零回归；
-                                             // 产品路径（shell.startMatch）必须传 'hub'（F4 验收线）
-  unlockedGloveIds?: GloveId[];              // HUB-R1 新增（ADR-26）：hub 装备许可集，缺省 ['cotton']
-                                             // （fail-closed）；cotton 恒解锁；未知 id 忽略；sim 不读存档，
-                                             // shell 用 data.isGloveUnlocked + 存档换算后传入
+  config?: Partial<MatchConst>;              // 测试用覆盖（config.skipHub 也认，见 phase）
+  phase?: 'hub'|'arena';                     // ① 开局在哪。**缺省 'hub'（开局在安全区）**——这是产品
+                                             // 路径，HR-01 红线；旧测/旧探针要直接进岛显式传 'arena'。
+  skipHub?: boolean;                         // ① 等价于 phase:'arena' 的旧路便捷位；config.skipHub 同义。
+                                             // 优先级：opts.phase > opts.skipHub > config.skipHub > 'hub'
+  unlocked?: GloveId[] | Set<GloveId> | Record<GloveId, boolean> | 'all';
+                                             // ① hub 装备许可集（别名 unlockedGloves 也认）。缺省
+                                             // fail-closed：unlock==='default' 的掌 + 调用方明确传入的
+                                             // gloveId/offhandId；空集回落表首掌；未知 id 忽略；
+                                             // 'all' 全解锁（测试/探针用）。sim 不读存档，shell 用
+                                             // data.isGloveUnlocked + 存档换算后传入。
+  // 死名（v4 曾登记、从未实装，禁止使用）：startPhase、unlockedGloveIds。
 }): MatchState;
 
 export function step(state: MatchState, inputs: Partial<Record<PlayerId, Partial<Input>>>, dt: number): MatchState;
@@ -252,13 +293,15 @@ export function getView(state: MatchState): MatchView;   // §4.3
 export function isMatchOver(state: MatchState): { over: boolean; winnerId?: PlayerId|null; reason?: 'kills'|'time' };
 ```
 
-**`isMatchOver` 语义（ADR-20，冻结；HUB-R1 修订计时域，ADR-27）**：
+**`isMatchOver` 语义（ADR-20，冻结；HUB-R1 计时域 = 传送重置，v4.1 按实现改写）**：
 
-- **纯读的活谓词，不要求先 `step`**。调用不改 state、不发事件。
-- `over ⇔ state.match.over ∨ ∃p: p.kills ≥ config.killsToWin ∨ arenaTime ≥ config.matchSeconds`，
-  其中 **`arenaTime = phase === 'arena' ? state.time − state.hub.enteredArenaAt : 0`**——
-  时间判据只在格斗区计时域内成立，逛大厅不吃对局时间；`phase === 'hub'` 恒 `over: false`。
-  `startPhase: 'arena'` 时 `enteredArenaAt = 0`，`arenaTime ≡ state.time`，v3 语义逐位一致。
+- **纯读的活谓词，不要求先 `step`**。调用不改 state、不发事件；**不看 phase**。
+- `over ⇔ state.match.over ∨ ∃p: p.kills ≥ config.killsToWin ∨ (state.time − match.startTime) ≥ config.matchSeconds`。
+  计时锚是 **`state.match.startTime`**（createMatch 时 0）；「挑掌不吃对局时长」由**传送重置**实现：
+  `enterArena` 把 `startTime = state.time`、`secondsLeft` 回满、`over/winnerId/reason` 清空——
+  不是在 hub 冻结时钟。`phase:'arena'` 开局时 `startTime = 0`，与 v3 语义逐位一致。
+  推论：在 hub 里逗留超过 `matchSeconds`，`isMatchOver` 也会给 `over:true`（有测锁定此行为）——
+  **壳层在 hub 阶段不消费 over**（main 实况：`over ∧ phase !== 'hub'` 才进结算），穿门即重置。
   调用方直接改 `player.kills`（如契约测试）后**立即**得到 `over: true`。
 - `winnerId/reason`：已缓存则回缓存；否则杀数达标 ⇒ 该玩家（按 players 序取先者）+ `'kills'`；时间到 ⇒ 杀数最多者（平杀比死数少、再平按 players 序）+ `'time'`。本版无 `'draw'`。
 - `step` 内的 `updateMatch` 仍负责把结果写入 `state.match` 并发 `matchOver` 事件——**事件与缓存需要 step，布尔真值不需要**。`isMatchOver` 与 `updateMatch` 共用 `decideMatch(state)`（现算、不写 state），保证「直接改 kills 再问」与「跑满 step」两条路答案一致。
@@ -266,13 +309,20 @@ export function isMatchOver(state: MatchState): { over: boolean; winnerId?: Play
 附属导出（现有名单冻结，不得删除；节选常用面）：
 
 ```ts
-export { installData, installCombat, resetDeps, getDeps, resolveGlove };   // 接线（测试用）
+export { installData, installCombat, installHubLayout, resetDeps, getDeps, resolveGlove };
+                                                     // 接线（install* 仅测试替身用）
 export function getMatchConfig(): MatchConst;        // 生效中的 MATCH 副本（main 传 shell 用这份）
 export function getGloves(): GloveDef[];             // 生效中的掌表副本
+export function getHubLayout(): HubLayout;           // 生效中的大厅布局副本（data 表或内置默认）
+export { enterArena, enterHub };                     // 传送 / 回程 API（②，见 §4.4；事件同名）
+export { DEFAULT_HUB_LAYOUT, equipFromPedestal, hubSpawnFor, inHubZone,
+         nearPortal, nearestPedestal, playerInHub, setHubUnlocked };   // hub 判定/装备原语
 export function damageTileAt(state, x: number, z: number, amount: number): { tile, broken } | null;
                                                      // 台面伤害唯一入口：发事件、计 stats
 export function hasFloorUnder(state, x: number, z: number): boolean;
-export const ZERO_INPUT: Input;
+export const ZERO_INPUT: Input;                      // 不含 interact（Bot 键集基准）
+export const HUB_ZERO_INPUT: Input;                  // = ZERO_INPUT + { interact:false, interactSlot:null }；
+                                                     // hub 测试/壳层基准，禁止把 interact 并进 ZERO_INPUT
 export function applyHits(state, attacker, hits: HitRecord[], source: 'slap'|'skill'): number;
 export { getPlayer, activeGlove, activeGloveId, respawnPlayer };
 export { forwardX, forwardZ, rightX, rightZ, yawFromDir, wrapAngle, FACE };
@@ -293,24 +343,41 @@ interface MatchState {
   version: 1; seed: number;
   rng: { a: number; b: number; c: number; d: number };   // sfc32，纯整数
   time: number; tick: number;
+  t: number;                          // 已登记内部字段：combat 读的时钟别名，与 time 同步（桥维护）
+  playerRadius: number;               // 已登记内部字段：combat 扇形判定读的平铺副本（= config.playerRadius）
   config: MatchConst;                 // createMatch 时快照（含 opts.config 覆盖）
-  phase: 'hub'|'arena';               // HUB-R1 新增（ADR-25）：双区状态机，R1 单向 hub → arena
-  hub: HubState;                      // HUB-R1 新增：大厅簿记（两个 phase 下都存在）
+  phase: 'hub'|'arena';               // 双区状态机（ADR-29）。step 内传送单向 hub → arena；
+                                      // 回程走 enterHub API（壳层调用，不在 step 内自动发生）
+  hub: HubState;                      // 大厅簿记（两个 phase 下都存在）
   arena: ArenaState;
+  combat: { clock: number; pending: unknown[]; dashes: unknown[]; ghosts: unknown[]; seq: number };
+                                      // 已登记内部字段：combat 状态机台账（O3 写、桥翻译；
+                                      // ghosts 经桥 ghostsView 出 view，ADR-27/34）
   players: PlayerState[];             // [0] 恒为 p0
   events: SimEvent[];                 // 本 step 产生，开头清空，≤ 96 条
-  match: { over: boolean; winnerId: PlayerId|null; reason: 'kills'|'time'|null; secondsLeft: number };
+  match: { over: boolean; winnerId: PlayerId|null; reason: 'kills'|'time'|null;
+           startTime: number;         // 对局计时锚：createMatch 时 0，enterArena 时重置（§4.1）
+           secondsLeft: number };
   stats: { slaps: number; hits: number; kos: number; tilesBroken: number };
 }
 
-interface HubState {                  // HUB-R1 新增；纯数据，随 state 一起 structuredClone
-  mainChosen: boolean;                // 主掌是否已在走道确认（portalReady 的判据）
-  offChosen: boolean;
+interface HubState {                  // HUB-R1；纯数据，随 state 一起 structuredClone。v4.1 按实现名收口（④）
+  layout: HubLayout;                  // normalizeHubLayout(HUB) 的每局快照（§3.3），运行期只读
+  unlocked: GloveId[];                // createMatch(opts.unlocked) 解析结果（fail-closed，§4.1）
+  pedestals: {                        // 台座簿记（view 侧形状见 §4.3 HubPedestalView）
+    gloveId: GloveId; x: number; y: number; z: number; yaw: number;
+    row: 'left'|'right'; index: number;
+    unlock: 'default'|string;         // 解锁条件 id（GloveDef.unlock 透传，hubLocked 事件携带）
+    unlocked: boolean;
+    selected: 'main'|'off'|null;      // 已确认落位的槽
+  }[];
+  mainGloveId: GloveId|null;          // 在走道确认过的主掌；null = 还没挑（portalReady 的判据）。
+                                      // 死名：mainChosen/offChosen（v4，从未实装）
+  offGloveId: GloveId|null;
   focusGloveId: GloveId|null;         // 当前聚焦展掌（interactRadius 内最近；arena 阶段恒 null）
-  nearPortal: boolean;                // p0 是否在门 AABB 外扩提示区/门内（HUD 提示用）
-  enteredArenaAt: number|null;        // 传送发生时的 state.time；startPhase:'arena' ⇒ 0；hub 中 ⇒ null
-  unlocked: GloveId[];                // createMatch 注入的装备许可集（恒含 'cotton'，已去重排序）
-  layout: HubLayout;                  // data.HUB 的快照（§3.2），运行期只读
+  portalReady: boolean;               // ⇔ !!mainGloveId（syncSelection 维护）
+  portalNear: boolean;                // 有真人站在门触发圆内（§4.4）。死名：nearPortal（v4）
+  enteredArenaAt: number|null;        // 传送发生时的 state.time；hub 中/『arena 直开』⇒ null
 }
 
 interface PlayerState {
@@ -364,14 +431,17 @@ interface MatchView {
   hub: HubView | null;                // HUB-R1 新增；真实 sim 恒为对象（两个 phase 下都给，
                                       // 几何静态、体积小）；null 仅允许出现在降级件，消费方须容错
   match: { over: boolean; winnerId: PlayerId|null; reason: 'kills'|'time'|null; secondsLeft: number };
-                                      // hub 阶段 secondsLeft ≡ matchSeconds（计时冻结，ADR-27）
+                                      // hub 阶段 secondsLeft 也走表（自 startTime=0），壳层不消费；
+                                      // 穿门重置回满（§4.1 计时域 = 传送重置）
   arena: {
     radius: number; tileSize: number; cols: number; origin: number;
     floorY: number; brokenCount: number;
     tiles: ViewTile[];
   };
   players: ViewPlayer[];
-  combat: { ghosts: ViewGhost[] };     // 手感轮新增（ADR-27）：分身残影，render 必画
+  combat: { ghosts: ViewGhost[] };     // 手感轮新增（ADR-27）：分身残影，render 必画。
+                                       // 名字冻结于 ADR-34：`combat.ghosts` 与 `players[].skinId`
+                                       // 是 O1 Round 2 的导出面，恒存在、JSON-safe（无残影 = 空数组）
   events: SimEvent[];
   stats: { slaps: number; hits: number; kos: number; tilesBroken: number };
 }
@@ -381,25 +451,38 @@ interface ViewGhost {                  // 来源 state.combat.ghosts，经 comba
   ttl: number; ttl0: number;           // 剩余/初始秒；render 用 ttl/ttl0 做淡出（O3 建 ghost 时写 ttl0）
   fake: boolean;                       // true = 觉醒残影，会假挥掌（ghostSlap 事件）
 }
-interface HubView {                    // HUB-R1 新增（ADR-30/31）
-  focusGloveId: GloveId|null;          // 聚焦展掌；HUD 说明牌与 render 高亮的唯一依据
-  portalReady: boolean;                // ⇔ mainChosen；门可用
-  nearPortal: boolean;                 // p0 在门提示区内（§4.4 定义）
-  mainChosen: boolean; offChosen: boolean;
-  interactRadius: number;
-  spawn: { x: number; z: number; yaw: number };
-  bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
+interface HubView {                    // HUB-R1（ADR-30/31）；v4.1 按实现名收口（④⑤）
+  layoutId: string; source: string;    // 布局来源（'data' | 'sim-default'，见 §3.3）
+  origin: { x: number; y: number; z: number };
   floorY: number;
-  portal: { x: number; z: number; yaw: number;
-            aabb: { minX: number; maxX: number; minZ: number; maxZ: number } };
-  pedestals: HubPedestalView[];        // 恒 8 条，GLOVES 图鉴顺序
+  spawn: { x: number; y: number; z: number; yaw: number };
+  walkway: { halfWidth: number; minZ: number; maxZ: number };   // 隐形墙（sim 钳制同一份数据）
+  zone: { halfWidth: number; minZ: number; maxZ: number; minY: number; maxY: number };
+  portal: { x: number; y: number; z: number; radius: number;    // ⑤ 圆形触发（无 aabb 字段）
+            ready: boolean; near: boolean };                    // = portalReady / portalNear 的就地副本
+  interactRadius: number;
+  pedestalRadius: number; pedestalHeight: number;
+  focusGloveId: GloveId|null;          // 聚焦展掌；HUD 说明牌与 render 高亮的唯一依据
+  portalReady: boolean;                // ⇔ !!mainGloveId；门可用
+  portalNear: boolean;                 // 有真人在门触发圆内（§4.4）。死名：nearPortal
+  mainGloveId: GloveId|null;           // 走道确认的主/副掌。死名：mainChosen/offChosen
+  offGloveId: GloveId|null;
+  unlocked: GloveId[];                 // 装备许可集副本
+  pedestals: HubPedestalView[];        // 真表下恒 8 条，GLOVES 图鉴顺序
 }
 interface HubPedestalView {
   gloveId: GloveId;
-  x: number; y: number; z: number; yaw: number;
-  unlocked: boolean;                   // 装备许可（unlockedGloveIds 注入的结果）
-  selected: 'main'|'off'|null;         // 已确认落位的槽；未 chosen 的预选不算
+  x: number; y: number; z: number; yaw: number;   // y = 展掌悬浮中心（F3 表值）
+  row: 'left'|'right'; index: number;
+  height: number;                      // = layout.pedestalHeight（座体净高）
+  radius: number;                      // = layout.interactRadius（交互圈，render 画提示圈用）
+  unlock: 'default'|string;            // 解锁条件 id（说明牌文案经 UNLOCK_BY_GLOVE 查）
+  unlocked: boolean;                   // 装备许可（opts.unlocked 注入的结果）
+  selected: boolean;                   // 是否已落位（布尔）；具体哪个槽看 slot
+  slot: 'main'|'off'|null;             // 已确认落位的槽
   focused: boolean;                    // === (gloveId === focusGloveId)
+  name: string; color: string;         // getView 从掌表补挂：UI 不必再翻 data
+  desc: string|null; role: string|null;
 }
 interface ViewTile {
   i: number; x: number; z: number; zone: 0|1|2|3; seam: boolean;
@@ -424,35 +507,42 @@ interface ViewPlayer {
   combo: number; knockScale: number;
 }
 // 编排层用 core/interp.js lerpView(prev, cur, alpha) 产出插值快照后再交 renderer（ADR-12 修订）。
-// HUB-R1：prev.phase !== cur.phase（传送帧）⇒ lerpView 整帧跳插值直接返回 cur（ADR-27）。
+// HUB-R1：prev.phase !== cur.phase（传送帧）⇒ lerpView 整帧跳插值直接返回 cur（ADR-31）。
 ```
 
-### 4.4 双区与大厅交互语义（HUB-R1 新增，ADR-25/26/27，冻结）
+### 4.4 双区与大厅交互语义（HUB-R1，ADR-29/30/31；v4.1 按实现收口，冻结）
 
-**安全区四禁（`phase === 'hub'` 时 sim 的行为面）**：
+**规则按「实体所处空间」生效，不是全局开关**：`playerInHub(state, p) ⇔ phase === 'hub' ∧ p 在 `layout.zone` 体积内`。把人摆在裂岛坐标上的旧测不受 phase 影响，照走裂岛规则。
 
-1. **不进 combat 管线**：不调 `tickStatuses / resolveSlap / resolveSkill`，扇击相位机不启动（`slap` 按住无效、不发 `slapStart/slap` 事件），无击退、无 meter 收支、无状态、无觉醒。
-2. **无掉落**：支撑不查 `arena` 台面；p0 位置逐子步被 `hub.layout.bounds` AABB 硬钳制（贴墙滑动，不反弹）；`fallY` 与出盘 ko 判定跳过。移动/冲刺/跳照常（手感与 arena 一致）。
-3. **Bot 静默**：bot 保持 `createMatch` 时的裂岛站位不动。编排层 hub 阶段不调 `ai.think`（ADR-28）；即使被喂输入，sim 在 hub 阶段也只对 p0 结算动作（双保险）。
-4. **计时冻结**：`match.secondsLeft ≡ matchSeconds`；`isMatchOver` 恒 `over: false`（§4.1 计时域）。
+**安全区四禁（对 hub 内实体的行为面）**：
 
-**聚焦（focus）**：每子步计算 `focusGloveId` = 与 p0 的 **xz 距离 ≤ `interactRadius`** 的最近展掌；并列取 `pedestals` 表序靠前者；半径内无展掌 ⇒ `null`；`phase === 'arena'` ⇒ 恒 `null`。`nearPortal` ⇔ p0 的 xz 位置落在 `portal.aabb` 各边**外扩 `interactRadius`** 的矩形内（提示区复用交互半径，不加新调参项）。
+1. **免战**：命中落账处豁免——`applyHits` 对 hub 内目标把 combat 已写入的冲量**退回**、跳过 `lastHitBy/hitsTaken/kbT` 记账、不发 `hit` 事件；无掉落 KO ⇒ 无 meter 击杀奖励。注意 `combat.tickStatuses` 每子步照跑（状态倒计时是全局一份），豁免在落账处不在管线口。**空挥闸（ADR-33，Round 2 O1 落地）**：`phase === 'hub'` 时 `handleActions` 不启动扇击前摇（不发 `slapStart/slap`、`stats.slaps` 不涨）、不调 `resolveSkill`/不发 `skill`（含疾风 dashSlap 这类战斗位移技）；R1 实况是 hub 内按住鼠标仍空挥（hits:0），R2 起按本条闸死。
+2. **无掉落**：hub 内支撑不查 `arena` 台面，走 `resolveHubGround`——实心地板（`floorY`）+ `walkway` 隐形墙硬钳制（贴墙滑动，不反弹）+ 台座柱体（`pedestalRadius` 实体，走不过去）；`fallY` 与出盘 ko 判定跳过。移动/跳/Shift 位移冲刺照常（手感与 arena 一致）。
+3. **Bot 静默**：`createMatch` 时 Bot 全部落裂岛站位（安全区不放 Bot）。编排层 hub 阶段不调 `ai.think`（ADR-32）；`think` 见 hub 视图自返零输入（双保险）。
+4. **计时域 = 传送重置**（§4.1）：`secondsLeft` 在 hub 也走表（自 `startTime = 0`），但壳层在 hub 阶段不消费 `over`、HUD 不展示对局倒计时；穿门时 `startTime/secondsLeft/over` 整体重置，「挑掌不吃对局时长」由此保证。
 
-**`interact` 上升沿的装备结算**（仅 hub；对象 = 当前聚焦展掌，无聚焦 ⇒ no-op）：
+**聚焦（focus）**：每子步计算 `focusGloveId` = 与 p0 的 **xz 距离 ≤ `interactRadius`** 的最近台座（`nearestPedestal`）；并列取 `pedestals` 表序靠前者；半径内无台座 ⇒ `null`；`phase === 'arena'` ⇒ 恒 `null`。聚焦**变为非空/换座**时发 `hubFocus { gloveId }` 事件（回落 null 不发事件——消费方读 view diff）。`portalNear` ⇔ 有 hub 内真人 xz 距门中心 ≤ `portal.radius`（**提示区 = 触发圆本身**，不外扩、不加新调参项）；进圆沿发一次 `hubPortalNear { id, ready }`。
+
+**`interact` 上升沿的装备结算**（仅 hub；对象 = 交互半径内最近台座，无 ⇒ no-op；`input.interactSlot: 'main'|'off'` 可直接指定槽位——触控 UI 的两个槽位按钮）：
 
 | 前置状态（自上而下取首条命中） | 结果 | 事件 |
 | --- | --- | --- |
-| 展掌未解锁（∉ `hub.unlocked`） | 拒绝，配装不变 | `hubDeny { reason: 'locked' }` |
-| 该掌已**确认**落位（`selected ≠ null`；预选不算） | no-op（HUD 显示「已装备」） | 无 |
-| `!mainChosen` | 写主槽：`gloveId = 该掌`、`activeSlot = 0`、`mainChosen = true` ⇒ `portalReady` | `hubEquip { slot: 'main' }` |
-| `mainChosen && !offChosen` | 写副槽：`offhandId = 该掌`、`offChosen = true` | `hubEquip { slot: 'off' }` |
-| 双槽已满 | 替换副槽（主掌不被覆盖） | `hubEquip { slot: 'off' }` |
+| 台座未解锁（`unlocked === false`） | 拒绝，配装逐字段不变 | `hubLocked { gloveId, unlock }`（③；`unlock` = 解锁条件 id） |
+| 该掌已是主掌 | no-op（HUD 显示「已装备」） | `hubEquip { slot:'main', changed:false }`（回执，不改配装） |
+| 主槽空（`mainGloveId === null`） | 写主槽 ⇒ `portalReady` | `hubEquip { slot:'main', changed:true, mainGloveId, offGloveId }` |
+| 该掌已是副掌，再按一次 | **提为主掌**，原主掌顺位退到副槽（⑥，UX 优于 no-op） | `hubEquip { slot:'main', changed:true, … }` |
+| 副槽空 | 写副槽 | `hubEquip { slot:'off', changed:true, … }` |
+| 双槽已满 | 替换副槽（主掌不被覆盖） | `hubEquip { slot:'off', changed:true, … }` |
 
-**hub 内 `switchGlove`** = 主副槽**交换**（`gloveId ↔ offhandId`，chosen 位与 selected 标记随行，`activeSlot` 归 0，无 switchLock 代价，发既有 `switch` 事件 `slot: 0`）。要换主掌：新掌先落副槽，再按一次换掌交换。arena 阶段维持既有 activeSlot 切换语义，互不影响。
+装备成功即写回玩家（`applyLoadout`）：`gloveId/offhandId` 更新、副掌未选时 `offhandId = mainGloveId`（不让人白捡没选过的掌）、`activeSlot = 0`。指定 `interactSlot:'off'` 时：该掌已是副掌 ⇒ `changed:false` 回执；已是主掌 ⇒ 静默 no-op（同一只掌不占两格）。
 
-**传送**：`portalReady ∧ p0 的 xz 进入 portal.aabb` 的同一 tick 完成——`phase = 'arena'`、`enteredArenaAt = state.time`、p0 走既有出生点链路（`spawnSlot 0 → spawnPointFor → findSpawnSpot`，速度清零、`grounded = true`、朝台心、`invulnT = invulnTime`）、**loadout 原样保留**、`activeSlot = 0`，发 `phaseChange`（携落点坐标，相机瞬移用）。未 ready 进 AABB 不传送、不发事件——「先选一只掌」提示由 HUD 从 `nearPortal ∧ !portalReady` 状态读出（状态驱动，非事件驱动）。穿门即传送，无需 interact，键鼠触控同一路径。
+**hub 内 `switchGlove`**（洞 5 收口，契约随实现修）：与 arena 完全同一套语义——`activeSlot` 切换 + `switchLock 0.4s` + 既有 `switch` 事件；**没有**「主副槽交换、免 switchLock」的特殊 hub 语义（v4 旧文，从未实装）。「换主掌」的诉求由上表第 4 行（副掌再按提主）承担。
 
-**选掌预选与存档**：`createMatch(opts.gloveId/offhandId)` 在 hub 开局下只是「预选」（角色手上可先渲染为空手，O2 自便），chosen 位从 false 起步；`hubEquip` 成功后 **O4 负责把配装写回存档**（`updateSave({ loadout })`，存档 schema §12 不变）。
+**传送**：`portalReady ∧ 真人 xz 进入门触发圆（距门中心 ≤ portal.radius）` 的同一 tick 完成（⑤；sim 只读 radius，不读 aabb）——`enterArena(state, p)`：`phase = 'arena'`、该玩家走既有出生点链路（`spawnSlot → spawnPointFor → findSpawnSpot`，速度清零、`grounded = true`、朝台心）、`invulnT = max(invulnT, invulnTime)`、**loadout 原样保留**；`match.startTime = state.time`、`secondsLeft` 回满、`over/winnerId/reason` 清空；`hub.enteredArenaAt = state.time`、`focusGloveId = null`、`portalNear = false`；发 `enterArena { id, x, y, z }`（②，每个被传送真人一条；**不带 yaw**——朝向已写在玩家身上，壳层读 view 对齐相机）。未 ready 进圆不传送——「先选一只掌」提示由 HUD 从 `portalNear ∧ !portalReady` 状态读出（状态驱动）+ `hubPortalNear{ready:false}` 事件 toast。穿门即传送，无需 interact，键鼠触控同一路径。
+
+**回程 `enterHub(state, player?)`**（②，壳层 API，R2 打磨 UX）：`phase = 'hub'`、真人放回 hub 出生点（多人横向错开）、复活并清状态/攻击相位/击退簿记，**配装保留**；发 `enterHub { id, x, y, z }`。`step` 内不自动回程——回程只由壳层显式调用。
+
+**选掌预选与存档**：`createMatch(opts.gloveId)` 传有效值 = 主掌**已选**（`portalReady` 即 true，见 §4.1 ①——v4「预选不算已选」从未实装）；产品路径传 null 让门从「先选一只掌」起步。走道所选由 **O4 在传送帧写回存档**（main `rememberHubLoadout`：读 `view.hub.mainGloveId/offGloveId` → `updateSave({ loadout })`，存档 schema §12 不变）。
 
 **确定性**：hub 全部判定（聚焦/装备/传送）是 state + inputs 的纯函数，不引入新随机数；`structuredClone` 与逐位复现契约（§1-2/§1-5）对 `phase/hub` 字段同样成立。
 
@@ -527,8 +617,9 @@ export function think(view: MatchView, botId: PlayerId, rng: () => number): Inpu
 // bully 优先残血/背身/刚落地目标。产出的 moveX/moveZ 为世界系、yaw 遵守 ADR-17。
 // 编排层实际传入的是经 core/view.js adaptView 整形的超集快照（多 name/color/timeLeft
 // 等字段，yaw 未动）；think 只依赖 §4.3 字段即可，不得依赖超集字段。
-// HUB-R1（ADR-28）：view.phase === 'hub' ⇒ 立即返回零输入（不动、不出招）。这是防御性
-// 双保险——产线编排层在 hub 阶段本就不调 think；缺 phase 字段的旧快照按 'arena' 对待。
+// HUB-R1（ADR-32）：view.phase === 'hub' ⇒ 立即返回零输入（不动、不出招）。这是防御性
+// 双保险——产线编排层在 hub 阶段本就不调 think；缺 phase 字段但带 hub 数据的快照
+// fail-safe 按 hub 休眠（isHubView），纯 arena 旧快照照常。
 ```
 
 ## 7. `src/render`（Opus-2 所有；three 仅存在于此目录）
@@ -557,14 +648,18 @@ export function sync(view: MatchView): void;
 // players（yaw 直接 rotation.y）、events（§10 词表触发 VFX）。字段缺失容错不抛错。
 // HUB-R1：view.hub 存在 ⇒ 建大厅场景（走道、台座、门；8 只展掌**手指朝上 +Y**、轻微
 // 悬浮/呼吸、每掌可辨识的 idle VFX——霜雾/岩屑/风带/磁弧等，禁纯色光球）；按 view.phase
-// 切场景与相机域；pedestals[].focused/selected/unlocked 驱动高亮/落位标记/锁灰态；
-// phaseChange 事件 ⇒ 短过渡（淡场或门内粒子，禁加载条）+ 相机瞬移到事件携带的落点。
+// 切场景与相机域；pedestals[].focused/slot/unlocked 驱动高亮/落位标记/锁灰态；
+// enterArena / enterHub 事件（②）⇒ 短过渡（淡场或门内粒子，禁加载条）；落点/朝向读
+// view.players（事件只带 x/y/z），相机对齐由壳层 alignCameraToSelf 完成。
 // view.hub === null（降级件）⇒ 跳过大厅表现，不抛错。
 
 export function resize(width: number, height: number, dpr: number): void;   // dpr 已被 main 封顶 2
 export function setQuality(tier: Tier): void;
 export function dispose(): void;         // 释放 GL 资源，可重复调用
-// 句柄可选追加：render(view, alpha)、setFollow(id) —— 存在则 main 会调用
+// 句柄可选追加：render(view, alpha)、setFollow(id)、setSpectator(on) —— 存在则 main 会调用
+// Round 2 冻结追加（ADR-35）：setPitch(pitch: number)——相机俯仰（弧度，render 内部 clamp）。
+// O4 每 rAF 在 sync 前用 input.getLook().pitch 喂入；O2 的 cameraRig 消费该值（内部签名自便）。
+// 禁止第二个 pitch 状态源（input.getLook() 是唯一权威，ADR-4/17/35）。
 ```
 
 ## 8. `src/input`（Opus-4 所有）
@@ -585,18 +680,21 @@ export function sample(cameraYaw: number): Input;
 // 键鼠语义锚点（G1 锁死，ARCHITECTURE §5.1.1）：纯 W ⇒ (moveX,moveZ) = (cos θ, sin θ)
 //（= 相机水平前向）；纯 D ⇒ (−sin θ, cos θ)（屏幕右）；cameraYawToSimYaw 对 θ 单调递减
 //（鼠标 +dx ⇒ θ 增大 ⇒ sim yaw 减小 ⇒ 从上方看顺时针 = 右转）。
-// 每模拟步一次。按 §2 公式把摇杆/WASD 换算成世界系 moveX/moveZ；Input.yaw = cameraYaw。
-// R2 达标方式：input 内部保留自己的相机方位角，换算收敛在 core/view.js 的
-// cameraYawToSimYaw / simYawToCameraYaw（唯一适配点）；sample 返回的必须是
-// ADR-17 约定下的世界系结果，换算不得散布到其它文件。
-// HUB-R1（ADR-28）：键鼠 E 键双义——keydown 同时置 skill(hold) 与 interact(edge)，
-// input 不感知 phase，由 sim 按 phase 只消费其一；sample 返回的 Input 含 interact 位。
+// HUB-R1（ADR-32，v4.1 按实现收口）：input **感知 phase**（壳层 phase 切换时调 setPhase）。
+// 键鼠 E 双义（skill hold + interact），分流在 input 侧：phase='hub' 时 sample 把
+// slap/skill 归零、interact 以持续位上报（补 edge 帧防短点触漏拍）+ interactSlot 随行；
+// phase='arena' 时 E 复位技能、interact 恒 false 语义。跨区切换清空按住态（大厅按着 E
+// 穿门不会在裂岛立刻放技能）。sim 侧上升沿检测（p.prev.interact）不变。
 export function setEnabled(enabled: boolean): void;   // false：动作清零、移动归零
-export function getLook(): { yaw: number; pitch: number };   // 相机朝向权威源（ADR-4/17）
+export function getLook(): { yaw: number; pitch: number };   // 相机朝向权威源（ADR-4/17/35）
+// pitch 通路（ADR-35）：getLook().pitch 是俯仰唯一权威源，O4 每 rAF 喂给
+// renderer.setPitch（§7）；禁止 render/ui 各自维护第二份 pitch 状态。
 // 句柄追加（冻结命名）：setLook(yaw, pitch)、setSensitivity(v)、setPointerLock(on)、
-// releasePointerLock()、setTouchButton(name, down)
-// HUB-R1：setTouchButton 的 name 词表增加 'interact'（触控「选」按钮，hub 阶段显示；
-// DOM 由 ui 建并带 data-yz-interact 标记，input 绑事件——分工不变）。
+// releasePointerLock()、setTouchButton(name, down, opts?)、setPhase(next)、getPhase()
+// HUB-R1：setTouchButton 的 name 词表含 'interact'（触控「选」按钮，hub 阶段显示；
+// DOM 由 ui 建并带 data-yz-interact 标记，input 绑事件——分工不变）；opts.slot
+// ('main'|'off') 只有 interact 认，直接指定要装的槽位（§4.4 装备表）。
+// setPhase('hub'|'arena')：见上方 E 双义分流；由壳层在 enterArena/enterHub 时调用。
 ```
 
 禁止锁敌自动瞄（种子红线）：input 只产出方向与动作位，不做目标吸附。
@@ -645,29 +743,40 @@ type SimEvent = { t: number } & (
   | { type: 'tileCrack'; i: number; x: number; z: number; hp: number; maxHp: number }
   | { type: 'tileBreak'; i: number; x: number; z: number; hp: number; maxHp: number }
   | { type: 'matchOver'; winnerId: PlayerId|null; reason: 'kills'|'time' }
-  // ---- HUB-R1 新增（ADR-26/27，sim 直发）----
-  | { type: 'hubEquip'; id: PlayerId; gloveId: GloveId; slot: 'main'|'off' }   // 走道装备成功
-  | { type: 'hubDeny';  id: PlayerId; gloveId: GloveId; reason: 'locked' }     // 未解锁拒绝
-  | { type: 'phaseChange'; id: PlayerId; from: 'hub'|'arena'; to: 'hub'|'arena';
-      x: number; y: number; z: number; yaw: number }   // 传送完成，携落点（R1 仅 hub→arena）
+  // ---- HUB-R1（sim 直发；v4.1 按实现名收口，②③）----
+  | { type: 'hubFocus'; gloveId: GloveId }             // 聚焦变为非空/换座（回落 null 不发，读 view diff）
+  | { type: 'hubEquip'; id: PlayerId; gloveId: GloveId; slot: 'main'|'off';
+      changed: boolean;                                // false = 已装备回执（不改配装，无音效/toast）
+      mainGloveId?: GloveId; offGloveId?: GloveId }    // changed:true 时附装备后全配装
+  | { type: 'hubLocked'; id: PlayerId; gloveId: GloveId; unlock: 'default'|string }
+                                                       // ③ 未解锁拒绝；unlock = 解锁条件 id
+                                                       //（UI 文案经 UNLOCK_BY_GLOVE 查）
+  | { type: 'hubPortalNear'; id: PlayerId; ready: boolean }   // 进入门触发圆的上升沿发一次
+  | { type: 'enterArena'; id: PlayerId; x: number; y: number; z: number }
+                                                       // ② 传送完成，携落点（每个真人一条，不带 yaw）
+  | { type: 'enterHub'; id: PlayerId; x: number; y: number; z: number }
+                                                       // ② 回程完成（enterHub API 触发）
 );
 ```
 
 注：
 
 - `awaken / awakenEnd / parry / meteorImpact / ghostSlap` 由 combat 触发、经桥翻译后 sim 代发（ADR-22）；其余全部 sim 直发。
-- hub 内 `switchGlove` 槽位交换复用既有 `switch` 事件（`slot: 0`、`gloveId` = 交换后主掌）；聚焦变化**不是事件**（`view.hub.focusGloveId` 是状态，消费方自行 diff）。
+- **死名（v4 曾登记、从未发射，禁止对其写测试/分派/音效）**：`hubDeny`（→ `hubLocked`）、`phaseChange`（→ `enterArena` / `enterHub`）。
+- hub 内 `switchGlove` 复用既有 `switch` 事件（arena 同语义，见 §4.4）；聚焦获得/换座**是** `hubFocus` 事件（v4「聚焦变化不是事件」已按实现修正），聚焦丢失读 view diff。
 - `skill` 事件与 `HitRecord` 的 `skillId` 是 **handler id**（§3.1 右列）。
 - **VFX 分派键（ADR-27）**：O2 按事件的 `gloveId` 分派扇击表现、按 `skillId` 分派技能表现——`slapStart/slap/hit/switch/skill/parry/meteorImpact/ghostSlap` 都带 `gloveId`，禁止按 type 猜或全掌共用一套。
 - `ko.reason` 现值恒为 `'fell'`（掉落是唯一死法）。
 - O4 经 `core/view.js normalizeEvent` 把本词表整形成 shell 内部形状（`ko → killerId/victimId` 等）——线上词表以本节为准，normalizeEvent 的输出形状不冻结。
 
-## 11. 事件 → 音效名对照（main.js 持有；SoundName 词表冻结）
+## 11. 事件 → 音效名对照（main.js 持有；SoundName 词表冻结；v4.1 按实现表收口，⑦）
 
-| SimEvent | SoundName |
+**SoundName 现役词表**（= `src/audio/index.js` 合成器键集，冻结）：`slap` `slapWhiff` `hit` `hitTaken` `heavy` `crack` `collapse` `jump` `land` `dash` `switchGlove` `skill` `awaken` `ringout` `kill` `death` `respawn` `uiMove` `uiSelect` `uiBack` `matchStart` `matchEnd` `tick`。v4 曾登记的 `equip / deny / portal / ui_hover / ui_click` **从未实装**（死名）；未知名静默忽略的契约不变。
+
+| SimEvent（main.handleEvents 实况） | SoundName |
 | --- | --- |
 | `slap`（hits>0） / `slap`（hits=0） | `slap` / `slapWhiff` |
-| `hit` | `hit`（power 调强度） |
+| `hit` | `hit`（power 调强度）；`targetId === p0` 追加 `hitTaken`（被打有贴脸闷响） |
 | `skill` | `skill` |
 | `switch` | `switchGlove` |
 | `dash` / `jump` | `dash` / `jump` |
@@ -675,14 +784,16 @@ type SimEvent = { t: number } & (
 | `ko`（凶手=p0 / 受害=p0 / 其他） | `kill` / `death` / `ringout` |
 | `respawn`（仅 p0） | `respawn` |
 | `awaken` | `awaken` |
-| `matchOver` | `matchEnd` |
-| `hubEquip` | `equip`（HUB-R1 新增音名） |
-| `hubDeny` | `deny`（HUB-R1 新增音名） |
-| `phaseChange` | `portal`（HUB-R1 新增音名）；`to === 'arena'` 时 main 顺带播 `matchStart` |
-| `view.hub.focusGloveId` 变为非空（main 侧 diff，非事件） | `ui_hover` |
-| 局面切换（ui 直接调） | `matchStart` / `ui_click` / `ui_hover` |
+| `hubFocus` | `uiMove` |
+| `hubEquip`（`changed === false` 不发声） | `switchGlove`（+ 主/副掌 toast） |
+| `hubLocked` | `uiBack`（+ 解锁条件 toast） |
+| `hubPortalNear` | 无音（`ready:false` 时 toast「先挑一只主掌」） |
+| `enterArena`（仅 p0；enterArenaFx） | `matchStart`（顺带 `.yz-warp` 淡场 + toast） |
+| `enterHub`（仅 p0；enterHubFx） | 无音（淡场 + toast） |
+| 开局 `startMatch`（非事件） | 直通裂岛 `matchStart`；进大厅 `uiSelect` |
+| 结算 `finishMatch`（读 `view.over`，非 `matchOver` 事件挂钩） | `matchEnd` |
 
-未列出的事件（`parry / meteorImpact / ghostSlap / slapStart / awakenEnd`）暂不发声；要加音效先在本表登记。`equip / deny / portal` 由 O4 在 audio 里合成（未知名静默忽略的契约不变，渐进上线安全）。
+未列出的事件（`slapStart / awakenEnd / parry / meteorImpact / ghostSlap`）**保持静默**；要加音效先在本表登记新名（G1 不得对未登记的事件-音名组合写断言）。
 
 ## 12. 存档 schema（key = `yizhang-save-v1`，`src/core/storage.js` 独占读写）
 
@@ -703,7 +814,7 @@ interface SaveV1 {
 }
 ```
 
-规则：读失败/版本不符 → 默认值并覆写；未知字段写回保留；破坏性变更换 key `yizhang-save-v2` + 迁移。解锁判定用 `data` 的 `UNLOCKS/UNLOCK_BY_GLOVE/isGloveUnlocked`，结果落 `unlocked`。HUB-R1：schema 不变——`unlocked` 就是 `createMatch(opts.unlockedGloveIds)` 的来源；走道装备成功（`hubEquip`）后 O4 把配装写回 `loadout`（§4.4）。
+规则：读失败/版本不符 → 默认值并覆写；未知字段写回保留；破坏性变更换 key `yizhang-save-v2` + 迁移。解锁判定用 `data` 的 `UNLOCKS/UNLOCK_BY_GLOVE/isGloveUnlocked`，结果落 `unlocked`。HUB-R1：schema 不变——存档 `unlocked` 经壳层换算后就是 `createMatch(opts.unlocked)` 的来源（v4.1 名收口，①）；走道所选在**传送帧**由 O4 写回 `loadout`（`rememberHubLoadout`，§4.4）。
 
 ## 13. `src/ui/shell.js` 与 `src/core/loop.js`（Opus-4 所有；最小面）
 
@@ -736,11 +847,11 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 
 `updateHud(view, selfId)` 在 `view.phase === 'hub'` 时额外驱动三块 DOM（类名由 F2 在 `src/styles/**` 定义，shell 按语义挂类）：
 
-1. **靠近说明牌（`.yz-inspect`）**：`view.hub.focusGloveId` 非空时显示，内容全部来自既有只读表——掌名 `name`、职能 `role`、一句话 `desc`、识别色 `color`（仅当前聚焦掌给饱和色）、槽位状态（`selected` 为 `'main'/'off'` ⇒ 「已装备·主/副」；null ⇒ 「按 E / 点『选』装备」+ 将落入的槽位预告，按 §4.4 装备规则推导）；`unlocked === false` ⇒ 锁态样式 + 解锁条件文案（`UNLOCK_BY_GLOVE[gloveId].desc`）。focus 为 null 时隐藏。
-2. **门提示**：`nearPortal ∧ !portalReady` ⇒ 「先选一只掌」；`nearPortal ∧ portalReady` ⇒ 「穿过传送门 · 进入裂岛」。状态驱动（读 view），不依赖事件。
-3. **配装指示**：HUD 常驻显示当前主/副掌（未 chosen 的槽显示空位），复用既有掌色/掌名字段。
+1. **靠近说明牌（`.yz-inspect`）**：`view.hub.focusGloveId` 非空时显示，内容直接读聚焦座的 `HubPedestalView`（`name/role/desc/color` 已由 getView 补挂，UI 不必再翻数据表；饱和识别色只给当前聚焦掌）、槽位状态（`slot` 为 `'main'/'off'` ⇒ 「已装备·主/副」；null ⇒ 「按 E / 点『选』装备」+ 将落入的槽位预告，按 §4.4 装备表推导，含「副掌再按提主」）；`unlocked === false` ⇒ 锁态样式 + 解锁条件文案（`unlock` 字段经 `UNLOCK_BY_GLOVE` 查 desc）。focus 为 null 时隐藏。
+2. **门提示**：`portalNear ∧ !portalReady` ⇒ 「先选一只掌」；`portalNear ∧ portalReady` ⇒ 「穿过传送门 · 进入裂岛」。状态驱动（读 view），不依赖事件。
+3. **配装指示**：HUD 常驻显示当前主/副掌（`mainGloveId/offGloveId` 为 null 的槽显示空位），复用既有掌色/掌名字段。
 
-触控：hub 阶段显示「选」按钮（`data-yz-interact`，`setTouchButton('interact', down)`），仅在 `focusGloveId` 非空时可用态；靠近+确认与键鼠同一套语义（种子验收线）。2D 选掌板 `.yz-home` 降为暂停/设置里的备选入口，默认开局不再作为必经路（GOAL 附则）；开始一局 = `startMatch` 以 `startPhase: 'hub'` 进大厅，配装在走道完成。
+触控：hub 阶段显示「选」按钮（`data-yz-interact`，`setTouchButton('interact', down, { slot })` 可指定主/副槽），仅在 `focusGloveId` 非空时可用态；靠近+确认与键鼠同一套语义（种子验收线）。2D 选掌板 `.yz-home` 降为暂停/设置里的备选入口，默认开局不再作为必经路（GOAL 附则）；开始一局 = `startMatch` 缺省进大厅（`phase:'hub'`、`gloveId:null` 让门从未就绪起步），配装在走道完成；只有备选台上的「直接进裂岛」才带 `skipHub`。
 
 ## 14. 不变量清单（G1 测试基线 / F4 验收引用）
 
@@ -763,9 +874,10 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 17. **皮肤表（ADR-26，§3.2）**：`SKINS.length ≥ 6`、id 唯一且属 SkinId 词表、字段齐全（build/headgear/back/palette 全非空）；`resolveSkin(未知 id)` 与 `resolveSkin(null)` 都返回 `SKIN_BY_ID[DEFAULT_SKIN_ID]`；`BOT_PERSONAS` 每项带 `skinId` 且三人互异。
 18. **皮肤透传（ADR-26）**：`createMatch({ skinId: 'x' })` 后 `getView().players[0].skinId === 'x'`（sim 不校验）；缺省为 null；`botSkinIds` 按序落到 b0…；存档 `skinId` 经 `loadSave/updateSave` 往返保留，旧档缺失补 `DEFAULT_SKIN_ID`。
 19. **VFX 事件形状（ADR-27）**：任一 `hit` 事件带 `gloveId`（属 GloveId 词表）与 `skillId`（handler id 或 null）；`view.combat.ghosts` 恒存在（无残影时空数组）；分身放技能后 ghosts 出现 `{ ownerId, ttl0 > 0, yaw 为 -Z 基 }` 条目并在 ttl 耗尽后消失。
-20. **hub 开局形状（ADR-29）**：`createMatch()` 缺省或 `{ startPhase: 'hub' }` ⇒ `view.phase === 'hub'`、`view.hub.pedestals.length === 8`、`portalReady === false`。`skipHub` / `phase:'arena'` 直接进岛。
-21. **靠近聚焦（ADR-30）**：p0 在展掌 `interactRadius` 内 ⇒ `focusGloveId` 为该掌；移出 ⇒ `null`。
-22. **interact 装备（ADR-30）**：聚焦已解锁掌 + `interact` 上升沿 ⇒ 主空装主、副空装副；长按不连发。
-23. **未解锁拒绝（ADR-30）**：聚焦未解锁掌 + interact ⇒ 配装不变。
-24. **传送（ADR-31）**：`portalReady` 后进入门半径 ⇒ 同 tick `phase === 'arena'`，loadout 保留。
-25. **安全区免战（ADR-29）**：hub 内无击退 KO、无碎地；Bot 不进攻。
+20. **hub 开局形状（ADR-29，v4.1 名收口）**：`createMatch()` 缺省或 `{ phase: 'hub' }` ⇒ `view.phase === 'hub'`、`view.hub.pedestals.length === 8`；不传 `gloveId` 时 `mainGloveId === null ∧ portalReady === false`；传有效 `gloveId` ⇒ 视为已选主掌、`portalReady === true`。`skipHub` / `phase:'arena'` / `config.skipHub` 直接进岛。
+21. **靠近聚焦（ADR-30）**：p0 在台座 `interactRadius` 内 ⇒ `focusGloveId` 为该掌（并发 `hubFocus`）；移出 ⇒ `null`（不发事件）。
+22. **interact 装备（ADR-30，v4.1 补 ⑥）**：聚焦已解锁掌 + `interact` 上升沿 ⇒ 主空装主、副空装副、**副掌再按提为主掌（原主退副）**、已是主掌 ⇒ `changed:false` 回执；长按不连发（按住走到另一座不重复消费同一次按下）。
+23. **未解锁拒绝（ADR-30）**：聚焦未解锁掌 + interact ⇒ 配装逐字段不变，发 `hubLocked { unlock }`。
+24. **传送（ADR-31，v4.1 补 ⑤②）**：`portalReady` 后 xz 进入门触发圆（`≤ portal.radius`）⇒ 同 tick `phase === 'arena'`、loadout 保留、`match.startTime` 重置、发 `enterArena`。
+25. **安全区免战（ADR-29）**：hub 内无击退 KO、无碎地；被连扇 180 帧位置/deaths/hitsTaken 零变化；Bot 不进攻。
+26. **hub 空挥闸（ADR-33，Round 2 起生效）**：`phase === 'hub'` 时按住 `slap` 任意帧数 ⇒ 零 `slapStart/slap` 事件、`stats.slaps` 不变、`attack.phase` 恒 `'idle'`；`skill` 上升沿 ⇒ 零 `skill` 事件、`skillCd` 不变；移动/跳/dash/interact/switchGlove 不受影响。

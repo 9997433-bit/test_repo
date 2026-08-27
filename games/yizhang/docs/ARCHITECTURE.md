@@ -1,6 +1,6 @@
-# 异掌 · 架构总纲（安全区大厅轮 · 叠手感轮）
+# 异掌 · 架构总纲（安全区大厅轮 Round 2 · 叠手感轮）
 
-> 状态：**冻结（HUB-R1 + 手感轮）**。父分支 **`cursor/yizhang-hub-db8d`**。手感轮 ADR-25…28（朝向零补偿、皮肤、每掌 VFX、hit-stop）沿用；大厅轮新增 **ADR-29…32**（双区状态机、走道选掌、传送门、`interact` / Bot 静默）。大厅 Fable-1 原文曾占用 ADR-25…28，与手感轮撞号，父调度器改记 29…32。O1 已落地 `createMatch` **缺省 `phase:'hub'`**，旧测靠裂岛坐标/空间规则或 `skipHub` 零回归，不以「缺省 arena」回退实现。变更流程：先改本文与 `docs/API_CONTRACT.md`，再改代码。
+> 状态：**冻结（HUB-R2 + 手感轮）**。父分支 **`cursor/yizhang-hub-db8d`**。手感轮 ADR-25…28（朝向零补偿、皮肤、每掌 VFX、hit-stop）沿用；大厅轮 **ADR-29…32**（双区状态机、走道选掌、传送门、`interact` / Bot 静默）；Round 2 新增 **ADR-33…35**（hub 空挥闸、skinId+ghosts 导出、相机 pitch 通路，见 §10）。大厅 Fable-1 原文曾占用 ADR-25…28，与手感轮撞号，父调度器改记 29…32。O1 已落地 `createMatch` **缺省 `phase:'hub'`**，旧测靠裂岛坐标/空间规则或 `skipHub` 零回归，不以「缺省 arena」回退实现。Round 2 契约向实现收口：`API_CONTRACT.md` v4.1 §0 的七处名义漂移（`phase/skipHub`、`enterArena/enterHub`、`hubLocked`、`portalNear/mainGloveId/offGloveId`、`portal.radius`、副掌提主、音效实测表）以实现名为准，本文同名处已同步。变更流程：先改本文与 `docs/API_CONTRACT.md`，再改代码。
 
 ## 0. 一句话架构
 
@@ -78,15 +78,18 @@ combat.tickStatuses（状态倒计时·掌意衰减·满条觉醒·返回延迟�
 → 掉落判定（y < fallY 或出盘无支撑 ⇒ ko）→ updateMatch（胜负缓存 + matchOver 事件）
 ```
 
-**hub 阶段的子步差异（ADR-25，冻结）**——外层管线一字不变，`subStep` 内部按 `state.phase` 分岔：
+**hub 阶段的子步差异（ADR-29/33，按实现收口）**——外层管线一字不变，`subStep` 骨架对两个 phase 是**同一条**，分岔按「实体所处空间」（`playerInHub`）与 phase 落在具体环节：
 
 ```
-phase === 'hub' 的子步：
-  计时器（仅 dashCd/dashT/coyote 等移动系）→ 动作（interact 选掌 / switchGlove 槽位交换 /
-  冲刺 / 跳）→ 位移积分 → HUB.bounds 硬钳制 → 聚焦计算（focusGloveId / nearPortal）
-  → 传送判定（portalReady ∧ 进门 AABB ⇒ 切 arena）→ updateMatch（只刷新 secondsLeft 冻结值）
-不进入的段：combat.tickStatuses / resolveSlap / resolveSkill、扇击相位机、applyHits、
-掉落与出盘 ko、互推可保留（hub 只有 p0 在动，结果恒零）。
+subStep（两个 phase 共用骨架）：
+  combat.tickStatuses（全局照跑，状态倒计时只有一份）→ 计时器/重生
+  → handleActions（换掌/冲刺/跳照常；扇击前摇与技能在 phase='hub' 时被空挥闸拦下，ADR-33）
+  → 位移积分 → 互推
+  → 地面解算：playerInHub ? resolveHubGround（实心地板+隐形墙+台座柱体）: resolveGround
+  → strike 结算（hub 内经 ADR-33 不会有 strike；即使有，applyHits 对 hub 内目标退回冲量）
+  → stepHub（聚焦 focusGloveId / interact 装备 / 传送判定：portalReady ∧ 进门圆 ⇒ enterArena，
+     放在掉落判定之前）
+  → 掉落 KO（playerInHub 跳过）→ updateMatch（secondsLeft 照走，穿门时整体重置，契约 §4.1）
 ```
 
 要点：
@@ -144,7 +147,7 @@ phase === 'hub' 的子步：
 ### 4.4 事件流
 
 - `state.events` 每次 `step` 开头清空、步内追加（上限 `PHYSICS.maxEvents = 96`），`pushEvent` 自动盖 `t = state.time` 戳；`getView` 逐条浅拷贝进快照。
-- **sim 是唯一事件发射者（ADR-22，由桥执行）**：动作/命中/出局/碎地/胜负事件由 sim 直发；combat 在解算中 push 的事件先落进 combat-bridge 的暂存缓冲，由桥翻译成 sim 词表（`awaken/awakenEnd/parry/meteorImpact/ghostSlap`，并补 `tileBreak` 记账）后进 `state.events`，其余暂存事件丢弃（sim 已发等价事件）。`state.events` 里永远只有 `API_CONTRACT.md` §10 词表（camelCase：`slap` `hit` `ko` `tileBreak` …）。本轮词表新增 `hubEquip / hubDeny / phaseChange`（§10 登记，sim 直发）。
+- **sim 是唯一事件发射者（ADR-22，由桥执行）**：动作/命中/出局/碎地/胜负事件由 sim 直发；combat 在解算中 push 的事件先落进 combat-bridge 的暂存缓冲，由桥翻译成 sim 词表（`awaken/awakenEnd/parry/meteorImpact/ghostSlap`，并补 `tileBreak` 记账）后进 `state.events`，其余暂存事件丢弃（sim 已发等价事件）。`state.events` 里永远只有 `API_CONTRACT.md` §10 词表（camelCase：`slap` `hit` `ko` `tileBreak` …）。大厅轮词表新增 `hubFocus / hubEquip / hubLocked / hubPortalNear / enterArena / enterHub`（契约 §10 登记，sim 直发）；`hubDeny` 与 `phaseChange` 是从未实装的死名（契约 §0-②③），禁止对其写测试/分派。
 - **手感轮补充（ADR-27）**：`hit` 事件携带 `gloveId`（结算时攻击者激活掌，`HitRecord.gloveId` 优先）与 `skillId`（handler id，null = 素掌）；桥代发的三个 combat 事件补齐 `gloveId / skillId`。VFX / 音效按这两个 id 分派。
 
 ### 4.5 皮肤与残影（手感轮新增）
@@ -174,7 +177,7 @@ createMatch() 缺省 phase='hub'（O1 已落地）     skipHub / phase:'arena' �
 └──── portalReady ∧ 进门半径 ────────┘   └──────────────────────────────────┘
 ```
 
-**一份 state 承载双区**。安全区走道与裂岛**水平错开**（O1：走道 z≈-120）；规则按实体所处空间生效，所以把人摆在裂岛坐标上的旧测仍走裂岛规则。布局表最终归 `data/hub.js`；未合入前 O1 用 `src/sim/hub.js` 的 `DEFAULT_HUB_LAYOUT`，F3 落地后 `installHubLayout` 接管。
+**一份 state 承载双区**。安全区走道与裂岛**水平错开**（走道 z≈-120）；规则按实体所处空间生效（`playerInHub`），所以把人摆在裂岛坐标上的旧测仍走裂岛规则。`portalReady ⇔ !!hub.mainGloveId`；传送触发是**圆形 `portal.radius`**（契约 §0-⑤）。布局表 F3 `data/hub.js` 已合入，装配层经 `wireSimDeps → installData`（或 `installHubLayout`）交给 sim，缺席时 `sim/hub.js DEFAULT_HUB_LAYOUT` 兜底（`getDeps().usingDataHub` 报真源）。回程 `enterHub(state)` 是壳层 API（发 `enterHub` 事件），`step` 内的传送单向 hub → arena（发 `enterArena` 事件）——事件名即 API 名，v4 的 `phaseChange` 是从未实装的死名（契约 §0-②）。
 
 ## 5. 移动端与自适应
 
@@ -283,7 +286,7 @@ R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「�
 17. **yaw = 0 面向 -Z（冻结；手感轮修订）**：`forward = (-sin yaw, -cos yaw)`。相机 yaw、`Input.yaw`、`view.players[].yaw`、测试 helpers 同一约定；摇杆→世界系换算公式见 §5.1。**sim / render / camera 全链同一基，render 零补偿**。合法换算点只剩两处：`sim/combat-bridge.js`（combat ±π，含 ghosts 导出还原）与 `core/view.js cameraYawToSimYaw / simYawToCameraYaw`（相机方位角）。R3 曾列的第三处（`toRenderView` +π）经 ADR-25 裁定废除；不得新增任何新的换算点。
 18. **台面拓扑 = sim 方格网格（新，冻结）**：`src/sim/arena.js` 的 2.5m 方格圆盘（约 208 块）是唯一拓扑，`view.arena` 的形状即渲染输入。理由：sim 侧支撑/伤害/重生/probe 全链已在此拓扑上通过，render 只需按 `origin/tileSize/cols + tiles[].x,z` 建板即可；而改 sim 迁就 72 扇环要重写 arena/floor/spawn 全部逻辑。**O1 保持、O2 消费、O3 走 `damageTileAt`，禁止发明第四套拓扑。**
 19. **依赖接线 = 静态桥（修订于 R3）**：`src/sim/deps.js` 静态 `import "../data/gloves.js"`（运行时权威掌表）与 `"./combat-bridge.js"`（其内静态 `import "../combat/index.js"`）——生产路径零动态注入，**import sim 即已接线**。`installData/installCombat/resetDeps` 保留**仅供测试替身**，`autoWireOptionalDeps` 已删除。main 启动断言 `getDeps().usingRealData && usingRealCombat` 为 true（为假 = 替身泄漏，亮降级横幅），传给 shell/render 的掌表与 MATCH 一律取自 `sim.getGloves()/getMatchConfig()`。**R3 必改**：`core/modules.js` 的 `wireSimDeps` 注入路径与 `alignSkillIds` 删除（O4）、`scripts/harness.mjs` 的 `installSimulationDependencies` 不再 install（G2）——向已接线的 sim 再 install 真实模块＝绕过桥，见 ADR-24。
-20. **isMatchOver 即时判定（新，冻结；HUB-R1 修订时间域）**：`isMatchOver(state)` 是**纯读的活谓词**，不要求先 `step`：`over ⇔ state.match.over ∨ ∃p: p.kills ≥ killsToWin ∨ arenaTime ≥ matchSeconds`——时间判据自 HUB-R1 起以 **arena 计时域**衡量（见 ADR-27；`startPhase:'arena'` 时与 `state.time` 等价，旧语义逐位一致）。调用不改 state、不发事件；`step` 内的 `updateMatch` 仍负责把结果缓存进 `state.match` 并发 `matchOver` 事件——**事件需要 step，布尔真值不需要**。语义细则见 API_CONTRACT §4。
+20. **isMatchOver 即时判定（新，冻结；HUB-R2 按实现改写计时域）**：`isMatchOver(state)` 是**纯读的活谓词**，不要求先 `step`：`over ⇔ state.match.over ∨ ∃p: p.kills ≥ killsToWin ∨ (state.time − match.startTime) ≥ matchSeconds`——计时锚是 `match.startTime`（createMatch 时 0，`enterArena` 时重置为当时 time），「挑掌不吃对局时长」由**传送重置**实现而非 hub 冻结；`isMatchOver` 不看 phase，壳层在 hub 阶段不消费 over（main 以 `over ∧ phase !== 'hub'` 收结算）。`phase:'arena'` 开局与旧语义逐位一致。调用不改 state、不发事件；`step` 内的 `updateMatch` 仍负责把结果缓存进 `state.match` 并发 `matchOver` 事件——**事件需要 step，布尔真值不需要**。语义细则见 API_CONTRACT §4.1。
 21. **降级政策：单产线路径（修订于 R3）**：产线路径 = 真实模块。`core/fallback/**`（O4 降级件）只在**模块 import 失败/缺席**时于启动期挂载（`loadSiblingModules` 捕获），且必须亮降级横幅；**局中不换件**——真实 sim 已加载后其运行期异常按错误暴露（暂停+提示），不得静默切到占位模拟。sim 侧的兜底战斗（`sim/fallback-combat.js`）已在 R2 删除：combat 经桥静态 import，坏了即 sim 整体 import 失败，降级单位是**整个 sim**（换 `core/fallback/sim.js`），不存在「sim 真、combat 假」的中间态。所有 fallback 件必须遵守冻结约定（p0、-Z、方格 view 形状），保证换件不换协议。
 22. **sim 是唯一事件发射者（修订于 R3：由桥执行）**：`state.events` 里只允许 API_CONTRACT §10 词表。combat 解算中 push 的事件被 combat-bridge 的暂存缓冲截获，翻译（`awaken/awakenEnd/parry/meteorImpact/ghostSlap` + `tileBreak` 记账）后由 sim 代发，未登记的暂存事件丢弃。O4 的 `core/view.js normalizeEvent` 是 shell 内部适配（`ko → killerId/victimId` 等），不改变线上词表。
 23. **技能 id：两套词表 + 一张别名表（新，冻结）**：数据 id（`quake_slam / wind_rush / frost_arc / coil_counter / phantom_swap / iron_pull / sky_fall`，木棉为哨兵 `"none"`、禁 null）是公共词表——`GloveDef.skillId`、图鉴、GDD 用它；handler id（`groundPound / dashSlap / frostArc / parry / blinkSwap / magnetPull / meteorSlam`）是 combat 的分派键——`skill` 事件与 `HitRecord.skillId` 携带它。两者之间**只有一张翻译表**：`src/sim/combat-bridge.js` 的 `SKILL_ALIAS`（`combatSkillId()` 是唯一运行时翻译点），全表冻结在 API_CONTRACT §3.1。重复副本 R3 删除：`data/skills.js` 的 `SKILL_COMBAT_ALIASES`（F3）、`core/modules.js` 的 `SKILL_ALIASES + alignSkillIds`（O4）。combat 内部的宽容归一化表（`combat/skills.js`）是防御性实现细节，不具规范地位、不得新增依赖。
@@ -293,6 +296,9 @@ R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「�
 27. **每掌 VFX = 事件驱动 + 按 id 分派（手感轮新增，冻结）**：分派键是事件上的 `gloveId` / `skillId`。`view.combat.ghosts` 必须可见。
 28. **hit-stop 归编排层（手感轮新增，冻结）**：`core/juice.js` + `loop.hold`，单次 ≤ 0.12s，禁止进 sim。
 29. **双区状态机 `phase: hub|arena`（HUB-R1，冻结）**：一份 `MatchState` 承载安全区与裂岛。O1 缺省 `hub`；`skipHub` / `phase:'arena'` 给旧探针。禁止第二套模拟。安全区：走实心地板、无击退、无掉落 KO、Bot 静默。
-30. **走道选掌（HUB-R1，冻结）**：布局最终来源 `src/data/hub.js`；未合入前允许 `sim/hub.js` 默认表并由 `installHubLayout` 接管。`interact` 上升沿：未解锁拒绝，否则主空→主、副空→副、双满→换副。
-31. **传送门（HUB-R1，冻结）**：`portalReady` 且进入门半径 ⇒ 同 tick `phase='arena'`，p0 到裂岛出生点，loadout 保留。过渡归外壳。
-32. **`interact` 与 hub 期 Bot 静默（HUB-R1，冻结）**：E 键可双义（skill hold + interact edge），sim 按 phase 只消费其一。hub 不调 `think`；`think` 见 hub 自返零输入。
+30. **走道选掌（HUB-R1，冻结；R2 按实现补记）**：布局来源 `src/data/hub.js`（已合入，缺席时 `sim/hub.js` 默认表兜底，`installHubLayout` 供测试覆盖）。`interact` 上升沿：未解锁拒绝（`hubLocked{unlock}`），否则主空→主、**副掌再按提为主掌（原主退副）**、已是主掌 ⇒ `changed:false` 回执、副空→副、双满→换副（契约 §4.4 装备表）。
+31. **传送门（HUB-R1，冻结；R2 按实现补记）**：`portalReady`（⇔ 主掌已选）且 xz 进入门触发圆（`portal.radius`，sim 不读 aabb）⇒ 同 tick `phase='arena'`，p0 到裂岛出生点，loadout 保留，`match.startTime` 重置，发 `enterArena{id,x,y,z}`。过渡归外壳；传送帧 `lerpView` 跳插值。
+32. **`interact` 与 hub 期 Bot 静默（HUB-R1，冻结；R2 按实现补记）**：E 键双义（skill hold + interact），分流在 **input 侧**——`input.setPhase('hub')` 下 sample 把 slap/skill 归零、只出 interact（+interactSlot）；sim 侧 `p.prev.interact` 做上升沿。hub 不调 `think`；`think` 见 hub 视图（`isHubView` fail-safe）自返零输入。
+33. **hub 空挥闸（HUB-R2 新增，冻结；归 O1）**：`phase === 'hub'` 时 `handleActions` 不启动扇击前摇、不调 `resolveSkill`——零 `slapStart/slap/skill` 事件、`stats.slaps` 不涨、`skillCd` 不动（含疾风 dashSlap 这类战斗位移技）；移动、跳、Shift 位移冲刺、`interact`、`switchGlove` 照常。R1 实况是大厅按住鼠标仍空挥（hits:0）并污染 stats，本条闸死；免战豁免（applyHits 对 hub 内目标退回冲量）保留为第二道保险。不变量见契约 §14-26。
+34. **skinId 与 combat.ghosts 进 getView（HUB-R2 新增，冻结；O1 导出、O2 消费、G1 锁测）**：`getView().players[].skinId`——sim 视为**不透明字符串**原样透传（不校验、不 import skins.js，缺省 null，消费端 `resolveSkin` 兜底，ADR-26）；`view.combat.ghosts`——源 `state.combat.ghosts` 经桥 `ghostsView` 翻译（yaw 还原 -Z、数值 round、`ttl/ttl0` 齐全），**恒存在**（无残影 = 空数组）、纯 JSON。两个名字冻结为 `players[].skinId` / `combat.ghosts`，皮肤五段链（F3 表 → O4 传参 → O1 透传 → O2 换件）与残影双段接线（O1 导出 → O2 绘制）都以此为对接面。形状见契约 §4.3，不变量 §14-18/19。
+35. **相机 pitch 通路（HUB-R2 新增，冻结；O2 开 API、O4 每帧喂）**：`input.getLook().pitch` 是俯仰的**唯一权威源**（ADR-4 同源）。渲染句柄冻结追加 `setPitch(pitch: number)`（弧度，render 内部 clamp 防翻转），O4 每 rAF 在 `sync` 前调用；O2 的 `cameraRig` 消费该值（内部签名自便，现状 `update(dt, focus, yaw, vel)` 不吃 pitch 即本条要修的断链）。禁止 render/ui 各自维护第二份 pitch 状态、禁止把 pitch 塞进 view 快照。
