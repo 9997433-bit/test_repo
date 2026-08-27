@@ -145,6 +145,7 @@ async function executeProbeWorker() {
       throw new Error('AI module is required to verify bot think() calls');
     }
     let state = createFourPlayerMatch(simulation, {
+      phase: 'hub',
       gloveId: null,
       offhandId: null,
       unlocked: ['cotton'],
