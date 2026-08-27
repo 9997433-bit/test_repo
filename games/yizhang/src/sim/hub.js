@@ -76,7 +76,7 @@ function spawnYawTowardPortal(x, z, portal) {
   const dz = portal.z - z;
   if (len2(dx, dz) < 1e-6) return DEFAULT_HUB_LAYOUT.spawn.yaw;
   const yaw = yawFromDir(dx, dz);
-  return yaw === 0 ? 0 : yaw; // atan2 的 -0 会让 Object.is 断言炸掉
+  return yaw === 0 ? 0 : yaw; // atan2 会吐 -0，布局是要序列化的数据，收成 +0
 }
 
 /** 布局字段补全：data 侧只给一半字段也不能把 sim 打成 NaN。 */
