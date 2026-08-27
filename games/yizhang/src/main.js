@@ -571,11 +571,17 @@ async function boot() {
    */
   function restartArena() {
     startMatch(entryFor(ENTRY.RESTART));
+    // 两个回程入口都会把人瞬移到另一处出生点，相机是阻尼跟随的，中间那几百毫秒
+    // 会看见镜头从上一局的位置飞过去。用穿门那道淡场盖住（同一套表现，仍然不上
+    // 加载条）—— 走道→裂岛的 enterArenaFx 早就是这么做的。
+    shell.warp(280);
   }
 
   /** 回程：重开一局并落在安全区。掌记在存档里，但走道上要重新挑，挑完门才放行。 */
   function returnToHub() {
     startMatch(entryFor(ENTRY.HUB));
+    // 裂岛与走道横向错开 120 米，回程这一下镜头要飞过去：淡场盖住（同 restartArena）
+    shell.warp(320);
     // 结算板上那行小字承诺的是「主副掌清空」：落地这一刻把同一句话再说一遍，
     // 免得玩家以为掌位是掉了 bug（存档里的配装还在，只是走道上要重新挑）。
     shell.toast("安 全 区 · 主副掌已解下，走道两侧重挑", 2000);
