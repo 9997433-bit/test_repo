@@ -522,6 +522,14 @@ html[data-yz-fallback] .yz-menu {
   margin: 0 auto;
 }
 
+/* 入口按钮底下那行去处说明（F2 同名类在 styles/menus.css，这里只是缺席兜底） */
+html[data-yz-fallback] .yz-hintline {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--yz-text-mute);
+}
+
 html[data-yz-fallback] .yz-btn {
   min-height: 48px;
   padding: 0 24px;
