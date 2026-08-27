@@ -104,7 +104,7 @@ describe("Round 3 product and render contracts", () => {
       "flux",
       "cinder",
     ]);
-    expect(new Set(entries.map(([, kind]) => kind))).toHaveSize(8);
+    expect(new Set(entries.map(([, kind]) => kind)).size).toBe(8);
     expect(COMBAT_VFX_KIND.afterimage).not.toBe("mirror");
   });
 
