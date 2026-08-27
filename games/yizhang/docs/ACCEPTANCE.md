@@ -2,7 +2,7 @@
 
 维护者：Fable-4（SOTA 验收）。指标定义与阈值以同目录 `SOTA_CHECKLIST.md` 的 ID 为唯一事实源，本文只定义**执行顺序、证据要求、否决规则、判定模板**，不重复定义数值。
 
-> **当前生效轮次：固定人物视角轮（Look Round 1–3，父分支 `cursor/yizhang-look-db8d`）—— 执行规程见 §13，指标见 SOTA_CHECKLIST §12。**
+> **当前生效轮次：固定人物视角轮 Round 4（打磨轮 LOOK-R4，父分支 `cursor/yizhang-polish-db8d`）—— 执行规程见 §13，指标见 SOTA_CHECKLIST §12（Round 4 记分 §12.8），判定见 §13.9。**
 > §12 是大厅轮（`cursor/yizhang-hub-db8d`，视角轮分支即由其拉出）的规程，其大厅脚本（§12.4）被 §13 回归段引用；§11 是手感轮规程（方向脚本 §11.4 被 §13.4 沿用）；§1–§10 是骨架→精品系列的存档规程，§2 命令与 §8 性能协议仍被引用。均不得删改。
 
 ## 1. 范围与环境
@@ -514,10 +514,10 @@ npm run build   # HG-03：退出码 0
 
 ---
 
-## 13. 固定人物视角轮（Look Round 1–3）验收规程
+## 13. 固定人物视角轮（Look Round 1–4）验收规程
 
 指标 ID 与阈值以 SOTA_CHECKLIST **§12** 为唯一事实源（LG 回归门 / LK 视角行为 / LT 测试锁 / LR 红线）。
-验收对象：`games/yizhang/**` 合入 **`cursor/yizhang-look-db8d`** 的状态（或待合子分支）。每轮 6 步顺序执行；任何一步 FAIL 即出 REJECT 报告，后续步骤照跑用于收集修复清单。**LG 回归门任何一项红 → 直接 REJECT，不再往下记分。**
+验收对象：Round 1–3 为 `games/yizhang/**` 合入 **`cursor/yizhang-look-db8d`** 的状态（或待合子分支）；**Round 4（打磨轮）为合入 `cursor/yizhang-polish-db8d` 的状态**（自 main `18ed78e` 拉出，打向 main）。每轮 6 步顺序执行；任何一步 FAIL 即出 REJECT 报告，后续步骤照跑用于收集修复清单。**LG 回归门任何一项红 → 直接 REJECT，不再往下记分。**
 **判读口径**：全项目只有两套角空间（契约 §1-11）——相机系 θ（input 内部）与 sim 系（yaw=0 → -Z，sim/render/camera 共用）；凡写进 `renderer.lookYaw` / `Input.yaw` / `p.yaw` 的水平角必须已是 sim 空间。
 
 ### 13.1 第 1 步 · 拉取安装与隔离（LG-04）
@@ -672,3 +672,29 @@ npm run build   # LG-03：退出码 0
 - WARNING 清单：真机段延后（§13.4 交互原教旨口径 + 触屏 + 转向手感评分卡）**保留**；R3 O4 边角与另一份 R3 O2 复核 **已合入父分支**（`ea1c825`，销号）；W2 hit-stop 零余量哨兵结转（§11.9）**保留**。
 - 修复指派：无实现缺口待派；真机到位后按 §13.4 八步复跑销首条 WARNING。
 - 证据包：命令原文（上列）+ probe JSON 三 seed 全文 + 冒烟截图 6 张（存验收工作台，不入 `games/yizhang/src`）随本轮验收 PR 描述提交。
+
+### 13.9 异掌视角打磨轮 Round 4 验收判定（F4 终验席）
+
+- 被验分支/commit：**`cursor/yizhang-polish-db8d` @ `bbe51de`**（Round 4 九席中八席合入后：O4 吞指针锁 `7a84d52` / F1 登记 `bdddcf4` / O2 放手带 `9fc5058` / G1 CI `9289f34` / G2 sourcemap+probe 转角 `7c556cc` / F2 触屏视钮+invertY 开关 `98aad66` / O1 TELEPORT 导出 `c421974` / O4 invertY 落盘 `bc35806` / O3 combat 锁测 `bbe51de`；**F3 GDD 在飞**，`origin/cursor/yizhang-p1-f3-db8d` 读分支核对）。工作分支 `cursor/yizhang-p1-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md` 与本文件，零 src）。
+- 验收人/日期：Fable-4 终验席 / 2026-08-27（全套命令实跑：`npm ci` → `npm test` → `npm run probe` → `npm run build` → 静态检查与 F3 分支合并演算）。
+- 结论：**PASS-WITH-WARNINGS**（复盘六项 6/6 销号；WARNING 为 F3 在飞（`git merge-tree --write-tree` 实测零冲突可干净合入）、真机触屏 DEFER、§13.4 桌面八步未做（无交互桌面，不假装）、W2 哨兵结转；无实现缺口、无红线命中）。
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| 复盘销号（本轮主表） | 6/6 | 无（P0 放手带 / P0 CI / P0 16 登记 / P1 触屏视钮 / P1 吞指针锁 / P2 invertY——逐项证据见 SOTA §12.8 销号表） |
+| LG 回归门（沿用） | 6/6 | 无（LG-01 842≥775 零减量；LG-02 三 seed 视角硬门 + 本轮新增 `noSnapFrameMaxDisplacement`/`lookTurnMinAngleDeg` 全过；LG-03/04/05/06 绿——隔离仅 +`pages.yml` 系 G1 点名例外） |
+| 冻结面（DISPATCH 红线） | 8/8 | 无（yaw 偏移 0 / 缺省 hub / locked 缺省 / free null 两条 / low bloom / `HIT_STOP.max` 0.12 原数 / `BEHIND_LIMIT`+`TELEPORT_DISTANCE` 原数 / 两套 behind 闸并存未合成） |
+| LR/HR/FR/R 否决 | 零命中 | 无 |
+
+**命令实测原文摘要**：
+
+- `npm test`：**Test Files 57 passed (57) / Tests 842 passed (842)**，退出码 0（Round 3 收口 775/54 → 842/57，零减量；新增 `combat/hit-feel-budget.test.js`、`core/settings-invert-y.test.js`、`ui/touch.test.js` 三文件 + 六处行内扩充，分解见 SOTA §12.8）。
+- `npm run probe`：退出码 0，`{"status":"pass","seedCount":3,"kills":1,"arenaKills":1,"cameraSnapMaxDist":7.1,"modeSwitchCameraMaxDist":7.1,"lookTurnMinAngleDeg":89.38,"noSnapFrameMaxDisplacement":0.4504,"lockedForwardMinDot":1,"lockedForwardMaxAngleDeg":0,"lockedTurnMinAngleDeg":89.38,"lockedCameraMaxBehindness":-7.1,"freeStationaryMaxYawDeltaDeg":0,"freeMoveYawErrorDeg":0.00063,"p99StepMs":0.107,"ai":"think","wiredCombat":true,…}`；三 seed 逐条——`0x1a2b3c4d`：kills 1、p99 0.107、botSlapAttempts 2191、noSnap 0.4504；`0x5eed1234`：kills 2、p99 0.100、botSlapAttempts 3425、noSnap 0.4498；`0xc0ffee42`：kills 2、p99 0.094、botSlapAttempts 3636、noSnap 0.4499；三条均 `openingCameraDistance:7.1`、`arenaEntryPreSnapDistance:127.0–127.2`、`snappedFrames:2`、`lockedTargets:3601`、`freeGateTurnAngle:3.12`、`lookModeTransitions:2`、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`；横幅 `MODEL_SLUG: yizhang-probe`。
+- `npm run build`：退出码 0；主 chunk 682.23kB / gzip 188.71kB（>500kB 警告既知，含 three）；**`find dist -name '*.map'` 零命中**（`vite.config.js` `sourcemap: false` + `pages.yml` `find site -name '*.map' -delete` 双保险）；build 后 `rg googleapis|gstatic src dist index.html` 零命中。
+- 静态面：`RENDER_YAW_OFFSET = 0`；换算实现唯一（`core/view.js`）；`HIT_STOP` 全表原数（max 0.12）；`BEHIND_LIMIT = π/2.4`、`TELEPORT_DISTANCE = 16`、`CAMERA.snapTeleport = 60` 三数原样且 `tuning.test.js` 锁 16≠60 与 `lockedYawSpan > behindLimit`；两套 behind 闸并存（`camera.js` 头注明示；放手带 `behindReleaseSlack` 只进 R3 闸、与 R2 `lockedHoldSlack` 同源）；吞锁判据与申请锁条件逐字一致（`input/index.js`）；隔离 `git diff --name-only origin/main...HEAD` 过滤后仅 `.github/workflows/pages.yml`（G1 点名例外）。
+
+**验证方式限定（诚实口径）**：本轮仍无交互桌面与真机——§13.4 实机八步与真机触屏（「视」钮点按 / invertY 拖动 / `preventDefault` 实机手势）**未做**；本轮零视觉与玩法数值改动（输入 / 机位闸 / CI / 登记面），以 842 条单测（含放手带回归组把修前 11.2m 写进回归线）+ 三 seed probe 硬门（`noSnapFrameMaxDisplacement 0.45m ≤ 1m`、转角 89.38° 真实压过 75° 闸宽）替代并如实标注。
+
+- WARNING 清单：**F3 GDD 在飞**（零冲突可干净合入；合入后 §15.2 与 §15.6 内容重叠、§2 模块表 `CHARACTERS` 一格两版并存，建议合并时顺一遍去重，不挡签字）；**真机触屏 DEFER** 结转；**§13.4 桌面八步未做**（环境性，如实标注）；**W2 hit-stop 零余量哨兵**结转（本轮 O3 已锁测化）。
+- 修复指派：无实现缺口待派；F3 合入由合并工人执行（顺带去重 GDD §15.2/§15.6）；真机到位后按 §13.4 复跑销触屏 WARNING。
+- 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（零视觉改动 + 无桌面环境，如实标注）。
