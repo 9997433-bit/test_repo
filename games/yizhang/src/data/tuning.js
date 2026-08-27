@@ -67,6 +67,27 @@ export const CAMERA = {
   pitchDamping: 14, // 抬头量阻尼（鼠标一格一格跳，镜头不能跟着跳）
   snapTeleport: 60, // = 契约 CAMERA_SNAP_TELEPORT（§7.1）：跟随目标单帧位移 > 此值 ⇒ 渲染器自动 snap
   snapMaxDist: 20, // = 契约 CAMERA_SNAP_MAX_DIST（§7.1）：snap 后相机-目标距离上界（G1/G2 断言用）
+  // —— locked 迟滞硬顶（LOOK-R2 O2，GDD §15.3；复盘 P1-6 补登记）——
+  lockedYawSpan: Math.PI / 2 - 0.1, // = render LOCKED_YAW_SPAN（≈84°）：locked 下机位允许落后角色面向的上限。
+  // 恒**严格大于** behindLimit：R3 咬合闸（≈75°）在内先咬，本值是更靠外的最后一道墙——
+  // 两闸并存才都有活干，关系由 tuning.test.js 锁死。
+  lockedHoldRate: 30, // = render LOCKED_HOLD_RATE（rad/s）：硬顶生效带宽 = rate×dt（lockedHoldSlack）
+  lockedHoldMin: 0.25, // = render LOCKED_HOLD_MIN（rad）：带宽下夹
+  lockedHoldMax: 1.2, // = render LOCKED_HOLD_MAX（rad）：带宽上夹（超出带宽 = 朝向被瞬移，硬顶整只让路）
+  // —— 跟随角咬合闸（LOOK-R3 O2）——
   behindLimit: Math.PI / 2.4, // = render BEHIND_LIMIT（≈75°）：跟随角咬合闸的极角上限
   behindShell: 2, // = render BEHIND_SHELL：机位半径 > dist×本系数时松开咬合闸（重生追赶不横跳）
+};
+
+// 角色渲染对照登记（render/characters.js，O2 域；工程复盘 P0-3）。
+// 与 CAMERA 同一套「登记不是权威」模式：实现权威在 render/characters.js，
+// render 侧改值时回修此表；常量在实现里是模块私有，tuning.test.js 读源码对照锁两边同数。
+export const CHARACTERS = {
+  // = render/characters.js TELEPORT_DISTANCE（米）：模型位置插值的跳插值阈值——
+  // 单帧位移 > 此值当传送，角色直接出现在新位置（damp 22 的位置弹簧不许把过门/重生摊成滑步）。
+  // 16 管的是**模型**瞬移；CAMERA.snapTeleport = 60（= 契约 CAMERA_SNAP_TELEPORT，§7.1）管的是
+  // **机位**——故意不是同一个数：局内重生瞬移最远 ≤ 2×arenaRadius = 40m，模型必须瞬移出现
+  // （16 < 40），机位却不得 snap（60 > 40，重生的弹簧甩镜手感保留，契约 §14-33）。
+  // 正常移动一帧最多一米出头（冲刺 ~17m/s ÷ 60Hz），远够不到 16，不会误伤。
+  teleportDistance: 16,
 };
