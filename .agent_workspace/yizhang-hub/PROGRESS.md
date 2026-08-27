@@ -18,4 +18,4 @@
 |-------|------|------|
 | 1 初始构建与基线探索 | 已收口 | 十席全合入；见 `round1/BRIEF.md` |
 | 2 靶向重构与深度优化 | 已收口 | 十席全合入；F4 PASS-WITH-WARNINGS；见 `round2/BRIEF.md` |
-| 3 SOTA 打磨与最终验收 | 进行中 | Wave 1–3 全合入；F4 `bc-0111baf9-a3a4-5820-98e8-8095da9a8890` 签字中 |
+| 3 SOTA 打磨与最终验收 | 已收口 | 十席全合入；F4 PASS-WITH-WARNINGS；见 `round3/BRIEF.md` |

@@ -50,4 +50,4 @@
 
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
-| F4 签字 | `claude-fable-5-thinking-xhigh` | `bc-0111baf9-a3a4-5820-98e8-8095da9a8890` | 已派出 |
+| F4 签字 | `claude-fable-5-thinking-xhigh` | `bc-0111baf9-a3a4-5820-98e8-8095da9a8890` | 已合入 `cursor/yizhang-hub-r3-f4-sota-db8d`（PASS-WITH-WARNINGS；§11.9 / §12.10） |
