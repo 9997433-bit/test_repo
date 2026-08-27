@@ -20,6 +20,12 @@
 // 朝向也是两套：`src/sim` 冻结 yaw=0 面向 **-Z**（`src/sim/math.js` 的 FACE），
 // combat 的 testkit 仍按 yaw=0 面向 +Z 记账。think() 每帧先认一次方言（见 faceOf），
 // 之后所有「朝向 / 背后 / 局部移动向量」都走同一组函数，emit 出去的 yaw 才是真的对着人。
+//
+// 视角模式（lookMode: locked / free）不进这一层，一个字段都不读。它只决定**本机玩家**
+// 那一路输入：壳层拿相机方位角换出 `Input.yaw`（`src/core/look.js`），sim 不感知（ADR-38），
+// getView 也不透出它。所以 think() 认的角永远只有 `p.yaw` 这一个 sim 空间的值 ——
+// 快照上多出 lookMode / pitch / 相机角，Bot 的输出一个字节都不该变
+// （`look-mode-blind.test.js` 把这条钉死）。
 
 import { GLOVE_BY_ID as DATA_GLOVE_BY_ID } from "../data/gloves.js";
 import { BOT_PERSONA_BY_ID } from "../data/bots.js";
