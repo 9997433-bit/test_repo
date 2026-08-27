@@ -18,6 +18,10 @@
 //   ?seed=7                 对局种子
 //   ?crumble=1.2            每隔几秒往台面上砸一发（0 表示不砸）
 //   ?combat=real            强行接 src/combat（见下面 createLiveMatch 里的说明）
+//   ?phase=arena            跳过安全区直接进裂岛（缺省 hub：开局在走道上）
+//   ?picked=0               开局不带主掌，走道里挑到掌门才会开（看传送门两态）
+//   ?unlock=all             全解锁（缺省只有木棉 + 带进来的两只，其余是未点亮的石掌）
+//   ?tour=0                 关掉大厅走查脚本，人物站着不动（拍静帧用）
 //
 // 就绪后 window.smoke 可用；异步引导的 Promise 在 window.smokeReady 上。
 
@@ -47,10 +51,94 @@ function yawToward(dx, dz) {
 }
 
 /**
+ * 大厅走查脚本。
+ *
+ * 沿走道从近端走到门口，在每一座台座旁停一下（进得了交互半径，焦点就落在那只掌上），
+ * 途中挑一只主掌与一只副掌，最后走进传送门。它替代的是「玩家的手」，
+ * 所以只产出 sim 的 Input，不直接改状态。
+ */
+function createHubTour() {
+  let plan = null;
+  let idx = 0;
+  let dwell = 0;
+  let pressed = false;
+
+  function buildPlan(hub) {
+    // 从走道近端（z 大）往门口（z 小）逐座走；停位在台座与中线之间，落在交互半径里
+    const stops = [...hub.pedestals]
+      .sort((a, b) => b.z - a.z)
+      .map((ped) => ({
+        gloveId: ped.gloveId,
+        unlocked: ped.unlocked !== false,
+        x: ped.x + (ped.x < hub.origin.x ? 1.55 : -1.55),
+        z: ped.z,
+        lookX: ped.x,
+        lookZ: ped.z,
+        equip: false,
+      }));
+    // 挑两只能挑的：一只进主掌位，一只进副掌位
+    const pickable = stops.filter((s) => s.unlocked);
+    if (pickable[0]) pickable[0].equip = true;
+    if (pickable[Math.min(2, pickable.length - 1)]) pickable[Math.min(2, pickable.length - 1)].equip = true;
+    return stops;
+  }
+
+  return {
+    reset() {
+      plan = null;
+      idx = 0;
+      dwell = 0;
+      pressed = false;
+    },
+    input(view, dt) {
+      const hub = view.hub;
+      const me = view.players.find((p) => p.id === LOCAL_ID);
+      if (!hub || !me) return {};
+      if (!plan) plan = buildPlan(hub);
+
+      const goal =
+        idx < plan.length
+          ? plan[idx]
+          : { x: hub.portal.x, z: hub.portal.z + 0.4, lookX: hub.portal.x, lookZ: hub.portal.z - 4, equip: false };
+
+      const dx = goal.x - me.x;
+      const dz = goal.z - me.z;
+      const d = Math.hypot(dx, dz);
+      const yaw = yawToward(goal.lookX - me.x, goal.lookZ - me.z);
+
+      let interact = false;
+      if (d < 0.32 && idx < plan.length) {
+        dwell += dt;
+        if (goal.equip && !pressed && dwell > 0.35) {
+          interact = true;
+          pressed = true;
+        }
+        if (dwell > 1.3) {
+          idx++;
+          dwell = 0;
+          pressed = false;
+        }
+        return { moveX: 0, moveZ: 0, yaw, interact };
+      }
+      // 走过去：走的方向是世界方向，朝向另算，所以人是「侧着看展示掌」走过去的
+      return { moveX: dx / Math.max(d, 1e-4), moveZ: dz / Math.max(d, 1e-4), yaw, interact };
+    },
+  };
+}
+
+/**
  * 起一局真的对局。data / combat / ai 缺席时 sim 会自己退回内置兜底，
  * 冒烟台照样能跑，只是掌不全。
  */
-export async function createLiveMatch({ seed = 7, crumbleEvery = 1.2, combat = 'sim' } = {}) {
+export async function createLiveMatch({
+  seed = 7,
+  crumbleEvery = 1.2,
+  combat = 'sim',
+  phase = 'hub',
+  picked = true,
+  unlockAll = false,
+  tour = true,
+} = {}) {
   const sim = await import('../sim/index.js');
   const wired = { data: false, combat: 'sim' };
 
@@ -83,7 +171,22 @@ export async function createLiveMatch({ seed = 7, crumbleEvery = 1.2, combat = '
     /* bots 缺席就让他们站着挨打 */
   }
 
-  const state = sim.createMatch({ seed, gloveId: 'granite', offhandId: 'meteor', botCount: 3 });
+  const state = sim.createMatch({
+    seed,
+    gloveId: 'granite',
+    offhandId: 'meteor',
+    botCount: 3,
+    phase,
+    ...(unlockAll ? { unlocked: 'all' } : {}),
+  });
+  // 「还没挑掌」的开局：门是封着的，走道里挑到主掌才会开。冒烟台专用，正式壳不这么干。
+  if (!picked && state.hub) {
+    state.hub.mainGloveId = null;
+    state.hub.offGloveId = null;
+    state.hub.portalReady = false;
+    for (const ped of state.hub.pedestals) ped.selected = null;
+  }
+  const hubTour = createHubTour();
   const rand = mulberry32(seed * 7919 + 13);
   const botRng = () => rand();
 
@@ -162,8 +265,10 @@ export async function createLiveMatch({ seed = 7, crumbleEvery = 1.2, combat = '
     },
     step(dt) {
       t += dt;
-      const inputs = { [LOCAL_ID]: humanInput(view) };
-      if (ai) {
+      const inHub = view.phase === 'hub';
+      // 安全区里走的是走查脚本；进了岛才切回「追着人扇」的那套
+      const inputs = { [LOCAL_ID]: inHub ? (tour ? hubTour.input(view, dt) : {}) : humanInput(view) };
+      if (ai && !inHub) {
         for (const p of view.players) {
           if (p.id === LOCAL_ID || !p.alive) continue;
           try {
@@ -174,7 +279,7 @@ export async function createLiveMatch({ seed = 7, crumbleEvery = 1.2, combat = '
         }
       }
       sim.step(state, inputs, dt);
-      crumble(view);
+      if (!inHub) crumble(view);
       view = sim.getView(state);
       return view;
     },
@@ -185,10 +290,15 @@ export async function createLiveMatch({ seed = 7, crumbleEvery = 1.2, combat = '
     stats() {
       return {
         t: state.time.toFixed(1),
+        phase: state.phase,
         tiles: state.arena.tiles.length,
         broken: state.arena.brokenCount,
         kos: state.stats.kos,
         hits: state.stats.hits,
+        focus: state.hub?.focusGloveId ?? null,
+        main: state.hub?.mainGloveId ?? null,
+        off: state.hub?.offGloveId ?? null,
+        portalReady: !!state.hub?.portalReady,
         wired,
       };
     },
@@ -200,6 +310,10 @@ export async function bootSmoke(canvas) {
     seed: numOpt('seed', 7),
     crumbleEvery: numOpt('crumble', 1.2),
     combat: opt('combat', 'sim'),
+    phase: opt('phase', 'hub') === 'arena' ? 'arena' : 'hub',
+    picked: opt('picked', '1') !== '0',
+    unlockAll: opt('unlock', '') === 'all',
+    tour: opt('tour', '1') !== '0',
   });
 
   const renderer = createRenderer(canvas, {
@@ -234,9 +348,13 @@ export async function bootSmoke(canvas) {
         hudTimer = 0;
         const s = getStats();
         const m = match.stats();
+        const zone =
+          m.phase === 'hub'
+            ? `hub  focus ${m.focus ?? '-'}  主 ${m.main ?? '-'} / 副 ${m.off ?? '-'}  门 ${m.portalReady ? '通' : '封'}`
+            : `arena  tiles ${m.tiles - m.broken}/${m.tiles}  ko ${m.kos}`;
         hud.textContent =
           `${s.tier}  dpr ${s.pixelRatio.toFixed(2)}  draw ${s.drawCalls}  tris ${s.triangles}` +
-          `  |  t ${m.t}s  tiles ${m.tiles - m.broken}/${m.tiles}  ko ${m.kos}`;
+          `  |  t ${m.t}s  ${zone}`;
       }
     }
   };
