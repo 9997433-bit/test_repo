@@ -206,6 +206,36 @@ describe('战斗特效：八掌各一套', () => {
     expect(normal).toBeGreaterThan(1);
     vfx.dispose();
   });
+
+  it('絮扇跟着掌横扫：扇心从出掌方向的左侧走到右侧，不是往上抹', () => {
+    const { vfx } = mount('high');
+    // 出掌方向 -Z（与 yaw=0 一致）：这时世界 +X 就是出掌方向的右手边
+    vfx.strike('fanwake', new Vector3(0, 1.2, 0), new Vector3(0, 0, -1), 1, { whiff: true });
+
+    const sheet = [];
+    vfx.group.traverse((o) => {
+      if (!o.isMesh || !o.material?.uniforms?.uInner) return;
+      if (o.visible && o.parent?.visible && o.parent?.parent?.visible) sheet.push(o);
+    });
+    expect(sheet.length).toBe(1);
+
+    // 扇形几何体在本地 XY 平面上以 +X 为楔心，取楔心上一点当扇面的「朝向标记」
+    const mark = new Vector3();
+    const sample = () => {
+      sheet[0].updateWorldMatrix(true, false);
+      return mark.set(0.6, 0, 0).applyMatrix4(sheet[0].matrixWorld).clone();
+    };
+
+    const head = sample();
+    for (let i = 0; i < 20; i++) vfx.update(1 / 60); // 0.33s，絮扇一共 0.44s
+    const tail = sample();
+
+    // 左 → 右
+    expect(tail.x).toBeGreaterThan(head.x + 0.1);
+    // 抬高只是一点点，纵向不许抢过横扫（改之前扇面一边扫一边升 0.24m）
+    expect(Math.abs(tail.y - head.y)).toBeLessThan(tail.x - head.x);
+    vfx.dispose();
+  });
 });
 
 describe('镜头俯角', () => {

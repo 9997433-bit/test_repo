@@ -471,8 +471,10 @@ export function createCombatVfx({ scene, quality, textures, seed = 90210 }) {
         const e = 1 - Math.pow(1 - t, 2.2);
         const k = (0.72 + e * 1.15) * p;
         rec.mesh.scale.set(k, k, k);
-        rec.holder.position.y = rec.baseY + e * 0.24;
-        rec.orient.rotation.z = -0.28 + e * 0.5;
+        // 扇面跟着掌走：绕出掌方向从左扫到右（orient.z 递减 = 扇心往 +X 走，
+        // 也就是出掌方向的右手边）。抬高只留一点点 —— 抬多了整片就成了往上抹
+        rec.holder.position.y = rec.baseY + e * 0.05;
+        rec.orient.rotation.z = 0.28 - e * 0.5;
       },
       burst(ctx) {
         // 棉絮：大、软、几乎不落，被掌风带出去一段就慢慢化开
