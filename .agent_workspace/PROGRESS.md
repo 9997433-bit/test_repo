@@ -4,7 +4,7 @@
 
 | 游戏 | 目录 | 端口 | 本轮状态 |
 | --- | --- | --- | --- |
-| 异掌 | `games/yizhang/` | 4181 | 安全区大厅轮进行中（`yizhang-hub/`）；手感轮见 `yizhang-feel/` |
+| 异掌 | `games/yizhang/` | 4181 | **视角轮进行中**（`yizhang-look/`）；大厅轮已合 main（`yizhang-hub/`）；手感轮见 `yizhang-feel/` |
 | 三国：冰河时代 | `games/sanguo-ice-age/` | 4176 | Round 1–3 完成，24 测 / 10 探针全绿 |
 | 我的花园世界 | `games/my-garden-world/` | 5173 | Round 1–3 完成，见 `PROGRESS.my-garden-world.md` |
 | 超能下蛋鸭 | `games/chao-neng-xia-dan-ya/` | 4174 | Round 1–3 完成，L1 |
@@ -16,10 +16,10 @@
 
 # 异掌 — 编排进度
 
-- **任务名**: yizhang-hub（安全区选掌大厅）
-- **工作分支**: `cursor/yizhang-hub-db8d`（逻辑名 `agent/yizhang-hub`）
-- **游戏目录**: `/workspace/games/yizhang/`
-- 详见 `yizhang-hub/PROGRESS.md`；手感轮 `yizhang-feel/`；上一循环归档 `PROGRESS.yizhang.md`
+- **任务名**: yizhang-look（固定人物视角 / 修怪机位）
+- **工作分支**: `cursor/yizhang-look-db8d`（逻辑名 `agent/yizhang-look`）
+- **游戏目录**: `/workspace/games/yizhang/`（不复制第二份游戏目录）
+- 详见 `yizhang-look/PROGRESS.md`；大厅轮归档 `yizhang-hub/`；手感轮 `yizhang-feel/`；更早循环 `PROGRESS.yizhang.md`
 
 ---
 
