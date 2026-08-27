@@ -161,6 +161,12 @@ describe("think() 的 yaw 永远是有限数", () => {
     const alone = structuredClone(liveView);
     alone.players = alone.players.filter((p) => p.id === id);
 
+    // 台心 + 无人可打 = 巡逻向量正好是零：这一帧 Bot 不走位，`yaw` 也照样得是个数。
+    // 「不动就别写朝向」是玩家 free 那一路的约定，Bot 不许照抄。
+    const parked = structuredClone(alone);
+    parked.players[0].x = 0;
+    parked.players[0].z = 0;
+
     const dead = structuredClone(liveView);
     for (const p of dead.players) {
       if (p.id === id) {
@@ -173,6 +179,7 @@ describe("think() 的 yaw 永远是有限数", () => {
       ["常态裂岛", liveView, id],
       ["安全区", hubView, botIds(hub)[0]],
       ["场上只剩自己", alone, id],
+      ["场上只剩自己且停在台心", parked, id],
       ["自己已出局", dead, id],
       ["不认识的 id", liveView, "nobody"],
       ["空对象", {}, id],
@@ -185,6 +192,11 @@ describe("think() 的 yaw 永远是有限数", () => {
       resetBots();
       expectFinite(think(view, who, counter(3)), tag);
     }
+
+    // 哨兵：台心那一帧确实是零位移，上面那条才不是空转。
+    resetBots();
+    const idle = think(parked, id, counter(3));
+    expect(Math.hypot(idle.moveX, idle.moveZ), "台心巡逻帧本该零位移").toBe(0);
   });
 
   it("快照被写坏也不漏：yaw 是 null / NaN、坐标是 NaN、目标与自己重合", () => {
