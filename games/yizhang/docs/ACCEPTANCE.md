@@ -644,3 +644,31 @@ npm run build   # LG-03：退出码 0
 - WARNING 清单：实机段延后（§13.4 八步 + 转向手感评分卡预跑，结转 Round 3）；O2 机位复核在飞（合入后 F4 复跑 `render/look.test.js` ×15 + probe 机位读数防回退）；W2 hit-stop 零余量哨兵结转（§11.9）。
 - 修复指派：无实现缺口待派；O2 机位复核合入后由 F4 补验；Round 3 实机段（§13.4 八步 + 触屏）到位后复跑即可销首条 WARNING。
 - 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（无桌面环境，如实标注）。
+
+### 13.8 异掌视角轮 Round 3 验收判定（F4 最终验收席 · 签字轮）
+
+- 被验分支/commit：`cursor/yizhang-look-db8d` @ `372a8dd`（Round 3 已合席位：O2 机位复核补交 `4696ee0`+`91fd888` @ merge `f202877`——R2 唯一 DEFER 销号 / F1 契约 v4.4 实现态登记 `e7eae97` / F2 ART §18.7 收口审计 `7f71689` / F3 GDD §15 硬顶登记 `a8ceb70` / O1 reach 镜像与 1e-4 边界复核 `4c322d9` / O3 水平锥与 Bot 路径锁测 `9947c05`+`255ec8f` / G2 切模式探针与跨层锁测 `a3f9e4d`+`2284321`+`74290f0`；**未合、不装绿**：R3 O4 边角、另一份 R3 O2 复核——在飞，合入后防回退复跑）；Round 2 判定点 `c97723d`。
+- 验收人/日期：Fable-4 最终验收席 / 2026-08-27（全套命令实跑：静态检查 → `npm test` → `npm run probe` → `npm run build` → headless Chrome CDP 冒烟截图 ×6）。工作分支 `cursor/yizhang-look-r3-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md` 与本文件，不改 src）。
+- 结论：**PASS-WITH-WARNINGS**（R2 唯一 DEFER——O2 机位复核——合入并复验改勾；六条用户验收线 6/6 复验无回退；WARNING 全部为环境性延后（真机段）与在飞席位登记（R3 O4 / 另一份 R3 O2），无实现缺口、无红线命中）。
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| LG 回归门 | 6/6 | 无（LG-01 737≥717 零减量；LG-02 三 seed 视角硬门 + G2 新增切模式硬门全过；LG-05 静态面全绿含 dist 复查；LG-06 大厅四点抽验在 737 内绿） |
+| LK 视角行为 | 9/9 | 无（R2 表 9/9 复验无回退；LK-01/02/03 由 O2 硬顶从阻尼行为升级为几何保证并有锁测） |
+| LT 测试锁 | 8/8 | 无（LT-01…08 全在场；R3 加固 20 条：LT-02 系 15→27、LT-03 系 25→28、跨层新 ×3、O3 系 +2） |
+| LR/HR/FR/R 否决 | 零命中 | 无 |
+
+**六条用户验收线（Round 3 终表）**：开局背后 **PASS** / 过门不飞跃 **PASS** / locked 面向=视线 **PASS** / free 可解耦 **PASS** / 横扇读向 **PASS** / 打人朝向一致 **PASS** —— 6/6，逐条证据见 SOTA §12.7 终表。
+
+**命令实测原文摘要**：
+
+- `npm test`：**Test Files 52 passed (52) / Tests 737 passed (737)**，退出码 0（Round 2 717/51 → 737/52，零减量；新增分解见 SOTA §12.7）。
+- `npm run probe`：退出码 0，`{"status":"pass","seedCount":3,"kills":1,"arenaKills":1,"cameraSnapMaxDist":7.1,"modeSwitchCameraMaxDist":7.133,"lockedForwardMinDot":1,"lockedForwardMaxAngleDeg":0,"lockedTurnMinAngleDeg":47.67,"lockedCameraMaxBehindness":-7.1,"freeStationaryMaxYawDeltaDeg":0,"freeMoveMaxYawErrorDeg":0.00021,"p99StepMs":0.116,"ai":"think","wiredCombat":true,…}`；三 seed 逐条——`0x1a2b3c4d`：kills 1、p99 0.116、botSlapAttempts 2191、modeSwitch 7.107；`0x5eed1234`：kills 2、p99 0.104、botSlapAttempts 3425、modeSwitch 7.133；`0xc0ffee42`：kills 2、p99 0.113、botSlapAttempts 3636、modeSwitch 7.106；三条均 `openingCameraDistance:7.1`、`arenaEntryPreSnapDistance:127.0–127.2`、`arenaEntryCameraDistance:7.1`、`snappedFrames:2`、`lockedTargets:3601`、`lockedReturnYawError≈1.7e-16`、`lookModeTransitions:2 / modeSwitchCameraFrames:2`、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`；横幅 `MODEL_SLUG: yizhang-probe`。
+- `npm run build`：退出码 0；主 chunk 681.44kB / gzip 188.54kB（>500kB 警告既知，含 three）；build 后 `rg googleapis|gstatic src dist index.html` 零命中。
+- 静态面：`RENDER_YAW_OFFSET = 0`；换算实现唯一（`core/view.js:173/178`，其余 10 文件只 import）；`rg yawFromDir src/input` 命中（分派在位）；`rg "yz-look" src/ui src/main.js` 命中（HUD DOM 在位）；`git diff c97723d..HEAD --stat -- src/render` **有 diff**（O2 硬顶合入实锤：camera.js +120 / renderer.js +55 / look.test.js +331）；同区间 `src/input`/`src/ui`/`src/main.js` **零 diff**（R3 O4 未合实锤）；隔离 diff 过滤后零残留。
+
+**验证方式限定（诚实口径）**：本轮仍无交互桌面与真机——§13.4 实机八步的交互原教旨口径**未做**；以 probe 硬门（3601 帧 locked 逐帧 + V 双向切换零 snap + 127m 远跳前提）+ headless Chrome 148（SwiftShader WebGL）CDP 驱动 `smoke.html` 截图 ×6（locked 开局背后 / V→free 同帧位 / free 独立转镜露侧面 / free→locked 机位连续 / 弹簧归位背后 / tour 穿门首帧机位在身后）逐步替代并如实标注（八步 × 替代证据对照表见 SOTA §12.7）；触屏一步无替代，DEFER 真机段。
+
+- WARNING 清单：真机段延后（§13.4 交互原教旨口径 + 触屏 + 转向手感评分卡）；R3 O4 边角与另一份 R3 O2 复核在飞（合入后 F4 防回退复跑）；W2 hit-stop 零余量哨兵结转（§11.9）。
+- 修复指派：无实现缺口待派；在飞席位合入后由 F4 复跑 LG-01/LG-02 + `render/look.test.js` 补验；真机到位后按 §13.4 八步复跑销首条 WARNING。
+- 证据包：命令原文（上列）+ probe JSON 三 seed 全文 + 冒烟截图 6 张（存验收工作台，不入 `games/yizhang/src`）随本轮验收 PR 描述提交。

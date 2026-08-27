@@ -711,3 +711,51 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 - **W2 hit-stop 零余量哨兵**结转（§11.9）。
 
 **判定：视角轮 Round 2 = PASS-WITH-WARNINGS**（判定表与证据见 ACCEPTANCE §13.7；Round 1 唯一 FAIL 项 LK-04 重判 PASS，LK 九条全绿、LT 八条全在场真实断言，六条用户验收线 6/6 PASS；WARNING 全部为环境性延后与在飞席位登记，无实现缺口、无红线命中）。
+
+**编排层补记（Round 3 合入后）**：本节唯一未合项 **O2 机位复核已合入**（`4696ee0` locked 背后半平面硬顶 + `91fd888` 迟滞与归位让路，merge `f202877`）——上表 DEFER 过时，Round 3 改勾与复验见 §12.7；`render/look.test.js` 15 → 27，probe 机位读数复跑无回退。
+
+### 12.7 Round 3 实测记分（F4 最终验收席 @ 父分支 `372a8dd`，2026-08-27，全套命令实跑）
+
+**执行口径**：Round 3 已合席位的最终验收。已合：**O2 机位复核补交**（R2 DEFER 销号：`4696ee0`+`91fd888` @ merge `f202877`）/ **F1** 契约 v4.4 实现态登记（`e7eae97` @ `cf644fa`）/ **F2** ART §18.7 SOTA 收口审计（`7f71689` @ `ff61b2f`）/ **F3** GDD §15 locked 硬顶与切模式不传送机位登记（`a8ceb70` @ `9061829`）/ **O1** reach 镜像与 1e-4 边界复核（`4c322d9`）/ **O3** 水平锥与 Bot 路径锁测（`9947c05`+`255ec8f` @ merge `372a8dd`）/ **G2** 切模式机位连续性探针 + 跨层锁测（`a3f9e4d`+`2284321`+`74290f0`）。**未合（不装绿）**：R3 **O4 边角**与**另一份 R3 O2 复核**仍在飞（`git diff c97723d..HEAD` 零 `src/input`/`src/ui`/`src/main.js` diff 实锤 O4 未合）；合入后按防回退复跑，不计入本轮判定。工作分支 `cursor/yizhang-look-r3-f4-db8d`（仅动本文件与 `ACCEPTANCE.md`，不改 src）。自动化全套实跑；本环境仍无交互桌面——§13.4 实机八步以 **probe 硬门 + headless Chrome 148（SwiftShader WebGL）CDP 驱动 `smoke.html` 截图**替代并逐步写清口径（见下），不装成手测过。命令原文见 ACCEPTANCE §13.8。
+
+**三件套实测**（勾选依据）：
+
+- `npm test`：**737/737（52 文件）**，退出码 0（Round 2 基线 717/51 → 737/52，零红零减量。新增 20 条：`render/look.test.js` 15→27（O2 硬顶锁测 +12）、`sim/look-yaw.test.js` 25→28（O1 +3）、`tests/look-round3-cross-layer.test.js` 新 ×3（G2）、`combat/look-invariants.test.js` 11→12（O3 +1）、`ai/look-mode-blind.test.js` 8→9（O3 +1）；`ai/bot-yaw-finite.test.js` 行内加固不变 8）。
+- `npm run probe`：**PASS** 退出码 0，3/3 固定 seed。R2 读数全部复跑无回退：`cameraSnapMaxDist:7.1`（开局 7.1 / 过门 pre-snap 127.0–127.2 → post 7.1，`snappedFrames:2`）、`lockedForwardMinDot:1 / lockedForwardMaxAngleDeg:0`（每 seed 3601 帧）、`lockedTurnMinAngleDeg:47.67`、`lockedCameraMaxBehindness:-7.1`、`freeStationaryMaxYawDeltaDeg:0`、`freeMoveMaxYawErrorDeg:0.00021`；**G2 Round 3 新增硬门全过**：`modeSwitchCameraMaxDist:7.133 ≤ 20`（V 真实 keydown/keyup 双向切换 ×2，`observeModeSwitchCamera` 断言切模式不武装 `_snapPending` 且 `_followCamera` 返回未 snap）、`lockedReturnYawError ≈ 1.7e-16`（free→locked 首帧即恢复 1:1 直赋）、`lookModeTransitions:2 / modeSwitchCameraFrames:2` 逐 seed 全录。沿用门全绿：`wiredCombat:true`、`ai:"think"`、arenaKills 1/2/2、botSlapAttempts 2191/3425/3636（> 哨兵 1900）、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`、p99StepMs 0.104–0.116（≤0.5）；横幅 `MODEL_SLUG: yizhang-probe`。
+- `npm run build`：退出码 0；主 chunk 681.44kB / gzip 188.54kB（>500kB 警告既知，含 three）。
+
+**O2 机位复核收口（R2 DEFER 改勾）**：`src/render/camera.js` 落地 locked 背后半平面**硬顶**——`LOCKED_YAW_SPAN = π/2 − 0.1`（留 0.1rad 余量使 behindness 断言恒取到确定负数）、`lockedHoldSlack`（30rad/s 生效带宽，0.25–1.2 夹，掉帧自适应）、`holdBehind/insideBehind`（yaw 份）+ `holdPosBehind`（机位份，位置阻尼 λ6.2 < yaw λ7.5 故单夹 yaw 不够）；**迟滞双位分记**（`behindHold/behindPosHold`：上一帧在半平面里才拽得动这一帧——转身挤出去的无感拽回，朝向被瞬移/归位途中整只让路）；`renderer._behindYaw` 只在 locked 且 yaw 有限时下发（free 恒不夹）；**切模式不入 snap 名单**（`_notePhase` 只认 hub↔arena 换区）。锁测 +12 覆盖判决面：720°/s 甩镜绕不到正脸、free 同甩法不受硬顶、`setLookMode`/payload 不武装 snap、free→locked 弹簧归位不甩镜、归位途中硬顶让路逐帧与纯弹簧逐位相同、过门仍 snap、常规转速 ≤270°/s 硬顶零介入（手感一行没改）、`holdBehind` 三分支。F4 复验：probe 机位读数（7.1 / −7.1 / dot 1.0）复跑无回退，GDD §15（F3）与 ART §18.7（F2）登记与实现同词。
+
+**实机八步（§13.4）替代口径逐条**（headless Chrome 148 + CDP 驱动 `src/render/smoke.html?manual=1&seed=7&quality=mid`，真实渲染链路 + 真实 sim；smoke 的 V 与壳层同键位。截图 6 张存验收工作台，不入 src）：
+
+| 步 | 原教旨口径 | 本轮替代证据 | 判 |
+|---|---|---|---|
+| 1 开局背后 | 实机目视首帧 | 截图 01：走道出生、机位在背后正对纵深与门；probe `openingCameraDistance:7.1`、dot=1.0 ×3 seed | 替代 PASS |
+| 2 方向回归 | 键鼠 W/S/A/D | 无头无指针锁——FD 矩阵锁测（input 44 测）+ FD-06 半平面 + `RENDER_YAW_OFFSET=0` 静态面；键鼠手感留真机段 | 替代 PASS（手感延后） |
+| 3 locked 转镜头 360° | 实机原地转镜 | probe locked 段真实转镜 47.67° 后 3601 帧 dot=1.0；O2 硬顶锁测 720°/s 甩不绕正脸 | 替代 PASS |
+| 4 横扇读向 | 实机目视横抽+空挥 | 无头拍不实挥掌动画帧——combat「判定是横着的一片扇形」+ O3 水平锥/水平 reach/Bot 水平瞄准锁测 + 跨层「切模式后扇击前向 = 真实 locked 视线」（`look-round3-cross-layer` #2） | 替代 PASS |
+| 5 V 切换 | 实机按 V 目视 | smoke 运行时 V 双向切换截图：01→02 同帧位（locked→free 不跳）、03→04 机位连续（free→locked，cameraYaw 2.25→1.75 弹簧中段）、05 归位背后；probe `lookModeTransitions:2` 零 snap ×3 seed；HUD 一瞬反馈 smoke 无壳层 HUD，以 `ui/hud.test.js` ×9 + `shell.test.js` look 组代 | 替代 PASS |
+| 6 过门吸附 | 实机穿门目视 | smoke tour 全链（走道装掌→穿门，step 1085 过门）首帧+2 帧截图 06：机位已架在裂岛出生点身后（无敌罩+门光粒子在框），无 120m 飞越帧；probe pre-snap 127m → post 7.1m、`snappedFrames:2` | 替代 PASS |
+| 7 存档链 | 刷新页面复验 | 无刷新交互——`core/storage.test.js` 向后兼容组 + 跨层「URL > 存档 > locked」不变量 | 替代 PASS |
+| 8 触屏 | 真机 | 无真机，如实延后 | DEFER（真机段） |
+
+**六条用户验收线（Round 3 终表）**：
+
+| # | 验收线 | R1 | R2 | R3 | 一句话证据 |
+|---|---|---|---|---|---|
+| 1 | 开局镜头在背后 | PASS | PASS | **PASS** | probe 7.1m + dot=1.0 + behindness −7.1 复跑无回退；截图 01 目视 |
+| 2 | 过门不飞跃 | PASS | PASS | **PASS** | pre-snap 127m → post 7.1m ×3 seed；截图 06 过门首帧目视 |
+| 3 | locked 面向=视线 | PASS | PASS | **PASS** | 3601 帧 ×3 seed dot=1.0；O2 硬顶把「绕不到正脸」从阻尼巧合升级为几何保证 |
+| 4 | free 可解耦 | FAIL | PASS | **PASS** | free 静止 null / 移动 yawFromDir 复跑无回退；截图 03 机位绕到侧面、人物面向不动目视 |
+| 5 | 横扇读向 | PASS | PASS | **PASS** | 横扇形判定 + O3 水平锥/水平 reach 锁测加固复验绿 |
+| 6 | 打人朝向一致 | PASS | PASS | **PASS** | aim-alignment ×7 + O1 reach 镜像/1e-4 边界 + 跨层「切模式后扇击前向=视线」复验绿 |
+
+**红线扫描（全零命中）**：`RENDER_YAW_OFFSET = 0` 在位；换算实现唯一（`cameraYawToSimYaw/simYawToCameraYaw` 只实现在 `core/view.js:173/178`，其余 10 文件 import）；`rg googleapis|gstatic src dist index.html` 零命中（build 后含 dist 复查）；lookMode 权威仍只住 input（renderer 随帧镜像，LR-03 零命中）；测试 717→737 零减量（LR-04 零命中）；隔离 diff 过滤后零残留（LG-04）。
+
+**WARNING 清单（记录不否决）**：
+
+- **真机段延后**（§13.4 八步的交互原教旨口径：键鼠转向手感、触屏 free/locked、转向手感评分卡）：本环境无交互桌面与真机，以上表替代口径如实标注；有真机后按 §13.4 复跑即销。
+- **R3 O4 边角与另一份 R3 O2 复核在飞**：未合不计分不装绿；合入后由 F4 按 LG-01/LG-02 + `render/look.test.js` 复跑防回退。
+- **W2 hit-stop 零余量哨兵**结转（§11.9）。
+
+**判定：视角轮 Round 3 = PASS-WITH-WARNINGS**（判定表与证据见 ACCEPTANCE §13.8；LG 六门全绿、LK 九条全绿（含 O2 DEFER 改勾）、LT 八条全在场真实断言 + R3 新增 20 条锁测、六条用户验收线 6/6 复验无回退；WARNING 全部为环境性延后与在飞席位登记，无实现缺口、无红线命中）。
