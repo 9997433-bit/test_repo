@@ -27,7 +27,7 @@
 | 席位 | 模型 | 状态 |
 | --- | --- | --- |
 | F3 皮肤真表 | `claude-fable-5-thinking-xhigh` | `bc-19617087-f8db-5dae-9f0b-83e998f63ff2` | 已派出 |
-| O1 空挥+导出 | `claude-opus-5-thinking-high-fast` | `bc-3b6a15f6-a353-5978-984c-afaa1b882532` | 已派出 |
+| O1 空挥+导出 | `claude-opus-5-thinking-high-fast` | `bc-3b6a15f6-a353-5978-984c-afaa1b882532` | 已合入 `cursor/yizhang-hub-r2-o1-sim-db8d`（空挥空间闸、skinId、ghosts、hub 换掌；352 测） |
 | G2 探针 phase | `gpt-5.6-sol-xhigh-fast` | `bc-7f07748d-c290-5db1-ac3c-5b9d64e4618e` | 已合入 `cursor/yizhang-hub-r2-g2-probe-db8d`（probe pass，harness 缺省仍 arena） |
 
 ### Wave 2（Wave 1 合入后）
