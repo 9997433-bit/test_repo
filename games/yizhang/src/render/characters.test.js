@@ -16,7 +16,7 @@ import { Scene, Vector3 } from 'three';
 import * as sim from '../sim/index.js';
 import { GLOVES } from '../data/gloves.js';
 import { BOT_PERSONAS } from '../data/bots.js';
-import { QUALITY } from './config.js';
+import { OCCLUDER_LAYER, QUALITY } from './config.js';
 import { createCharacters } from './characters.js';
 import { ACCESSORIES, EXTRA_LOOKS, resolveSkinLook, sameLook, skinTable } from './skins.js';
 import * as dataModule from '../data/index.js';
@@ -248,6 +248,171 @@ describe('角色：不同 skinId 不是同一根胶囊', () => {
     expect(new Set(sigs).size).toBe(ids.length);
     expect(chars.get('p0').look.accessory).toBe('hood'); // drifter
     expect(chars.get('p1').look.accessory).toBe('sash'); // mason
+    chars.dispose();
+  });
+});
+
+describe('角色：按材质合批（L3-10 绘制预算）', () => {
+  /** 真会发出绘制调用的东西：可见、且祖先都可见。 */
+  function drawables(root) {
+    const out = [];
+    root.updateMatrixWorld(true);
+    root.traverse((o) => {
+      if (!(o.isMesh || o.isPoints)) return;
+      let cur = o;
+      while (cur) {
+        if (!cur.visible) return;
+        cur = cur.parent;
+      }
+      out.push(o);
+    });
+    return out;
+  }
+
+  it('分节照旧、绘制调用收成「身上有几种材质」那么多份', () => {
+    const { chars } = mount('mid');
+    chars.reconcile([player('p0', 'crane')], 'p0');
+    const c = chars.get('p0');
+
+    // 零件一件没少：躯干烘出来的几份 + 四肢 + 两只掌 + 配件，都还在场景图里
+    const parts = [];
+    c.rootGroup.traverse((o) => {
+      if (o.isMesh && !o.isSkinnedMesh) parts.push(o);
+    });
+    expect(parts.length).toBeGreaterThanOrEqual(25);
+
+    // 但每帧真正要画的只有合批后的那几份（+ 接地阴影），mid 档预算 120 是给
+    // 「4 个人 + 8 座 + 天光 + 特效」分的，一个人不能占掉三分之一。
+    // 中档并完是：布 / 皮 / 素面 / 金属 / 识别色漆 / 主副两道缝线，加接地阴影。
+    const live = drawables(c.rootGroup);
+    expect(live.length).toBeLessThanOrEqual(9);
+    expect(live.filter((o) => o.isSkinnedMesh).length).toBe(live.length - 1);
+    // 合批网格用的就是原来那几份材质，没有偷偷换成统一材质
+    const mats = new Set(Object.values(c.mats));
+    for (const sm of live) {
+      if (!sm.isSkinnedMesh || sm.name === 'bloom-occluder') continue;
+      expect(mats.has(sm.material)).toBe(true);
+    }
+    chars.dispose();
+  });
+
+  it('每个零件是自己的骨头：动画写节点，合批网格跟着动', () => {
+    const { chars } = mount('mid');
+    chars.reconcile([player('p0', 'nuo')], 'p0');
+    const c = chars.get('p0');
+    const bones = c.skinned.skeleton.bones;
+    // 会动的关节（掌、束带）都在骨头表里，否则挥掌时它们会钉在绑定姿势上
+    expect(bones).toContain(c.arms[0].glove.userData.tassel);
+    expect(bones).toContain(c.arms[0].glove.userData.mitt);
+    for (const sm of c.skinned.meshes) expect(sm.skeleton).toBe(c.skinned.skeleton);
+    chars.dispose();
+  });
+
+  it('三块识别色漆共用一份材质，颜色走顶点色，换掌照样看得见', () => {
+    const { chars } = mount('mid');
+    chars.reconcile(
+      [player('p0', 'reed', { tint: 0x63c6b4, mainTint: 0x63c6b4, offTint: 0xc94f43 })],
+      'p0'
+    );
+    const c = chars.get('p0');
+    const mesh = c.paintMesh;
+    expect(mesh).toBeTruthy();
+    expect(mesh.material).toBe(c.mats.paintSurface);
+    expect(mesh.material.vertexColors).toBe(true);
+
+    // 背布片 / 主掌漆条 / 副掌漆条，三段各写各的颜色
+    const sources = mesh.userData.ranges.map((r) => r.source.userData.tintSource).sort();
+    expect(sources).toEqual(['paint', 'paintMain', 'paintOff']);
+    const attr = mesh.geometry.attributes.color;
+    const readAt = (r) => [attr.getX(r.start), attr.getY(r.start), attr.getZ(r.start)];
+    for (const r of mesh.userData.ranges) {
+      const want = c.mats[r.source.userData.tintSource].color;
+      const got = readAt(r);
+      // 顶点属性是 float32，材质颜色是 float64，比到 6 位就够断言「写的是这个色」
+      expect(got[0], r.source.userData.tintSource).toBeCloseTo(want.r, 6);
+      expect(got[1], r.source.userData.tintSource).toBeCloseTo(want.g, 6);
+      expect(got[2], r.source.userData.tintSource).toBeCloseTo(want.b, 6);
+    }
+    // 副掌暖红、主掌青，两段顶点色分得开 —— 不是三段刷成同一个色
+    const off = mesh.userData.ranges.find((r) => r.source.userData.tintSource === 'paintOff');
+    const main = mesh.userData.ranges.find((r) => r.source.userData.tintSource === 'paintMain');
+    expect(readAt(off)).not.toEqual(readAt(main));
+
+    // 换掌：材质还是同一份，颜色跟着改
+    chars.reconcile(
+      [player('p0', 'reed', { tint: 0xe07840, mainTint: 0xe07840, offTint: 0xc94f43 })],
+      'p0'
+    );
+    expect(mesh.material).toBe(c.mats.paintSurface);
+    expect(readAt(main)[0]).toBeCloseTo(c.mats.paintMain.color.r, 6);
+    expect(readAt(main)[2]).toBeCloseTo(c.mats.paintMain.color.b, 6);
+    chars.dispose();
+  });
+
+  it('布/皮/素面各并成一份，六套皮肤的衣料色仍旧一色一段', () => {
+    const { chars } = mount('mid');
+    chars.reconcile([player('p0', 'nuo')], 'p0');
+    const c = chars.get('p0');
+
+    // 并完之后：布与暗布同一份材质，皮与旧皮同一份，皮肤与配饰同一份
+    const clothMesh = c.skinned.byMaterial.get(c.mats.clothSurface);
+    const leatherMesh = c.skinned.byMaterial.get(c.mats.leatherSurface);
+    const plainMesh = c.skinned.byMaterial.get(c.mats.plainSurface);
+    for (const mesh of [clothMesh, leatherMesh, plainMesh]) {
+      expect(mesh).toBeTruthy();
+      expect(mesh.material.vertexColors).toBe(true);
+      // 合并材质自己是白的，颜色全在顶点上，否则会给每一段再乘一层色
+      expect(mesh.material.color.getHex()).toBe(0xffffff);
+    }
+    // 原来那几份材质没被删：它们仍旧是颜色的持有者
+    expect(c.skinned.byMaterial.has(c.mats.cloth)).toBe(false);
+    expect(c.mats.cloth.color).toBeTruthy();
+
+    const colorAt = (mesh, key) => {
+      const r = mesh.userData.ranges.find((x) => x.source.userData.tintSource === key);
+      const a = mesh.geometry.attributes.color;
+      return r ? [a.getX(r.start), a.getY(r.start), a.getZ(r.start)] : null;
+    };
+    // 衣料色与滚边色是两段不同的顶点色 —— 并材质不是「把两件衣服刷成一个色」
+    const cloth = colorAt(clothMesh, 'cloth');
+    const trim = colorAt(clothMesh, 'clothDim');
+    expect(cloth).not.toEqual(trim);
+    expect(cloth[0]).toBeCloseTo(c.mats.cloth.color.r, 6);
+    expect(trim[2]).toBeCloseTo(c.mats.clothDim.color.b, 6);
+    // 掌面的旧皮比腰带的皮亮：两段皮也分得开
+    expect(colorAt(leatherMesh, 'leather')).not.toEqual(colorAt(leatherMesh, 'leatherWorn'));
+    // 骨角 / 面具的配饰本色不会被皮肤色吃掉
+    expect(colorAt(plainMesh, 'accent')).not.toEqual(colorAt(plainMesh, 'skin'));
+    chars.dispose();
+  });
+
+  it('高档的布带织物菲涅尔，所以那一档不并布 —— 换来的画质不往中档塞', () => {
+    const { chars } = mount('high');
+    chars.reconcile([player('p0', 'nuo')], 'p0');
+    const c = chars.get('p0');
+    expect(c.mats.clothSurface).toBe(null);
+    expect(c.mats.cloth.sheen).toBeGreaterThan(0);
+    // 布与暗布在高档各画各的，识别色漆与皮照旧并
+    expect(c.skinned.byMaterial.has(c.mats.cloth)).toBe(true);
+    expect(c.skinned.byMaterial.has(c.mats.clothDim)).toBe(true);
+    expect(c.skinned.byMaterial.has(c.mats.leatherSurface)).toBe(true);
+    chars.dispose();
+  });
+
+  it('辉光挡光走一份纯黑替身：平时不画，只在自发光通道里露面', () => {
+    const { chars } = mount('mid');
+    chars.reconcile([player('p0', 'mason')], 'p0');
+    const c = chars.get('p0');
+    const shade = c.skinned.meshes.find((m) => m.name === 'bloom-occluder');
+    expect(shade).toBeTruthy();
+    expect(shade.visible).toBe(false);
+    expect(shade.userData.emissiveOnly).toBe(true);
+    expect(shade.layers.isEnabled(OCCLUDER_LAYER)).toBe(true);
+    // 本尊不再兼职挡光，否则一具角色要在辉光通道里画三份
+    for (const sm of c.skinned.meshes) {
+      if (sm === shade) continue;
+      expect(sm.layers.isEnabled(OCCLUDER_LAYER)).toBe(false);
+    }
     chars.dispose();
   });
 });

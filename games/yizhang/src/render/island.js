@@ -22,22 +22,23 @@ import {
   ExtrudeGeometry,
   Group,
   IcosahedronGeometry,
+  InstancedBufferAttribute,
   InstancedMesh,
   LatheGeometry,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   PlaneGeometry,
   Shape,
+  ShapeGeometry,
   ShaderMaterial,
   Vector2,
   Vector3,
 } from 'three';
-import { PALETTE } from './config.js';
+import { BLOOM_LAYER, PALETTE, markOccluder } from './config.js';
 import { fbm, makeValueNoise2D, mulberry32, smoothstep } from './noise.js';
-
-const BLOOM_LAYER = 1;
 
 /** 台面厚度。塌掉一块之后，邻块的断面要有厚度才读得出「这是个洞」。 */
 const DECK_DEPTH = 0.92;
@@ -323,10 +324,15 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   bedrock.name = 'bedrock';
   bedrock.receiveShadow = quality.shadows;
   bedrock.castShadow = false;
+  // 岩体 / 井壁 / 台面是井底光核唯一真正的遮挡体，辉光通道里少了它们就会漏光
+  markOccluder(bedrock);
   group.add(bedrock);
 
-  // 挂在岛底的碎岩：不对称，破掉「完美圆锥」的读法
+  // 挂在岛底的碎岩：不对称，破掉「完美圆锥」的读法。
+  // 同形不同姿，合批成一个实例网格 —— 各自的浮沉与自转写进实例矩阵。
   const chunks = [];
+  let chunkMesh = null;
+  const chunkDummy = new Object3D();
   if (quality.rockChunks > 0) {
     const chunkGeo = track(new IcosahedronGeometry(1, quality.name === 'low' ? 0 : 1));
     {
@@ -351,26 +357,28 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       }
       chunkGeo.setAttribute('color', new BufferAttribute(colors, 3));
     }
+    chunkMesh = new InstancedMesh(chunkGeo, cliffMat, quality.rockChunks);
+    chunkMesh.name = 'rock-chunks';
+    chunkMesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    chunkMesh.castShadow = false;
+    chunkMesh.receiveShadow = false;
     for (let i = 0; i < quality.rockChunks; i++) {
-      const m = new Mesh(chunkGeo, cliffMat);
       const ang = rand() * Math.PI * 2;
       const rad = R * (0.35 + rand() * 0.7);
       const y = -3 - rand() * 13;
-      m.position.set(Math.cos(ang) * rad, y, Math.sin(ang) * rad);
-      const s = 0.7 + rand() * 2.4;
-      m.scale.setScalar(s);
-      m.rotation.set(rand() * 3, rand() * 3, rand() * 3);
-      m.castShadow = false;
-      m.receiveShadow = false;
-      m.userData.bob = {
+      chunks.push({
+        x: Math.cos(ang) * rad,
+        z: Math.sin(ang) * rad,
+        scale: 0.7 + rand() * 2.4,
+        rot: new Vector3(rand() * 3, rand() * 3, rand() * 3),
         base: y,
         amp: 0.06 + rand() * 0.14,
         phase: rand() * 6.28,
         spin: (rand() - 0.5) * 0.05,
-      };
-      group.add(m);
-      chunks.push(m);
+      });
     }
+    group.add(chunkMesh);
+    disposables.push(chunkMesh);
   }
 
   // ---------- 缝底下的暖光井 ----------
@@ -429,6 +437,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   // 井口刚好埋在台面底下：正上方看不见井沿，从破洞看下去却是一路到底
   shaft.position.y = -DECK_DEPTH - 8.0;
   shaft.name = 'crack-shaft';
+  markOccluder(shaft);
   group.add(shaft);
 
   // 光核缩到井底的一小口，从台面看下去只是深处的一点暖光
@@ -453,6 +462,9 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   let deckGeo = null;
   let deckCapacity = 0;
   let deckTileSize = 0;
+  /** 台面在辉光通道里的低面替身，见 ensureDeck。 */
+  let deckShade = null;
+  const deckShadeMat = track(new MeshBasicMaterial({ color: 0x000000 }));
 
   function buildTileGeometry(size) {
     const half = Math.max(0.2, size / 2 - SEAM_GAP * 0.5);
@@ -469,6 +481,9 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     shape.lineTo(-half, half - chip);
     shape.lineTo(-half, -half + chip);
     shape.closePath();
+
+    const cap = new ShapeGeometry(shape);
+    cap.rotateX(-Math.PI / 2);
 
     const geo = new ExtrudeGeometry(shape, {
       depth: DECK_DEPTH,
@@ -505,7 +520,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       colors[i * 3 + 2] = c.b;
     }
     geo.setAttribute('color', new BufferAttribute(colors, 3));
-    return geo;
+    return { geo, cap };
   }
 
   function ensureDeck(tileSize, needed) {
@@ -516,19 +531,37 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       group.remove(deck);
       deck.dispose();
       deckGeo.dispose();
+      group.remove(deckShade);
+      deckShade.geometry.dispose();
     }
     deckTileSize = tileSize;
     deckCapacity = capacity;
-    deckGeo = buildTileGeometry(tileSize);
+    const built = buildTileGeometry(tileSize);
+    deckGeo = built.geo;
     deck = new InstancedMesh(deckGeo, [crustMat, tileSideMat], capacity);
     deck.name = 'deck';
     deck.instanceMatrix.setUsage(DynamicDrawUsage);
     deck.castShadow = quality.shadows;
     deck.receiveShadow = quality.shadows;
-    // 台面本来就把镜头包在中间，逐实例剔除只会白花 CPU
+    // 台面本来就把镜头包在中间，逐实例剔除只会白花 CPU。
+    // 代价是它在安全区里也会照画不误，所以 setActive() 必须把整棵子树关掉。
     deck.frustumCulled = false;
     deck.count = 0;
     group.add(deck);
+
+    // 辉光通道里的替身：井底那道光只需要知道「哪儿被板子盖住了」，而板子挡光靠的
+    // 是贴着 y=0 的那层顶面 —— 倒角、侧壁、底面在这件事上一个像素都不改。
+    // 一块板 6 个三角形替下 120 个，208 块就是 25000 → 1200。缺角照旧，
+    // 光该从哪个菱形空洞漏上来还从哪儿漏。中档以外用不上它（整场重画本尊就在）。
+    deckShade = new InstancedMesh(built.cap, deckShadeMat, capacity);
+    deckShade.name = 'deck-occluder';
+    deckShade.instanceMatrix = deck.instanceMatrix;
+    deckShade.frustumCulled = false;
+    deckShade.count = 0;
+    deckShade.visible = false;
+    deckShade.userData.emissiveOnly = true;
+    markOccluder(deckShade);
+    group.add(deckShade);
     return true;
   }
 
@@ -594,50 +627,87 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
 
   // ---------- 损伤裂纹贴花 ----------
   // 只在 tile 真的挨过打之后才出现，越伤越明显；塌下去时跟着一起消失。
+  //
+  // 一场打到尾声能同时亮着十几片。图案是同一张 crack 贴图，差别只在位置 / 转角 /
+  // 大小 / 淡入程度 —— 正好是一块实例网格的形状，中档因此从 12 个 draw 收成 1 个。
+  // 淡入淡出过去改 material.opacity，实例之间不能各改各的，改走每实例的 aFade。
+  const decalCapacity = Math.max(0, quality.decalBudget | 0);
   const decalGeo = track(new PlaneGeometry(1, 1));
-  let decalBudget = quality.decalBudget;
-  const decalGroup = new Group();
-  decalGroup.name = 'tile-damage';
-  group.add(decalGroup);
-
-  function addDamageDecal(rec) {
-    if (decalBudget <= 0 || !textures.crack) return;
-    if (rec.decals.length >= 2) return;
-    decalBudget--;
-    const mat = new MeshBasicMaterial({
+  const decalFade = new InstancedBufferAttribute(new Float32Array(decalCapacity), 1);
+  decalFade.setUsage(DynamicDrawUsage);
+  decalGeo.setAttribute('aFade', decalFade);
+  const decalMat = track(
+    new MeshBasicMaterial({
       map: textures.crack,
       transparent: true,
       depthWrite: false,
-      opacity: 0,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
       toneMapped: false,
-    });
-    disposables.push(mat);
-    const mesh = new Mesh(decalGeo, mat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.rotation.z = rand() * Math.PI * 2;
+    })
+  );
+  decalMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aFade;\nvarying float vFade;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvFade = aFade;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vFade;')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.a *= vFade;');
+  };
+  const decals = new InstancedMesh(decalGeo, decalMat, decalCapacity);
+  decals.name = 'tile-damage';
+  decals.instanceMatrix.setUsage(DynamicDrawUsage);
+  // 贴花散落在整个台面上，实例包围球不随写入自动更新，交给台面本身的可见性判断
+  decals.frustumCulled = false;
+  decals.renderOrder = 2;
+  decals.visible = false;
+  // 与 vfx 的冲击贴花同理：平铺的分叉纹路一旦吃辉光就会炸成四芒星
+  group.add(decals);
+  disposables.push(decals);
+
+  /** 收起来的槽位停在原点、缩到 0：一个退化三角形，不占像素也不挡辉光。 */
+  const DECAL_PARKED = new Matrix4().makeScale(0, 0, 0);
+  const decalDummy = new Object3D();
+  const decalFree = [];
+  for (let i = decalCapacity - 1; i >= 0; i--) {
+    decalFree.push(i);
+    decals.setMatrixAt(i, DECAL_PARKED);
+  }
+  let decalShown = 0;
+  let decalMatrixDirty = false;
+
+  function addDamageDecal(rec) {
+    if (decalFree.length === 0 || !textures.crack) return;
+    if (rec.decals.length >= 2) return;
+    const slot = decalFree.pop();
+    decalDummy.rotation.set(-Math.PI / 2, 0, rand() * Math.PI * 2);
     const spread = deckTileSize * 0.3;
-    mesh.position.set(
+    decalDummy.position.set(
       rec.x + (rand() - 0.5) * spread,
       0.014 + rec.decals.length * 0.004,
       rec.z + (rand() - 0.5) * spread
     );
     const s = deckTileSize * (0.7 + rand() * 0.5);
-    mesh.scale.set(s, s, s);
-    mesh.renderOrder = 2;
-    // 与 vfx 的冲击贴花同理：平铺的分叉纹路一旦吃辉光就会炸成四芒星
-    decalGroup.add(mesh);
-    rec.decals.push({ mesh, mat });
+    decalDummy.scale.set(s, s, s);
+    decalDummy.updateMatrix();
+    // 刚出现时透明度是 0，槽位先停着不画 —— 与过去 mesh.visible 的门槛一致
+    decalFade.array[slot] = 0;
+    decalFade.needsUpdate = true;
+    rec.decals.push({ slot, fade: 0, shown: false, matrix: decalDummy.matrix.clone() });
   }
 
   function dropDecals(rec) {
     for (const d of rec.decals) {
-      decalGroup.remove(d.mesh);
-      d.mat.dispose();
-      decalBudget = Math.min(quality.decalBudget, decalBudget + 1);
+      decalFade.array[d.slot] = 0;
+      if (d.shown) {
+        decals.setMatrixAt(d.slot, DECAL_PARKED);
+        decalMatrixDirty = true;
+        decalShown--;
+      }
+      decalFree.push(d.slot);
     }
+    if (rec.decals.length > 0) decalFade.needsUpdate = true;
     rec.decals.length = 0;
   }
 
@@ -722,6 +792,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     const lip = new Mesh(lipGeo, railMat);
     lip.receiveShadow = quality.shadows;
     lip.castShadow = false;
+    markOccluder(lip);
     railGroup.add(lip);
   }
 
@@ -823,6 +894,25 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     tiles,
     core,
     arenaRadius: R,
+    /**
+     * 裂岛在不在场。
+     *
+     * 安全区在 z ≈ -120，裂岛在原点，两者永远不同框；而台面那块 InstancedMesh
+     * 关掉了视锥剔除（`deck.frustumCulled = false`），人在走道上时它照样每帧
+     * 画满一整座岛。所以走进安全区就把整棵子树摘掉 —— 与 hub.js 在 arena 里
+     * 关掉走道是同一条纪律：两区不同时付钱。
+     */
+    setActive(on) {
+      const want = !!on;
+      if (group.visible === want) return want;
+      group.visible = want;
+      return want;
+    },
+
+    get active() {
+      return group.visible;
+    },
+
     /** 还立着的块数。塌掉的记录会留在表里等落完，但它们已经是洞了。 */
     get tileCount() {
       let n = 0;
@@ -925,10 +1015,17 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     update(dt, time) {
       coreMat.uniforms.uTime.value = time;
 
-      for (const chunk of chunks) {
-        const b = chunk.userData.bob;
-        chunk.position.y = b.base + Math.sin(time * 0.4 + b.phase) * b.amp;
-        chunk.rotation.y += b.spin * dt;
+      if (chunkMesh) {
+        for (let i = 0; i < chunks.length; i++) {
+          const c = chunks[i];
+          c.rot.y += c.spin * dt;
+          chunkDummy.position.set(c.x, c.base + Math.sin(time * 0.4 + c.phase) * c.amp, c.z);
+          chunkDummy.rotation.set(c.rot.x, c.rot.y, c.rot.z);
+          chunkDummy.scale.setScalar(c.scale);
+          chunkDummy.updateMatrix();
+          chunkMesh.setMatrixAt(i, chunkDummy.matrix);
+        }
+        chunkMesh.instanceMatrix.needsUpdate = true;
       }
 
       for (const rec of animating) {
@@ -958,15 +1055,31 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
         deck.instanceMatrix.needsUpdate = true;
         matrixDirty = false;
       }
+      // 替身和本尊共用同一份实例矩阵，只有条数要跟上
+      if (deckShade) deckShade.count = deck ? deck.count : 0;
 
+      let fadeDirty = false;
       for (const rec of tiles.values()) {
         if (rec.decals.length === 0) continue;
+        const want = rec.broken ? 0 : 0.2 + rec.displayCrack * 0.45;
         for (const d of rec.decals) {
-          const want = rec.broken ? 0 : 0.2 + rec.displayCrack * 0.45;
-          d.mat.opacity += (want - d.mat.opacity) * Math.min(1, dt * 3);
-          d.mesh.visible = d.mat.opacity > 0.01;
+          d.fade += (want - d.fade) * Math.min(1, dt * 3);
+          decalFade.array[d.slot] = d.fade;
+          fadeDirty = true;
+          const shown = d.fade > 0.01;
+          if (shown === d.shown) continue;
+          d.shown = shown;
+          decalShown += shown ? 1 : -1;
+          decals.setMatrixAt(d.slot, shown ? d.matrix : DECAL_PARKED);
+          decalMatrixDirty = true;
         }
       }
+      if (fadeDirty) decalFade.needsUpdate = true;
+      if (decalMatrixDirty) {
+        decals.instanceMatrix.needsUpdate = true;
+        decalMatrixDirty = false;
+      }
+      decals.visible = decalShown > 0;
     },
 
     /** 台面顶面高度。sim 的 floorY 恒为 0，这里跟着它。 */

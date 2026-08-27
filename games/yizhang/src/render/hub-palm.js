@@ -356,7 +356,9 @@ export function createPalmFactory({ quality, textures }) {
         if (!geo) continue;
         const mat = !unlocked ? locked : key === 'metal' ? metal : key === 'paint' ? paint : leather;
         const mesh = new Mesh(geo, mat);
-        mesh.castShadow = quality.shadows;
+        // 掌的剪影就是皮革那一份；护条与漆环的影子在中档 1024 的贴图上落不到一个纹素，
+        // 却要在阴影 pass 里各占 8 个 drawcall（8 座 ×2 份）
+        mesh.castShadow = quality.shadows && (key === 'leather' || quality.propShadows);
         mesh.receiveShadow = false;
         group.add(mesh);
         meshes[key] = mesh;

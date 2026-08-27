@@ -70,6 +70,10 @@ export class YizhangRenderer {
     this.renderer.setClearColor(0x000000, 1);
     // 一帧有主渲染 + 自发光通道 + 模糊 + 合成好几次 render()，统计要手动归零才有意义
     this.renderer.info.autoReset = false;
+    // 阴影贴图一帧只烘一次。默认的 autoUpdate 是「每次 render() 都重烘」，而一帧里
+    // 主渲染与自发光通道各调一次 render()，第二次那趟阴影是纯粹白付的
+    // （中档实测 55 个 drawcall / 32k 三角形）。改成每帧开工前手动置一次脏。
+    this.renderer.shadowMap.autoUpdate = false;
 
     this.clock = new Clock();
     this.time = 0;
@@ -84,6 +88,8 @@ export class YizhangRenderer {
     this.camera = this.cameraRig.camera;
 
     this._focus = new Vector3(0, 0, 0);
+    /** 角色距离剔除的圆心，见 update() 里的赋值。 */
+    this._cullAt = new Vector3(0, 0, 0);
     this._vel = new Vector3();
     this._tmp = new Vector3();
     this._tmp2 = new Vector3();
@@ -142,7 +148,7 @@ export class YizhangRenderer {
     if (this.view) {
       this.island.syncTiles(this.view.tiles, this.view.arena);
       this.characters.reconcile(this.view.players, this.localId);
-      this.hub.sync(this.view.hub, 1 / 60, this.time);
+      this.island.setActive(!this.hub.sync(this.view.hub, 1 / 60, this.time));
     }
   }
 
@@ -489,18 +495,29 @@ export class YizhangRenderer {
     // 分身残影：sim 每帧给一份存活的快照，这里照着画半透复本（空数组就是没有）
     this.characters.syncGhosts(v.ghosts);
     this.island.syncTiles(v.tiles, v.arena);
-    // 安全区与裂岛在世界坐标里错开：hub 只在 phase === 'hub' 时长出来，
-    // 走道永远不会画进格斗岛，裂岛也一直摆在原处（在大厅里远远看得见）
-    this.hub.sync(v.hub, dt, this.time);
+    // 安全区与裂岛在世界坐标里错开（走道在 z ≈ -120，裂岛在原点）。两区从来不同框，
+    // 所以谁都别替对方付钱：phase === 'hub' 时裂岛整棵关掉，phase === 'arena' 时
+    // 安全区整棵关掉。台面那块 InstancedMesh 是 frustumCulled = false 的，
+    // 不显式关掉的话，人在走道上时它照样每帧画满一整座岛。
+    const inHub = this.hub.sync(v.hub, dt, this.time);
+    this.island.setActive(!inHub);
     this._consumeEvents(v, raw.events);
 
-    this.characters.update(dt, this.time);
+    // 距离剔除的圆心取本帧本地玩家在 sim 里的坐标 —— this._focus 是上一帧算完镜头才写的，
+    // 第一帧还停在原点（= 裂岛），拿它当圆心会把岛上的 Bot 全判进圈、走道上一个都不留。
+    // 观战时没有本地玩家，圆心退回镜头焦点（绕岛环绕，本来就该看见岛上的人）。
+    const localView =
+      this.spectator || this.localId == null ? null : v.players.find((p) => p.id === this.localId);
+    if (localView) this._cullAt.set(localView.x ?? 0, 0, localView.z ?? 0);
+    else this._cullAt.set(this._focus.x, 0, this._focus.z);
+    this.characters.update(dt, this.time, this._cullAt);
     this.island.update(dt, this.time);
 
     // 环境反馈：走得快扬尘，觉醒冒余烬，掉下去拖一条尘尾
     for (const p of v.players) {
       const c = this.characters.get(p.id);
-      if (!c || !p.alive) continue;
+      // 被距离剔除掉的人（另一个区里的 Bot）不该往粒子池里挤尘
+      if (!c || !p.alive || !c.rootGroup.visible) continue;
       if (c.speed > 3.2 && p.grounded && this.frame % 3 === 0) {
         this.vfx.footDust(c.pos.x, Math.max(0, c.pos.y), c.pos.z, c.speed);
       }
@@ -535,6 +552,8 @@ export class YizhangRenderer {
     this.lighting.update(this.time, this._focus);
     this.sky.update(this.time, this.camera.position);
 
+    // 一帧一次：post.render 里的自发光通道不该再烘一遍同一张阴影贴图
+    this.renderer.shadowMap.needsUpdate = this.quality.shadows;
     this.post.render(this.camera);
   }
 

@@ -22,31 +22,278 @@
 
 import {
   BoxGeometry,
+  BufferAttribute,
   CapsuleGeometry,
   CircleGeometry,
   Color,
   ConeGeometry,
   CylinderGeometry,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  Skeleton,
+  SkinnedMesh,
+  Sphere,
   SphereGeometry,
   TorusGeometry,
+  Object3D,
   Vector2,
   Vector3,
 } from 'three';
-import { FALLBACK_TINT, PALETTE } from './config.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { BLOOM_LAYER, FALLBACK_TINT, OCCLUDER_LAYER, PALETTE, markOccluder } from './config.js';
 import { smoothstep } from './noise.js';
 import { resolveSkinLook, skinTable } from './skins.js';
-
-const BLOOM_LAYER = 1;
 const TAU = Math.PI * 2;
 /** 右手（side=+1）拿主掌 slot 0，左手拿副掌 slot 1。 */
 const MAIN_SIDE = 1;
 /** 同时在场的残影上限。分身掌一次最多剥两三个，留出余量就够。 */
 const GHOST_CAP = 6;
+/**
+ * 离焦点多远之外的人不画（米）。
+ *
+ * 安全区在 z ≈ -120、裂岛在原点，两区相距 120 米：人在走道上时，三个 Bot 还站在
+ * 岛上，一转身就有三副完整骨架进视锥 —— 那是 90 来个绘制调用买一撮几个像素高、
+ * 还被雾吃掉一半的剪影。裂岛本体已经按阶段整棵关掉（island.setActive），
+ * 人也照同一条规矩走。裂岛自己最远才 50 米上下，这条线在场内不会误伤。
+ */
+const CULL_DISTANCE = 80;
+/** 这几种配件自己就盖住了头顶，素帽不必再长出来（也就不进躯干那份烘焙）。 */
+const ACCESSORY_HIDES_CAP = new Set(['hood', 'turban']);
+
+/**
+ * 把一批「相对同一个父节点不动」的零件按材质烘成几份几何体。
+ *
+ * 分节还是分节做的 —— 形一点没变；变的是运行时不再一个零件一个 drawcall。
+ * 躯干上的皮带扣、指节上的铆钉不会相对躯干/掌移动，那它们就没有理由各自
+ * 占一次绘制调用。会动的部件（束带、四肢、掌）仍旧是独立节点。
+ *
+ * @param {Object3D} scaffold 只用来算变换的脚手架，烘完就丢
+ * @returns {Map<string, import('three').BufferGeometry>} 材质键 → 合并后的几何体
+ */
+function bakeRigid(scaffold) {
+  scaffold.updateWorldMatrix(true, true);
+  const buckets = new Map();
+  scaffold.traverse((o) => {
+    if (!o.isMesh) return;
+    const key = o.userData.matKey ?? 'cloth';
+    const g = o.geometry.clone();
+    g.applyMatrix4(o.matrixWorld);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(g);
+  });
+  const out = new Map();
+  for (const [key, list] of buckets) {
+    if (list.length === 1) {
+      out.set(key, list[0]);
+      continue;
+    }
+    const merged = mergeGeometries(list, false);
+    for (const g of list) g.dispose();
+    if (merged) out.set(key, merged);
+  }
+  return out;
+}
+
+/**
+ * 一具角色的包围球（rootGroup 本地坐标，米）。
+ *
+ * 蒙皮网格的顶点会被骨骼推到哪里，三角形层面上算不出来 —— three 只好按绑定姿势
+ * 的包围盒去做视锥剔除，摆臂一挥就会在画面边缘闪。这里直接给一个够大的球：
+ * 人最高 ~2.0 米，背旗再高半米，挥掌时手伸到身侧 ~1 米。
+ */
+const BODY_SPHERE = new Sphere(new Vector3(0, 1.1, 0), 2.6);
+
+/**
+ * 角色在辉光通道里的「挡光替身」用的材质。
+ *
+ * 挡光这件事只关心形，不关心它是布是皮：所以全场角色共用这一份纯黑材质，
+ * 一具角色的挡光形状因此收成一个绘制调用，而不是「他身上有几种材质」那么多份。
+ */
+const OCCLUDER_MAT = new MeshBasicMaterial({ color: 0x000000 });
+
+/**
+ * 渲染时哪几份材质合成一份「表面」。
+ *
+ * 布与暗布、皮与旧皮、三块识别色漆 —— 每一对的材质参数本来就只差一点点，
+ * 差的主要是颜色，而颜色可以走顶点色。并完之后一具角色在主通道少三个绘制调用、
+ * 在阴影通道再少一个；原来那几份材质仍旧是颜色的持有者与 applyTints 的写入口，
+ * 六套皮肤的衣料色、配饰色、每只掌的识别色一个都没有合并。
+ *
+ * 高档的布是 MeshPhysicalMaterial（多一层织物菲涅尔），并不进来 ——
+ * 那一档 clothSurface 是 null，布与暗布照旧各画各的（见 buildMaterials）。
+ */
+const SURFACE_OF = {
+  cloth: 'clothSurface',
+  clothDim: 'clothSurface',
+  leather: 'leatherSurface',
+  leatherWorn: 'leatherSurface',
+  skin: 'plainSurface',
+  accent: 'plainSurface',
+  paint: 'paintSurface',
+  paintMain: 'paintSurface',
+  paintOff: 'paintSurface',
+};
+
+/**
+ * 造一个零件网格：材质走 SURFACE_OF 的合并表，颜色的来源键记在 userData 上。
+ *
+ * @param {import('three').BufferGeometry} geometry
+ * @param {Record<string, any>} mats buildMaterials 的产物
+ * @param {string} key 这个零件「本来」用的是哪份材质
+ */
+/** 重组无敌的半透要盖住的那几份材质（含并完的表面，见 SURFACE_OF）。 */
+const GHOSTABLE = [
+  'cloth',
+  'clothDim',
+  'clothSurface',
+  'leather',
+  'leatherWorn',
+  'leatherSurface',
+  'skin',
+  'accent',
+  'plainSurface',
+];
+
+function matMesh(geometry, mats, key) {
+  const material = mats[SURFACE_OF[key]] ?? mats[key];
+  const mesh = new Mesh(geometry, material);
+  // 顶点色材质要知道这一段该找谁要颜色（见 writePaint）
+  if (material.vertexColors) mesh.userData.tintSource = key;
+  return mesh;
+}
+
+/**
+ * 把一具角色身上所有零件按材质合成几份**刚性蒙皮**网格。
+ *
+ * 分节还是分节做的：髋 / 膝 / 肩 / 腕 / 掌 / 束带每一个都还是场景图里的节点，动画
+ * 照旧写它们的 rotation —— 变的只是「谁来画」。每个零件把自己当一根骨头（权重 1，
+ * 没有真的蒙皮形变），几何体按材质合并成一份，于是一具角色从 30 来个绘制调用
+ * 收成「他身上有几种材质」那么多份。剪影、摆放、比例一个数都没动。
+ *
+ * 原来的 Mesh 节点留在原地当骨头（`visible = false`）：动画、特效锚点、单测读到的
+ * 还是同一批节点，它们只是不再自己画自己。
+ *
+ * @param {Object3D} rootGroup 角色根节点，蒙皮网格会挂在它下面
+ * @param {Set<Object3D>} skip 不参与合并的网格（接地阴影这种要单独开关的）
+ * @returns {{meshes: import('three').SkinnedMesh[], skeleton: Skeleton}}
+ */
+function skinify(rootGroup, skip) {
+  rootGroup.updateMatrixWorld(true);
+  const toLocal = new Matrix4().copy(rootGroup.matrixWorld).invert();
+  const bindPose = new Matrix4();
+  const bones = [];
+  /** @type {Map<import('three').Material, {geos: any[], cast: boolean, receive: boolean, layers: number, bloomSelf: boolean}>} */
+  const buckets = new Map();
+
+  const parts = [];
+  rootGroup.traverse((o) => {
+    if (o.isMesh && !o.isSkinnedMesh && !skip.has(o)) parts.push(o);
+  });
+  /** 登记成辉光遮挡体的那几件，另外合成一份纯黑替身（见 OCCLUDER_MAT）。 */
+  const occGeos = [];
+
+  for (const mesh of parts) {
+    const boneIndex = bones.length;
+    bones.push(mesh);
+
+    const g = mesh.geometry.clone();
+    g.applyMatrix4(bindPose.multiplyMatrices(toLocal, mesh.matrixWorld));
+    const n = g.attributes.position.count;
+    const idx = new Uint16Array(n * 4);
+    const wgt = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      idx[i * 4] = boneIndex;
+      wgt[i * 4] = 1;
+    }
+    g.setAttribute('skinIndex', new BufferAttribute(idx, 4));
+    g.setAttribute('skinWeight', new BufferAttribute(wgt, 4));
+
+    if (mesh.layers.isEnabled(OCCLUDER_LAYER)) occGeos.push(g.clone());
+
+    // 顶点色材质（识别色漆，见 mats.paintSurface）先垫一份白，颜色由 writePaint 写
+    if (mesh.material.vertexColors && !g.attributes.color) {
+      const white = new Float32Array(n * 3).fill(1);
+      g.setAttribute('color', new BufferAttribute(white, 3));
+    }
+
+    let b = buckets.get(mesh.material);
+    if (!b) {
+      b = { geos: [], cast: false, receive: false, layers: 0, bloomSelf: false, verts: 0, ranges: [] };
+      buckets.set(mesh.material, b);
+    }
+    b.ranges.push({ source: mesh, start: b.verts, count: n });
+    b.verts += n;
+    b.geos.push(g);
+    b.cast ||= mesh.castShadow;
+    b.receive ||= mesh.receiveShadow;
+    // 挡光交给上面那份替身，本尊不必再进辉光通道
+    b.layers |= mesh.layers.mask & ~(1 << OCCLUDER_LAYER);
+    b.bloomSelf ||= !!mesh.userData.bloomSelf;
+
+    // 节点留着当骨头：动画写的是它的 rotation，特效锚的是它的世界坐标
+    mesh.visible = false;
+  }
+
+  const skeleton = new Skeleton(bones);
+  const meshes = [];
+  const byMaterial = new Map();
+  for (const [material, b] of buckets) {
+    const geometry = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
+    if (!geometry) continue;
+    if (b.geos.length > 1) for (const g of b.geos) g.dispose();
+    const sm = new SkinnedMesh(geometry, material);
+    sm.castShadow = b.cast;
+    sm.receiveShadow = b.receive;
+    sm.layers.mask = b.layers;
+    if (b.bloomSelf) sm.userData.bloomSelf = true;
+    // 合并后每个源零件占哪一段顶点：识别色换色时照着这张表改顶点色
+    sm.userData.ranges = b.ranges;
+    sm.boundingSphere = BODY_SPHERE.clone();
+    rootGroup.add(sm);
+    sm.bind(skeleton, rootGroup.matrixWorld);
+    meshes.push(sm);
+    byMaterial.set(material, sm);
+  }
+
+  if (occGeos.length > 0) {
+    const geometry = occGeos.length === 1 ? occGeos[0] : mergeGeometries(occGeos, false);
+    if (occGeos.length > 1) for (const g of occGeos) g.dispose();
+    if (geometry) {
+      const shade = new SkinnedMesh(geometry, OCCLUDER_MAT);
+      shade.name = 'bloom-occluder';
+      shade.visible = false;
+      shade.userData.emissiveOnly = true;
+      shade.boundingSphere = BODY_SPHERE.clone();
+      markOccluder(shade);
+      rootGroup.add(shade);
+      shade.bind(skeleton, rootGroup.matrixWorld);
+      meshes.push(shade);
+    }
+  }
+  return { meshes, skeleton, byMaterial };
+}
+
+/**
+ * 把三块识别色漆的颜色写进合批网格的顶点色。
+ *
+ * 背布片吃当前激活掌的色、右手漆条吃主掌色、左手吃副掌色 —— 和以前三份材质
+ * 各自带一个颜色时一模一样，只是颜色的落点从 uniform 换成了顶点属性。
+ * 换掌一帧几十个顶点，比多两个 drawcall 便宜得多。
+ */
+function writePaint(mesh, mats) {
+  const attr = mesh?.geometry?.attributes?.color;
+  if (!attr) return;
+  for (const r of mesh.userData.ranges) {
+    const col = mats[r.source.userData.tintSource]?.color;
+    if (!col) continue;
+    for (let i = r.start; i < r.start + r.count; i++) attr.setXYZ(i, col.r, col.g, col.b);
+  }
+  attr.needsUpdate = true;
+}
 
 function shortestAngle(a, b) {
   let d = (b - a) % TAU;
@@ -140,16 +387,39 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     bracerShell: keep(new CylinderGeometry(0.16, 0.135, 0.32, seg + 1)),
   };
 
+  // 掌背上的金属件：一圈护条 + 三颗铆钉。它们相对掌永远不动，而且每只掌、每个人
+  // 都是同一份摆法，所以整个渲染层只烘这一份，8 只手共用。
+  geo.gloveMetal = keep(
+    (() => {
+      const scaffold = new Object3D();
+      const knuckle = new Mesh(geo.knuckle, null);
+      knuckle.userData.matKey = 'metal';
+      knuckle.rotation.set(Math.PI * 0.5, Math.PI, Math.PI * 0.02);
+      knuckle.position.set(0, 0.02, -0.06);
+      scaffold.add(knuckle);
+      for (let i = 0; i < 3; i++) {
+        const stud = new Mesh(geo.stud, null);
+        stud.userData.matKey = 'metal';
+        const a = -0.5 + i * 0.5;
+        stud.position.set(Math.sin(a) * 0.28, 0.16, -Math.cos(a) * 0.26);
+        stud.rotation.y = -a;
+        scaffold.add(stud);
+      }
+      return bakeRigid(scaffold).get('metal');
+    })()
+  );
+
   // 接地阴影：低画质关了实时阴影后，角色仍然要「踩在地上」而不是浮着
   const contactMat = keep(
     new MeshBasicMaterial({ color: 0x0d1017, transparent: true, opacity: 0.32, depthWrite: false })
   );
 
-  function makePaint(ident) {
+  function makePaint(ident, vertexColors = false) {
     // 识别色是「染过的粗布」，不是「喷了漆的塑料板」。给它布的织纹与法线、
     // 把粗糙度推到接近全漫反射，否则背板会在跟随镜头里烧成一张白纸。
     return new MeshStandardMaterial({
       color: ident,
+      vertexColors,
       // 织物只做了粗糙度与法线，没有 albedo：颜色就是识别色本身
       roughnessMap: textures.cloth.rough,
       normalMap: quality.normalMaps ? textures.cloth.normal : null,
@@ -253,65 +523,108 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       envMapIntensity: 0.45,
     });
 
+    // 布与暗布真正上场的那一份：粗糙度 0.96/0.98、法线强度 0.5/0.4、环境光 0.35/0.3
+    // 取中间值，颜色改走顶点色。这两个数差在肉眼与 1024 的阴影贴图之下都读不出来，
+    // 少掉的是一具角色一个主通道 drawcall 加一个阴影 drawcall。
+    // 高档的布带 sheen，是另一种材质，不能这么并 —— 那一档留 null，照旧两份。
+    const clothSurface = quality.sheenCloth
+      ? null
+      : new MeshStandardMaterial({
+          color: 0xffffff,
+          vertexColors: true,
+          roughness: 0.97,
+          metalness: 0,
+          roughnessMap: textures.cloth.rough,
+          normalMap: textures.cloth.normal,
+          normalScale: new Vector2(0.45, 0.45),
+          envMapIntensity: 0.33,
+        });
+
+    // 旧皮（掌面）比皮（腰带 / 靴 / 护腕）亮一档，取靠掌那一头的粗糙度：
+    // 画面上掌是主角，腰带只是配料。
+    const leatherSurface = new MeshStandardMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      roughness: 0.68,
+      metalness: 0,
+      roughnessMap: textures.leather.rough,
+      normalMap: textures.leather.normal,
+      normalScale: new Vector2(0.8, 0.8),
+      envMapIntensity: 0.56,
+    });
+
+    // 皮肤与配饰本色是全身仅有的两份不带贴图的材质，差的是颜色与 0.06 的粗糙度。
+    // 骨角、面具底、旗面照旧是「这一身自己的颜色」，只是不再自己占一个 drawcall。
+    const plainSurface = new MeshStandardMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      roughness: 0.69,
+      metalness: 0,
+      envMapIntensity: 0.42,
+    });
+
     return {
       cloth,
       clothDim,
+      clothSurface,
       leather,
       leatherWorn,
+      leatherSurface,
       metal,
       skin,
       accent,
+      plainSurface,
       paint: makePaint(ident),
       paintMain: makePaint(identMain),
       paintOff: makePaint(identOff),
+      // 三块漆（背布片 = 当前激活掌、右手主掌漆条、左手副掌漆条）的材质参数
+      // 一字不差，差的只是颜色。所以渲染时共用这一份，各自的颜色写进顶点色
+      // （见 writePaint）—— 上面那三份仍旧是颜色的持有者与 applyTints 的写入口，
+      // 只是不再各占一个 drawcall。换掌在画面上照样是看得见的。
+      paintSurface: makePaint(0xffffff, true),
       seamMain: makeSeam(),
       seamOff: makeSeam(),
       ident,
     };
   }
 
-  /** side: +1 右手（主掌），-1 左手（副掌）。掌心与指节朝 -Z（正前方）。 */
+  /**
+   * side: +1 右手（主掌），-1 左手（副掌）。掌心与指节朝 -Z（正前方）。
+   * stripeMat 是漆条颜色的来源键（`paintMain` / `paintOff`，见 mats.paintSurface）。
+   */
   function buildGlove(mats, side, stripeMat, seamMat) {
     const g = new Group();
-    const mitt = new Mesh(geo.mitt, mats.leather);
+    const mitt = matMesh(geo.mitt, mats, 'leather');
     mitt.scale.set(1.0, 0.86, 1.16);
     mitt.castShadow = quality.shadows;
     g.add(mitt);
 
     // 掌心一侧用磨得更亮的皮：抓握的地方才会包浆
-    const palm = new Mesh(geo.mitt, mats.leatherWorn);
+    const palm = matMesh(geo.mitt, mats, 'leatherWorn');
     palm.scale.set(0.86, 0.6, 0.9);
     palm.position.set(0, -0.13, -0.06);
     g.add(palm);
 
-    const knuckle = new Mesh(geo.knuckle, mats.metal);
-    knuckle.rotation.set(Math.PI * 0.5, Math.PI, Math.PI * 0.02);
-    knuckle.position.set(0, 0.02, -0.06);
-    knuckle.castShadow = quality.shadows;
+    // 护条与三颗铆钉合成一份（见 geo.gloveMetal）：形没变，四个 drawcall 变一个
+    const knuckle = matMesh(geo.gloveMetal, mats, 'metal');
+    // 掌的影子由 mitt 那一份给全了，金属件只是贴在它表面的一层
+    knuckle.castShadow = quality.shadows && quality.propShadows;
     g.add(knuckle);
 
-    for (let i = 0; i < 3; i++) {
-      const stud = new Mesh(geo.stud, mats.metal);
-      const a = -0.5 + i * 0.5;
-      stud.position.set(Math.sin(a) * 0.28, 0.16, -Math.cos(a) * 0.26);
-      stud.rotation.y = -a;
-      g.add(stud);
-    }
-
     // 识别色只出现在这一道漆条上：右手主掌色、左手副掌色
-    const stripe = new Mesh(geo.stud, stripeMat);
+    const stripe = matMesh(geo.stud, mats, stripeMat);
     stripe.scale.set(3.4, 0.55, 1.2);
     stripe.position.set(0, 0.07, 0.24);
     g.add(stripe);
 
-    const cuff = new Mesh(geo.cuff, mats.cloth);
+    const cuff = matMesh(geo.cuff, mats, 'cloth');
     cuff.position.set(0, 0.3, 0.02);
     cuff.rotation.x = -0.15;
-    cuff.castShadow = quality.shadows;
+    cuff.castShadow = quality.shadows && quality.propShadows;
     g.add(cuff);
 
     // 垂下来的束带：受重力，说明配饰有重量
-    const tassel = new Mesh(geo.tassel, mats.clothDim);
+    const tassel = matMesh(geo.tassel, mats, 'clothDim');
     tassel.position.set(side * 0.14, 0.26, 0.14);
     g.add(tassel);
 
@@ -335,10 +648,12 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
    * @param {string} kind ./skins.js 的 ACCESSORIES 之一
    */
   function addAccessory(kind, parts) {
-    const { body, head, cap, arms, mats } = parts;
+    const { body, arms, mats } = parts;
     const made = [];
     const put = (mesh, parent) => {
-      mesh.castShadow = quality.shadows;
+      // 配件在中档不投影：一顶帽子 / 一对角 / 一片肩甲的影子，在 1024 的贴图上
+      // 落不到一个纹素，却每件都要在阴影 pass 里占一个 drawcall
+      mesh.castShadow = quality.shadows && quality.propShadows;
       (parent ?? body).add(mesh);
       made.push(mesh);
       return mesh;
@@ -346,28 +661,27 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
 
     switch (kind) {
       case 'hood': {
-        // 兜帽压得很低：帽沿盖过眉骨，转身时才露半张脸
-        cap.visible = false;
-        const hood = put(new Mesh(geo.hoodDeep, mats.cloth));
+        // 兜帽压得很低：帽沿盖过眉骨，转身时才露半张脸。
+        // 素帽在 ACCESSORY_HIDES_CAP 里就已经不长了，这里不必再关一次。
+        const hood = put(matMesh(geo.hoodDeep, mats, 'cloth'));
         hood.position.set(0, 1.82, 0.03);
         hood.rotation.x = 0.2;
         hood.scale.set(1.06, 1.12, 1.12);
-        const cowl = put(new Mesh(geo.cowl, mats.clothDim));
+        const cowl = put(matMesh(geo.cowl, mats, 'clothDim'));
         cowl.position.y = 1.62;
         break;
       }
 
       case 'turban': {
-        cap.visible = false;
-        const ring = put(new Mesh(geo.turbanRing, mats.cloth));
+        const ring = put(matMesh(geo.turbanRing, mats, 'cloth'));
         ring.position.y = 1.86;
         ring.rotation.x = Math.PI / 2 + 0.12;
         ring.scale.set(1.12, 1.12, 0.86);
-        const knot = put(new Mesh(geo.cap, mats.cloth));
+        const knot = put(matMesh(geo.cap, mats, 'cloth'));
         knot.position.y = 1.92;
         knot.scale.set(0.94, 0.7, 0.94);
         // 垂在脑后的尾巾：走路时它会甩，说明头上包的是布不是盔
-        const tail = put(new Mesh(geo.tassel, mats.clothDim));
+        const tail = put(matMesh(geo.tassel, mats, 'clothDim'));
         tail.position.set(0.05, 1.68, 0.2);
         tail.scale.set(1.7, 1.5, 1.6);
         break;
@@ -376,10 +690,10 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       case 'horns': {
         // 兽角朝两侧后翻：正面剪影变宽，侧面剪影多出两道折线
         for (const side of [-1, 1]) {
-          const horn = put(new Mesh(geo.horn, mats.accent));
+          const horn = put(matMesh(geo.horn, mats, 'accent'));
           horn.position.set(side * 0.17, 1.9, 0.02);
           horn.rotation.set(-0.5, 0, side * -0.75);
-          const tip = put(new Mesh(geo.horn, mats.accent));
+          const tip = put(matMesh(geo.horn, mats, 'accent'));
           tip.position.set(side * 0.3, 2.02, 0.16);
           tip.rotation.set(-1.15, 0, side * -1.1);
           tip.scale.setScalar(0.72);
@@ -388,10 +702,10 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       }
 
       case 'mask': {
-        const shell = put(new Mesh(geo.maskShell, mats.accent));
+        const shell = put(matMesh(geo.maskShell, mats, 'accent'));
         shell.position.set(0, 1.79, -0.04);
         shell.scale.set(1.06, 1.12, 1.06);
-        const brow = put(new Mesh(geo.brow, mats.clothDim));
+        const brow = put(matMesh(geo.brow, mats, 'clothDim'));
         brow.position.set(0, 1.9, -0.19);
         brow.rotation.x = 0.22;
         break;
@@ -401,7 +715,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
         // 片状薄甲一层层错开：肩线抬高，上半身读起来更方
         for (const arm of arms) {
           for (let i = 0; i < 3; i++) {
-            const plate = put(new Mesh(geo.plate, mats.metal), arm.shoulder);
+            const plate = put(matMesh(geo.plate, mats, 'metal'), arm.shoulder);
             plate.position.set(arm.side * (0.02 + i * 0.035), 0.06 - i * 0.075, 0);
             plate.rotation.z = arm.side * (0.18 + i * 0.16);
             plate.scale.setScalar(1 - i * 0.12);
@@ -412,15 +726,15 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
 
       case 'cloak': {
         // 一整片垂到膝弯，下摆被岛风扯开：转身时它慢半拍
-        const sheet = put(new Mesh(geo.cloakSheet, mats.cloth));
+        const sheet = put(matMesh(geo.cloakSheet, mats, 'cloth'));
         sheet.position.set(0, 1.06, 0.31);
         sheet.rotation.x = -0.07;
         sheet.scale.set(1, 1, 1);
-        const hemLeft = put(new Mesh(geo.cloakSheet, mats.clothDim));
+        const hemLeft = put(matMesh(geo.cloakSheet, mats, 'clothDim'));
         hemLeft.position.set(-0.2, 0.62, 0.3);
         hemLeft.rotation.set(-0.16, 0.24, 0.08);
         hemLeft.scale.set(0.42, 0.5, 0.8);
-        const hemRight = put(new Mesh(geo.cloakSheet, mats.clothDim));
+        const hemRight = put(matMesh(geo.cloakSheet, mats, 'clothDim'));
         hemRight.position.set(0.2, 0.62, 0.3);
         hemRight.rotation.set(-0.16, -0.24, -0.08);
         hemRight.scale.set(0.42, 0.5, 0.8);
@@ -429,24 +743,24 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
 
       case 'banner': {
         // 背旗：瘦高的人再插一根杆，远处只看轮廓也知道是谁在绕边走
-        const pole = put(new Mesh(geo.pole, mats.leather));
+        const pole = put(matMesh(geo.pole, mats, 'leather'));
         pole.position.set(-0.12, 1.62, 0.34);
         pole.rotation.z = 0.16;
-        const flag = put(new Mesh(geo.flag, mats.accent));
+        const flag = put(matMesh(geo.flag, mats, 'accent'));
         flag.position.set(-0.26, 1.86, 0.36);
         flag.rotation.z = 0.16;
-        const clasp = put(new Mesh(geo.buckle, mats.metal));
+        const clasp = put(matMesh(geo.buckle, mats, 'metal'));
         clasp.position.set(-0.06, 1.3, 0.33);
         break;
       }
 
       case 'sash': {
-        const band = put(new Mesh(geo.sashBand, mats.accent));
+        const band = put(matMesh(geo.sashBand, mats, 'accent'));
         band.position.set(-0.05, 1.24, -0.28);
         band.rotation.z = 0.42;
-        const knot = put(new Mesh(geo.buckle, mats.leather));
+        const knot = put(matMesh(geo.buckle, mats, 'leather'));
         knot.position.set(-0.22, 0.94, -0.24);
-        const tail = put(new Mesh(geo.tassel, mats.clothDim));
+        const tail = put(matMesh(geo.tassel, mats, 'clothDim'));
         tail.position.set(-0.24, 0.78, -0.2);
         tail.scale.set(1.6, 2.2, 1.6);
         break;
@@ -455,9 +769,9 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       case 'bracer': {
         // 厚护臂：小臂加粗一圈，挥掌时最先扫过视野的就是它
         for (const arm of arms) {
-          const shell = put(new Mesh(geo.bracerShell, mats.leatherWorn), arm.wrist);
+          const shell = put(matMesh(geo.bracerShell, mats, 'leatherWorn'), arm.wrist);
           shell.position.y = -0.04;
-          const rim = put(new Mesh(geo.wrapBand, mats.metal), arm.wrist);
+          const rim = put(matMesh(geo.wrapBand, mats, 'metal'), arm.wrist);
           rim.position.y = -0.19;
           rim.scale.set(1.35, 0.42, 1.35);
         }
@@ -468,11 +782,11 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       default: {
         // 最素的一档：旧布条缠小臂，腰上再绕一圈。它不该抢戏，但也不能什么都没有。
         for (const arm of arms) {
-          const band = put(new Mesh(geo.wrapBand, mats.clothDim), arm.wrist);
+          const band = put(matMesh(geo.wrapBand, mats, 'clothDim'), arm.wrist);
           band.position.y = -0.02;
           band.scale.set(1.08, 1.5, 1.08);
         }
-        const waist = put(new Mesh(geo.turbanRing, mats.clothDim));
+        const waist = put(matMesh(geo.turbanRing, mats, 'clothDim'));
         waist.position.y = 0.92;
         waist.rotation.x = Math.PI / 2;
         waist.scale.set(1.32, 1.32, 0.5);
@@ -493,82 +807,103 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     body.scale.set(build.mass, build.height, build.mass);
     rootGroup.add(body);
 
-    const hips = new Mesh(geo.hips, mats.clothDim);
-    hips.position.y = 0.86;
-    hips.castShadow = quality.shadows;
-    body.add(hips);
+    // ---- 躯干这一段全是「相对身体不动」的零件：分节照做，最后按材质烘成几份 ----
+    //
+    // 髋 / 躯干 / 皮带 / 带扣 / 领口 / 背布底 / 背布识别色 / 头 / 素帽，一共九件，
+    // 九种摆法一件不少；但它们之间没有任何相对运动，所以没有理由各占一次绘制调用。
+    // 烘完剩六份（布 / 暗布 / 皮 / 金属 / 识别色 / 皮肤），一份材质一个 drawcall。
+    // 会动的东西 —— 四肢、掌、束带、配件 —— 仍旧各是各的节点。
+    const shoulderScaleX = 0.82 + build.shoulder * 0.18;
+    const hideCap = ACCESSORY_HIDES_CAP.has(look.accessory);
+    const scaffold = new Object3D();
+    const piece = (geometry, matKey, place) => {
+      const m = new Mesh(geometry, null);
+      m.userData.matKey = matKey;
+      place?.(m);
+      scaffold.add(m);
+      return m;
+    };
 
-    const torso = new Mesh(geo.torso, mats.cloth);
-    torso.position.y = 1.24;
-    torso.castShadow = quality.shadows;
-    torso.receiveShadow = quality.shadows;
-    body.add(torso);
-
+    piece(geo.hips, 'clothDim', (m) => {
+      m.position.y = 0.86;
+    });
+    // 肩宽单独一档：躯干只加宽不加高，宽肩与瘦长在正面剪影上立刻分得开
+    piece(geo.torso, 'cloth', (m) => {
+      m.position.y = 1.24;
+      m.scale.x = shoulderScaleX;
+    });
     // 胸前皮带把布压出褶：配饰要压变下面的织物
-    const strap = new Mesh(geo.strapChest, mats.leather);
-    strap.position.set(0.06, 1.26, -0.27);
-    strap.rotation.z = -0.24;
-    body.add(strap);
-    const buckle = new Mesh(geo.buckle, mats.metal);
-    buckle.position.set(0.12, 1.06, -0.3);
-    body.add(buckle);
-
-    const collar = new Mesh(geo.collar, mats.clothDim);
-    collar.position.y = 1.58;
-    body.add(collar);
-
+    piece(geo.strapChest, 'leather', (m) => {
+      m.position.set(0.06, 1.26, -0.27);
+      m.rotation.z = -0.24;
+    });
+    piece(geo.buckle, 'metal', (m) => {
+      m.position.set(0.12, 1.06, -0.3);
+    });
+    piece(geo.collar, 'clothDim', (m) => {
+      m.position.y = 1.58;
+      m.scale.set(shoulderScaleX, 1, 1);
+    });
     // 背上的掌印布片：跟随镜头看到的是后背，识别色必须在这里能读到。
     // 先垫一块更大的暗色底布再压识别色，边上就留出一圈缝线般的暗边 ——
     // 少了这一圈，纯色方块会像一张贴在背上的白纸。
-    const backing = new Mesh(geo.backPanel, mats.clothDim);
-    backing.position.set(0, 1.26, 0.305);
-    backing.rotation.x = -0.06;
-    backing.scale.set(1.22, 1.16, 0.6);
-    body.add(backing);
+    piece(geo.backPanel, 'clothDim', (m) => {
+      m.position.set(0, 1.26, 0.305);
+      m.rotation.x = -0.06;
+      m.scale.set(1.22, 1.16, 0.6);
+    });
+    piece(geo.backPanel, 'paint', (m) => {
+      m.position.set(0, 1.26, 0.315);
+      m.rotation.x = -0.06;
+    });
+    piece(geo.head, 'skin', (m) => {
+      m.position.y = 1.79;
+    });
+    // 素帽是所有人的底：兜帽 / 头巾这类真的盖住头顶的配件就不长它
+    if (!hideCap) {
+      piece(geo.cap, 'cloth', (m) => {
+        m.position.y = 1.8;
+        m.rotation.x = 0.16;
+      });
+    }
 
-    const backPanel = new Mesh(geo.backPanel, mats.paint);
-    backPanel.position.set(0, 1.26, 0.315);
-    backPanel.rotation.x = -0.06;
-    backPanel.castShadow = quality.shadows;
-    body.add(backPanel);
-
-    const head = new Mesh(geo.head, mats.skin);
-    head.position.y = 1.79;
-    head.castShadow = quality.shadows;
-    body.add(head);
-
-    // 素帽是所有人的底：配件里真的盖住头的那几种（兜帽 / 头巾）会把它关掉
-    const cap = new Mesh(geo.cap, mats.cloth);
-    cap.position.y = 1.8;
-    cap.rotation.x = 0.16;
-    cap.castShadow = quality.shadows;
-    body.add(cap);
+    const bakedBody = bakeRigid(scaffold);
+    const bodyParts = [];
+    // 躯干 / 髋 / 头挡在光前面时是真的挡得住：把带着它们的那几份登记成辉光遮挡体，
+    // 人站在传送门口或破洞边上时，光不会从身上透出来
+    const OCCLUDES = new Set(['cloth', 'clothDim', 'skin']);
+    // 大件投影，贴在身上的小件（皮带扣、背布片）中档不单独投影
+    const CASTS = new Set(['cloth', 'clothDim', 'skin']);
+    for (const [key, geometry] of bakedBody) {
+      const mesh = matMesh(geometry, mats, key);
+      mesh.castShadow = quality.shadows && (CASTS.has(key) || quality.propShadows);
+      if (key === 'cloth') mesh.receiveShadow = quality.shadows;
+      if (OCCLUDES.has(key)) markOccluder(mesh);
+      body.add(mesh);
+      bodyParts.push(mesh);
+    }
 
     const legs = [];
     for (const side of [-1, 1]) {
       const hip = new Group();
       hip.position.set(side * 0.16, 0.84, 0);
       body.add(hip);
-      const thigh = new Mesh(geo.thigh, mats.clothDim);
+      const thigh = matMesh(geo.thigh, mats, 'clothDim');
       thigh.position.y = -0.24;
       thigh.castShadow = quality.shadows;
       hip.add(thigh);
       const knee = new Group();
       knee.position.y = -0.46;
       hip.add(knee);
-      const shin = new Mesh(geo.shin, mats.clothDim);
+      const shin = matMesh(geo.shin, mats, 'clothDim');
       shin.position.y = -0.2;
       shin.castShadow = quality.shadows;
       knee.add(shin);
-      const foot = new Mesh(geo.foot, mats.leather);
+      const foot = matMesh(geo.foot, mats, 'leather');
       foot.position.set(0, -0.38, -0.06);
       knee.add(foot);
       legs.push({ hip, knee, side });
     }
-
-    // 肩宽单独一档：躯干只加宽不加高，宽肩与瘦长在正面剪影上立刻分得开
-    torso.scale.x = 0.82 + build.shoulder * 0.18;
-    collar.scale.set(torso.scale.x, 1, 1);
 
     const arms = [];
     for (const side of [-1, 1]) {
@@ -576,7 +911,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       const shoulder = new Group();
       shoulder.position.set(side * 0.33 * build.shoulder, 1.46, 0);
       body.add(shoulder);
-      const upper = new Mesh(geo.upperArm, mats.cloth);
+      const upper = matMesh(geo.upperArm, mats, 'cloth');
       upper.position.y = -0.2;
       upper.castShadow = quality.shadows;
       shoulder.add(upper);
@@ -586,7 +921,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       const glove = buildGlove(
         mats,
         side,
-        isMain ? mats.paintMain : mats.paintOff,
+        isMain ? 'paintMain' : 'paintOff',
         isMain ? mats.seamMain : mats.seamOff
       );
       glove.position.y = -0.22;
@@ -594,7 +929,7 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       arms.push({ shoulder, wrist, glove, side, slot: isMain ? 0 : 1 });
     }
 
-    const accessory = addAccessory(look.accessory, { body, head, cap, arms, mats });
+    const accessory = addAccessory(look.accessory, { body, arms, mats });
 
     const contact = new Mesh(geo.contact, contactMat.clone());
     contact.rotation.x = -Math.PI / 2;
@@ -604,15 +939,25 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     contact.scale.setScalar(0.86 + build.mass * 0.18);
     rootGroup.add(contact);
 
+    // 分节搭完了，最后按材质合成几份刚性蒙皮网格（见 skinify）。
+    // 接地阴影是单独开关的半透片，不进这一份。
+    const skinned = skinify(rootGroup, new Set([contact]));
+    // 合批后走顶点色的那几份（识别色漆 / 布 / 皮）：颜色从各自的来源材质写进顶点
+    const tinted = skinned.meshes.filter((m) => m.material.vertexColors);
+    for (const m of tinted) writePaint(m, mats);
+    const paintMesh = skinned.byMaterial.get(mats.paintSurface) ?? null;
+
     return {
       rootGroup,
+      paintMesh,
+      tinted,
       body,
       mats,
       legs,
       arms,
-      head,
-      cap,
-      torso,
+      skinned,
+      // 躯干那一段烘成的几份网格：换角色时要连同这几份几何体一起回收
+      bodyParts,
       contact,
       look,
       accessory,
@@ -639,6 +984,8 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     c.mats.paintMain.color.copy(identColor(p.mainTint ?? p.tint, isLocal));
     c.mats.paintOff.color.copy(identColor(p.offTint ?? p.tint, isLocal));
     c.mats.cloth.color.copy(skinColor(c.look.cloth, isLocal)).lerp(ident, 0.12);
+    // 并成一份的那几面（漆 / 布 / 皮）颜色落在顶点色上，改完要重写一遍（见 writePaint）
+    for (const m of c.tinted) writePaint(m, c.mats);
     c.activeGloveId = p.activeGloveId;
     c.mainId = p.mainId;
     c.offhandId = p.offhandId;
@@ -678,6 +1025,11 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     for (const key of Object.keys(c.mats)) {
       c.mats[key]?.dispose?.();
     }
+    // 躯干那几份是这个角色自己烘的（肩宽、有没有素帽都写死在顶点里），跟着他一起走
+    for (const mesh of c.bodyParts) mesh.geometry.dispose();
+    // 合并出来的蒙皮网格同理：一具角色一份
+    for (const mesh of c.skinned.meshes) mesh.geometry.dispose();
+    c.skinned.skeleton.dispose();
     c.contact.material.dispose();
   }
 
@@ -802,13 +1154,33 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       c.hitDir = dir ? tmpVec.copy(dir).normalize().clone() : new Vector3(0, 0, 1);
     },
 
-    update(dt, time) {
+    /**
+     * @param {number} dt
+     * @param {number} time
+     * @param {{x:number,z:number}} [focus] 镜头焦点。给了就按 CULL_DISTANCE 做距离剔除。
+     */
+    update(dt, time, focus = null) {
       for (const c of chars.values()) {
         const p = c.target;
         if (!p) continue;
 
         const alive = p.alive !== false;
-        c.rootGroup.visible = alive;
+        // 距离剔除：另一个区里的人不画（见 CULL_DISTANCE）。本地玩家永远画 ——
+        // 镜头就架在他身上，第一帧焦点还没跟上时不能把主角剔掉。
+        const far =
+          !c.isLocal &&
+          focus != null &&
+          Math.hypot((p.x ?? 0) - focus.x, (p.z ?? 0) - focus.z) > CULL_DISTANCE;
+        c.rootGroup.visible = alive && !far;
+        if (far) {
+          // 不画也要跟位：回到范围内时人要在他该在的地方，不能从上一帧的位置滑过来
+          c.pos.set(p.x ?? 0, p.y ?? 0, p.z ?? 0);
+          c.prev.copy(c.pos);
+          c.rootGroup.position.copy(c.pos);
+          c.yaw = p.yaw ?? c.yaw;
+          c.rootGroup.rotation.y = c.yaw;
+          continue;
+        }
         if (!alive) continue;
 
         // 位置插值：sim 是 60Hz 定步，渲染可能更快，直接跟随会有台阶感
@@ -909,13 +1281,19 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
         const activeMain = c.activeSlot === 0;
         c.mats.seamMain.emissiveIntensity = c.awaken * (activeMain ? 2.6 : 0.5) * pulse;
         c.mats.seamOff.emissiveIntensity = c.awaken * (activeMain ? 0.5 : 2.6) * pulse;
+        // 识别色漆在觉醒时透一点暖 —— 上场的是合并后的 paintSurface，
+        // paint 那一份只剩下「背布片的颜色」这个身份，所以两边都写
         c.mats.paint.emissive.setHex(PALETTE.crackCore);
         c.mats.paint.emissiveIntensity = c.awaken * 0.35 * pulse;
+        c.mats.paintSurface.emissive.setHex(PALETTE.crackCore);
+        c.mats.paintSurface.emissiveIntensity = c.awaken * 0.35 * pulse;
 
         // 重组无敌：不闪烁，改用「还没完全凝实」的半透
         const invuln = (p.invulnT ?? 0) > 0;
         const ghost = invuln ? 0.55 + 0.2 * Math.sin(time * 9) : 1;
-        for (const key of ['cloth', 'clothDim', 'leather', 'leatherWorn', 'skin', 'accent']) {
+        // 真正上场的是并完的 clothSurface / leatherSurface（高档 clothSurface 是 null，
+        // 布与暗布各画各的），两边都写：材质表怎么并，半透都得跟着走
+        for (const key of GHOSTABLE) {
           const m = c.mats[key];
           if (!m) continue;
           const wantTransparent = ghost < 0.999;

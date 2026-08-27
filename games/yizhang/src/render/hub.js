@@ -2,7 +2,8 @@
 //
 // sim 把安全区整体挪到 z ≈ -120，与裂岛在水平面上错开（见 src/sim/hub.js）。这里照着
 // `view.hub` 的布局把它长出来，`phase === 'arena'` 时整棵子树 visible = false ——
-// 走道不会跑进格斗岛，裂岛那一套也一行没动。
+// 走道不会跑进格斗岛。反过来也一样：人在走道上时裂岛整棵关掉（renderer.js 按
+// sync() 的返回值调 island.setActive）。两区从不同框，谁都不替对方付绘制调用。
 //
 // 视觉沿用底座 B（docs/VISUAL_HANDBOOK.md）：
 //   1. 走道是**铺出来的**：一块块石板，各自有磨损、错高与冷暖差，不是一张长方形地板贴图
@@ -38,12 +39,10 @@ import {
   TorusGeometry,
   Vector2,
 } from 'three';
-import { PALETTE } from './config.js';
+import { BLOOM_LAYER, PALETTE, markOccluder } from './config.js';
 import { bakeByMaterial, createPalmFactory } from './hub-palm.js';
 import { createHubVfx } from './hub-vfx.js';
 import { mulberry32 } from './noise.js';
-
-const BLOOM_LAYER = 1;
 
 /** 掌浮在台帽上方多少米。低于这个高度会挡住漆环，高了就不像「摆在座上」。 */
 const PALM_HOVER = 0.62;
@@ -368,6 +367,8 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
       const mesh = new Mesh(geo, matOf[key] ?? rockMat);
       mesh.receiveShadow = quality.shadows;
       mesh.castShadow = key === 'rock' && quality.shadows;
+      // 走道与岩体挡得住门里透出来的光，嵌线自己就是光
+      if (key !== 'inlay') markOccluder(mesh);
       group.add(mesh);
       meshes.push(mesh);
     }
@@ -519,6 +520,8 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
     plinthMesh.receiveShadow = quality.shadows;
     plinthMesh.frustumCulled = false;
     plinthMesh.count = 0;
+    // 8 座石柱是走道上体量最大的东西，门里的光被它们挡住
+    markOccluder(plinthMesh);
     root.add(plinthMesh);
 
     ringMesh = new InstancedMesh(ringGeo, ringMat, cap);
@@ -541,12 +544,12 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
 
     const mainMark = new Mesh(markGeo.main, palm.paint);
     mainMark.visible = false;
-    mainMark.castShadow = quality.shadows;
+    mainMark.castShadow = quality.shadows && quality.propShadows;
     group.add(mainMark);
 
     const offMark = new Mesh(markGeo.off, palm.paint);
     offMark.visible = false;
-    offMark.castShadow = quality.shadows;
+    offMark.castShadow = quality.shadows && quality.propShadows;
     group.add(offMark);
 
     const effect = vfx.attach({
@@ -669,6 +672,7 @@ export function createHubScene({ scene, quality, textures, seed = 20240501 }) {
       const mesh = new Mesh(geo, key === 'rune' ? runeMat : rockMat);
       mesh.castShadow = quality.shadows;
       mesh.receiveShadow = quality.shadows;
+      if (key !== 'rune') markOccluder(mesh);
       if (key === 'rune' && quality.bloom) {
         mesh.layers.enable(BLOOM_LAYER);
         mesh.userData.bloomSelf = true;

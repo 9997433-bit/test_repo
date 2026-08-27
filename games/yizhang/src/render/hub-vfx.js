@@ -39,11 +39,9 @@ import {
   TubeGeometry,
   Vector3,
 } from 'three';
-import { PALETTE } from './config.js';
+import { BLOOM_LAYER, PALETTE } from './config.js';
 import { mulberry32 } from './noise.js';
 import { emitParticle, flushParticles, makeParticleSystem, swapRemove } from './particles.js';
-
-const BLOOM_LAYER = 1;
 const TAU = Math.PI * 2;
 
 /** 掌 id → idle 特效种类。八只掌各一种，不许共用。 */
@@ -276,7 +274,7 @@ export function createHubVfx({ root, quality, textures, seed = 20240501 }) {
     });
     const mesh = new InstancedMesh(chipGeo, mat, count);
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    mesh.castShadow = quality.shadows;
+    mesh.castShadow = quality.shadows && quality.propShadows;
     mesh.frustumCulled = false;
     ctx.host.add(mesh);
 
@@ -429,19 +427,24 @@ export function createHubVfx({ root, quality, textures, seed = 20240501 }) {
       envMapIntensity: 1.1,
       flatShading: true,
     });
-    const shards = [];
+    // 一圈冰棱同形不同姿：合批成一个实例网格，5 根棱只花一个 drawcall
     const count = low ? 3 : 5;
+    const shardMesh = new InstancedMesh(crystalGeo, iceMat, count);
+    shardMesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    shardMesh.castShadow = quality.shadows && quality.propShadows;
+    shardMesh.frustumCulled = false;
+    ctx.host.add(shardMesh);
+    const shardDummy = new Object3D();
+    const shards = [];
     for (let i = 0; i < count; i++) {
-      const m = new Mesh(crystalGeo, iceMat);
       const a = (i / count) * TAU + rand() * 0.5;
       // 高度要等第一帧拿到台帽的高度才知道，先把角度与体态定下来
-      m.userData.angle = a;
-      m.userData.radius = 0.4 + rand() * 0.12;
-      m.rotation.set(rand() * 0.5, rand() * TAU, rand() * 0.6);
-      m.scale.set(0.7 + rand() * 0.6, 1.2 + rand() * 0.9, 0.7 + rand() * 0.5);
-      m.castShadow = quality.shadows;
-      ctx.host.add(m);
-      shards.push(m);
+      shards.push({
+        angle: a,
+        radius: 0.4 + rand() * 0.12,
+        rot: new Vector3(rand() * 0.5, rand() * TAU, rand() * 0.6),
+        scale: new Vector3(0.7 + rand() * 0.6, 1.2 + rand() * 0.9, 0.7 + rand() * 0.5),
+      });
     }
     const mistColor = ctx.tint.clone().lerp(new Color(0xeaf6ff), 0.5);
     let acc = 0;
@@ -453,14 +456,18 @@ export function createHubVfx({ root, quality, textures, seed = 20240501 }) {
         if (!placed) {
           placed = true;
           // 冰棱从台帽边沿长出来，不是浮在半空的碎片
-          for (const m of shards) {
-            const a = m.userData.angle;
-            m.position.set(
-              Math.cos(a) * m.userData.radius,
+          shards.forEach((s, i) => {
+            shardDummy.position.set(
+              Math.cos(s.angle) * s.radius,
               c.pedestalTopY + 0.04,
-              Math.sin(a) * m.userData.radius
+              Math.sin(s.angle) * s.radius
             );
-          }
+            shardDummy.rotation.set(s.rot.x, s.rot.y, s.rot.z);
+            shardDummy.scale.copy(s.scale);
+            shardDummy.updateMatrix();
+            shardMesh.setMatrixAt(i, shardDummy.matrix);
+          });
+          shardMesh.instanceMatrix.needsUpdate = true;
         }
         // 冰棱不动，只让通透度随呼吸微变：静物也要有生命
         iceMat.opacity = 0.5 + 0.22 * Math.sin(c.time * 0.9) * c.intensity;
@@ -489,7 +496,8 @@ export function createHubVfx({ root, quality, textures, seed = 20240501 }) {
         }
       },
       dispose() {
-        for (const m of shards) ctx.host.remove(m);
+        ctx.host.remove(shardMesh);
+        shardMesh.dispose();
         iceMat.dispose();
       },
     };
@@ -515,7 +523,7 @@ export function createHubVfx({ root, quality, textures, seed = 20240501 }) {
       envMapIntensity: 0.9,
     });
     const mesh = new Mesh(geo, mat);
-    mesh.castShadow = quality.shadows;
+    mesh.castShadow = quality.shadows && quality.propShadows;
     ctx.host.add(mesh);
 
     const ringMat = new MeshBasicMaterial({
