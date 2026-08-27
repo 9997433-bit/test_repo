@@ -163,9 +163,12 @@ describe("Bot 不感知 lookMode", () => {
     expect(free.emitted).toEqual(bare.emitted);
     expect(locked.end).toEqual(bare.end);
     expect(free.end).toEqual(bare.end);
-    // 这一局确实打起来了，不是「两边都空转所以相等」
-    expect(bare.end.stats.slaps).toBeGreaterThan(10);
+    // 这一局确实打起来了，不是「两边都空转所以相等」。看的是 Bot 自己的输出
+    // （走位 / 起手 / 转向都有），不拿场上战绩当哨兵 —— 那是配平的事，不是视角的事。
+    expect(bare.emitted.filter((inp) => inp.slap).length).toBeGreaterThan(20);
     expect(bare.emitted.some((inp) => Math.hypot(inp.moveX, inp.moveZ) > 0.5)).toBe(true);
+    expect(new Set(bare.emitted.map((inp) => inp.yaw)).size).toBeGreaterThan(50);
+    expect(bare.end.stats.hits).toBeGreaterThan(0);
   });
 
   it("emit 的 yaw 始终是 sim 空间的角：塞进相机角也照样对着人", () => {
