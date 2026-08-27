@@ -16,7 +16,7 @@ import { Scene, Vector3 } from 'three';
 import * as sim from '../sim/index.js';
 import { GLOVES } from '../data/gloves.js';
 import { BOT_PERSONAS } from '../data/bots.js';
-import { QUALITY } from './config.js';
+import { OCCLUDER_LAYER, QUALITY } from './config.js';
 import { createCharacters } from './characters.js';
 import { ACCESSORIES, EXTRA_LOOKS, resolveSkinLook, sameLook, skinTable } from './skins.js';
 import * as dataModule from '../data/index.js';
@@ -248,6 +248,79 @@ describe('角色：不同 skinId 不是同一根胶囊', () => {
     expect(new Set(sigs).size).toBe(ids.length);
     expect(chars.get('p0').look.accessory).toBe('hood'); // drifter
     expect(chars.get('p1').look.accessory).toBe('sash'); // mason
+    chars.dispose();
+  });
+});
+
+describe('角色：按材质合批（L3-10 绘制预算）', () => {
+  /** 真会发出绘制调用的东西：可见、且祖先都可见。 */
+  function drawables(root) {
+    const out = [];
+    root.updateMatrixWorld(true);
+    root.traverse((o) => {
+      if (!(o.isMesh || o.isPoints)) return;
+      let cur = o;
+      while (cur) {
+        if (!cur.visible) return;
+        cur = cur.parent;
+      }
+      out.push(o);
+    });
+    return out;
+  }
+
+  it('分节照旧、绘制调用收成「身上有几种材质」那么多份', () => {
+    const { chars } = mount('mid');
+    chars.reconcile([player('p0', 'crane')], 'p0');
+    const c = chars.get('p0');
+
+    // 零件一件没少：躯干烘出来的几份 + 四肢 + 两只掌 + 配件，都还在场景图里
+    const parts = [];
+    c.rootGroup.traverse((o) => {
+      if (o.isMesh && !o.isSkinnedMesh) parts.push(o);
+    });
+    expect(parts.length).toBeGreaterThanOrEqual(25);
+
+    // 但每帧真正要画的只有合批后的那几份（+ 接地阴影），mid 档预算 120 是给
+    // 「4 个人 + 8 座 + 天光 + 特效」分的，一个人不能占掉三分之一
+    const live = drawables(c.rootGroup);
+    expect(live.length).toBeLessThanOrEqual(14);
+    expect(live.filter((o) => o.isSkinnedMesh).length).toBe(live.length - 1);
+    // 合批网格用的就是原来那几份材质，没有偷偷换成统一材质
+    const mats = new Set(Object.values(c.mats));
+    for (const sm of live) {
+      if (!sm.isSkinnedMesh || sm.name === 'bloom-occluder') continue;
+      expect(mats.has(sm.material)).toBe(true);
+    }
+    chars.dispose();
+  });
+
+  it('每个零件是自己的骨头：动画写节点，合批网格跟着动', () => {
+    const { chars } = mount('mid');
+    chars.reconcile([player('p0', 'nuo')], 'p0');
+    const c = chars.get('p0');
+    const bones = c.skinned.skeleton.bones;
+    // 会动的关节（掌、束带）都在骨头表里，否则挥掌时它们会钉在绑定姿势上
+    expect(bones).toContain(c.arms[0].glove.userData.tassel);
+    expect(bones).toContain(c.arms[0].glove.userData.mitt);
+    for (const sm of c.skinned.meshes) expect(sm.skeleton).toBe(c.skinned.skeleton);
+    chars.dispose();
+  });
+
+  it('辉光挡光走一份纯黑替身：平时不画，只在自发光通道里露面', () => {
+    const { chars } = mount('mid');
+    chars.reconcile([player('p0', 'mason')], 'p0');
+    const c = chars.get('p0');
+    const shade = c.skinned.meshes.find((m) => m.name === 'bloom-occluder');
+    expect(shade).toBeTruthy();
+    expect(shade.visible).toBe(false);
+    expect(shade.userData.emissiveOnly).toBe(true);
+    expect(shade.layers.isEnabled(OCCLUDER_LAYER)).toBe(true);
+    // 本尊不再兼职挡光，否则一具角色要在辉光通道里画三份
+    for (const sm of c.skinned.meshes) {
+      if (sm === shade) continue;
+      expect(sm.layers.isEnabled(OCCLUDER_LAYER)).toBe(false);
+    }
     chars.dispose();
   });
 });
