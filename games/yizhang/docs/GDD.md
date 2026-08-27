@@ -14,8 +14,9 @@ Fable-3 出品。本文只做一件事：把 DESIGN_SEED 定下的核心循环�
 | `src/data/tuning.js` | `MOVEMENT` `KNOCKBACK` `METER` `RULES` | 运动 / 击退 / 掌意 / 规则扩展 |
 | `src/data/skills.js` | `SKILLS` `SKILL_IDS` `SKILL_COMBAT_ALIASES` | 7 个主动技参数 + data→combat id 完整映射（§6） |
 | `src/data/tiles.js` | `TILE` | 台面碎裂（方格拓扑，对齐 sim） |
-| `src/data/bots.js` | `BOT_PERSONAS` | 3 种 Bot 人格 |
+| `src/data/bots.js` | `BOT_PERSONAS` | 3 种 Bot 人格（含互异 `skinId`） |
 | `src/data/unlocks.js` | `UNLOCKS` | 局内解锁挑战 |
+| `src/data/hub.js` | `HUB` | 安全区大厅布局：8 座坐标/朝向、交互半径、走道 AABB、传送门（§12） |
 
 ---
 
@@ -202,13 +203,15 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 
 无血条，因此「残血」统一映射为**台权劣势**（贴边距离 + 硬直状态），由 `targetBias` 加权：
 
-| 人格 | 打法 | 关键参数 | 配掌 |
-| --- | --- | --- | --- |
-| brute 蛮古 | 直线硬冲贪掌 | aggression .9，reaction .28s，mistake .18，punishRead .2 | 磐石+陨掌 |
-| fox 狸缘 | 沿边绕走抓后摇 | circling .85，punishRead .85，mistake .08，edgeCaution .75 | 疾风+冰霜 |
-| bully 欺霸 | 专打背身/硬直/贴边 | backstabBias .8，targetBias{edge 1.0, hitstun 1.0} | 磁掌+分身 |
+| 人格 | 打法 | 关键参数 | 配掌 | 皮肤 |
+| --- | --- | --- | --- | --- |
+| brute 蛮古 | 直线硬冲贪掌 | aggression .9，reaction .28s，mistake .18，punishRead .2 | 磐石+陨掌 | wildhorn 荒角 |
+| fox 狸缘 | 沿边绕走抓后摇 | circling .85，punishRead .85，mistake .08，edgeCaution .75 | 疾风+冰霜 | crane 鹤羽 |
+| bully 欺霸 | 专打背身/硬直/贴边 | backstabBias .8，targetBias{edge 1.0, hitstun 1.0} | 磁掌+分身 | nuo 傩面 |
 
 可战胜性由三个旋钮保证：`reactionSeconds`（感知延迟 0.2–0.28）、`mistakeRate`（.08–.18 随机失误）、`punishRead`（只有狸缘接近人类的抓后摇水平）。磐石 Bot（蛮古）0.42s 前摇 + 高失误率 = 木棉玩家的第一个「可学习」对手：引它挥空 → 绕背 → 两三掌送下岛。
+
+皮肤（契约 §3.2 规则 3，ADR-26）：`skinId` 纯装饰、不挂数值；三人互异且不等于默认皮肤 `drifter`，Bot 不得全员同一造型。id 取皮肤词表 v1 冻结值；`src/data/skins.js` 真表落地前，壳层 `assignSkins` 对表里查无此 id 的值安全回落轮转，行为不破。
 
 ## 11. 调参指南（改哪个数字、动什么）
 
@@ -221,5 +224,48 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 | 觉醒太频繁 | `METER.onSlapHit 0.12` | 降 0.01 ≈ 多打一掌 |
 | 拆台太快/太慢 | `TILE.baseHp 120` 或技能 `tileDamage` | 保持「磐石 3 砸一块」的读感 |
 | Bot 太强/太弱 | `mistakeRate` / `reactionSeconds` | 别动数值表，动人格 |
+
+## 12. 安全区大厅与走道选掌（`hub.js`，HUB-R1，ADR-30）
+
+布局唯一来源是 `src/data/hub.js` 的 `HUB`（契约 §3.3）：sim 经 `installData` / `installHubLayout` 接管后快照进 `state.hub.layout`，render/ui 从 `view.hub` 读，**任何模块不得硬编码第二份坐标**。坐标与 O1 `sim/hub.js` 内置默认表逐字段对齐——data 表缺席时行为不变，落地后 `deps.usingDataHub === true`，唯一的表内差异是 `pedestals` 数组顺序改为 GLOVES 图鉴顺序（契约硬约束 1；O1 默认表按排交错，坐标相同）。
+
+**空间总览**：安全区与裂岛共用世界坐标。裂岛 = 原点半径 20 圆盘；走道整体在 z ≈ −120，安全区最近点（zone 北缘 z = −98）距裂岛圆心 98m，远大于「半径 20 + 2m 缓冲」的 22m 红线（硬约束 3）。走道沿 −Z 推进：出生 +Z 端 → 两排台掌 → 传送门 −Z 端，与 yaw = 0 → −Z 同向，开局镜头即面向走道纵深（ADR-17）。
+
+| 项 | 值 | 说明 |
+| --- | --- | --- |
+| 走道 `bounds` | x ∈ [−7.5, 7.5]，z ∈ [−141, −102] | 15m 宽 × 39m 长；sim 硬钳制（走不出去、掉不下去） |
+| 出生点 `spawn` | (0, −106)，yaw 0 | 距门 31m，walkSpeed 6.2 约 5s 走完，途中 8 座全部入视 |
+| 台座 ×8 | x = ±4.2，z = −113 / −119 / −125 / −131 | 两排各 4 座，同排间距 6m；实体碰撞半径 0.6，座高 0.95 |
+| 展掌悬浮 | y = 1.35 | floorY 0 + 座高 0.95 + 悬浮余量 0.4；手指朝上（+Y），idle VFX 归 O2 |
+| 交互半径 | 2.0 | 契约区间 [1.6, 2.2] 取中偏上 |
+| 传送门 | 中心 (0, −137)，yaw π（门面朝 +Z 迎向玩家） | 触发 AABB：x ∈ [−2.4, 2.4]，z ∈ [−139.4, −134.6]（半径 2.4 的外切正方形） |
+
+**台座顺序与朝向**：`pedestals` 数组顺序 = GLOVES 图鉴顺序（聚焦并列时 sim 取表序靠前者）；空间上左排由近到远 = 木棉/磐石/疾风/冰霜——默认掌离出生点最近，**步行顺序即教学梯度**；右排 = 弹簧/分身/磁掌/陨掌。朝向遵守 ADR-17（forward(yaw) = (−sin yaw, −cos yaw)）：左排 yaw = −π/2 面向 +X、右排 +π/2 面向 −X，展掌永远面向走道中线，玩家走来看到的是掌心而不是掌背。
+
+**交互半径为什么是 2.0**：
+
+- 台座离走道中线 4.2 > 2.2（区间上限）：沿中线直走不误触发说明牌，想看哪只掌就朝它跨两三步（约 2.2m 进圈）。
+- 同排间距 6m、对排 8.4m，均 > 2 × 2.0 = 4m：任何站位至多落进一座交互圈，聚焦无歧义（硬约束 2）。
+- 台座实体碰撞 = 座半径 0.6 + playerRadius 0.7 = 1.3 < 2.0：贴到台边仍在圈内，不会「被实体挤开就丢焦点」。
+
+**门与传送**：门 AABB 最近角到最近一排台座（±4.2, −131）约 4.0m > 交互半径 2.0——门触发区不与任何台座交互圈相交（硬约束 4），站在冰霜/陨掌前读说明不会误穿门。门提示区（AABB 各边外扩 interactRadius，契约 §4.4）与末排交互圈仅在门角有一小片重叠：那里 HUD 同时显示说明牌与门提示，属预期，不影响传送判定。
+
+**验收对照**（F4 / G1 引用；`src/data/hub.test.js` 已全部锁死，改坐标先过它）：
+
+| 硬约束（契约 §3.3） | 本表取值 | 裕量 |
+| --- | --- | --- |
+| 1. 恰好 8 座、gloveId 唯一、顺序 = 图鉴 | 8 座，cotton→meteor | 测试逐项断言 |
+| 2. interactRadius ∈ [1.6, 2.2]；座距 > 2r | 2.0；最小座距 6m | 6 − 4 = 2m |
+| 3. 全部几何距裂岛盘（20 + 2m）不重叠 | 最近点离原点 98m | 76m |
+| 4. spawn/座/门都在 bounds 内；门区不碰交互圈 | 门−座净距 ≈ 4.0m | 2.0m |
+
+**调参指南**（动数前先看这里，改完跑 `src/data/hub.test.js`）：
+
+| 症状 | 旋钮 | 边界 |
+| --- | --- | --- |
+| 说明牌太灵敏 / 太迟钝 | `interactRadius 2.0` | 硬区间 [1.6, 2.2]；恒 < 台座离中线 4.2、> 实体碰撞 1.3 |
+| 走道太挤 / 太空 | `ROW_X 4.2`、`ROW_Z` 间距 6 | 座距恒 > 2 × interactRadius；ROW_X 恒 > interactRadius |
+| 误入传送门 | `PORTAL_RADIUS 2.4`、门−末排 z 距 6 | 门 AABB 与台座交互圈净距恒 > 0 |
+| 安全区整体搬家 | `HUB_Z −120` | zone 最近缘距裂岛圆心恒 > 22m |
 
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。
