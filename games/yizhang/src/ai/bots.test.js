@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { think, resetBots, configureBots, BOT_PERSONAS, personaFor } from "./bots.js";
+import { think, resetBots, configureBots, isHubView, BOT_PERSONAS, personaFor } from "./bots.js";
 import { makePlayer, makeState, makeTiles, stepSim, counter } from "../combat/testkit.js";
 
 const INPUT_KEYS = ["moveX", "moveZ", "yaw", "slap", "skill", "switchGlove", "dash", "jump"];
@@ -224,6 +224,131 @@ describe("moveX/moveZ 坐标系自校准", () => {
     state.moveSpace = "world";
     const inp = think(state, "B1", counter(2));
     expect(inp.moveX).toBeGreaterThan(0.8); // 世界坐标下目标在 +X
+  });
+});
+
+describe("安全区守卫（phase=hub 时 Bot 休眠）", () => {
+  /**
+   * 手搭一份 `src/sim/view.js` 形状的快照：目标就贴在 Bot 脸上、冷却全好、有副掌可换，
+   * 换句话说 arena 下这一帧必定出手。phase 一改成 hub 就必须一个动作都不出。
+   */
+  function snapshot(phase, over = {}) {
+    return {
+      version: 4,
+      seed: 1,
+      time: 12.5,
+      tick: 750,
+      phase,
+      hub: { portalReady: false, focusGloveId: null, pedestals: [] },
+      config: { dt: 1 / 60, arenaRadius: 20 },
+      arena: { radius: 20, tileSize: 3, tiles: [] },
+      players: [
+        {
+          id: "B1",
+          kind: "bot",
+          persona: "brute",
+          x: 0,
+          y: 0,
+          z: 0,
+          yaw: 1.25,
+          alive: true,
+          respawnT: 0,
+          gloveId: "granite",
+          offhandId: "frost",
+          activeSlot: 0,
+          slapCd: 0,
+          skillCd: 0,
+          dashCd: 0,
+          dashT: 0,
+          statuses: [],
+          knockScale: 1,
+        },
+        { id: "p0", kind: "human", x: 0.8, y: 0, z: 0, yaw: 0, alive: true, respawnT: 0, statuses: [], knockScale: 1 },
+      ],
+      events: [],
+      ...over,
+    };
+  }
+
+  const ZEROED = { moveX: 0, moveZ: 0, slap: false, skill: false, switchGlove: false, dash: false, jump: false };
+
+  it("isHubView：显式 phase 优先，缺 phase 时看有没有 hub 数据", () => {
+    expect(isHubView({ phase: "hub" })).toBe(true);
+    expect(isHubView({ phase: "arena", hub: { pedestals: [] } })).toBe(false);
+    expect(isHubView({ hub: { pedestals: [] } })).toBe(true);
+    expect(isHubView({ hub: null })).toBe(false);
+    expect(isHubView({ players: [] })).toBe(false);
+    expect(isHubView(null)).toBe(false);
+  });
+
+  it("phase='hub'：键集不变、全是零，yaw 保持自己当前朝向", () => {
+    const view = snapshot("hub");
+    const inp = think(view, "B1", counter(3));
+    expect(Object.keys(inp).sort()).toEqual([...INPUT_KEYS].sort());
+    expect(inp).toMatchObject(ZEROED);
+    expect(inp.yaw).toBe(1.25); // 不是 0：sim 会照单写回 p.yaw，别让 Bot 齐刷刷扭头
+  });
+
+  it("在安全区里连站 10 秒也一次都不出手", () => {
+    const view = snapshot("hub");
+    const rng = counter(17);
+    for (let i = 0; i < 600; i++) {
+      view.time += 1 / 60;
+      view.tick += 1;
+      const inp = think(view, "B1", rng);
+      expect(inp).toMatchObject(ZEROED);
+    }
+  });
+
+  it("缺 phase 但带 view.hub 也按安全区处理（fail-safe 偏向不出手）", () => {
+    const view = snapshot("hub");
+    delete view.phase;
+    expect(think(view, "B1", counter(5))).toMatchObject(ZEROED);
+  });
+
+  /** 按 sim 的口径回写 yaw：think 出的朝向下一帧就是 p.yaw。 */
+  function drive(view, frames, rng) {
+    const log = { move: 0, slap: 0 };
+    for (let i = 0; i < frames; i++) {
+      view.time += 1 / 60;
+      view.tick += 1;
+      const inp = think(view, "B1", rng);
+      view.players[0].yaw = inp.yaw;
+      if (Math.hypot(inp.moveX, inp.moveZ) > 0.5) log.move += 1;
+      if (inp.slap) log.slap += 1;
+    }
+    return log;
+  }
+
+  it("同一份快照换成 phase='arena' 就恢复正常：会走、会扇", () => {
+    const view = snapshot("arena");
+    delete view.hub;
+    const log = drive(view, 12, counter(3));
+    expect(log.move).toBe(12);
+    expect(log.slap).toBeGreaterThan(0);
+  });
+
+  it("hub → arena 切换后第一帧就正常出手，不带安全区里的陈旧记忆", () => {
+    const hub = snapshot("hub");
+    const rng = counter(23);
+    for (let i = 0; i < 300; i++) {
+      hub.time += 1 / 60;
+      think(hub, "B1", rng);
+    }
+    const arena = snapshot("arena", { time: hub.time + 1 / 60, tick: hub.tick + 1 });
+    delete arena.hub;
+    const inp = think(arena, "B1", rng);
+    expect(Number.isFinite(inp.moveX) && Number.isFinite(inp.moveZ) && Number.isFinite(inp.yaw)).toBe(true);
+    expect(Math.hypot(inp.moveX, inp.moveZ)).toBeGreaterThan(0.5);
+  });
+
+  it("没有 phase 也没有 hub 的老快照（combat testkit）不受守卫影响", () => {
+    // testkit 的朝向方言是 yaw=0 面向 +Z，把目标摆到正前方 1.2m
+    const bot = makePlayer("B1", { persona: "brute", x: 0, z: 0, yaw: 0 });
+    const foe = makePlayer("P", { x: 0, z: 1.2 });
+    const state = makeState([bot, foe]);
+    expect(isHubView(state)).toBe(false);
+    expect(think(state, "B1", counter(3)).slap).toBe(true);
   });
 });
 
