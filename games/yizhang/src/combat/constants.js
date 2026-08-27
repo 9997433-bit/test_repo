@@ -48,6 +48,13 @@ export const HIT = {
   maxEvents: 512,
 };
 
+/** 残影暂存区（`state.combat.ghosts` → `view.combat.ghosts`）。 */
+export const GHOSTS = {
+  // 分身换位两端各留一具，8s 冷却里最多两具同时在场；上限只是病态输入的保险丝。
+  max: 24,
+  defaultTtl: 1.6,
+};
+
 /** 场地兜底（MATCH 未注入时使用）。 */
 export const ARENA = {
   radius: 20,

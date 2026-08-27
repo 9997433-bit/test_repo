@@ -7,6 +7,7 @@ import {
   clamp,
   clamp01,
   clockOf,
+  gloveIdFor,
   horizDir,
   inCone,
   isTileAlive,
@@ -124,9 +125,10 @@ export function damageTilesInRadius(state, cx, cz, radius, damage, opts = {}) {
 /**
  * 弹簧反击判定：target 处于 parryWindow 且大致面朝来袭方向时，
  * 打击被吃掉并按倍率弹回 attacker 身上。
+ * @param {string|null} [incomingGloveId] 来袭掌，只用于事件上的 `attackerGloveId`
  * @returns {object|null} 反击结果，null 表示没挡住
  */
-export function tryParry(state, attacker, target, incomingPower, now) {
+export function tryParry(state, attacker, target, incomingPower, now, incomingGloveId = null) {
   if (!target || !attacker) return null;
   const list = Array.isArray(target.statuses) ? target.statuses : [];
   const st = list.find((s) => s && s.kind === "parryWindow" && num(s.t) > 0);
@@ -156,6 +158,10 @@ export function tryParry(state, attacker, target, incomingPower, now) {
     type: "parry",
     parrierId: target.id,
     attackerId: attacker.id,
+    // 分派键是**弹反者**结算时的生效掌（契约 §5.1-8）；来袭掌另记一列，两边都不用猜。
+    gloveId: gloveIdFor(target),
+    skillId: "parry",
+    attackerGloveId: gloveIdFor(attacker, incomingGloveId),
     power: mag,
     hop: hop > 0,
     t: num(now),
@@ -174,6 +180,7 @@ export function landHit(state, attacker, target, cfg) {
     now = 0,
     kind = "slap",
     skillId = null,
+    gloveId = null,
     dirOverride = null,
     behindBonus = true,
     meterDealt = METER.onHitDealt,
@@ -182,7 +189,10 @@ export function landHit(state, attacker, target, cfg) {
     statuses = null,
   } = cfg || {};
 
-  const parried = tryParry(state, attacker, target, power, now);
+  // 出招掌：调用方（doSlap / 各技能 / 延迟结算队列）记下来的那只优先。
+  const gid = gloveIdFor(attacker, gloveId);
+
+  const parried = tryParry(state, attacker, target, power, now, gid);
   if (parried) {
     // 这一掌被吃掉了：targetId 留空，宿主就不会把它记成一次落地的命中。
     return {
@@ -191,6 +201,9 @@ export function landHit(state, attacker, target, cfg) {
       applied: true,
       parried: true,
       impulse: { x: 0, y: 0, z: 0 },
+      kind,
+      skillId,
+      gloveId: gid,
       reflect: parried,
     };
   }
@@ -220,6 +233,9 @@ export function landHit(state, attacker, target, cfg) {
     power: mag,
     kind,
     skillId,
+    // HitRecord.gloveId（契约 §5.2）：sim 发 hit 事件时的分派键，
+    // 延迟命中（陨掌落地 / 冲刺接触）期间攻击者可能已经换掌，所以由 combat 填。
+    gloveId: gid,
     distance: num(dir.dist, 0),
     behind: behind > 1,
     hitX: num(target.x),
@@ -230,6 +246,7 @@ export function landHit(state, attacker, target, cfg) {
     type: kind === "slap" ? "slap" : "skillHit",
     attackerId: attacker.id,
     targetId: target.id,
+    gloveId: gid,
     skillId,
     power: mag,
     impulse,

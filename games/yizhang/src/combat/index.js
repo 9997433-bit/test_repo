@@ -44,10 +44,12 @@ import {
   steerDash,
 } from "./skills.js";
 import {
+  activeGloveId,
   clamp01,
   clockOf,
   combatOf,
   forwardFromYaw,
+  gloveIdFor,
   horizDir,
   inCone,
   inSafeZone,
@@ -95,13 +97,6 @@ export function gloveTable(state) {
       ? Object.fromEntries(state.gloves.filter((g) => g && g.id).map((g) => [g.id, g]))
       : null);
   return fromState || registeredGloveById || GLOVE_BY_ID;
-}
-
-export function activeGloveId(player) {
-  if (!player) return DEFAULT_GLOVE_ID;
-  const slot = num(player.activeSlot, 0);
-  const id = slot === 1 ? player.offhandId : player.gloveId;
-  return id || player.gloveId || player.offhandId || DEFAULT_GLOVE_ID;
 }
 
 const COTTON = FALLBACK_GLOVE_BY_ID[DEFAULT_GLOVE_ID];
@@ -279,6 +274,7 @@ function doSlap(state, attacker, g, now, chargeCooldown) {
       now,
       kind: "slap",
       skillId: null,
+      gloveId: g.id,
       dirOverride: dir,
       behind: isBehind(attacker, p),
       extraMul,
@@ -290,7 +286,7 @@ function doSlap(state, attacker, g, now, chargeCooldown) {
   }
 
   if (!found.length) {
-    pushEvent(state, { type: "slapWhiff", attackerId: attacker.id, gloveId: g.id, t: now });
+    pushEvent(state, { type: "slapWhiff", attackerId: attacker.id, gloveId: g.id, skillId: null, t: now });
   }
   return hits;
 }
@@ -334,7 +330,14 @@ export function beginSlap(state, attacker, glove, now = clockOf(state)) {
   attacker.slapSeq = num(attacker.slapSeq) + 1;
   const c = combatOf(state);
   c.pending.push({ kind: "slap", at: now + g.windup, ownerId: attacker.id, gloveId: g.id, awakened: !!g.awakened });
-  pushEvent(state, { type: "slapWindup", attackerId: attacker.id, gloveId: g.id, contactAt: now + g.windup, t: now });
+  pushEvent(state, {
+    type: "slapWindup",
+    attackerId: attacker.id,
+    gloveId: g.id,
+    skillId: null,
+    contactAt: now + g.windup,
+    t: now,
+  });
   return { ok: true, contactAt: now + g.windup, recoverAt: attacker.recoverUntil };
 }
 
@@ -409,6 +412,8 @@ function tickDashes(state, now, sink) {
           now,
           kind: "skill",
           skillId: "dashSlap",
+          // 冲刺是起手那一刻的掌，途中换掌不改这一段的特效。
+          gloveId: gloveIdFor(owner, d.gloveId),
           dirOverride: dir,
           meterDealt: METER.onSkillHit,
         }),
@@ -451,6 +456,8 @@ function tickGhosts(state, dt) {
   const c = combatOf(state);
   if (!c.ghosts.length) return;
   c.ghosts = c.ghosts.filter((gh) => {
+    // 快照里塞进来的残影可能没有淡出基准；第一帧补上，别让 view 拿到 ttl0 < ttl。
+    if (!(num(gh.ttl0) > 0)) gh.ttl0 = Math.max(0, num(gh.ttl));
     gh.ttl = num(gh.ttl) - dt;
     return gh.ttl > 0;
   });
@@ -494,14 +501,25 @@ export function tickStatuses(state, dt) {
       p.awakened = p.awakenedT > 0;
       if (!p.awakened) {
         p.cottonChain = 0;
-        pushEvent(state, { type: "awakenEnd", playerId: p.id, t: now });
+        pushEvent(state, {
+          type: "awakenEnd",
+          playerId: p.id,
+          gloveId: gloveIdFor(p, p.awakenGloveId),
+          t: now,
+        });
       }
     } else if (num(p.meter) >= 1) {
       applyAwaken(p, resolveGlove(state, p));
     }
     if (p.awakenFlash) {
       p.awakenFlash = false;
-      pushEvent(state, { type: "awaken", playerId: p.id, gloveId: p.awakenGloveId || activeGloveId(p), duration: AWAKEN.duration, t: now });
+      pushEvent(state, {
+        type: "awaken",
+        playerId: p.id,
+        gloveId: gloveIdFor(p, p.awakenGloveId),
+        duration: AWAKEN.duration,
+        t: now,
+      });
     }
 
     if (num(p.knockbackT) > 0) p.knockbackT = Math.max(0, num(p.knockbackT) - dt);
@@ -558,6 +576,8 @@ export function respawn(state, player, now = clockOf(state), invulnTime = ARENA.
 }
 
 export {
+  activeGloveId,
+  gloveIdFor,
   SIM_ADAPTER,
   installIntoSim,
   AWAKEN,

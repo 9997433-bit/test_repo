@@ -342,6 +342,16 @@ describe("安全区守卫（phase=hub 时 Bot 休眠）", () => {
     expect(Math.hypot(inp.moveX, inp.moveZ)).toBeGreaterThan(0.5);
   });
 
+  it("interact 永远不进 Bot 的键集：选掌是 O4 的按键，Bot 连大厅都不该按", () => {
+    for (const phase of ["hub", "arena"]) {
+      const view = snapshot(phase);
+      if (phase === "arena") delete view.hub;
+      const inp = think(view, "B1", counter(11));
+      expect(inp).not.toHaveProperty("interact");
+      expect(Object.keys(inp).sort()).toEqual([...INPUT_KEYS].sort());
+    }
+  });
+
   it("没有 phase 也没有 hub 的老快照（combat testkit）不受守卫影响", () => {
     // testkit 的朝向方言是 yaw=0 面向 +Z，把目标摆到正前方 1.2m
     const bot = makePlayer("B1", { persona: "brute", x: 0, z: 0, yaw: 0 });
@@ -349,6 +359,39 @@ describe("安全区守卫（phase=hub 时 Bot 休眠）", () => {
     const state = makeState([bot, foe]);
     expect(isHubView(state)).toBe(false);
     expect(think(state, "B1", counter(3)).slap).toBe(true);
+  });
+});
+
+describe("Bot 出手喂得动 VFX 分派", () => {
+  /**
+   * Round 1 遗留 3：裂岛的每掌特效还是一套通用壳。O2 按事件的 gloveId 分派，
+   * 前提是 Bot 真的把八掌打出来——这条盯住「Bot 出手 → 事件带掌」这一整段。
+   */
+  it("三 Bot 混战 30 秒：扇击与技能事件逐条带 gloveId，且不止一只掌在出招", () => {
+    const gloves = ["granite", "gale", "magnet"];
+    const bots = BOT_PERSONAS.map((persona, i) =>
+      makePlayer(`B${i}`, {
+        persona,
+        gloveId: gloves[i],
+        offhandId: ["frost", "spring", "meteor"][i],
+        x: Math.cos((i / 3) * Math.PI * 2) * 5,
+        z: Math.sin((i / 3) * Math.PI * 2) * 5,
+      }),
+    );
+    const state = makeState(bots, { arenaRadius: 9, tiles: makeTiles(6, 8, 80) });
+    const log = run(state, bots.map((b) => b.id), { seconds: 30, rng: counter(101) });
+    expect(log.slaps).toBeGreaterThan(20);
+    expect(log.skills).toBeGreaterThan(0);
+
+    const casts = state.events.filter((e) => e.type === "skillCast");
+    expect(casts.length).toBeGreaterThan(0);
+    expect(new Set(casts.map((e) => e.gloveId)).size).toBeGreaterThan(1);
+
+    for (const ev of state.events) {
+      if (!["slap", "slapWhiff", "skillCast", "skillHit", "awaken"].includes(ev.type)) continue;
+      expect(typeof ev.gloveId, `${ev.type} 缺 gloveId`).toBe("string");
+      expect(gloves, `${ev.type} 的 gloveId=${ev.gloveId}`).toContain(ev.gloveId);
+    }
   });
 });
 
