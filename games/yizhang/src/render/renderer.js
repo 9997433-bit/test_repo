@@ -13,7 +13,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { GLOBAL_DPR_CAP, QUALITY, resolveTier } from './config.js';
-import { BASE_PITCH, PITCH_LIMIT, createCamera } from './camera.js';
+import { BASE_PITCH, CAMERA_SNAP_TELEPORT, PITCH_LIMIT, createCamera } from './camera.js';
 import { createCharacters } from './characters.js';
 import { skinTable } from './skins.js';
 import { combatVfxKind, createCombatVfx, skillVfxKind } from './combat-vfx.js';
@@ -27,12 +27,6 @@ import { createVfx } from './vfx.js';
 import { forwardFromYaw, readView } from './view.js';
 
 const UP = new Vector3(0, 1, 0);
-
-/**
- * 焦点一帧之内挪了这么远就当成传送（安全区在 z ≈ -120、裂岛在原点）。
- * 正常位移一帧最多一米出头（冲刺 ~14m/s × 0.05s），拉开一个数量级不会误判。
- */
-const TELEPORT_DIST = 16;
 
 /** 固定人物视角 / 自由视角。缺省锁视角（GOAL：产品默认钉在角色背后）。 */
 const LOOK_MODES = ['locked', 'free'];
@@ -260,7 +254,7 @@ export class YizhangRenderer {
   /**
    * 下一帧把镜头瞬时架到跟随目标身后（过门、结算回程、壳层显式重置）。
    *
-   * 渲染层自己也会在 hub ↔ arena 切换、焦点整跳（> TELEPORT_DIST）时自动 snap，
+   * 渲染层自己也会在 hub ↔ arena 切换、焦点整跳（> CAMERA_SNAP_TELEPORT）时自动 snap，
    * 这个方法是给壳层用的显式入口：它比渲染层更早知道「这一帧要传送」。
    */
   snapCamera() {
@@ -285,12 +279,23 @@ export class YizhangRenderer {
    * 切模式**不吸附机位**：人还站在原地，镜头顺着弹簧转过去就好（snap 只给传送，
    * 见 _followCamera / ADR-39）。运行期权威仍在输入层，这里只是随帧收（ADR-38）。
    *
+   * 切模式**不武装 snap**：人还站在原地，只是机位改绕另一个角，弹簧会自己把镜头
+   * 荡过去。这里若顺手 `_snapPending = true`，按一下 V 画面就会硬跳一格 —— snap 是
+   * 留给「世界位置整个换了一处」的（过门 / 换人 / 开局，见 snapCamera）。
+   *
+   * 真换了模式才通知镜头松一下背后闸（`camera.js releaseBehind`）：两个跟随角在真链路
+   * 上本来是连着的（locked 下人跟镜头 1:1），但 free 里人朝的是移动方向，切回 locked
+   * 的那一帧 sim 还没把人扭过来，落差可以到 π —— 闸这时硬按就等于 snap。
+   *
    * @param {'locked'|'free'} mode 认不出来的值不改现状
    * @returns {'locked'|'free'} 生效后的模式
    */
   setLookMode(mode) {
     const next = normalizeLookMode(mode);
-    if (next) this.lookMode = next;
+    if (next && next !== this.lookMode) {
+      this.lookMode = next;
+      this.cameraRig.releaseBehind();
+    }
     return this.lookMode;
   }
 
@@ -403,6 +408,22 @@ export class YizhangRenderer {
   }
 
   /**
+   * 过门检测：hub ↔ arena 两区在世界里隔着 ~120m，phase 一变机位必须吸附过去。
+   *
+   * 从 sync 里拆出来是为了能在没有 WebGL 的地方单独锁测 —— 「过门仍 snap」与
+   * 「切视角模式不许 snap」是同一枚硬币的两面，两条都要有测（见 look-camera.test.js）。
+   *
+   * @param {'hub'|'arena'} phase 本帧实际画的是哪一区
+   * @returns {boolean} 这一帧是不是过门
+   */
+  _phaseChanged(phase) {
+    const changed = this._lastPhase !== null && phase !== this._lastPhase;
+    if (changed) this._snapPending = true;
+    this._lastPhase = phase;
+    return changed;
+  }
+
+  /**
    * 跟随机位。传送（过门 / 结算回程 / 换人 / 开局第一帧）走 snap，其余走弹簧。
    *
    * **切视角模式不在 snap 名单里**：locked ↔ free 换的是「机位绕谁转」，角色还站在
@@ -414,7 +435,7 @@ export class YizhangRenderer {
   _followCamera(dt, focus, yaw) {
     const jumped =
       this._following &&
-      Math.hypot(focus.x - this._prevFocusX, focus.z - this._prevFocusZ) > TELEPORT_DIST;
+      Math.hypot(focus.x - this._prevFocusX, focus.z - this._prevFocusZ) > CAMERA_SNAP_TELEPORT;
     this._prevFocusX = focus.x;
     this._prevFocusZ = focus.z;
     this._following = true;
@@ -436,12 +457,15 @@ export class YizhangRenderer {
    * 两区在世界里隔着 ~120m，弹簧跟过去是一秒钟的空镜飞越。同一区里反复调用不产生
    * 副作用 —— 「换了个区」是唯一的触发条件，视角模式、画质、换皮肤都不算。
    *
+   * 包装 `_phaseChanged`：过门语义共用一份 `_lastPhase` 记账，返回值按 R2 契约
+   * 是 `_snapPending`（look.test.js），而 `_phaseChanged` 返回的是「这一帧是不是过门」
+   * （look-camera.test.js）。
+   *
    * @param {'hub'|'arena'} phase
    * @returns {boolean} 本帧是否处于「待吸附」状态
    */
   _notePhase(phase) {
-    if (this._lastPhase !== null && phase !== this._lastPhase) this._snapPending = true;
-    this._lastPhase = phase;
+    this._phaseChanged(phase);
     return this._snapPending;
   }
 
@@ -669,6 +693,7 @@ export class YizhangRenderer {
     const inHub = this.hub.sync(v.hub, dt, this.time);
     this.island.setActive(!inHub);
     // 过门（hub ↔ arena）：两区在世界里隔着 ~120m，机位必须吸附过去，不许弹簧飞越
+    // `_notePhase` 包装 `_phaseChanged`：过门仍 snap、切 V 不 snap，两套测各吃各的返回值
     this._notePhase(inHub ? 'hub' : 'arena');
     this._consumeEvents(v, raw.events);
 
