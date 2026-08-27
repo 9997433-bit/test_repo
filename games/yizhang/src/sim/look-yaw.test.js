@@ -7,6 +7,11 @@
 //
 // 用户反馈「打别人打不到」的落点在下半场：出掌锥的前向必须就是 `p.yaw`，而且本 tick
 // 转的身本 tick 就作数，不然看到的朝向和打出去的扇形对不上。
+//
+// locked 的「背后硬顶」不改 sim：那道钳位是相机层的事（`src/render/camera.js` 的
+// behindHold），sim 既不认 lookMode 也不认硬顶，只看见壳层钳完之后送进来的那个有限
+// `Input.yaw`，照样直赋。硬顶怎么调都不该在本目录留下 diff——要动的是壳层的产出口径，
+// 不是 `step.js` 里那一行赋值。
 
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 
@@ -401,6 +406,66 @@ describe("扇击前向 = p.yaw（sim 空间）", () => {
     slapOnce(hit.s, toward);
     expect(hit.b.hitsTaken).toBeGreaterThan(0);
     expect(hit.a.yaw).toBe(toward); // 出招那帧过了 combat 的 ±PI 换算，回来仍逐位相等
+  });
+});
+
+// reach 的口径其实不住在 sim 里：combat 的 slapTargets 拿 `glove.slapRange` 加上**平铺在
+// state 顶层**的 `state.playerRadius`——那是 createMatch 从 `config.playerRadius` 镜像过去的
+// 一个字段，认不出就退回 combat 自己的 `ARENA.playerRadius`（0.7）。默认配置下这两个数正好
+// 都是 0.7，所以上面那两条 ±0.3 的近 / 远用例在镜像被摘掉之后照样全绿：reach 真回退了也没人
+// 报警（同目录早先就有过「删掉 combat 不读的 state.playerHeight 镜像」这种清理）。
+// 这一组把口径钉死：边界精确到 1e-4，且 reach 必须跟着 sim 的 config 走。
+describe("reach 不回退：sim 的 playerRadius 说了算，边界一分不多", () => {
+  /** 面朝 yaw 站在原点，把靶子摆到正前方 dist 处，出一掌 */
+  function slapAt(dist, { yaw = FACE_PLUS_X, playerRadius } = {}) {
+    const s = createMatch({
+      seed: 5,
+      botCount: 1,
+      phase: "arena",
+      ...(playerRadius === undefined ? {} : { config: { playerRadius } }),
+    });
+    const a = getPlayer(s, "p0");
+    const b = getPlayer(s, "b0");
+    place(a, 0, 0, 0, yaw);
+    place(b, forwardX(yaw) * dist, 0, forwardZ(yaw) * dist);
+    a.invulnT = 0;
+    b.invulnT = 0;
+    run(s, { p0: input({ slap: true, yaw }) }, COTTON.windup + 0.05);
+    return { s, a, b };
+  }
+
+  it("createMatch 把 config.playerRadius 镜像到 state 顶层给 combat 读", () => {
+    for (const playerRadius of [undefined, 0.7, 1.4]) {
+      const s = createMatch({
+        seed: 1,
+        botCount: 0,
+        ...(playerRadius ? { config: { playerRadius } } : {}),
+      });
+      expect(s.playerRadius, "combat 的扇形判定读的就是这个平铺字段").toBe(s.config.playerRadius);
+      if (playerRadius) expect(s.config.playerRadius).toBe(playerRadius);
+    }
+  });
+
+  it("边界就落在 slapRange + playerRadius 上：里 1e-4 命中，外 1e-4 落空", () => {
+    const reach = COTTON.slapRange + createMatch({ seed: 1, botCount: 0 }).config.playerRadius;
+    const EPS = 1e-4; // 比上面那条 ±0.3 的粗锁紧三千倍，放大一毫米都会红
+
+    // 换几个朝向：reach 是标量，不许随机位或象限漂
+    for (const yaw of [0, 0.3, -1.25, Math.PI, FACE_PLUS_X, 2.4]) {
+      expect(slapAt(reach - EPS, { yaw }).b.hitsTaken, `yaw=${yaw} 差一丝也该够得着`).toBeGreaterThan(0);
+      expect(slapAt(reach + EPS, { yaw }).b.hitsTaken, `yaw=${yaw} 多一丝就该落空`).toBe(0);
+    }
+  });
+
+  it("reach 跟着 sim 的 config 走，不是 combat 的兜底常量", () => {
+    // 把身位加倍：reach 2.6+1.4=4.0。镜像掉了的话 combat 会退回 0.7 → 3.3，3.6 这一档就打不到了
+    const wide = { playerRadius: 1.4 };
+    expect(slapAt(3.6, wide).b.hitsTaken, "config 说 1.4 就得按 1.4 算").toBeGreaterThan(0);
+    expect(slapAt(4.3, wide).b.hitsTaken, "超出 4.0 仍旧够不着，不许连带放大").toBe(0);
+
+    // 对照组：同一个距离在默认身位（0.7 → reach 3.3）下必须落空，
+    // 说明上面那一发是 config 抬起来的，不是本来就够得着
+    expect(slapAt(3.6).b.hitsTaken).toBe(0);
   });
 });
 
