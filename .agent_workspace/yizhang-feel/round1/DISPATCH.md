@@ -29,7 +29,7 @@
 | 席位 | 模型 | Agent ID |
 | --- | --- | --- |
 | F1 架构契约 | `claude-fable-5-thinking-xhigh` | `bc-c827eb82-65d7-5b3f-b691-e8d2b5080e9a` | 运行中 |
-| F4 SOTA 验收 | `claude-fable-5-thinking-xhigh` | `bc-32ec5ea8-b3f4-5db3-9906-719afa069e88` | 运行中 |
+| F4 SOTA 验收 | `claude-fable-5-thinking-xhigh` | `bc-32ec5ea8-b3f4-5db3-9906-719afa069e88` | 已合入 `cursor/yizhang-feel-r1-f4-acceptance-db8d` |
 | G2 探针 | `gpt-5.6-sol-xhigh-fast` | `bc-7d89c6b4-b280-59cb-8565-25053082b764` | 已合入 `cursor/yizhang-feel-probe-db8d` |
 
 ### Wave 2（补派）

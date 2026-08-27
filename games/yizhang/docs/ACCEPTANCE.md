@@ -2,6 +2,9 @@
 
 维护者：Fable-4（SOTA 验收）。指标定义与阈值以同目录 `SOTA_CHECKLIST.md` 的 ID 为唯一事实源，本文只定义**执行顺序、证据要求、否决规则、判定模板**，不重复定义数值。
 
+> **当前生效轮次：手感轮（Feel Round 1–3，父分支 `cursor/yizhang-feel-db8d`）—— 执行规程见 §11，指标见 SOTA_CHECKLIST §10。**
+> §1–§10 是上一系列（骨架→精品）的存档规程；§2 的命令与 §8 的性能协议仍被 §11 引用，不得删改。
+
 ## 1. 范围与环境
 
 - 验收对象：`games/yizhang/**` 在各轮结束时合入 `cursor/yizhang-db8d` 的状态（或待合分支）。
@@ -223,3 +226,122 @@ npm run build          # 构建 + 体积预算
 - WARNING 清单（复验后）：技能 id 四处别名表仍并存（data 侧 id 已定稿，运行时靠桥正确；`data/skills.js`、`sim/combat-bridge.js`、`core/modules.js`、`combat/skills.js`）；bloom 三档常开（0.9/0.8/0.7）low 不可关（R-03 检查点）；probe 单 seed（T-07 规格 3 seed）；`sim/deps.js` 头注仍引已删除的 fallback-combat（注释级）。
 - 剩余修复（复验 `8dff71e` 时点，约 4 个文件；三验后 ③ 已结，见补记）：① `index.html` 删 17–18 两行 preconnect（Opus-4）；② `sim-integration.test.js` 改写对照组去掉死 import（GPT-sol-1）；③ awakenModifiers schema 定稿对齐 `tests/glove-data`（Fable-3 + GPT-sol-1）；④ `wiring` data 装表期望更新（GPT-sol-1）。修完复跑 §2 全流程即可签发。
 - 证据包：两轮 `npm test` 输出（145/152 → 156/158 + FAIL 清单）、两轮 probe JSON 原文（首验 `{…,"kills":3,…,"usingRealCombat":false}`；复验 `{"status":"pass","steps":3600,…,"kills":1,"p99StepMs":0.1114,"ai":"think","botThinkCalls":10800,"botSlapAttempts":4884,"wiredCombat":true}`）、build 输出与体积、`rg googleapis src dist index.html` 命中行（复验仅余 index.html/dist/index.html 各 2 行）、裸 step 八掌矩阵输出（两轮均 8/8 PASS）——随本轮验收 commit 提交于 PR 描述。
+
+---
+
+## 11. 手感轮（Feel Round 1–3）验收规程
+
+指标 ID 与阈值以 SOTA_CHECKLIST **§10** 为唯一事实源（FG 回归门 / FD 方向 / FS 皮肤 / FV 每掌 VFX / FJ 打击感 / FT 测试锁 / FR 红线）。
+验收对象：`games/yizhang/**` 合入 **`cursor/yizhang-feel-db8d`** 的状态（或待合子分支）。每轮 7 步顺序执行；任何一步 FAIL 即出 REJECT 报告，后续步骤照跑用于收集修复清单。**FG 回归门任何一项红 → 直接 REJECT，不再往下记分。**
+
+### 11.1 第 1 步 · 拉取安装与隔离（FG-05）
+
+```sh
+git fetch origin cursor/yizhang-feel-db8d && git checkout <被验分支>
+cd games/yizhang && npm ci
+git diff --name-only origin/main...HEAD | grep -v '^games/yizhang/' | grep -v '^\.agent_workspace/'
+```
+
+最后一条只允许剩共享只读文件的已声明改动；出现其他 `games/*`、`pages/`、workflow → FR-03 即时否决。
+
+### 11.2 第 2 步 · 静态检查（FG-04/06、FD-01/07、FS-01、FJ-05 静态面）
+
+```sh
+rg -n "RENDER_YAW_OFFSET" src/core/view.js       # FD-01：必须为 0（或常量已删、toRenderView 不改 yaw）
+rg -n 'base:|4181' vite.config.js                # FG-04：base "./" + dev/preview 双 4181 strictPort
+rg -n "googleapis|gstatic" src dist index.html   # FG-06：零命中（上一系列已清零，防回潮）
+rg -n "cameraYawToSimYaw" src                    # FD-07/FR-02：唯一换算点，无第四套约定
+ls src/data/skins.js                             # FS-01：皮肤表存在性
+rg -in "vignette" src/render src/styles          # FJ-05/FR-01：无受击驱动红晕（构图暗角 0.42 可留）
+```
+
+### 11.3 第 3–5 步 · 测试 / 探针 / 构建（FG-01/02/03、FT 表）
+
+```sh
+npm test        # FG-01：退出码 0，通过数 ≥197
+npm run probe   # FG-02：pass + wiredCombat:true + kills≥1 + ai:"think" + movedPlayers:4
+npm run build   # FG-03：退出码 0
+```
+
+- FT 在场性速查：`rg -ln "FT-0[1-8]" tests src scripts`（或按 FD/FS/FV/FJ 行为逐条核对）；抽读断言内容防空壳（§4 规则 4；FR-05）。
+- **防假达标复核（Round 2 起必做）**：FD-01/FD-06 必须是「判决性」断言——把 `RENDER_YAW_OFFSET` 临时改回 `Math.PI` 复跑，两测必须转红；不红说明测试没锁住渲染链路，按 FR-05 计。
+- probe 复跑规则：任何改动 hit-stop / 僵直 / Bot 行为的 PR 合入后必须复跑 probe；`botSlapAttempts` < 1900（基线一半）须书面解释。
+
+### 11.4 第 6 步 · 方向手动脚本（FD-08，全程录屏）
+
+`npm run dev`（4181 端口），进局后按序执行：
+
+1. 手不碰鼠标，按 **W** 2 秒——角色背影走向屏幕深处（远离相机、背影变小）；松开按 **S**——走向相机。
+2. 按 **A**——向屏幕左平移；按 **D**——屏幕右。
+3. 鼠标**向右**平移——镜头与角色向右转（远景地标向左移）；向左反向。
+4. 右转约 180° 后重复第 1–2 步——W 仍是屏幕深处、A 仍是屏幕左（证明映射是相机相对，不是世界绝对轴）。
+5. Esc 暂停再恢复——朝向与镜头保持，无跳变。
+6. devtools 触屏仿真：左摇杆推上 = W 同向；右侧空白**右拖** = 右转；摇杆 + 扇击同按互不干扰（Round 3 换真机复验）。
+
+### 11.5 第 7 步 · 皮肤 / VFX / 打击感评审
+
+**皮肤（FS-02/03/05/06）**：
+
+1. 大厅逐一选 ≥6 套皮肤，各截图一张（预览生效）。
+2. 选非默认皮肤进局——本人模型生效；刷新页面——大厅记住上次选择（存档）。
+3. devtools 删 `yizhang-save-v1` 或写坏 JSON——回退默认皮肤、不崩溃。
+4. 1+3 开局同屏截图——Bot ≥2 种不同外观、同屏 ≥3 种 skinId。
+5. 6 套截图灰度化并排——剪影/明度两两可辨（Round 2 起记分）。
+
+**每掌 VFX（FV-02/03/04/05）**：
+
+1. 练习局逐掌放扇击 + 技能各一次，60fps 录屏。
+2. 慢放确认：任两掌特效可辨；有形状-衰减-残留；无纯色光球 / 发光描边 / Bloom 糊屏。
+3. 分身技能释放后，画面上可见 ≥1 个半透明残影（FV-03 实机面）。
+4. Round 3 盲测：隐藏 HUD 掌名（devtools 或临时参数），评审按特效猜掌 id 记录，**≥6/8** 过（FV-05）；同场跑 §7 四维评分卡。
+
+**打击感（FJ-01…05）**：
+
+1. 慢放数 hit-stop：本人命中/被命中画面停顿 **≤120ms**（60fps 录屏 ≤7 帧）；旁观他人互扇无定格；连段无幻灯片化。
+2. 命中**接触点**可见扬尘爆，非全屏效果。
+3. 命中瞬间相机短促冲击，≤0.5s 回稳；连段不叠加成持续抖动。
+4. 被扇的 Bot 有可见僵直姿态（短暂不还手）；自己被扇同样（不阻击退位移）。
+5. 全程无满屏红晕/红闪；受击反馈是去饱和帧（FR-01 红线）。
+
+### 11.6 证据包
+
+- 11.1–11.3 全部命令原始输出（含退出码）与 probe JSON 原文。
+- 方向脚本完整录屏 ≥60s（11.4 六步齐）。
+- 皮肤截图 ≥8 张（6 套预览 + 进局生效 + Bot 同屏）+ 灰度并排图（R2 起）。
+- 8 掌 VFX 慢放录屏 + 分身残影可见的截图。
+- 打击感慢放录屏（hit-stop 计帧截图）。
+- Round 3 另加：真机型号 + 触屏方向录屏 + 性能采样（§8 协议）。
+
+### 11.7 判定模板（手感轮）
+
+```markdown
+# 异掌手感轮 Round <N> 验收判定
+- 被验分支/commit：
+- 验收人/日期：
+- 结论：PASS | PASS-WITH-WARNINGS | REJECT
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| FG 回归门 | x/6 | |
+| FD 方向 | x/8 | |
+| FS 皮肤 | x/6 | |
+| FV 每掌 VFX | x/5 | |
+| FJ 打击感 | x/5 | |
+| FT 测试锁 | x/8 | |
+| FR/R 否决 | 命中列表 | |
+
+- WARNING 清单：
+- 修复指派（按 .agent_workspace/yizhang-feel/OWNERSHIP.md）：
+- 证据包链接：
+```
+
+**修复指派对照（手感轮 OWNERSHIP）**：sim 侧 skinId/ghosts 进 getView → Opus-1；渲染朝向消费 / 皮肤 mesh / 每掌 VFX / 残影绘制 / 相机冲击 → Opus-2；combat 事件带掌 id / 僵直下发 / Bot persona.skinId → Opus-3；输入反转修复 / 大厅皮肤 UI / hit-stop 加强 / 存档 skinId → Opus-4；SKINS 表与每掌 vfx 参数 → Fable-3；选择器与特效视觉规范 → Fable-2；朝向/皮肤/VFX 契约冻结 → Fable-1；tests → GPT-sol-1；scripts/探针 → GPT-sol-2。
+
+### 11.8 Round 1 开工基线（Fable-4 实测 @ `be97cee`，2026-08-27，全套命令实跑）
+
+- `npm test`：**197/197**（17 文件），退出码 0。
+- `npm run probe`：`{"status":"pass","steps":3600,"players":4,"kills":2,"movedPlayers":4,"p99StepMs":0.099,"ai":"think","botThinkCalls":10800,"botSlapAttempts":3818,"wiredCombat":true}`。
+- `npm run build`：退出码 0（主 chunk >500kB 警告属既知，含 three）。
+- 静态面：`RENDER_YAW_OFFSET = Math.PI` 在场（**FD-01 当前红，即用户所报反转**）；`src/data/skins.js` 不存在；`getView` 无 `skinId`/`ghosts` 字段；`rg googleapis src index.html` 零命中；`vite.config.js` `base:"./"` + 4181 双端口在位。
+- 打击感底子：`src/core/juice.js` hit-stop 在场（max 90ms、本人限定、冷却 0.14s，`juice.test.js` 有测）；`renderer.js` 事件→`cameraRig.impulse` 已接线；`src/sim/physics.js` 认 `stun` 状态但 combat 从不下发（僵直缺失）；受击反馈为去饱和帧、无红晕。
+- 差距标注与 Round 2/3 洞：见 SOTA_CHECKLIST §10.7 / §10.8。
