@@ -2,9 +2,30 @@
 
 import { describe, expect, it } from "vitest";
 
-import { HIT_STOP, createHitStop, hitStopFor, hitStopForEvents } from "./juice.js";
+import {
+  HIT_FLASH,
+  HIT_STOP,
+  createHitStop,
+  hitFlashFor,
+  hitFlashForEvents,
+  hitStopFor,
+  hitStopForEvents,
+} from "./juice.js";
 
 const SELF = "p0";
+
+describe("HIT_STOP 参数", () => {
+  it("单次定格可感知但不超过 120ms", () => {
+    // 60fps 下 4 帧起步才「有东西」，验收线是单次 ≤120ms
+    expect(HIT_STOP.dealt).toBeGreaterThanOrEqual(0.06);
+    expect(HIT_STOP.max).toBeLessThanOrEqual(0.12);
+    expect(HIT_STOP.dealt + HIT_STOP.heavyBonus).toBeLessThanOrEqual(HIT_STOP.max);
+  });
+
+  it("冷却保证最坏情况下画面不到一半时间是冻的", () => {
+    expect(HIT_STOP.max / HIT_STOP.cooldown).toBeLessThan(0.6);
+  });
+});
 
 describe("hitStopFor", () => {
   it("本人扇中别人：定格一记，且不超过上限", () => {
@@ -56,6 +77,36 @@ describe("hitStopFor", () => {
     ];
     expect(hitStopForEvents(events, SELF)).toBe(HIT_STOP.dealt + HIT_STOP.heavyBonus);
     expect(hitStopForEvents([], SELF)).toBe(0);
+  });
+});
+
+describe("hitFlashFor", () => {
+  it("只在本人挨打时给反馈，打中别人不糊自己的屏", () => {
+    expect(hitFlashFor({ type: "hit", playerId: "p2", targetId: SELF, power: 8 }, SELF)).toBeTruthy();
+    expect(hitFlashFor({ type: "hit", playerId: SELF, targetId: "p2", power: 8 }, SELF)).toBeNull();
+    expect(hitFlashFor({ type: "hit", playerId: "p1", targetId: "p2" }, SELF)).toBeNull();
+    expect(hitFlashFor({ type: "slap", targetId: SELF }, SELF)).toBeNull();
+  });
+
+  it("越重的一记越明显，但强度与时长都封顶", () => {
+    const light = hitFlashFor({ type: "hit", targetId: SELF, power: 2 }, SELF);
+    const heavy = hitFlashFor({ type: "hit", targetId: SELF, power: 30 }, SELF);
+    expect(heavy.strength).toBeGreaterThan(light.strength);
+    expect(heavy.strength).toBeLessThanOrEqual(HIT_FLASH.maxStrength);
+    expect(heavy.ms).toBeLessThanOrEqual(HIT_FLASH.maxMs);
+    expect(light.ms).toBeGreaterThanOrEqual(HIT_FLASH.minMs);
+  });
+
+  it("同帧多段只取最重的一记", () => {
+    const events = [
+      { type: "hit", targetId: SELF, power: 3 },
+      { type: "hit", targetId: "p2", power: 99 },
+      { type: "hit", targetId: SELF, power: 12 },
+    ];
+    expect(hitFlashForEvents(events, SELF).strength).toBe(
+      hitFlashFor({ type: "hit", targetId: SELF, power: 12 }, SELF).strength
+    );
+    expect(hitFlashForEvents([], SELF)).toBeNull();
   });
 });
 

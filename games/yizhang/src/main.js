@@ -9,7 +9,7 @@ import {
   wiringStatus,
 } from "./core/modules.js";
 import { createLoop } from "./core/loop.js";
-import { hitStopForEvents } from "./core/juice.js";
+import { hitFlashForEvents, hitStopForEvents } from "./core/juice.js";
 import { lerpView } from "./core/interp.js";
 import { createQualityProbe } from "./core/quality.js";
 import { loadSave, updateSave, recordMatch, unlockGlove, SAVE_KEY } from "./core/storage.js";
@@ -21,6 +21,7 @@ import {
   simYawToCameraYaw,
   toRenderView,
 } from "./core/view.js";
+import { normalizeSkinId, resolveSkins } from "./core/skins.js";
 import { createUnlockChecker, newlyUnlocked, unlockTextOf } from "./core/unlocks.js";
 import { createProgressTracker } from "./core/progress.js";
 import * as fallbackSim from "./core/fallback/sim.js";
@@ -95,6 +96,8 @@ async function boot() {
     ...(typeof sim.getMatchConfig === "function" ? sim.getMatchConfig() : {}),
   };
   const personaById = (dataModule && dataModule.BOT_PERSONA_BY_ID) || null;
+  // 皮肤表：data 给了就用真表，没给用 core/skins.js 的兜底表（默认 ash）。
+  const skinTable = resolveSkins(dataModule);
 
   const isUnlocked = createUnlockChecker(dataModule, { gloves });
 
@@ -106,6 +109,12 @@ async function boot() {
   if (mods.data.ok && !realWiring.usingRealData) degraded.push({ text: "sim 没吃到真实掌表 · 8 掌数值可能未进局", tone: "warn" });
   if (mods.combat.ok && !realWiring.usingRealCombat) degraded.push({ text: "sim 没吃到真实 combat · 技能可能未进局", tone: "warn" });
   if (styleCount === 0) degraded.push({ text: "src/styles 未接入 · 使用 shell 兜底暮蓝主题", tone: "warn" });
+  if (skinTable.source !== "data") {
+    degraded.push({
+      text: `src/data 未导出 SKINS · 使用壳层兜底皮肤表（${skinTable.skins.length} 套，默认 ${skinTable.defaultId}）`,
+      tone: "warn",
+    });
+  }
 
   let save = loadSave();
   const audio = createAudio({ muted: save.muted });
@@ -176,6 +185,7 @@ async function boot() {
     root: app,
     gloves,
     gloveById,
+    skinTable,
     save,
     audio,
     input,
@@ -189,6 +199,10 @@ async function boot() {
       onQuit: () => quitToMenu(),
       onPauseRequest: () => togglePause(),
       onSettingsChange: (next) => applySettings(next),
+      // 皮肤在大厅点一下就落盘，不必等到进局
+      onSkinChange: (skinId) => {
+        save = updateSave({ skinId: normalizeSkinId(skinId, skinTable) });
+      },
     },
   });
   const bootNode = document.getElementById("yz-boot");
@@ -282,7 +296,8 @@ async function boot() {
           break;
         case "hit":
           audio.play("hit", { power: e.power });
-          if (e.targetId === SELF_ID) shell.flashHit();
+          // 挨打的是自己：再补一记短促的贴脸闷响，听感上分得清打人和被打
+          if (e.targetId === SELF_ID) audio.play("hitTaken", { power: e.power });
           break;
         case "skill":
           audio.play("skill");
@@ -329,9 +344,11 @@ async function boot() {
     }
 
     // 手感：本人参与的扇击命中给一记极短定格。同帧多段只停一次，
-    // 连段之间还有冷却兜着；画面反馈仍是 HUD 那层去饱和，不加红晕。
+    // 连段之间还有冷却兜着；画面反馈仍是 HUD 那层去饱和 + 轻压暗，不加红晕。
     const stop = hitStopForEvents(view.events, SELF_ID);
     if (stop > 0) loop.hold(stop);
+    const flash = hitFlashForEvents(view.events, SELF_ID);
+    if (flash) shell.flashHit(flash);
   }
 
   function evaluateUnlocks(won) {
@@ -384,37 +401,38 @@ async function boot() {
 
   function refreshView() {
     const raw = sim.getView(state);
-    return adaptView(raw, { selfId: SELF_ID, roster, gloveById });
+    return adaptView(raw, { selfId: SELF_ID, roster, gloveById, skinTable });
   }
 
   function startMatch(loadout) {
     lastLoadout = loadout;
-    save = updateSave({ loadout });
+    const skinId = normalizeSkinId(loadout.skinId ?? save.skinId, skinTable);
+    // 存档里 loadout 只装手套，皮肤是平级字段（旧档缺省兼容见 core/storage.js）
+    save = updateSave({ loadout: { main: loadout.main, off: loadout.off }, skinId });
     rng = makeRng((Date.now() & 0xffff) ^ 0x5eed);
     tracker.reset();
     resultShown = false;
 
+    // sim 还没吃 skinId 的那一版会直接忽略这两个字段，壳层的 roster 仍会补上皮肤。
+    const matchOpts = {
+      gloveId: loadout.main,
+      offhandId: loadout.off,
+      botCount: 3,
+      skinId,
+      skins: skinTable.skins,
+    };
+
     try {
-      state = sim.createMatch({
-        seed: (Date.now() & 0x7fffffff) >>> 0,
-        gloveId: loadout.main,
-        offhandId: loadout.off,
-        botCount: 3,
-      });
+      state = sim.createMatch({ seed: (Date.now() & 0x7fffffff) >>> 0, ...matchOpts });
     } catch (err) {
       console.error("[yizhang] createMatch 失败，退回占位模拟", err);
-      state = fallbackSim.createMatch({
-        seed: 1,
-        gloveId: loadout.main,
-        offhandId: loadout.off,
-        botCount: 3,
-      });
+      state = fallbackSim.createMatch({ seed: 1, ...matchOpts });
       shell.setNotes([...degraded, { text: "src/sim.createMatch 抛错 · 已退回占位模拟", tone: "warn" }]);
     }
 
     const rawView = sim.getView(state);
-    roster = createRoster(rawView, { selfId: SELF_ID, personaById });
-    curView = adaptView(rawView, { selfId: SELF_ID, roster, gloveById });
+    roster = createRoster(rawView, { selfId: SELF_ID, personaById, skinTable, skinId });
+    curView = adaptView(rawView, { selfId: SELF_ID, roster, gloveById, skinTable });
     prevView = curView;
     if (fallbackAi.resetBots) fallbackAi.resetBots();
     if (ai.resetBots) ai.resetBots();
