@@ -362,7 +362,8 @@ export function createCombatVfx({ scene, quality, textures, seed = 90210 }) {
 
   const sheetGeo = {
     fanwake: new RingGeometry(0.22, 1, 22, 1, -1.15, 2.3),
-    gust: new RingGeometry(0.62, 1, 26, 1, -0.36, 0.72),
+    // 内径要留够：SHEET_FRAG 只在 r∈[uInner, 0.78] 之间显影，环太窄就只剩一小撮
+    gust: new RingGeometry(0.34, 1, 30, 1, -1, 2),
     rime: new RingGeometry(0.4, 1, 30, 1, -1.65, 3.3),
     phase: new RingGeometry(0.55, 1, 18, 1, -0.85, 1.7),
   };
@@ -557,30 +558,37 @@ export function createCombatVfx({ scene, quality, textures, seed = 90210 }) {
       },
     },
 
-    /** 疾风：贴地窜出去的一条薄风刃。 */
+    /** 疾风：贴地窜出去的一道薄风弓。 */
     gust: {
       family: 'sheet',
       geo: 'gust',
-      dur: 0.34,
-      shells: 1,
-      uniforms: { uTear: 0.2, uFlow: 1.5, uInner: 0.55, uOpacity: 0.5 },
+      dur: 0.36,
+      shells: 2,
+      uniforms: { uTear: 0.12, uFlow: 1.5, uInner: 0.3, uOpacity: 0.62 },
       color: (tint) => ({
         lit: accentOf(new Color(0xe6f4ef), tint, 0.34),
         dark: accentOf(new Color(PALETTE.fog), tint, 0.2),
       }),
       pose(rec) {
-        // 贴着地面走：几乎放平，只留一点仰角，读起来是掠地而不是划空
-        rec.orient.rotation.set(-HALF_PI + 0.1, HALF_PI, 0);
-        rec.baseY = Math.min(rec.baseY, 0.8);
+        // 弧口朝下、面对出掌方向：一张横在膝前的薄弓，往前推。
+        // 之前是整片放平贴地走，从人身后看正好是零厚度的一条边 —— 等于没画。
+        rec.orient.rotation.set(0.34, 0, -HALF_PI);
+        rec.baseY = Math.min(rec.baseY, 0.72);
         rec.holder.position.y = rec.baseY;
       },
       animate(rec, t, p) {
-        const e = Math.pow(t, 0.55);
-        rec.holder.position.x = rec.baseX + rec.dirX * e * 3.2 * p;
-        rec.holder.position.z = rec.baseZ + rec.dirZ * e * 3.2 * p;
-        rec.holder.position.y = rec.baseY - e * 0.28;
-        const k = (0.85 + e * 0.9) * p;
-        rec.mesh.scale.set(k, k, 1);
+        // 后一层慢半拍，跟出一道拖影
+        const lag = rec.phase * 0.16;
+        const s = clamp((t - lag) / (1 - lag), 0, 1);
+        const e = Math.pow(s, 0.55);
+        rec.holder.position.x = rec.baseX + rec.dirX * e * 2.6 * p;
+        rec.holder.position.z = rec.baseZ + rec.dirZ * e * 2.6 * p;
+        rec.holder.position.y = rec.baseY - e * 0.12;
+        // 滚过 90° 之后：局部 +X 是弓的厚度（竖向），+Y 是弓的展宽（横向）
+        const thick = (1 + e * 0.42) * p;
+        rec.mesh.scale.set(thick, (0.95 + e * 1.05) * p, 1);
+        // 弧口开在圆心下方，得把它顶回落点高度，否则整片沉在地板下面等于没画
+        rec.orient.position.y = 0.56 * thick;
       },
       burst(ctx) {
         for (let i = 0; i < budget(6, ctx.power); i++) {

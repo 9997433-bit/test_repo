@@ -22,6 +22,11 @@
 //   ?picked=0               开局不带主掌，走道里挑到掌门才会开（看传送门两态）
 //   ?unlock=all             全解锁（缺省只有木棉 + 带进来的两只，其余是未点亮的石掌）
 //   ?tour=0                 关掉大厅走查脚本，人物站着不动（拍静帧用）
+//   ?skin=reed              本人的皮肤 id（剪影 + 配件，见 ./skins.js）
+//   ?botskins=0             Bot 不带人格皮肤（看「没有 skinId 时全员兜底」长什么样）
+//   ?glove=afterimage       本人主掌；配 ?phase=arena 就能盯着那一掌的战斗特效看
+//   ?off=frost              本人副掌
+//   ?pitch=0.6              起始俯角（正 = 往下看）。运行时右键拖拽 / ↑↓ 也能改
 //
 // 就绪后 window.smoke 可用；异步引导的 Promise 在 window.smokeReady 上。
 
@@ -30,6 +35,7 @@ import {
   dispose,
   getStats,
   resize,
+  setLook,
   setQuality,
   setSpectator,
   sync,
@@ -138,9 +144,13 @@ export async function createLiveMatch({
   picked = true,
   unlockAll = false,
   tour = true,
+  skinId = null,
+  botSkins = true,
+  gloveId = 'granite',
+  offhandId = 'meteor',
 } = {}) {
   const sim = await import('../sim/index.js');
-  const wired = { data: false, combat: 'sim' };
+  const wired = { data: false, combat: 'sim', botSkins: false };
 
   // 掌表用真的（8 掌的识别色、判定角度、击退都从这儿来）。
   try {
@@ -149,6 +159,20 @@ export async function createLiveMatch({
     wired.data = true;
   } catch {
     /* 掌表缺席时 sim 用内置兜底 */
+  }
+
+  // Bot 的皮肤写在人格表里（wildhorn / crane / nuo）。sim 只在 createMatch 收
+  // botSkinIds，所以这里替壳层把它接上 —— 不接的话三个 Bot 的 skinId 全是 null，
+  // 画面上就又是三根一样的胶囊。
+  let botSkinIds = [];
+  if (botSkins) {
+    try {
+      const bots = await import('../data/bots.js');
+      botSkinIds = bots.BOT_PERSONAS.map((p) => p.skinId ?? null);
+      wired.botSkins = botSkinIds.some(Boolean);
+    } catch {
+      /* 人格表缺席：Bot 走渲染层的散列兜底 */
+    }
   }
 
   // combat 默认走 sim 自带的兜底：src/combat 的 resolveSlap 返回数组，而 sim/step.js
@@ -173,10 +197,12 @@ export async function createLiveMatch({
 
   const state = sim.createMatch({
     seed,
-    gloveId: 'granite',
-    offhandId: 'meteor',
+    gloveId,
+    offhandId,
     botCount: 3,
     phase,
+    skinId,
+    botSkinIds,
     ...(unlockAll ? { unlocked: 'all' } : {}),
   });
   // 「还没挑掌」的开局：门是封着的，走道里挑到主掌才会开。冒烟台专用，正式壳不这么干。
@@ -299,6 +325,8 @@ export async function createLiveMatch({
         main: state.hub?.mainGloveId ?? null,
         off: state.hub?.offGloveId ?? null,
         portalReady: !!state.hub?.portalReady,
+        ghosts: view.combat?.ghosts?.length ?? 0,
+        skins: view.players.map((p) => p.skinId ?? '-').join('/'),
         wired,
       };
     },
@@ -314,6 +342,10 @@ export async function bootSmoke(canvas) {
     picked: opt('picked', '1') !== '0',
     unlockAll: opt('unlock', '') === 'all',
     tour: opt('tour', '1') !== '0',
+    skinId: opt('skin', null),
+    botSkins: opt('botskins', '1') !== '0',
+    gloveId: opt('glove', 'granite'),
+    offhandId: opt('off', 'meteor'),
   });
 
   const renderer = createRenderer(canvas, {
@@ -336,6 +368,17 @@ export async function bootSmoke(canvas) {
   fit();
   globalThis.addEventListener?.('resize', fit);
 
+  // 抬头 / 低头。壳层那边由 O4 每帧喂 input.getLook().pitch；冒烟台自己拖鼠标，
+  // 走的是同一个入口（render.setLook），所以「鼠标上下看有没有用」这里就能验。
+  const PITCH_MAX = Math.PI / 2.6;
+  let pitch = numOpt('pitch', 0.22);
+  const applyPitch = () => {
+    pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, pitch));
+    setLook({ pitch });
+    return pitch;
+  };
+  applyPitch();
+
   const hud = opt('hud', '0') === '1' ? document.getElementById('readout') : null;
   if (hud) hud.style.display = 'block';
   let hudTimer = 0;
@@ -351,10 +394,11 @@ export async function bootSmoke(canvas) {
         const zone =
           m.phase === 'hub'
             ? `hub  focus ${m.focus ?? '-'}  主 ${m.main ?? '-'} / 副 ${m.off ?? '-'}  门 ${m.portalReady ? '通' : '封'}`
-            : `arena  tiles ${m.tiles - m.broken}/${m.tiles}  ko ${m.kos}`;
+            : `arena  tiles ${m.tiles - m.broken}/${m.tiles}  ko ${m.kos}  残影 ${m.ghosts}`;
         hud.textContent =
           `${s.tier}  dpr ${s.pixelRatio.toFixed(2)}  draw ${s.drawCalls}  tris ${s.triangles}` +
-          `  |  t ${m.t}s  ${zone}`;
+          `  pitch ${s.pitch.toFixed(2)}` +
+          `  |  t ${m.t}s  ${zone}  |  皮肤 ${m.skins}`;
       }
     }
   };
@@ -419,6 +463,12 @@ export async function bootSmoke(canvas) {
     setSpectator(on) {
       setSpectator(on);
     },
+    /** 抬头 / 低头。正 = 往下看，与 src/input 的 getLook().pitch 同约定。 */
+    setPitch(v) {
+      pitch = v;
+      return applyPitch();
+    },
+    getPitch: () => pitch,
     stats: getStats,
     simStats: () => match.stats(),
     stop() {
@@ -447,6 +497,22 @@ export async function bootSmoke(canvas) {
       if (e.key === '2') api.setQuality('mid');
       if (e.key === '3') api.setQuality('low');
       if (e.key === 's') api.setSpectator(true);
+      // 键盘也能抬头低头：录屏时比按住鼠标稳
+      if (e.key === 'ArrowUp') api.setPitch(pitch - 0.08);
+      if (e.key === 'ArrowDown') api.setPitch(pitch + 0.08);
+    });
+    // 按住拖拽 = 上下看。冒烟台没有指针锁，用拖拽足够验证这条链路通了。
+    let dragging = false;
+    canvas.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      canvas.setPointerCapture?.(e.pointerId);
+    });
+    canvas.addEventListener('pointerup', (e) => {
+      dragging = false;
+      canvas.releasePointerCapture?.(e.pointerId);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (dragging) api.setPitch(pitch + (e.movementY || 0) * 0.0035);
     });
   }
 
