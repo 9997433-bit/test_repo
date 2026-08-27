@@ -178,3 +178,14 @@ export function cameraYawToSimYaw(cameraYaw) {
 export function simYawToCameraYaw(simYaw) {
   return Math.atan2(-Math.cos(simYaw), -Math.sin(simYaw));
 }
+
+/**
+ * 世界系方向矢量 → sim 偏航（`forwardX/forwardZ` 的逆）。
+ *
+ * 这**不是**第三个换算点：入参与出参同在 sim 空间，只是矢量换角（契约 §1-11）。
+ * 与 `sim/math.js yawFromDir` 逐字同式；壳层（`src/input`）禁止 import sim，
+ * 所以 sim 空间的角度工具在这一侧备一份同名实现，free 视角的「面朝走向」用它。
+ */
+export function yawFromDir(x, z) {
+  return Math.atan2(-x, -z);
+}
