@@ -1,6 +1,6 @@
 # 异掌 · 文件所有权与协作边界（固定人物视角轮 Round 1–3）
 
-> 本轮目标：**修怪视角（yaw 喂入空间收口 + 过门机位 snap）→ 固定人物视角 `lookMode`（缺省 locked）→ SOTA 打磨**（`.agent_workspace/yizhang-look/GOAL.md`），叠在大厅轮 + 手感轮之上。已核验根因：`core/look.js feedLook` 把**相机系** yaw 写进 `renderer.lookYaw`，`sync` 把它当 sim 角用；次因：hub（z≈−120）↔ 裂岛（原点）传送时弹簧相机飞越 ~120m。视角轮新增 **ADR-37…39**（机位 yaw 喂入 = sim 空间、`lookMode: 'locked'|'free'`、过门相机 snap），契约升 **v4.3**（§0.1 名义登记、§7.1 机位契约、§8 lookMode、§13.2 通道与时序、不变量 28–33）。**Round 2 起契约为 v4.4**（零新 ADR、零新名下的收口与登记：`sample()` 分派升格为可测封闭表 §14-34/35、Round 1 合入终态按实现登记 §0.2、回调/镜像语义更正——详见 §3.1 与契约 v4.4 修订说明）。此前全部冻结（ADR-16…36、契约 v4.2 全文）沿用，见文末「大厅轮冻结摘要」。
+> 本轮目标：**修怪视角（yaw 喂入空间收口 + 过门机位 snap）→ 固定人物视角 `lookMode`（缺省 locked）→ SOTA 打磨**（`.agent_workspace/yizhang-look/GOAL.md`），叠在大厅轮 + 手感轮之上。已核验根因：`core/look.js feedLook` 把**相机系** yaw 写进 `renderer.lookYaw`，`sync` 把它当 sim 角用；次因：hub（z≈−120）↔ 裂岛（原点）传送时弹簧相机飞越 ~120m。视角轮新增 **ADR-37…39**（机位 yaw 喂入 = sim 空间、`lookMode: 'locked'|'free'`、过门相机 snap），契约升 **v4.3**（§0.1 名义登记、§7.1 机位契约、§8 lookMode、§13.2 通道与时序、不变量 28–33）。**Round 2 起契约为 v4.4**（零新 ADR、零新名下的收口与登记：`sample()` 分派升格为可测封闭表 §14-34/35、Round 1 合入终态按实现登记 §0.2、回调/镜像语义更正——详见 §3.1 与契约 v4.4 修订说明）。**Round 3（LOOK-R3）= SOTA 打磨轮**：Round 2 P0（`sample()` 分派）已落地、F4 重判 LK-04 **PASS**、六条用户验收线 6/6（签 PASS-WITH-WARNINGS）——契约保持 v4.4 不升版、零新 ADR、**无实现缺口**；本轮任务 = 契约实现态登记（F1）、O2 机位复核补交、实机/无头冒烟与记分收尾（派发见 §3.2）。此前全部冻结（ADR-16…36、契约 v4.2 全文）沿用，见文末「大厅轮冻结摘要」。
 
 游戏根：`games/yizhang/`（端口 **4181**）　父分支：**`cursor/yizhang-look-db8d`**（**所有子 PR 的 base，不是 `main`**）。
 各代理在自己的云端 `cursor/*-db8d` 分支提交，父调度器合回父分支。输出首行必须声明实际模型 slug（`MODEL_SLUG: <slug>`），严禁静默降级。编排目录 `.agent_workspace/yizhang-look/` 归父调度，子席位只读。
@@ -31,7 +31,7 @@
 此前接线终态全部沿用：静态桥（ADR-19/24）、技能 id 一张表（ADR-23）、`p0`、yaw=0 → -Z、`RENDER_YAW_OFFSET = 0`、方格拓扑、事件由 sim 独发、双区状态机与大厅语义（ADR-29…36）。本轮五个握手点（语义细则一律以 `API_CONTRACT.md` v4.3 为准）：
 
 1. **两套角空间，喂入收口（ADR-37，契约 §1-11/§7.1）**：相机系（`input.getLook().yaw`，前向 `(cos θ, sin θ)`）与 sim 系（yaw=0 → -Z）之外禁止第四套。`renderer.setLook` 消费规则：`simYaw` 优先 → `simYaw:null` 清除 → 裸 `yaw` 当 sim 角 → `yaw:null` 清除。O4 的 `lookPayload` 恒携 `simYaw = cameraYawToSimYaw(yaw)`。（~~payload 的相机系 `yaw` 字段仅供调试~~——R2 按合入实现更正：`payload.yaw === simYaw` 同值同空间，相机系角不出输入层，契约 v4.4 §7.1。）
-2. **`lookMode`（ADR-38，契约 §8）**：状态住 input（`{ yaw, pitch, lookMode }`），缺省 **`locked`**。locked：`Input.yaw = cameraYawToSimYaw(θ)`（既有行为 = 零回归）；free：有移动 ⇒ `Input.yaw = atan2(-moveX, -moveZ)`、零移动 ⇒ `null`。移动换算两模式同一条公式。（~~sim 与 renderer 不感知 lookMode~~——R2 按合入实现更正：**sim 与 view 快照不感知**；渲染器持 payload 每帧覆盖的随帧镜像、按模式选机位跟随角，契约 v4.4 §7.1/§14-35。`sample()` 分派 Round 1 未落地 = 本轮 P0，见 §3.1。）
+2. **`lookMode`（ADR-38，契约 §8）**：状态住 input（`{ yaw, pitch, lookMode }`），缺省 **`locked`**。locked：`Input.yaw = cameraYawToSimYaw(θ)`（既有行为 = 零回归）；free：有移动 ⇒ `Input.yaw = atan2(-moveX, -moveZ)`、零移动 ⇒ `null`。移动换算两模式同一条公式。（~~sim 与 renderer 不感知 lookMode~~——R2 按合入实现更正：**sim 与 view 快照不感知**；渲染器持 payload 每帧覆盖的随帧镜像、按模式选机位跟随角，契约 v4.4 §7.1/§14-35。`sample()` 分派 Round 1 曾未落地 = Round 2 P0——已落地并经 LK-04 重判 PASS，见 §3.1 收口实况与 §3.2。）
 3. **切换四通道（契约 §13.2/§12）**：键 `V`（KeyV 边沿 toggle，不占 E/WASD/空格/Q/F/Shift，不置位任何动作）、设置面板项、`?look=locked|free`（仅本会话、不回写存档）、存档 `lookMode`（追加字段不换 key，老档缺失补 `'locked'`）。初值取值链：URL → 存档 → `'locked'`。变化经 `onLookModeChange` 回调落盘 + toast。
 4. **过门 snap（ADR-39，契约 §7.1/§13.2）**：O2 开 `snapCamera()`（阻尼状态置稳态，幂等）+ `sync` 内单帧位移 > `CAMERA_SNAP_TELEPORT`（60m）自动保险；O4 在开局 / `enterArenaFx` / `enterHubFx` 按 `input.setLook → feedLook → snapCamera` 顺序调用。局内重生瞬移（≤ 40m）不触发自动 snap。
 5. **事件 / 音效零新增**：本轮不新增 SimEvent、不新增 SoundName；lookMode 切换的 toast 走 shell 既有 `toast`，要加音效先在契约 §11 登记。
@@ -52,7 +52,9 @@
 
 **基线（本轮开工实测 @ 父分支）**：vitest **557/557 全绿（40 文件）**；`npm run probe` 三 seed PASS。Round 1 出口 = 基线不破 + 上表各角色出口全达成。
 
-### 3.1 Round 2 派发（LOOK-R2；契约 v4.4）
+### 3.1 Round 2 派发（LOOK-R2；契约 v4.4）——已收口，本节为派发存档
+
+**收口实况（Round 3 起以此为准）**：下表全部出口已达成——O4 `sample()` 分派合入（`src/input/index.js`，F4 重判 **LK-04 PASS**）、G1 §14-34/35 锁测（`input/index.test.js`、`tests/look-round2-lk04.test.js`）、G2 locked/free 双段探针、三项过时 DEFER 改勾、六条用户验收线 6/6，签 **PASS-WITH-WARNINGS**。结转项（实机八步、O2 机位复核、W2 hit-stop 哨兵）进 §3.2。
 
 **Round 2 基线（父分支 `cursor/yizhang-look-db8d` @ Round 1 全部合入后实测）**：vitest **676/676 全绿（48 文件）**，不减量。
 
@@ -64,7 +66,7 @@
 | 「O3 席 `src/ai` 自基线零 diff、无显式锁测」 | **O3 护栏已合入**（`merge 06a7cba`）：`src/ai/bots.js` 防御性收紧 + `look-mode-blind.test.js`（Bot 不感知 lookMode、输出稳定、整局对照哨兵） | **F4** |
 | 「F3 GDD 零 diff——默认 lookMode/键位/机位 tuning 未入真源」 | **F3 已合入**（`9317709`）：GDD 冻结缺省 locked 文案、键位表（V）、CAMERA 机位对照表（+46 行） | **F4** |
 
-**Round 2 P0（唯一实现缺口）**：free 分派未落地（F4 判 **LK-04 FAIL**）——`input.sample()` 恒送 `cameraYawToSimYaw(θ)`，free 行为等同 locked。分工：
+**Round 2 P0（当时唯一实现缺口；已按下表落地，LK-04 重判 PASS）**：free 分派曾未落地（F4 曾判 **LK-04 FAIL**）——`input.sample()` 恒送 `cameraYawToSimYaw(θ)`，free 行为等同 locked。分工：
 
 | 席位 | Round 2 出口 |
 | --- | --- |
@@ -75,6 +77,23 @@
 | O1/O2/O3/F2/F3 | 零 diff 预期（free 的 sim/render 半边已在位；勿为锁视角抬性能预算——hub/arena 画调用基线本就贴 L3-10） |
 
 红线重申（违者作废）：**禁止第四套朝向**、`RENDER_YAW_OFFSET` 恒 0、相机方位角 θ 原值不得出现在 `Input.yaw`/`lookYaw`/任何 sim 侧字段（契约 §1-11/§14-34；换算点仍只有 `combat-bridge` 与 `cameraYawToSimYaw/simYawToCameraYaw` 两处）。
+
+### 3.2 Round 3 派发（LOOK-R3；SOTA 打磨轮，契约保持 v4.4）
+
+**Round 3 基线（父分支 `cursor/yizhang-look-db8d` @ `bff8209`，Round 2 全部合入后实测）**：vitest **717/717 全绿（51 文件）**，不减量；`npm run probe` 三固定 seed PASS（含 locked/free 双段机位读数：locked 逐帧 dot ≥ 1、free 静止 Δyaw = 0、free 走向误差 < 0.001°、过门 snap ≤ 7.1m）。
+
+**性质**：零新 ADR、零新名、契约 v4.4 不升版；**无实现缺口**——全部任务为补交、收尾与防回退。F1 本轮已交付：契约/架构/本文里「`sample()` 恒送视线角 / LK-04 FAIL / 未落地」历史注记全部改为已落地实现态（契约 §8 ✅ 段、§14-34、ARCHITECTURE §5.1.2 / ADR-38 R3 补记）。
+
+| 席位 | Round 3 出口 |
+| --- | --- |
+| O2 | **机位复核补交（Round 2 DEFER 唯一在飞席位）**：① free vs locked 机位半平面渲染侧复核——确认 `render/look.test.js` 既有 behindness 断言（locked 钉身后拧不动 / free 绕 `lookYaw`）覆盖足够，不足则补测交卷；② **切模式不误 snap 独立渲染锁**——局中 locked↔free 往返切换帧机位无跳切（切换不动 yaw/pitch、相机-目标距离连续、不触发 teleport 保险），过门仍 snap（§14-32/33 不回退）。零新几何、零新朝向；L3-10 实测数字（hub ≈94 draw / arena ≈117 draw）不回退 |
+| G2 | 冒烟/探针覆盖「**切模式不飞跃**」：探针局中 V 级切换（`setLookMode` 往返）后逐帧相机-目标距离连续、无 teleport 级跳变帧；smoke `?look=locked\|free` 与运行中切换路径复验；三 seed 不减量 |
+| G1 | 锁测防回退：**717 测 / 51 文件不减量**；O2 补测并入同一不减量口径；§14-34/35 既有用例一条不许弱化 |
+| F4 | SOTA 记分收尾：① 清单 §13.4 实机八步——实机补做，或把**无头 Chrome 替代口径逐步写清**（哪几步可无头替代、哪几步必须真机，逐条登记不装绿）；② O2 补交后复跑 probe 机位读数 + `render/look.test.js` 防回退，LK 表定稿；③ HV-04 完整盲辨（≥6/8）与转向手感评分卡随实机段；④ W2 hit-stop 零余量哨兵复核结转（`HIT_STOP.max = 0.12` 恰在 FJ-01 上界，调参前先看 `juice.test.js`） |
+| F1 | 本轮已交付（见上）；如 O2/F4 产出触发契约措辞更正，按「先改文档再改代码」流程收口 |
+| O1/O3/O4/F2/F3 | 零 diff 预期：sample 分派、sim null 门、Bot 护栏（yaw 有限闸）、HUD DOM、GDD 文案均已收口；发现回退先在简报声明再动，勿为打磨抬性能预算 |
+
+红线重申（违者作废，与 §3.1 同一字面）：**禁止第四套朝向**、`RENDER_YAW_OFFSET` 恒 0、相机方位角 θ 原值不得出现在 `Input.yaw`/`lookYaw`/任何 sim 侧字段；**不回退横扇（左→右横抽）、大厅语义（ADR-29…36）、simYaw 喂入空间（ADR-37）**；换算点仍只有 `combat-bridge` 与 `cameraYawToSimYaw/simYawToCameraYaw` 两处。
 
 ## 4. 红线（沿袭种子轮 / 手感轮 / 大厅轮，违者提交作废）
 
@@ -100,9 +119,9 @@
 
 | 文档 | 作用 |
 | --- | --- |
-| `docs/ARCHITECTURE.md` | 模块图、tick 顺序（含 feedLook 喂入步）、双区状态机 §4.6、视角模式与机位喂入 §5.1.2（含 R2 状态）、性能预算 §8、ADR 16–39（37/38 带 R2 补记） |
-| `docs/API_CONTRACT.md` | 冻结导出面 v4.4：名义登记 §0/§0.1/§0.2、机位契约 §7.1、input lookMode §8、存档 §12、视角通道与时序 §13.2、不变量 1–35（34 = sample 分派封闭表） |
-| `docs/OWNERSHIP.md`（本文） | 视角轮写路径、握手与验收线、红线、大厅冻结摘要 |
+| `docs/ARCHITECTURE.md` | 模块图、tick 顺序（含 feedLook 喂入步）、双区状态机 §4.6、视角模式与机位喂入 §5.1.2（含 R2 落地收口）、性能预算 §8、ADR 16–39（37/38 带 R2 补记，38 另带 R3 已落地补记） |
+| `docs/API_CONTRACT.md` | 冻结导出面 v4.4：名义登记 §0/§0.1/§0.2、机位契约 §7.1、input lookMode §8（✅ 实装状态段）、存档 §12、视角通道与时序 §13.2、不变量 1–35（34 = sample 分派封闭表，已落地） |
+| `docs/OWNERSHIP.md`（本文） | 视角轮写路径、握手与验收线、Round 2 派发存档 §3.1、Round 3 派发 §3.2、红线、大厅冻结摘要 |
 | `docs/VISUAL_HANDBOOK.md` | 视觉质量基线（用户手册，强制） |
 | `docs/ART_DIRECTION.md`（F2） / `docs/GDD.md`（F3） / `docs/SOTA_CHECKLIST.md`+`docs/ACCEPTANCE.md`（F4） | 各自轮内产出 |
 | `.agent_workspace/yizhang-look/GOAL.md` | 本轮用户目标与验收线（必读，只读） |
