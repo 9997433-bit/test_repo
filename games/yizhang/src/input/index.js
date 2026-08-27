@@ -225,19 +225,36 @@ export function createInput(dom, canvas, opts = {}) {
     return doc.pointerLockElement === target;
   }
 
+  /**
+   * 这一下左键是「去抓指针锁」还是「打人」。
+   *
+   * 暂停 / 失焦 / 结算都会把锁还给系统，玩家回来点画布重新抓锁的那一下，
+   * 浏览器只当它是一次普通 mousedown，于是既申请了锁又扇了一巴掌。大厅里
+   * `inHub` 把 slap 挡住了看不出来，裂岛里就是一记空挥，还白吃一次冷却。
+   *
+   * 判据必须与下面真正调 requestPointerLock 的条件逐字一致：想要锁、此刻没锁、
+   * 且这个 target 确实支持锁。少一条都属于正常左键，绝不能吞 ——
+   * 玩家在设置里关了指针锁、或浏览器压根没有这个 API 时，左键一直是扇击兼拖拽。
+   */
+  function grabbingPointerLock() {
+    return state.pointerLockWanted && !locked() && !!target && typeof target.requestPointerLock === "function";
+  }
+
   function onMouseDown(e) {
     fireGesture();
     if (!state.enabled) return;
     state.lastSource = "mouse";
     if (e.button === 0) {
-      state.hold.slap = true;
-      pressEdge("slap");
-      if (state.pointerLockWanted && !locked() && target && target.requestPointerLock) {
+      if (grabbingPointerLock()) {
+        // 整只吞掉：edge 不补、hold 也不置位。置了 hold 的话，锁一到手这一帧
+        // 就变成「按住连扇」，白挥只是从一下变成一串。
         const req = target.requestPointerLock();
         if (req && typeof req.catch === "function") req.catch(() => {});
-      } else {
-        state.dragging = true;
+        return;
       }
+      state.hold.slap = true;
+      pressEdge("slap");
+      state.dragging = true;
     } else if (e.button === 2) {
       state.dragging = true;
     }
