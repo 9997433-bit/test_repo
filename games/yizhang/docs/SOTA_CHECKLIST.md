@@ -524,3 +524,51 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 - **W4/W5 结转**：probe 单 seed（T-07 3-seed 规格差）；bloom 三档常开 low 不可关（R-03/FV-04）。
 
 **判定：大厅轮 Round 2 = PASS-WITH-WARNINGS**（判定表与证据包见 ACCEPTANCE §12.9）。
+
+### 11.9 Round 3 签字记分（F4 签字席 @ 父分支 `3f179a9`，2026-08-27，全套命令实跑）
+
+**执行口径**：Round 3 十席（Wave 1–3 九席合入后）的签字复验。工作分支 `cursor/yizhang-hub-r3-f4-sota-db8d`（仅动本文件与 `ACCEPTANCE.md`）。自动化全套实跑；视觉与预算面用 headless Chrome 148（SwiftShader WebGL，CDP 驱动 `smoke.html?manual=1` 逐帧）实测——§12.4 键鼠十步与 devtools 触控仿真在本环境仍**不可做**（无交互桌面），与 §11.8 同口径如实标注，归真机段。判定明细与命令原文见 ACCEPTANCE §12.10。
+
+**三件套 + bench 实测**（勾选依据，非抄父调度数字）：
+
+- `npm test`：**557/557（40 文件）**，退出码 0（Round 2 基线 500 → 557，零红零减量；G1 `tests/round3-hub-sota.test.js` 8 条锁表在场且绿）。
+- `npm run probe`：**PASS** 退出码 0，**3/3 固定 seed**（`0x1a2b3c4d` / `0x5eed1234` / `0xc0ffee42`）各自 hub→arena 全链（`focusObserved:true`、`equippedAtStep:51`、`enteredArenaAtStep:227`）、`arenaKills` 1/2/2（均 ≥1）、`wiredCombat:true`、`ai:"think"`；`p99StepMs` 0.117/0.102/0.111；横幅 **`MODEL_SLUG: yizhang-probe`**（`process.env.MODEL_SLUG` 可覆盖，锁测在场）。
+- `npm run build`：退出码 0；主 chunk 677.60kB / gzip 187.18kB，全部 JS gzip 合计 ≈255kB（≤1.2MB 预算）。
+- `npm run bench`：96,096 steps/s（≈0.0104ms/step，L3-11 红线 0.5ms 远达标），`wiredCombat:true`。
+
+**W1–W5 销号（全部按本机实测 / 代码审，不按 §11.8 旧读数记红）**：
+
+- **W1 渲染预算 → 关（L3-10 判绿，大厅轮记分口径）**。自测方法：headless Chrome + CDP 驱动 `smoke.html?quality=mid&manual=1&hud=1&seed=7`（1280×720、dpr 1），`smoke.step(1/60)` 逐帧 ×1500 读 `getStats()` 记分区峰值——**hub 峰值 94 draw / 47,761 tris**（1085 帧）、**arena 峰值 111 draw / 68,597 tris**（415 帧）；另跑纯 arena 压力位（`?phase=arena&crumble=1.2`，900 帧含碎地）峰值 **113 draw / 69,905 tris**。均 ≤120 / ≤80k，与 O2 报数（94/47.8k、117/70.0k）同量级。代码审：`renderer.js` 两处 `this.island.setActive(!inHub)`（151/503 行）落实 ADR-36 双区子树互斥；`hub.test.js` 锁 hub 子树 draw ≤52。L3-10 第三子句（30s 无每帧 GC 尖峰）headless 无 devtools Performance，以 sim 侧代证（probe `maxStepMs≈1.4ms`、p99 0.117ms、bench 稳态）如实记部分。
+- **W3 探针横幅 → 关**。缺省 `yizhang-probe`（环境变量可覆盖），`round3-hub-sota.test.js` 明断言「不是 `gpt-5.6-sol-xhigh-fast`」。
+- **W4 单 seed → 关**。`DEFAULT_PROBE_SEEDS` 三固定 seed 冻结（源码常量 + 锁测），本机 3/3 PASS（读数见上）。
+- **W5 bloom low → 关（按实现勾，不再当缺口）**。`QUALITY.low.bloom === false`（`config.js`，辉光支链整个不建）；`postfx.test.js` 锁 low `bloomEnabled=false` 且合成着色器不编译 bloom 采样、high/mid 保持选择性辉光。R-03 low 档可关检查点闭合。
+- **W2 hit-stop 零余量 → 结转哨兵**（`HIT_STOP.max = 0.12` 恰在 FJ-01 上界，`juice.test.js` 锁；调参前先看锁测，不算缺口）。
+
+**HV-04 盲辨（Round 3 记分 · 诚实口径：预跑/部分，不发满分勾）**：按 ART §17.2 摆场（mid 档、`unlock=all`、`hud=0`、逐座 3m 判距）headless 逐座三连拍 24 张 + 争议座复核 16 张。**静帧口径 6/8 座签名形即辨**：granite 岩屑绕掌、gale 风带环绕、frost 台沿冰棱+雾、spring 真螺旋蓄放、afterimage 半透错位复本、magnet 向心收束线。cotton / meteor 两座细粒子静帧弱（billboard 朝向与运动为主的层，photo 静帧拍不实）；改用跟随相机（p0 站进交互圈、正常渲染路径）复核确认粒子在场且动向符合 §17.1 底线形（絮团升荡 / 余烬升+落灰），无一座归零、无纯色光球。**完整交互盲辨（动帧、乱序遮名、观察者报名）本环境做不到，正式 ≥6/8 记分延后真机段**——预跑证据强于 Round 2 的 2/8，但不假勾满分。
+
+**Round 3 新增十项核验（逐条实查代码与锁测）**：
+
+1. **空挥闸 = `playerInHub` 空间闸**：`step.js:107` `gated = playerInHub(state, p)` 分别拦 dash/slap/skill；408/422 行 hub 地面与免掉落同源（R2 项复验无回退）。
+2. **皮肤六套剪影 + `skinAppearance` 握手**：`data/skins.js` 六 id（drifter/mason/crane/reed/nuo/wildhorn，DEFAULT `drifter`）；`render/skins.js` 经 `core/skins.js skinAppearance()` 吃契约枚举；`characters.test.js` 剪影互异锁测绿。
+3. **8 掌战斗 VFX 分派**：`COMBAT_VFX_KIND` 八键八形（`fanwake/slab/gust/rime/recoil/phase/flux/cinder`），`round3-hub-sota.test.js` 明断言 afterimage=`phase` ≠ mirror。
+4. **残影 yaw -Z + ttl/ttl0**：`combat-bridge.js ghostsView` yaw 减 `FACE.combatOffset` 还原 -Z 约定、`ttl0` 缺失以当前 `ttl` 兜底；O3 补「回灌残影缺 ttl0 第一帧补基准」测试；`characters.js:1345` 按 `ttl/ttl0` 淡出。
+5. **`setLook` pitch**：`render/index.js` 导出 `setLook/setPitch/getLook`；`core/look.js feedLook`（无 setter 时 no-op，有测）；`main.js:175` 每帧喂 `input.getLook()`。
+6. **再来一局 ≠ 回安全区**：`core/entry.js` `ENTRY.RESTART → skipHub:true`（带同一副掌回裂岛）/ `ENTRY.HUB → skipHub:false` 不预填；O4 文案归 entry 单一真源（RESTART 句携带将沿用的掌名、暂停「回安全区」明说弃局）+ `.yz-warp` 淡场；`entry.test.js` 16 测。
+7. **`enterHub` 清计时域**：`state.js:219-245` 清 `dashT/switchLockT`、`activeSlot=0`、statuses/attack/respawnT/kbT 复位、hub focus/portalNear 归零、发 `enterHub` 事件；**`gloveId/offhandId` 原样保留**（原局回程带装）——与壳层 ENTRY.HUB「重开新局不预填」二义分明。
+8. **O3 回程不在走道结算**：`combat/index.js:393`（冲刺段回安全区当场作废、不写 vx/vz）、`:446`（pending 延迟结算不分种类整笔作废，含 `meteorImpact` 纯表现事件不发）、`:505`（残影假掌不替回安全区者补刀）；`vfx-events.test.js` 29 测锁。
+9. **契约 v4.2 / ADR-36**：`API_CONTRACT.md` v4.2 修订说明 ①–⑤（皮肤通路 / VFX 分派词 / ADR-36+getStats / hub 换掌交换改写 / 进局入口语义），零新 API；ADR-36 正文在 ARCHITECTURE §10 与契约 §7 补记，与 `renderer.js` 实现互证。
+10. **GDD §14.3 同词**：idle 八词（`fluff/grit/streak/mist/coil/ghost/pull/ember`）与 `hub-vfx.js IDLE_VFX_KIND`、战斗八词与 `COMBAT_VFX_KIND` 逐词比对一致，中文八词与 ART §17.1 底线形表同词。
+
+**HG-06 抽验**：① `RENDER_YAW_OFFSET === 0`（`view.js:21`）+ FD-06/朝向锁测在 557 内绿；② 皮肤链单测绿（skins schema / characters 剪影 / view.skinId）；③ VFX 八键锁测绿；④ `HIT_STOP.max=0.12` 上界锁绿。
+
+**红线扫描（全零命中）**：`googleapis|gstatic` src/dist/index.html 零；`roblox|slap battle` 仅检查命令与文档自引；官方手套名/方块人零；`loading|progress` src/ui src/render 零（无加载条）；`RENDER_YAW_OFFSET=0` 未回 PI；`createMatch` 缺省 hub（`resolvePhase` 三条旧路保留，`round3-hub-sota` 锁）；测试 500→557 零减量；隔离干净（diff 过滤后零残留）。
+
+**洞 1–10 终态**：1/2/3/4/5/6/10 **关**（R2 已关，复验无回退）；洞 7 **关**（W1 修复本机实测两区峰值均入预算，见上）；洞 9 **关**（入口层级 R2 定稿维持）；洞 8 **延后真机**（本环境无真机，不假装过）。
+
+**WARNING 清单（只留真还红的）**：
+
+- **真机段未做**（洞 8 + §12.4 交互十步 + HV-04 完整盲辨 + M-01…07）：headless 环境无交互桌面与真机，全部如实延后；有真机后按 §12.4/§12.5 补验即可销。
+- **W2 hit-stop 零余量哨兵**结转（非缺口，调参闸门）。
+- **L3-10 GC 子句部分**：渲染侧 30s Performance 采样 headless 做不了，sim 侧读数代证（见 W1 条）。
+
+**判定：大厅轮 Round 3 = PASS-WITH-WARNINGS**（判定表与证据见 ACCEPTANCE §12.10；WARNING 全部为环境性延后与哨兵，无实现缺口）。

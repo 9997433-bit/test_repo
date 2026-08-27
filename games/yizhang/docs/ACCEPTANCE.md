@@ -480,3 +480,34 @@ npm run build   # HG-03：退出码 0
 - 洞 1–10 销号：1/2/3/4/5/6/10 关，7 已测记警告（W1），8 延后真机，9 记现状（皮肤=主菜单选皮肤板 + 暂停 2D 配掌板备选；走道=选掌主路径）。
 - 修复指派（均不否决本轮）：W1 → Opus-2（O2）；W3 → GPT-sol-2（G2）；W4 → GPT-sol-2；W5 → Opus-2/Fable-2。
 - 证据包：命令原文（上列）+ 冒烟截图 8 张（走道 tour ×3、门封/门通对比、pitch 0.59 俯视、皮肤 wildhorn 生效、arena 三皮肤同框、VFX+碎地帧）随本轮验收 PR 描述提交；截图存验收工作台，不入 `games/yizhang/src`。
+
+### 12.10 异掌大厅轮 Round 3 验收判定（F4 签字席）
+
+- 被验分支/commit：`cursor/yizhang-hub-db8d` @ `3f179a9`（Round 3 Wave 1–3 九席合入后）；验收工作分支 `cursor/yizhang-hub-r3-f4-sota-db8d`（只动 `docs/SOTA_CHECKLIST.md` 与本文件）。
+- 验收人/日期：Fable-4 签字席 / 2026-08-27（全套命令实跑：静态检查 → `npm test` → `npm run probe` → `npm run build` → `npm run bench` → headless CDP 预算逐帧实测 → HV-04 盲辨预跑截图 40 张）。
+- 结论：**PASS-WITH-WARNINGS**（WARNING 全部为环境性延后——真机/交互桌面——与既有哨兵，无实现缺口；指标明细与 W1–W5 销号见 SOTA_CHECKLIST §11.9）。
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| HG 回归门 | 6/6 | 无（HG-01 557≥306 零减量；HG-02 三 seed 全链；HG-06 四点抽验绿） |
+| HB 大厅流程 | 12/12 | 无（自动化断言全绿；§12.4 交互十步无桌面环境未做，headless 冒烟旁证，归真机段） |
+| HV 渲染视觉 | 6/6 | 无（HV-04 盲辨为**预跑口径**：静帧 6/8 即辨 + 2 座跟随相机存在性复核，正式交互盲辨延后真机——不按 FAIL 记，因底线形无一归零、预算与可辨在同一 mid 构建互锁验讫） |
+| HT 测试锁 | 8/8 | 无（另有 G1 `round3-hub-sota` 8 条 Round 3 锁表在场） |
+| HR/FR/R 否决 | 零命中 | 无（含 Round 3 红线：横幅、`createMatch` 缺省、`RENDER_YAW_OFFSET`、加载条、减测——逐条扫描零命中） |
+
+**命令实测原文摘要**：
+
+- `npm test`：**Test Files 40 passed (40) / Tests 557 passed (557)**，退出码 0。
+- `npm run probe`：退出码 0，`{"status":"pass","seedCount":3,…,"wiredCombat":true}`；三 seed 逐条——`0x1a2b3c4d`：kills 1、p99 0.117、botSlapAttempts 2191；`0x5eed1234`：kills 2、p99 0.102、botSlapAttempts 3425；`0xc0ffee42`：kills 2、p99 0.111、botSlapAttempts 3636；三条 hubJourney 均 `focusObserved:true / equippedAtStep:51 / enteredArenaAtStep:227 / killsAtArenaEntry:0`；横幅 `MODEL_SLUG: yizhang-probe`。
+- `npm run build`：退出码 0；主 chunk 677.60kB / gzip 187.18kB（>500kB 警告既知），JS gzip 合计 ≈255kB。
+- `npm run bench`：`{"stepsPerSec":96096,…,"wiredCombat":true}`。
+- 静态面：`rg googleapis|gstatic src dist index.html` 零命中；`rg -in "loading|progress" src/ui src/render` 零命中；`RENDER_YAW_OFFSET = 0`；`resolvePhase` 缺省 `hub`；隔离 diff 过滤后零残留。
+
+**L3-10 预算实测（W1 复核，自测非抄数）**：headless Chrome 148（SwiftShader）+ CDP 驱动 `smoke.html?quality=mid&manual=1`（1280×720 / dpr 1 / seed 7），逐帧 `step(1/60)` 读 `getStats()`：**走查 1500 帧——hub 峰值 94 draw / 47,761 tris，arena 峰值 111 draw / 68,597 tris**；**纯 arena 900 帧（`crumble=1.2` 碎地压力）——峰值 113 draw / 69,905 tris**。全部 ≤120 / ≤80k（L3-10 mid 档），与 O2 报数一致。互斥前提代码审：`renderer.js` `island.setActive(!inHub)` ×2（ADR-36）+ `hub.test.js` hub 子树 draw ≤52 锁测。
+
+**验证方式限定（诚实口径）**：本轮仍无交互桌面与真机——§12.4 键鼠十步、devtools 触控仿真、HV-04 完整交互盲辨（动帧乱序报名）、M-01…07 真机矩阵**未做**；以 557 单测 + 三 seed probe 全链 + headless 逐帧预算实测 + 40 张盲辨预跑截图（静帧 6/8 即辨、cotton/meteor 粒子在场且动向合 ART §17.1）替代并如实标注。真机段是本轮唯一遗留。
+
+- WARNING 清单：真机段延后（洞 8 / §12.4 十步 / HV-04 正式记分 / M 表）；W2 hit-stop 零余量哨兵结转；L3-10 GC 子句以 sim 侧读数代证（probe maxStepMs≈1.4ms、p99 0.117ms）。W1/W3/W4/W5 均已销（明细 SOTA §11.9）。
+- 洞 1–10 销号：1/2/3/4/5/6/7/9/10 **关**（洞 7 由「已测记警告」转关，实测入预算）；洞 8 **延后真机**。
+- 修复指派：无实现缺口待派；真机段到位后由 F4 复跑 §12.4/§12.5 补验即可销全部 WARNING。
+- 证据包：命令原文（上列）+ 预算逐帧 JSON 两份（走查 1500 帧 / 纯 arena 900 帧）+ 盲辨预跑截图 40 张（8 座 ×3 连拍 + cotton/meteor 近距与跟随相机复核 ×16）随本轮验收 PR 描述提交；截图存验收工作台，不入 `games/yizhang/src`。
