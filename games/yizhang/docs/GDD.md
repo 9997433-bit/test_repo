@@ -395,10 +395,12 @@ idle 与战斗逐掌**押韵不复制**（ART §16.0 快慢架 / §17.4 对齐�
 | `lookDamping` / `lookDampingY` | 9 / 7 | 视点弹簧（恒快于机位：先看后到） |
 | `distDamping` | 3.2 | 距离弹簧 |
 | `pitchDamping` | 14 | 抬头量弹簧 |
-| `snapTeleport` | 60 | = 契约 `CAMERA_SNAP_TELEPORT`（§7.1） |
+| `snapTeleport` | 60 | = 契约 `CAMERA_SNAP_TELEPORT`（§7.1）；render 导出同名常量，实现已向表看齐 |
 | `snapMaxDist` | 20 | = 契约 `CAMERA_SNAP_MAX_DIST`（§7.1） |
+| `behindLimit` | π/2.4（≈75°） | = render `BEHIND_LIMIT`：跟随角咬合闸极角上限（LOOK-R3 O2） |
+| `behindShell` | 2 | = render `BEHIND_SHELL`：机位半径 > dist×本系数时松闸（重生追赶不横跳） |
 
-**过门机位 snap（ADR-39）**：hub（z ≈ −120）与裂岛（原点）错开 ~120m，过门 / 开局 / 换跟随目标一律 `snapCamera()` 吸附，时序冻结为 `input.setLook → feedLook → snapCamera`（契约 §13.2，顺序反了 = snap 到旧角度）。自动保险：跟随目标单帧位移 > `snapTeleport 60` 时渲染器自 snap，局内重生瞬移（≤ 2×arenaRadius = 40m）不得触发、弹簧甩镜手感保留；snap 后相机-目标距离 ≤ `snapMaxDist 20` 且机位在身后半平面（§14-32/33）。吸附名单只认「世界位置换了一处」的传送时刻——**切视角模式不在名单里**（§15.4）。注：render 侧尚未导出同名契约常量，内部现以更敏感的 `TELEPORT_DIST 16` 判传送——按契约收敛归 O2/G1，本表只登记契约值、不复制内部判据。
+**过门机位 snap（ADR-39）**：hub（z ≈ −120）与裂岛（原点）错开 ~120m，过门 / 开局 / 换跟随目标一律 `snapCamera()` 吸附，时序冻结为 `input.setLook → feedLook → snapCamera`（契约 §13.2，顺序反了 = snap 到旧角度）。自动保险：跟随目标单帧位移 > `snapTeleport 60` 时渲染器自 snap（实现常量 `CAMERA_SNAP_TELEPORT`，已取代内部 `TELEPORT_DIST 16`），局内重生瞬移（≤ 2×arenaRadius = 40m）不得触发、弹簧甩镜手感保留；snap 后相机-目标距离 ≤ `snapMaxDist 20` 且机位在身后半平面（§14-32/33）。吸附名单只认「世界位置换了一处」的传送时刻——**切视角模式不在名单里**（§15.4）。
 
 **调参指南**：想镜头更贴身 / 更远先动 `restDist`（`dist` 初值同步 ±，两值保持 0.3 内）；想更「跟手」升 `posDamping`/`lookDamping`，但保持 look > pos（先看后到的次序别倒，`tuning.test.js` 锁死）；snap 两阈值是契约面，改值先过 §7.1 再动表。任何一处改完跑 `src/data/tuning.test.js`——它对照 render 实现逐项断言，两边不同数先红。
 
@@ -411,7 +413,7 @@ idle 与战斗逐掌**押韵不复制**（ART §16.0 快慢架 / §17.4 对齐�
 - **迟滞（整只让路）**：**上一帧还在半平面里**才拽得动这一帧（yaw 与机位各记各的迟滞位）；生效带宽 = `LOCKED_HOLD_RATE 30 rad/s` × dt 夹进 [0.25, 1.2] rad。30 rad/s ≈ 1700°/s，真人甩鼠标的持续转速远在其下——常规转速（≤270°/s）下硬顶逐位不介入、手感一行没改；一帧落后超出带宽 = 朝向被瞬移（切 V 那一帧壳层还没把角色转到视线上、重生改写朝向），硬拽就是一记甩镜，硬顶整只让路、归位交给弹簧。
 - **free 不夹**：renderer 只在 locked 时把角色 yaw 当 `behindYaw` 传进 `camera.update`，free 不传——自由视角本来就允许绕到侧面 / 正脸（契约 §14-35 双分支）。
 
-锁测：`render/look.test.js`「locked 背后半平面硬顶（camera.js）」与「同一角色 yaw，free 与 locked 的机位分野」（720°/s 甩视角 locked 恒在背后、free 同一甩法不受硬顶；常规转速逐位不介入）。`LOCKED_YAW_SPAN` / `LOCKED_HOLD_*` 是 O2 域实现常量，本节按实现登记；`CAMERA` 表（§15.2）字段不扩——既有列仍与 `render/camera.js` 逐项同数（`tuning.test.js` 在锁），render 侧改这几只常量时回修本节。
+锁测：`render/look.test.js`「locked 背后半平面硬顶（camera.js）」与「同一角色 yaw，free 与 locked 的机位分野」（720°/s 甩视角 locked 恒在背后、free 同一甩法不受硬顶；常规转速逐位不介入）。`LOCKED_YAW_SPAN` / `LOCKED_HOLD_*` 是 R2 O2 域实现常量，仅 locked（`behindYaw`）生效。LOOK-R3 O2 另加跟随角咬合闸 `BEHIND_LIMIT` / `BEHIND_SHELL`（`holdBehindLimit`，state `behindHeld`）：急甩 8 rad/s 也不翻正脸，重生级 40m 追赶途中松闸不横跳；两闸都跑。`CAMERA` 表（§15.2）已登记 `behindLimit` / `behindShell` 与 snap 两阈值，`tuning.test.js` 对照 render 同数。
 
 ### 15.4 切视角模式不传送机位（LOOK-R2 O2 已合入；按实现登记）
 

@@ -9,7 +9,14 @@ import { describe, expect, it } from "vitest";
 import { Vector3 } from "three";
 
 import { CAMERA, MOVEMENT } from "./tuning.js";
-import { BASE_PITCH, createCamera } from "../render/camera.js";
+import {
+  BASE_PITCH,
+  BEHIND_LIMIT,
+  BEHIND_SHELL,
+  CAMERA_SNAP_MAX_DIST,
+  CAMERA_SNAP_TELEPORT,
+  createCamera,
+} from "../render/camera.js";
 
 const DT = 1 / 60;
 
@@ -31,6 +38,8 @@ describe("CAMERA 表形状", () => {
       "pitchDamping",
       "snapTeleport",
       "snapMaxDist",
+      "behindLimit",
+      "behindShell",
     ];
     expect(Object.keys(CAMERA).sort()).toEqual([...keys].sort());
     for (const k of keys) {
@@ -98,6 +107,10 @@ describe("CAMERA snap 阈值（契约 §7.1 为准）", () => {
   it("snapTeleport = 60 / snapMaxDist = 20，且重生级瞬移（≤ 40m）落在必不触发区间", () => {
     expect(CAMERA.snapTeleport).toBe(60);
     expect(CAMERA.snapMaxDist).toBe(20);
+    expect(CAMERA.snapTeleport).toBe(CAMERA_SNAP_TELEPORT);
+    expect(CAMERA.snapMaxDist).toBe(CAMERA_SNAP_MAX_DIST);
+    expect(CAMERA.behindLimit).toBe(BEHIND_LIMIT);
+    expect(CAMERA.behindShell).toBe(BEHIND_SHELL);
     // 契约 §14-33：局内重生瞬移（≤ 2 × arenaRadius = 40m）不得触发自动 snap
     expect(CAMERA.snapTeleport).toBeGreaterThan(40);
     // hub ↔ arena 错开 ~120m 必须触发

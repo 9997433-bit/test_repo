@@ -67,4 +67,6 @@ export const CAMERA = {
   pitchDamping: 14, // 抬头量阻尼（鼠标一格一格跳，镜头不能跟着跳）
   snapTeleport: 60, // = 契约 CAMERA_SNAP_TELEPORT（§7.1）：跟随目标单帧位移 > 此值 ⇒ 渲染器自动 snap
   snapMaxDist: 20, // = 契约 CAMERA_SNAP_MAX_DIST（§7.1）：snap 后相机-目标距离上界（G1/G2 断言用）
+  behindLimit: Math.PI / 2.4, // = render BEHIND_LIMIT（≈75°）：跟随角咬合闸的极角上限
+  behindShell: 2, // = render BEHIND_SHELL：机位半径 > dist×本系数时松开咬合闸（重生追赶不横跳）
 };

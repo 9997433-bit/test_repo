@@ -771,6 +771,11 @@ export const CAMERA_SNAP_TELEPORT = 60;   // 米。sync 内跟随目标单帧位
 export const CAMERA_SNAP_MAX_DIST = 20;   // 米。snap 后（含自动 snap）相机与跟随目标的
                                           // 距离上界（稳态机位几何上界 ≈ 9–18m 留余量），
                                           // G1/G2 断言用（不变量 §14-32/33）。
+
+// LOOK-R3 O2 按实现登记（实现向表看齐；与 locked 迟滞硬顶 LOCKED_YAW_SPAN 并存）
+export const BEHIND_LIMIT = Math.PI / 2.4; // ≈75°。机位相对跟随角的咬合闸极角上限
+export const BEHIND_SHELL = 2;             // 机位半径 > 当前跟随距离×本系数 ⇒ 松闸
+                                          // （重生级追赶弧线不横跳，契约 §14-33）
 ```
 
 **lookMode 与渲染器（ADR-38，v4.4 按实现修订措辞）**：v4.3 曾写「渲染器不感知 lookMode、禁止塞进 renderer 状态」，合入的实现（F4 已验、`render/look.test.js` 锁定）是**随帧镜像**——payload 恒携 `lookMode`，`setLook` 每帧覆盖渲染器侧副本，它活不过一帧、**不构成第二权威**（运行期权威仍唯一住 input，禁令原意「防状态分叉」不变）。镜像驱动的唯一分支是**机位跟随角选源**（§14-35）：
