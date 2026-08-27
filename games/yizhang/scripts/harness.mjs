@@ -137,12 +137,13 @@ export async function loadOptionalAi() {
   return ai;
 }
 
-export function createFourPlayerMatch(simulation) {
+export function createFourPlayerMatch(simulation, matchOptions = {}) {
   const state = simulation.createMatch({
     seed: 0x1a2b3c4d,
     gloveId: 'cotton',
     offhandId: 'granite',
     botCount: 3,
+    ...matchOptions,
   });
 
   if (!state || typeof state !== 'object') {
