@@ -7,13 +7,15 @@
    .yz-feed       击杀播报（右上）
    .yz-glove-dock 掌位坞：掌意条 + 主/副掌卡 + 冷却排
    .yz-reticle    准星微点
+   .yz-look-flash 视角模式一瞬反馈（V 切换，LOOK-R1，§18.1）
    .yz-hit-flash  受击去饱和帧（替代红晕）
    .yz-respawn    重组浮层（#hud.is-dead 时出现）
    .yz-center-note 中央短讯（解锁/开局提示）
    .yz-toast      顶部提示（画质切换/觉醒/塌台）
    JS 钩子：--meter(0..1)、--cd(1→0)、data-glove、
-            #hud.is-dead / .is-awakened、.yz-timer.is-low、
-            .yz-toast.is-on
+            #hud.is-dead / .is-awakened / [data-look]、
+            .yz-timer.is-low、.yz-toast.is-on、
+            .yz-look-flash.is-on
    注：与 shell.css 同名的选择器（.yz-score* / .yz-meter* / .yz-toast）
    在此全量声明并后注入压制；shell.css 只读不改。
    ============================================================ */
@@ -482,6 +484,98 @@
   margin: -2px 0 0 -2px;
   border-radius: 50%;
   background: rgb(240 235 223 / 0.45);
+}
+
+/* ---- 视角模式（LOOK-R1，合同见 ART_DIRECTION §18） ----
+   状态钩子：#hud[data-look="locked"|"free"]——O4 随 input.getLookMode()
+   贴的装饰镜像（权威仍在 input，ADR-38）。锁视角的常驻指示只有
+   准星两侧两道 1px 短刻：读作「面向已夹紧到视线」，低对比、
+   无文字、无圈无光；free / 未贴属性 = 裸点，与旧 DOM 完全同相。 */
+#hud[data-look="locked"] .yz-reticle::before,
+#hud[data-look="locked"] .yz-reticle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 5px;
+  height: 1px;
+  margin-top: -0.5px;
+  background: rgb(240 235 223 / 0.3);
+}
+
+#hud[data-look="locked"] .yz-reticle::before {
+  left: -9px;
+}
+
+#hud[data-look="locked"] .yz-reticle::after {
+  right: -9px;
+}
+
+/* V 切换一瞬反馈：准星下方一行小字（「视角锁定 / 自由视角」）。
+   低对比骨白灰 + 极薄暗底，无框、无金、无发光——是确认回执不是
+   通知，所以比 .yz-toast 更矮更静。常驻节点：JS 写文本 + 加
+   .is-on，约 0.9s 后移除（连按 V 重置计时即可，不排队）；
+   入场 120ms 4px 落定、退场 220ms 淡出，弱动效直达终态。 */
+.yz-look-flash {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 24px);
+  transform: translate(-50%, -4px);
+  padding: 2px 10px;
+  font-family: var(--yz-font-display);
+  font-weight: 600;
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.24em;
+  text-indent: 0.24em;
+  white-space: nowrap;
+  color: var(--yz-text-mute);
+  background: rgb(11 16 28 / 0.35);
+  border-radius: var(--yz-r1);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--yz-t-med) var(--yz-ease),
+    transform var(--yz-t-med) var(--yz-ease),
+    visibility 0s linear var(--yz-t-med);
+}
+
+.yz-look-flash.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition:
+    opacity var(--yz-t-fast) var(--yz-ease),
+    transform var(--yz-t-fast) var(--yz-ease),
+    visibility 0s;
+}
+
+/* 键帽小章：缩号金属键帽（.yz-inspect-key 同族更小），桌面写 V；
+   触屏没有 V 键，键帽整枚隐藏、文本照常。 */
+.yz-look-flash kbd {
+  margin-left: 6px;
+  min-width: 16px;
+  display: inline-block;
+  text-align: center;
+  padding: 0 4px;
+  font-family: var(--yz-font-num);
+  font-weight: 600;
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  text-indent: 0;
+  color: var(--yz-bone-300);
+  border: 1px solid var(--yz-ink-950);
+  border-radius: var(--yz-r1);
+  background:
+    linear-gradient(180deg, rgb(240 235 223 / 0.08), rgb(240 235 223 / 0) 55%),
+    linear-gradient(180deg, var(--yz-steel-700), var(--yz-ink-800));
+  box-shadow:
+    inset 0 1px 0 rgb(240 235 223 / 0.18),
+    0 1px 2px rgb(4 7 12 / 0.5);
+}
+
+[data-touch="1"] .yz-look-flash kbd {
+  display: none;
 }
 
 /* ---- 受击反馈：一瞬去饱和（替代满屏红晕） ---- */
