@@ -534,6 +534,45 @@
   color: var(--yz-text-mute);
 }
 
+/* ---- 选皮肤条（HUB-R2，合同见 ART_DIRECTION §15.6） ----
+   DOM 归 O4（ui/menu.js）：.yz-skin-strip >
+   .yz-plate.yz-glove-tile.yz-skin-tile[data-skin]（.is-main = 当前穿着）>
+   svg.yz-skin-figure[data-build|data-headgear|data-back] + .yz-glove-name。
+   结构（宽度 / 排布 / 横向滚动）由 O4 行内兜底，这里只补外观；
+   钩子一律走 data-* 属性，不给每套皮肤造类名（皮肤表随 F3 增删）。 */
+.yz-skin-strip {
+  scrollbar-color: var(--yz-steel-700) transparent;
+}
+
+.yz-skin-tile .yz-glove-name {
+  font-size: var(--yz-fs-sm);
+}
+
+/* 剪影落影一点：小图元离玻璃板，浮而不飘（§13.3 展掌同理） */
+.yz-skin-figure {
+  filter: drop-shadow(0 2px 2px rgb(4 7 12 / 0.5));
+}
+
+/* 未选中的剪影降饱和退后（§1.2）；.is-main 满饱和 = 条内唯一峰值 */
+.yz-skin-tile:not(.is-main) .yz-skin-figure {
+  filter: saturate(0.4) brightness(0.86) drop-shadow(0 2px 2px rgb(4 7 12 / 0.5));
+}
+
+/* 背件的识别色承载面（契约 §3.2 规则 1）：banner 旗面 / pack 织带 /
+   panel 漆条——menu.js 里都是各自 back 组的第 2 个图元。CSS 的 fill
+   压过 SVG 表现属性，接管为当前主掌识别色（菜单根 data-glove = 主掌，
+   换主掌六个剪影同步跟色）——2D 预览与 3D 同一条「载体跟掌走」规则。 */
+.yz-skin-figure[data-back="banner"] > :nth-child(2),
+.yz-skin-figure[data-back="pack"] > :nth-child(2),
+.yz-skin-figure[data-back="panel"] > :nth-child(2) {
+  fill: var(--yz-accent);
+}
+
+/* 着章：皮肤问「穿着哪套」，不问主副（压掉掌卡角章的「主」字） */
+.yz-skin-tile.is-main::after {
+  content: "着";
+}
+
 /* ---- 分段选择（画质 / 音效 / 触控层等） ----
    契约 DOM：.yz-seg > button.yz-seg-opt(.is-on)。
    选择器带上父级：权重 (0,2,0)+ 压过 shell.css 的
