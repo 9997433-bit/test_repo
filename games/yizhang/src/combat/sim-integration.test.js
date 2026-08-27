@@ -21,6 +21,7 @@ import {
   forwardX,
   forwardZ,
   getDeps,
+  getView,
   installCombat,
   resetDeps,
   step,
@@ -410,6 +411,55 @@ describe("显式注入路径", () => {
     step(state, { [attacker.id]: input({ slap: true }) }, DT);
     advance(state, cotton.windup + cotton.recovery + 0.1);
     expect(target.hitsTaken).toBe(0);
+  });
+});
+
+describe("残影经 sim.step 进 view", () => {
+  it("分身放技能后 view.combat.ghosts 不再是空的，每一具都带 afterimage 与淡出基准", () => {
+    const { state, attacker, target } = duel({ seed: 700, gloveId: "afterimage", offhandId: "cotton" });
+    equip(attacker, "afterimage", "cotton");
+    place(attacker, target, 3);
+
+    expect(getView(state).combat.ghosts).toEqual([]);
+    step(state, { [attacker.id]: input({ skill: true }) }, DT);
+
+    const ghosts = getView(state).combat.ghosts;
+    expect(ghosts.length).toBeGreaterThan(0);
+    for (const ghost of ghosts) {
+      // O2 的分派键：不带 gloveId 的残影只能按类型猜特效（Round 1 遗留 3）
+      expect(ghost.gloveId).toBe("afterimage");
+      expect(ghost.ttl).toBeGreaterThan(0);
+      expect(ghost.ttl0).toBeGreaterThanOrEqual(ghost.ttl);
+      expect(Number.isFinite(ghost.x + ghost.y + ghost.z + ghost.yaw)).toBe(true);
+      // 桥把 yaw wrap 回 (-π, π] 再 round4，所以只留 round4 的余量
+      expect(Math.abs(ghost.yaw)).toBeLessThanOrEqual(Math.PI + 1e-4);
+    }
+    expect(ghosts.map((g) => g.ownerId)).toContain(attacker.id);
+
+    // ttl 走完就出场，view 不会越攒越长
+    advance(state, 3);
+    expect(getView(state).combat.ghosts).toEqual([]);
+  });
+});
+
+describe("安全区经 sim.step 仍然免战", () => {
+  it("大厅里按住扇击 180 帧：零命中、零残影、人也没被推动", () => {
+    const state = createMatch({ seed: 701, botCount: 3, phase: "hub", unlocked: "all" });
+    const p0 = state.players.find((p) => p.id === "p0");
+    const before = { x: p0.x, y: p0.y, z: p0.z, hitsTaken: p0.hitsTaken, deaths: p0.deaths };
+
+    const inputs = {};
+    for (const p of state.players) inputs[p.id] = input({ slap: true, skill: true });
+    const events = advance(state, 3, inputs);
+
+    expect(state.phase).toBe("hub");
+    expect(state.stats.hits).toBe(0);
+    expect(events.some((e) => e.type === "hit")).toBe(false);
+    expect(getView(state).combat.ghosts).toEqual([]);
+    expect(p0.x).toBeCloseTo(before.x, 6);
+    expect(p0.z).toBeCloseTo(before.z, 6);
+    expect(p0.hitsTaken).toBe(before.hitsTaken);
+    expect(p0.deaths).toBe(before.deaths);
   });
 });
 
