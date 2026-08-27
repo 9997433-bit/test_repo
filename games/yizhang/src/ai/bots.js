@@ -10,6 +10,9 @@
 // 只读 view（getView 的纯 JSON 快照），不写 state，不 import three / DOM。
 // view 字段缺失时全部退化到保守默认，保证 Bot 永远在动、永远会扇。
 //
+// 唯一的例外是安全区：`view.phase === 'hub'` 时 think() 直接返回零输入（见 isHubView），
+// 玩家在走道选掌期间 Bot 不动、不扇、不放技能，`phase` 回到 'arena' 才恢复正常。
+//
 // view 的字段名以 `src/sim/view.js` 为准：时钟是 `time`、冷却是 `slapCd`/`skillCd`、
 // 状态是 `statuses[{id,t,mag}]`、台面在 `arena.tiles[{x,z,alive}]`。
 // combat 的 testkit state 用另一套名字（`t` / `cd.skillAt` / `moveScale`），两套都读。
@@ -181,6 +184,39 @@ function isSimSnapshot(view) {
 
 function faceOf(view) {
   return isSimSnapshot(view) ? FACE_SIM : FACE_COMBAT;
+}
+
+// ---------------------------------------------------------------- 安全区守卫
+
+/**
+ * 这份快照是不是「玩家还在安全区选掌」。
+ *
+ * 认法按可信度排：
+ *   1. `view.phase` 显式写了 'hub' / 'arena'（`src/sim/view.js` 的常态）——直接采信；
+ *   2. 没有 phase 但带着 `view.hub` 大厅数据——按 hub 算（fail-safe 偏向不出手）；
+ *   3. 两样都没有（combat testkit、老快照）——按裂岛算，Bot 照常打。
+ */
+export function isHubView(view) {
+  if (!view || typeof view !== "object") return false;
+  const phase = view.phase ?? (view.config && view.config.phase);
+  if (phase === "hub") return true;
+  if (phase != null) return false;
+  return !!view.hub;
+}
+
+/**
+ * 进安全区时把「跨帧连续量」清掉：时钟基准、上一帧位置、上一帧命令。
+ * 大厅可能停留几十秒，留着旧基准会让传送回裂岛的第一帧算出一个假的 dt / 假的位移，
+ * 把移动坐标系自校准带偏。人格、绕行旋向这些不受时间影响的记忆保留。
+ */
+function hibernate(botId) {
+  const mem = MEM.get(botId);
+  if (!mem) return;
+  mem.lastT = null;
+  mem.lastPos = null;
+  mem.lastCmd = null;
+  mem.targetId = null;
+  mem.committing = false;
 }
 
 function statusesOf(p) {
@@ -565,6 +601,16 @@ export function think(view, botId, rng) {
   const out = NEUTRAL();
   const players = viewPlayers(view);
   const me = players.find((p) => p && p.id === botId);
+
+  // 安全区：Bot 全员休眠。不走位、不扇、不放技能、不换掌，连一帧都不许出手——
+  // 走道选掌期间不该有任何战斗判定。yaw 原样回给 sim（sim 会照单写回 p.yaw），
+  // 免得三只 Bot 在裂岛上齐刷刷扭到 yaw=0。
+  if (isHubView(view)) {
+    hibernate(botId);
+    if (me) out.yaw = num(me.yaw);
+    return out;
+  }
+
   const mem = memoryOf(botId);
 
   const face = faceOf(view);
@@ -713,4 +759,4 @@ function emit(out, mem, view, face, wx, wz, yaw, flags) {
 }
 
 export { personaFor };
-export default { think, resetBots, configureBots, BOT_PERSONAS, personaFor };
+export default { think, resetBots, configureBots, BOT_PERSONAS, personaFor, isHubView };
