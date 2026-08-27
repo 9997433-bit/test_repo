@@ -35,7 +35,7 @@
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
 | F1 契约收口 | `claude-fable-5-thinking-xhigh` | `bc-3703b736-e805-5387-9504-a9ef41455e13` | 已派出 |
-| O2 渲染 | `claude-opus-5-thinking-high-fast` | | 等 F3 真表 |
+| O2 渲染 | `claude-opus-5-thinking-high-fast` | `bc-164c2bad-45c0-51f0-9bb9-98d50a8065af` | 已派出 |
 | O4 壳 | `claude-opus-5-thinking-high-fast` | | 等槽 |
 
 ### Wave 3
