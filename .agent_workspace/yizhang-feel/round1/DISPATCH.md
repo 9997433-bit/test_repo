@@ -36,7 +36,7 @@
 
 | 席位 | 模型 | Agent ID |
 | --- | --- | --- |
-| O4 输入反转 | `claude-opus-5-thinking-high-fast` | `bc-8fbde8a9-2229-5a6e-8f10-8da2eb3dae9c` |
+| O4 输入反转 | `claude-opus-5-thinking-high-fast` | `bc-8fbde8a9-2229-5a6e-8f10-8da2eb3dae9c` | 已合入 `cursor/yizhang-feel-shell-r1-db8d` |
 
 ### 待派发
 
