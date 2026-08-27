@@ -13,10 +13,14 @@ import { createInput, moveFromCameraYaw } from "./index.js";
 
 function fakeNode() {
   const handlers = new Map();
-  return {
-    addEventListener(type, fn) {
+  const node = {
+    // 记下注册时的第三参：passive 与否决定 preventDefault 是真拦还是空调用，
+    // 触屏那条纪律得连注册方式一起钉。
+    bound: [],
+    addEventListener(type, fn, options) {
       if (!handlers.has(type)) handlers.set(type, new Set());
       handlers.get(type).add(fn);
+      node.bound.push({ type, options });
     },
     removeEventListener(type, fn) {
       handlers.get(type)?.delete(fn);
@@ -25,6 +29,7 @@ function fakeNode() {
       for (const fn of handlers.get(type) || []) fn({ preventDefault() {}, ...event });
     },
   };
+  return node;
 }
 
 let doc;
@@ -263,6 +268,224 @@ describe("安全区的 interact 采样", () => {
     input.setEnabled(false);
     expect(input.sample(0).interact).toBe(false);
     input.setEnabled(true);
+  });
+});
+
+// 暂停 / 失焦会把指针锁还给系统。回来点画布重新抓锁的那一下，浏览器只当它是普通
+// mousedown —— 既申请了锁，又扇了一巴掌。大厅里 inHub 把 slap 挡住了看不出来，
+// 裂岛里就是一记实打实的空挥（还白吃冷却）。这一组钉的就是那道闸：
+// 「未持锁的左键只抓锁」「持锁的左键照常扇击」，两边都不许塌。
+describe("左键与指针锁：抓锁那一下不算扇击", () => {
+  let lockCanvas;
+  let lockRequests;
+
+  /** 带 requestPointerLock 的画布替身。真机的锁是异步到手的，这里当场到手就够用了。 */
+  function makeLockCanvas({ grant = true, request } = {}) {
+    const node = fakeNode();
+    lockRequests = 0;
+    node.requestPointerLock =
+      request ||
+      (() => {
+        lockRequests += 1;
+        if (grant) doc.pointerLockElement = node;
+      });
+    return node;
+  }
+
+  function lockDown() {
+    lockCanvas.emit("mousedown", { button: 0 });
+  }
+
+  function lockUp() {
+    globalThis.window.emit("mouseup", { button: 0 });
+  }
+
+  beforeEach(() => {
+    input.dispose();
+    lockCanvas = makeLockCanvas();
+    input = createInput(doc, lockCanvas, { pointerLock: true, yaw: -Math.PI / 2, pitch: 0 });
+  });
+
+  it("未持锁的左键只抓锁、不 slap（暂停回来点一下不该空挥）", () => {
+    expect(input.isPointerLocked()).toBe(false);
+    lockDown();
+
+    expect(lockRequests).toBe(1);
+    expect(input.sample(0).slap).toBe(false);
+    // hold 也没置位：不然锁一到手就成了「按住连扇」，白挥从一下变成一串
+    expect(input.sample(0).slap).toBe(false);
+    lockUp();
+    expect(input.sample(0).slap).toBe(false);
+  });
+
+  it("持锁后的左键照常 slap：吞的只有抓锁那一下", () => {
+    lockDown(); // 抓锁，吞
+    lockUp();
+    expect(input.isPointerLocked()).toBe(true);
+
+    lockDown();
+    expect(lockRequests).toBe(1); // 已经持锁，不重复申请
+    expect(input.sample(0).slap).toBe(true);
+    lockUp();
+    expect(input.sample(0).slap).toBe(false);
+  });
+
+  it("持锁时按住左键连发：按住型没被这道闸带走", () => {
+    lockDown();
+    lockUp(); // 锁到手
+    lockDown();
+    expect(input.sample(0).slap).toBe(true);
+    expect(input.sample(0).slap).toBe(true);
+    lockUp();
+  });
+
+  it("每暂停一趟只吞一下：锁掉了再点还是抓锁，抓回来又能打", () => {
+    lockDown();
+    lockUp();
+    expect(input.sample(0).slap).toBe(false);
+
+    doc.pointerLockElement = null; // 暂停 / Esc 把锁还了
+    lockDown();
+    lockUp();
+    expect(input.sample(0).slap).toBe(false);
+
+    lockDown();
+    expect(input.sample(0).slap).toBe(true);
+    lockUp();
+  });
+
+  it("裂岛里真的没挥出去：喂进 sim 也不发 slapStart、stats.slaps 不动", () => {
+    const { state, player } = arena();
+    lockDown();
+    const seen = [];
+    for (let i = 0; i < 40; i++) {
+      step(state, { p0: input.sample(0) }, DT);
+      seen.push(...state.events.map((e) => e.type));
+    }
+    lockUp();
+
+    expect(seen).not.toContain("slapStart");
+    expect(state.stats.slaps).toBe(0);
+    expect(player.attack.phase).toBe("idle");
+  });
+
+  it("持锁后同一条路能打出去：这组断言不是因为 sim 收不到输入才通过的", () => {
+    const { state } = arena();
+    lockDown();
+    lockUp(); // 锁到手，这一下被吞
+
+    lockDown();
+    const seen = [];
+    for (let i = 0; i < 40; i++) {
+      step(state, { p0: input.sample(0) }, DT);
+      seen.push(...state.events.map((e) => e.type));
+    }
+    lockUp();
+
+    expect(seen).toContain("slapStart");
+    expect(state.stats.slaps).toBeGreaterThan(0);
+  });
+
+  it("玩家在设置里关了指针锁：左键一直是扇击兼拖拽，一下都不许吞", () => {
+    input.setPointerLock(false);
+    lockDown();
+    expect(lockRequests).toBe(0);
+    expect(input.sample(0).slap).toBe(true);
+    // 无锁模式下左键还兼着拖拽转视角
+    const before = input.getLook().yaw;
+    globalThis.window.emit("mousemove", { movementX: 120, movementY: 0 });
+    expect(input.getLook().yaw).not.toBe(before);
+    lockUp();
+  });
+
+  it("浏览器没有 requestPointerLock：也不吞（判据与真正申请锁的条件同一条）", () => {
+    input.dispose();
+    const bare = fakeNode(); // 没有 requestPointerLock 的画布
+    input = createInput(doc, bare, { pointerLock: true });
+    bare.emit("mousedown", { button: 0 });
+    expect(input.sample(0).slap).toBe(true);
+    globalThis.window.emit("mouseup", { button: 0 });
+  });
+
+  it("抓锁被浏览器拒绝（Promise reject）不炸穿输入层，这一下依旧不算扇击", async () => {
+    input.dispose();
+    lockCanvas = makeLockCanvas({
+      request: () => {
+        lockRequests += 1;
+        return Promise.reject(new Error("SecurityError"));
+      },
+    });
+    input = createInput(doc, lockCanvas, { pointerLock: true });
+    expect(() => lockDown()).not.toThrow();
+    await Promise.resolve();
+    expect(lockRequests).toBe(1);
+    expect(input.sample(0).slap).toBe(false);
+    lockUp();
+  });
+
+  it("右键不受影响：未持锁也照样进拖拽转视角", () => {
+    const before = input.getLook().yaw;
+    lockCanvas.emit("mousedown", { button: 2 });
+    globalThis.window.emit("mousemove", { movementX: 120, movementY: 0 });
+    globalThis.window.emit("mouseup", { button: 2 });
+    expect(lockRequests).toBe(0);
+    expect(input.getLook().yaw).not.toBe(before);
+  });
+});
+
+// 暂停时输入是关的，但 iOS 的边缘返回、下拉刷新不会跟着一起关。拦手势与收手势是两件事：
+// `preventDefault` 必须排在 `enabled` 闸前面，否则玩家在暂停面板上从屏幕边一划就退出了对局。
+describe("触屏手势拦截与 enabled 闸的先后", () => {
+  function touch(type, over = {}) {
+    let prevented = 0;
+    canvas.emit(type, {
+      preventDefault: () => {
+        prevented += 1;
+      },
+      changedTouches: [{ identifier: 7, clientX: 100, clientY: 100 }],
+      ...over,
+    });
+    return prevented;
+  }
+
+  it("touchstart / touchmove 是 passive:false 注册的，preventDefault 才拦得住", () => {
+    const optionsFor = (type) => canvas.bound.filter((b) => b.type === type).map((b) => b.options);
+    expect(optionsFor("touchstart")).toEqual([{ passive: false }]);
+    expect(optionsFor("touchmove")).toEqual([{ passive: false }]);
+  });
+
+  it("禁用时 touchstart / touchmove 仍 preventDefault", () => {
+    input.setEnabled(false);
+    expect(touch("touchstart")).toBe(1);
+    expect(touch("touchmove", { changedTouches: [{ identifier: 7, clientX: 180, clientY: 100 }] })).toBe(1);
+    input.setEnabled(true);
+  });
+
+  it("拦归拦，禁用期间不收手势：暂停时划屏不转视角", () => {
+    const before = input.getLook().yaw;
+    input.setEnabled(false);
+    touch("touchstart");
+    touch("touchmove", { changedTouches: [{ identifier: 7, clientX: 260, clientY: 100 }] });
+    expect(input.getLook().yaw).toBe(before);
+    input.setEnabled(true);
+  });
+
+  it("恢复后照常转视角：闸抬起来手势就收得到", () => {
+    input.setEnabled(false);
+    touch("touchstart");
+    input.setEnabled(true);
+
+    const before = input.getLook().yaw;
+    touch("touchstart");
+    touch("touchmove", { changedTouches: [{ identifier: 7, clientX: 180, clientY: 100 }] });
+    canvas.emit("touchend", { changedTouches: [{ identifier: 7, clientX: 180, clientY: 100 }] });
+    expect(input.getLook().yaw).not.toBe(before);
+  });
+
+  it("启用时也照拦：这道 preventDefault 不因挪到闸前而漏掉", () => {
+    expect(touch("touchstart")).toBe(1);
+    expect(touch("touchmove", { changedTouches: [{ identifier: 7, clientX: 180, clientY: 100 }] })).toBe(1);
+    canvas.emit("touchend", { changedTouches: [{ identifier: 7, clientX: 180, clientY: 100 }] });
   });
 });
 
