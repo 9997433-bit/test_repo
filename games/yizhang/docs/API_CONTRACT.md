@@ -1,6 +1,8 @@
-# 异掌 · 公共 API 契约 v4.3（固定人物视角轮 Round 1 · 视角契约，冻结）
+# 异掌 · 公共 API 契约 v4.4（固定人物视角轮 Round 2 · sample 分派收口，冻结）
 
 > 手感轮改四处：渲染朝向零补偿、皮肤契约、每掌 VFX / ghosts、hit-stop 边界。大厅轮追加：`Input.interact`、`HUB` 布局、`phase/hub` 视图、`hubEquip/hubLocked/hubFocus/hubPortalNear/enterArena/enterHub`。O1 缺省 `phase:'hub'`；旧测靠空间规则或 `skipHub`。大厅 ADR 记为 29…32（手感轮已占用 25…28）；Round 2 新增 ADR-33…35（空挥闸 / skinId+ghosts 导出 / 相机 pitch）；Round 3 新增 ADR-36（双区渲染子树互斥，见 ARCHITECTURE §10）。**视角轮新增 ADR-37…39（机位 yaw 喂入空间 / `lookMode` / 过门相机 snap，见 ARCHITECTURE §5.1.2 与 §10）**。
+>
+> **v4.4 修订说明（固定人物视角轮 Round 2，零新 ADR、零新 SimEvent/SoundName，冻结）**：两件事。① **把 ADR-38 的 `sample()` 分派升格为可测不变量并点名实现缺口**：Round 1 F4 判 **LK-04 FAIL**——`input.sample()` 未分模式，恒送 `cameraYawToSimYaw(θ)`，free 行为等同 locked；sim 的 `yaw: null` 不覆盖门（`step.js` 只在 `Number.isFinite(input.yaw)` 时直赋）与 renderer 的机位半边**都已在位且有测**，缺的只有 input 这一段分派。本版新增不变量 **§14-34（sample 分派封闭表）/ §14-35（机位跟随角按模式选源）**，Round 2 由 O4 落地、G1 锁测、F4 重判 LK-04。② **按实现登记 Round 1 合入终态（契约向实现修，方向同 v4.1/v4.2）**：`lookPayload` 的 `yaw` 字段现与 `simYaw` **同值同空间**（相机系角不出输入层，比 v4.3「保留相机系调试读数」更严）；payload 随帧携 `lookMode`，渲染器持有**随帧镜像**（`setLookMode/getLookMode`，每帧被 payload 覆盖，不构成第二权威——ADR-38 措辞按此修订，见 §7.1）；input 句柄的 `toggleLookMode()`（V 键同路、触发 `onLookModeChange`）与 `setLookMode` 静默 setter 语义按实现更正（§8）；`getLook()` 追加 `lookMode` 字段；锁视角 HUD DOM（`.yz-look-flash` + `#hud[data-look]`）、O3 Bot 护栏、F3 GDD 文案**均已合入父分支**——F4 清单里对应 DEFER 已过时（LK-09 等），SOTA_CHECKLIST/ACCEPTANCE 改勾归 F4（本文只登记事实）。全程 `RENDER_YAW_OFFSET` 恒 0、只有两套角空间、**禁止第四套朝向**（ADR-25/37 重申，一字不动）。新名登记见 §0.2。
 >
 > **v4.3 修订说明（固定人物视角轮 Round 1，冻结）**：修「视角转换很奇怪」的根因并冻结「固定人物视角」。已核验的根因：`core/look.js feedLook` 每帧把 `input.getLook()` 整包（`yaw` 是**相机系**方位角）丢给 `renderer.setLook`，而 `setLook` 把 `o.yaw` 存进 `lookYaw`、`sync` 里 `lookYaw == null ? local.yaw : lookYaw` 把**相机系角当 sim 角**用——喂入口违反了 `setLook` 注释里早已写明的空间要求。本版冻结四件事：① **机位 yaw 喂入 = sim 空间**（ADR-37，§7 `setLook` 优先 `simYaw`）；② **`lookMode: 'locked'|'free'`** 视角模式（ADR-38，缺省 `locked` = 固定人物视角；§8 input 持有）；③ **过门机位 snap**（ADR-39，§7 `snapCamera`，enterArena/enterHub/开局禁止弹簧飞越 ~120m）；④ 切换四通道（V 键 / 设置项 / `?look=` / 存档 `lookMode`，§8/§12/§13.2）。全部新名见 §0 v4.3 登记表；新不变量 §14-28…33。`RENDER_YAW_OFFSET` 恒 0（ADR-25）不动。
 >
@@ -35,7 +37,20 @@
 | `?look=locked\|free` | URL 通道：覆盖本次会话的初始 lookMode，**不回写存档**（§13.2） | O4（main）、G2（smoke/probe 参数） |
 | 存档 `lookMode` | `SaveV1` 追加字段，老档缺失补 `'locked'`（§12） | O4（storage） |
 
-死名预防：本轮**没有**任何旧名可复活；`lookPayload` 里的 `yaw` 字段（相机系）保留仅供探针/调试读数，**渲染器不得消费它**（ADR-37）。`RENDER_YAW_OFFSET` 恒 0，禁止用「再加一个偏移」修视角（ADR-25 重申）。
+死名预防：本轮**没有**任何旧名可复活。~~`lookPayload` 里的 `yaw` 字段（相机系）保留仅供探针/调试读数~~——**v4.4 按实现更正**：合入的实现比这条更严，`payload.yaw === payload.simYaw`（同值同空间，`core/look.test.js` 锁定键集恰为 `{yaw, pitch, simYaw, lookMode}`）——相机系角**根本不出输入层**，「渲染器不得消费相机系角」由「链路上没有相机系角」保证；`setLook` 的 simYaw 优先规则原样保留（防直连调用方只给 `yaw` 键时空间歧义，§7.1）。全项目唯一的相机系读数出口 = `input.getLook().yaw`。`RENDER_YAW_OFFSET` 恒 0，禁止用「再加一个偏移」修视角（ADR-25 重申）。
+
+### 0.2 v4.4 名义登记表（视角轮 Round 2，全部为登记既有实现，方向 = 契约向实现修）
+
+| 名 | 语义 | 出处（已合入、已有测） |
+| --- | --- | --- |
+| `input.toggleLookMode()` | 模式翻转，**与 V 键同一条路径**：触发 `onLookModeChange`（触控钮/调试用）。`setLookMode` 是**静默 setter**（§8，v4.3 曾写「同路」，与实现相反，本版更正） | `src/input/index.js`；`input/index.test.js` |
+| `input.getLook().lookMode` | `getLook()` 追加字段：`{ yaw, pitch, lookMode }` 随帧透出（供 `lookPayload`/壳层读；运行期权威语义不变） | `src/input/index.js` |
+| payload `lookMode` / `renderer.setLookMode(mode)` / `getLookMode()` / `setLook` 的 `lookMode` 键 | `lookPayload` 恒携 `lookMode`（缺省收 `'locked'`）；渲染器持有**随帧镜像**并按它选机位跟随角（§7.1、§14-35）。镜像每帧被 payload 覆盖，**不是第二权威**（ADR-38 修订） | `core/look.js`、`render/renderer.js`；`render/look.test.js` |
+| `payload.yaw === payload.simYaw` | `lookPayload` 的 `yaw` 与 `simYaw` 同值同空间（sim 系）——相机系角不出输入层 | `core/look.js`；`core/look.test.js` |
+| `normalizeLookMode(value, fallback?)` / `resolveLookMode(ctx)` / `DEFAULT_LOOK_MODE` | 模式归一（缺省回落 `'locked'`）/ 初值取值链（URL > 存档 > 缺省，§13.2）/ 缺省常量，全链共用一份词表实现 | `core/look.js` |
+| `hud.setLookMode` / `shell.setLookMode` / `#hud[data-look]` / `.yz-look-flash` | 锁视角 HUD **DOM 已合入**：`#hud[data-look]` 模式镜像（常驻 data 属性）+ `.yz-look-flash` 切换一瞬回执（唯一一枚，≈0.9s 自摘）。F4 清单 LK-09 的 DEFER 已过时，改勾归 F4（§13.2） | `src/ui/hud.js`、`shell.js`、`main.js`；`hud.test.js`、`shell.test.js` |
+
+Round 2 **零新 SimEvent、零新 SoundName、零新 ADR**；上表全部是 Round 1 合入代码的补登记。唯一待实现项 = `input.sample()` 的模式分派（§8、§14-34，归 O4）——它不引入任何新名（`yawFromDir` 是 §4.1 既有导出）。
 
 ## 1. 总则与硬性不变量
 
@@ -89,7 +104,7 @@ interface Input {
 ```
 moveX = sx·cos(θ) − sy·sin(θ)
 moveZ = −sx·sin(θ) − sy·cos(θ)
-Input.yaw = cameraYawToSimYaw(θ)      // lookMode='locked'（缺省）；'free' 见 §8——
+Input.yaw = cameraYawToSimYaw(θ)      // lookMode='locked'（缺省）；'free' 见 §8/§14-34——
                                       // v4.2 此行曾误写「= θ」（相机角），实现从来是
                                       // 换算后的 sim 角（§14-15 锁定），v4.3 按实现更正
 ```
@@ -697,30 +712,46 @@ export function dispose(): void;         // 释放 GL 资源，可重复调用
 // v4.2 登记（已实装，测量面）：getStats() 返回 { tier, phase, drawCalls, triangles, … }
 //（three renderer.info 读数）——L3-10 预算与冒烟 HUD 的唯一读数口，禁止另设第二个计数器。
 // 视角轮冻结追加（ADR-37/39，见 §7.1）：setLook 的 simYaw 优先语义收口 + snapCamera()。
+// v4.4 登记（已实装，§7.1/§14-35）：setLook 的 lookMode 键 + setLookMode/getLookMode
+// ——渲染器持有 lookMode 的**随帧镜像**（payload 每帧覆盖），按它选机位跟随角。
 ```
 
-### 7.1 视角机位契约（视角轮 Round 1 新增，冻结；ADR-37/39）
+### 7.1 视角机位契约（视角轮 Round 1 新增、Round 2 v4.4 按实现补登记，冻结；ADR-37/38/39）
 
 **`setLook(look)` 水平角唯一空间 = sim 空间**（ADR-37）。签名与消费规则：
 
 ```ts
-// 渲染句柄（既有方法，语义收口）
-setLook(look: { pitch?: number|null; yaw?: number|null; simYaw?: number|null } | number):
-  { pitch: number|null; yaw: number|null };
+// 渲染句柄（既有方法，语义收口；v4.4 追加 lookMode 键与返回字段，按实现登记）
+setLook(look: { pitch?: number|null; yaw?: number|null; simYaw?: number|null;
+                lookMode?: 'locked'|'free' } | number):
+  { pitch: number|null; yaw: number|null; lookMode: 'locked'|'free' };
 // 消费规则（自上而下取首条命中，水平角一律落进 lookYaw、空间恒为 sim）：
-//   1. simYaw 有限        ⇒ lookYaw = simYaw（有 simYaw 键就绝不读 yaw 键——feedLook 的
-//                            payload 里 yaw 是相机系读数，消费它 = 复活本轮修掉的 bug）
+//   1. simYaw 有限        ⇒ lookYaw = simYaw（有 simYaw 键就绝不读 yaw 键——优先规则保留，
+//                            防直连调用方只给 yaw 键时的空间歧义）
 //   2. simYaw === null    ⇒ lookYaw = null（机位回落跟角色自身 yaw——这条路一直是对的）
 //   3. 无 simYaw 键、yaw 有限 ⇒ lookYaw = yaw，**视传入 yaw 已是 sim 空间**（直连调用方——
 //                            冒烟台/探针——按 ADR-17 给角，不做任何换算）
 //   4. 无 simYaw 键、yaw === null ⇒ lookYaw = null
+//   5. lookMode 键在场（v4.4）⇒ 等价调一次 setLookMode（认不出的值不改现状）；
+//      缺席不动。feedLook 的 payload 恒携 lookMode（缺省收 'locked'），所以产线上
+//      渲染器侧的模式每帧被 payload 覆盖 = 随帧镜像，活不过一帧（§14-35）。
 // pitch 语义不变（ADR-35：有限值 clamp ±PITCH_LIMIT、null 清除、缺席不动）。
 // 数字入参 = setPitch 简写（既有行为保留）。
 
+// 渲染句柄（v4.4 按实现登记）
+setLookMode(mode: 'locked'|'free'): 'locked'|'free';   // 认不出的值不改现状，返回生效值
+getLookMode(): 'locked'|'free';
+// getLook() 回读形状（v4.4 按实现登记）：{ pitch, yaw, simYaw, lookMode, cameraPitch, cameraYaw }
+// ——yaw 与 simYaw 是同一个数（= lookYaw，sim 空间；没喂过 = null）；cameraPitch/cameraYaw
+// 是机位这一帧真正用的阻尼后读数（调试/探针用，均为 sim 空间）。
+
 // core/look.js（O4 所有，喂入侧同一份契约）
-lookPayload(look): { yaw: number; pitch: number; simYaw: number };
-// yaw   = input.getLook().yaw 原样（相机系，仅供探针/调试读数，渲染器不得消费）
-// simYaw = cameraYawToSimYaw(yaw)（唯一换算点产物，§1-11）
+lookPayload(look): { yaw: number; pitch: number; simYaw: number; lookMode: 'locked'|'free' };
+// simYaw  = cameraYawToSimYaw(look.yaw)（唯一换算点产物，§1-11）
+// yaw     === simYaw（v4.4 按实现更正：同值同空间——相机系角不出输入层，渲染器读哪个
+//           字段都拿到 sim 角；v4.3「yaw 保留相机系调试读数」作废，见 §0.1 死名预防段）
+// lookMode = normalizeLookMode(look.lookMode)（缺省/认不出 ⇒ 'locked'，随帧透传给渲染器）
+// 键集封闭：恰为 { yaw, pitch, simYaw, lookMode }，不得追加第三套朝向字段（core/look.test.js 锁定）
 // feedLook(renderer, look)：优先 setLook(payload)，仅有 setPitch 时退喂 pitch；
 // 两个都没有 no-op。喂入后 renderer.lookYaw 必须等于 payload.simYaw（不变量 §14-28）。
 
@@ -742,9 +773,16 @@ export const CAMERA_SNAP_MAX_DIST = 20;   // 米。snap 后（含自动 snap）�
                                           // G1/G2 断言用（不变量 §14-32/33）。
 ```
 
-**渲染器不感知 `lookMode`**（ADR-38）：两种模式下机位公式是同一条（`cameraRig` 吃 sim 空间 `lookYaw`，机位在 `focus + (sin yaw, cos yaw)·dist` 即视线方向的身后）；模式差异全部发生在 input 的 `Input.yaw` 产出（§8）。禁止把 lookMode 塞进 renderer 状态或 view 快照。`sync` 的 `lookYaw == null ? local.yaw : lookYaw` 回落链保留。
+**lookMode 与渲染器（ADR-38，v4.4 按实现修订措辞）**：v4.3 曾写「渲染器不感知 lookMode、禁止塞进 renderer 状态」，合入的实现（F4 已验、`render/look.test.js` 锁定）是**随帧镜像**——payload 恒携 `lookMode`，`setLook` 每帧覆盖渲染器侧副本，它活不过一帧、**不构成第二权威**（运行期权威仍唯一住 input，禁令原意「防状态分叉」不变）。镜像驱动的唯一分支是**机位跟随角选源**（§14-35）：
 
-同名异空间警示（探针/测试别混用）：`renderer.getLook().yaw` 回读的是 `lookYaw`（**sim 空间**），`input.getLook().yaw` 是相机方位角 θ（**相机系**）——两者只在 `cameraYawToSimYaw` 的不动点上偶然相等，断言时必须各对各的空间（不变量 §14-28 的取值建议 θ = 0 ⇒ simYaw = −π/2，两值必不同）。
+| 模式 | 跟随角（机位绕谁转，全为 sim 空间） |
+| --- | --- |
+| `locked` | **角色自身 yaw**（`view.players[local].yaw`）——喂入的 `lookYaw` 拧不动机位。locked 下 1:1 不变量（§14-30）保证它与视线同值，跟角色 yaw 让「镜头钉身后、永不绕到正脸」在壳层没喂/晚一帧时也成立 |
+| `free` | `lookYaw`（壳层喂的视线角）；`lookYaw === null` 回落角色 yaw——v4.3 的回落链原样保留，成为 free 分支语义 |
+
+机位公式仍是同一条（`focus + (sin yaw, cos yaw)·dist` 即视线方向的身后），变的只是绕的角选谁；两分支吃的角都已是 sim 空间，`RENDER_YAW_OFFSET` 恒 0、无第四套朝向（ADR-25/37）。**view 快照与 sim 仍不感知 lookMode**（这半句禁令一字不动）。
+
+同名异空间警示（探针/测试别混用）：`renderer.getLook().yaw` 回读的是 `lookYaw`（**sim 空间**），`input.getLook().yaw` 是相机方位角 θ（**相机系**）——两者只在 `cameraYawToSimYaw` 的不动点上偶然相等，断言时必须各对各的空间（不变量 §14-28 的取值建议 θ = 0 ⇒ simYaw = −π/2，两值必不同）。v4.4 起 `lookPayload().yaw` **不再是**相机系读数（=== simYaw）——全项目唯一的相机系角出口就是 `input.getLook().yaw`，其余凡叫 yaw 的视角字段一律 sim 空间。
 
 ## 8. `src/input`（Opus-4 所有）
 
@@ -755,9 +793,15 @@ export function createInput(dom: HTMLElement|Document, canvas: HTMLCanvasElement
   sensitivity?: number; invertY?: boolean; pointerLock?: boolean;
   onFirstGesture?: () => void; onPause?: () => void;
   lookMode?: 'locked'|'free';                    // 视角轮新增（ADR-38）：初始模式，缺省 'locked'
-  onLookModeChange?: (mode: 'locked'|'free') => void;   // 模式实际变化时触发（V 键与
-                                                 // setLookMode 同路；同值调用不触发）。
-                                                 // 壳层用它落盘存档 + toast，见 §13.2
+                                                 //（认不出的值落 'locked'——normalizeLookMode）
+  onLookModeChange?: (mode: 'locked'|'free') => void;
+                                                 // 模式实际变化时触发恰一次。v4.4 按实现更正：
+                                                 // 触发路径 = 键 V / toggleLookMode()（同一条路，
+                                                 // toggle 必变故无同值问题）；setLookMode 是
+                                                 // **静默 setter**（不触发回调——设置面板那条路
+                                                 // 由 main.applySettings 自己收敛后落盘+反馈，
+                                                 // 防「点一下弹两次提示」，§13.2）。v4.3 曾写
+                                                 // 「V 键与 setLookMode 同路」，与实现相反
 }): InputHandle;
 
 export function sample(cameraYaw: number): Input;
@@ -765,17 +809,23 @@ export function sample(cameraYaw: number): Input;
 // 移动换算同一条公式**——W 永远朝镜头水平前方，摇杆与 WASD 同映射）。
 // input 内部保留自己的相机方位角 θ（forward = (cos θ, sin θ)），换算收敛在 core/view.js 的
 // cameraYawToSimYaw / simYawToCameraYaw（两处合法换算点之一，ADR-17/25）。
-// **Input.yaw 的产出按 lookMode 分派（ADR-38，视角轮收口）**：
+// **Input.yaw 的产出按 lookMode 分派（ADR-38，视角轮收口；可测封闭表 = §14-34）**：
 //   · lookMode='locked'（缺省，固定人物视角）：Input.yaw = cameraYawToSimYaw(θ)
 //     ——期望面朝 ≡ 相机水平前向，即既有行为、不变量 §14-15 原式；sim 直赋
 //     （step.js handleActions：Number.isFinite(input.yaw) ⇒ p.yaw = input.yaw，无平滑），
 //     所以「人物水平面向与相机水平前向 1:1」逐 tick 精确成立（不变量 §14-30）。
-//   · lookMode='free'：镜头与面向解耦。移动矢量非零 ⇒ Input.yaw =
-//     atan2(-moveX, -moveZ)（世界系移动方向的 sim 角，与 sim/math.js yawFromDir 同式
-//     ——同空间内由矢量求角，不是新的换算点，§1-11）；零移动 ⇒ Input.yaw = null
-//     （保持当前朝向）。机位喂入不变（feedLook 仍喂 simYaw，§7.1）——free 只解耦
-//     人物面向，**不得**把相机系角混进任何 sim 侧字段。
-// 换算不得散布到其它文件。sim 与 renderer 都不感知 lookMode（ADR-38）。
+//   · lookMode='free'：镜头与面向解耦。产出的移动矢量非零（(moveX,moveZ) ≠ (0,0)）⇒
+//     Input.yaw = atan2(-moveX, -moveZ)（世界系移动方向的 sim 角，与 §4.1 既有导出
+//     sim/math.js yawFromDir(moveX, moveZ) 逐位同式——同空间内由矢量求角，不是新的
+//     换算点，§1-11）；零移动（含 WASD 对冲、setEnabled(false)）⇒ Input.yaw = null
+//     （sim 不覆盖、保持当前朝向——step.js 的 Number.isFinite 门是既有语义，O1 零改动）。
+//     机位喂入不变（feedLook 仍喂 simYaw，§7.1）——free 只解耦人物面向，
+//     **不得**把相机系角混进任何 sim 侧字段。
+// ⚠ 实装状态（v4.4，Round 2 P0 归 O4）：Round 1 合入的 sample() **未分派**——恒走
+//   locked 分支送 cameraYawToSimYaw(θ)，free 行为等同 locked（F4 判 LK-04 FAIL）。
+//   sim 的 null 门与 renderer 的机位半边（§14-35）都已在位且有测：本缺口只在 input
+//   这一段，落地即闭环；G1 按 §14-34 锁测，F4 重判 LK-04。
+// 换算不得散布到其它文件。sim 与 view 快照不感知 lookMode；渲染器仅持随帧镜像（§7.1，ADR-38 v4.4 措辞）。
 // 键鼠语义锚点（G1 锁死，ARCHITECTURE §5.1.1）：纯 W ⇒ (moveX,moveZ) = (cos θ, sin θ)
 //（= 相机水平前向）；纯 D ⇒ (−sin θ, cos θ)（屏幕右）；cameraYawToSimYaw 对 θ 单调递减
 //（鼠标 +dx ⇒ θ 增大 ⇒ sim yaw 减小 ⇒ 从上方看顺时针 = 右转）。
@@ -785,7 +835,10 @@ export function sample(cameraYaw: number): Input;
 // phase='arena' 时 E 复位技能、interact 恒 false 语义。跨区切换清空按住态（大厅按着 E
 // 穿门不会在裂岛立刻放技能）。sim 侧上升沿检测（p.prev.interact）不变。
 export function setEnabled(enabled: boolean): void;   // false：动作清零、移动归零
-export function getLook(): { yaw: number; pitch: number };   // 相机朝向权威源（ADR-4/17/35）
+export function getLook(): { yaw: number; pitch: number; lookMode: 'locked'|'free' };
+// 相机朝向权威源（ADR-4/17/35）。lookMode 字段 v4.4 按实现登记（随帧透出，供
+// lookPayload/壳层直读；yaw/pitch 两个既有字段一字不动）。注意 yaw 是**相机系** θ——
+// 全项目唯一的相机系读数出口（§7.1 警示段）。
 // pitch 通路（ADR-35）：getLook().pitch 是俯仰唯一权威源，O4 每 rAF 喂给
 // renderer.setPitch（§7）；禁止 render/ui 各自维护第二份 pitch 状态。
 // 句柄追加（冻结命名）：setLook(yaw, pitch)、setSensitivity(v)、setPointerLock(on)、
@@ -794,10 +847,13 @@ export function getLook(): { yaw: number; pitch: number };   // 相机朝向权�
 // DOM 由 ui 建并带 data-yz-interact 标记，input 绑事件——分工不变）；opts.slot
 // ('main'|'off') 只有 interact 认，直接指定要装的槽位（§4.4 装备表）。
 // setPhase('hub'|'arena')：见上方 E 双义分流；由壳层在 enterArena/enterHub 时调用。
-// 视角轮冻结追加（ADR-38）：setLookMode(mode)（非法值忽略并返回当前值）、
-// getLookMode()。lookMode 状态与 yaw/pitch 一样**只住在 input**（ADR-4 的 look 状态
-// 扩为 { yaw, pitch, mode }），禁止 shell/render/main 另存一份权威副本（存档是持久化
-// 不是运行期权威）。键 V（KeyV）上升沿 = toggle lookMode——不占用既有键位
+// 视角轮冻结追加（ADR-38）：setLookMode(mode)（非法值忽略并返回当前值；**静默**——
+// 不触发 onLookModeChange，v4.4 按实现更正）、getLookMode()、toggleLookMode()
+//（v4.4 登记：与 V 键同一条路径，触发 onLookModeChange；触控钮/调试用）。
+// lookMode 的**运行期权威**与 yaw/pitch 一样只住在 input（ADR-4 的 look 状态
+// 扩为 { yaw, pitch, lookMode }），禁止 shell/render/main 另存权威副本（存档是持久化
+// 不是运行期权威；渲染器/HUD 的**随帧镜像**不算——每帧被喂入链覆盖，§7.1/§13.2）。
+// 键 V（KeyV）上升沿 = toggle lookMode——不占用既有键位
 // （E/WASD/空格/Q/F/Shift/Esc），按 V 不得置位任何动作（jump/skill/interact/slap 等）；
 // input.setEnabled(false) 期间 V 不生效。两个 phase（hub/arena）共用同一份 mode。
 ```
@@ -967,7 +1023,12 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 
 ### 13.2 视角模式通道与过门机位（视角轮 Round 1 新增，冻结；ADR-38/39，归 O4）
 
-**lookMode 四通道，初始值取值链（左优先）**：`?look=locked|free`（URL，仅本次会话、不回写存档）→ 存档 `lookMode`（§12）→ 缺省 `'locked'`。运行期改动两条路：键 **V**（input 内 toggle）与设置面板项（shell `onSettingsChange` → `input.setLookMode`）——两条路都经 `onLookModeChange` 回调落盘存档并 toast（文案 F3/GDD 定，建议「固定视角 / 自由视角」）。非法 URL 值忽略、走存档链。smoke/冒烟台同一参数名：`?look=locked|free`（G2 探针用）。
+**lookMode 四通道，初始值取值链（左优先）**：`?look=locked|free`（URL，仅本次会话、不回写存档）→ 存档 `lookMode`（§12）→ 缺省 `'locked'`（实现 = `core/look.js resolveLookMode`，§0.2；URL 填了认不出的值落到存档链，不是直落缺省）。运行期改动两条路（**v4.4 按实现更正**——v4.3「两条路都经 `onLookModeChange`」与实现相反）：
+
+1. **键 V**（`input.toggleLookMode` 同路）：经 `onLookModeChange` 回调——main 实况 `updateSave({ lookMode })` 落盘 + `shell.setLookMode(mode)` 出反馈；
+2. **设置面板项**：main `applySettings` 实况 `input.setLookMode(next.lookMode)`（**静默** setter，收敛非法值）→ `shell.setLookMode(input.getLookMode())`（拿收敛后的值回喂）→ `updateSave`——**不经** `onLookModeChange`（否则设置板点一下弹两次提示）。
+
+两条路的可见反馈汇合在 `shell.setLookMode` 这一个入口（**Round 1 已合入 DOM 接线**，`hud.test.js`/`shell.test.js` 锁定）：`#hud[data-look]` 模式镜像（常驻 data 属性，锁定态准星等 CSS 选择器挂它；开局初始化不闪）+ **唯一一枚** `.yz-look-flash` 切换一瞬回执（「视角锁定 / 自由视角」+ V 键章，≈0.9s 自摘；同值再喂不亮、中央短讯不跟开）。F4 清单 **LK-09 的「DOM 零消费、toast 顶班」DEFER 已过时**，Round 2 由 F4 按合入实况改勾（本文只登记事实）。非法 URL 值忽略、走存档链。smoke/冒烟台同一参数名：`?look=locked|free`（G2 探针用）。
 
 **过门 / 开局机位时序（冻结顺序，ADR-39）**：`startMatch` 开局、`enterArenaFx`、`enterHubFx` 三处，`alignCameraToSelf` 必须按此顺序收尾：
 
@@ -1008,9 +1069,15 @@ O4 可在二者上追加方法，上表所列名字与语义不得变；`main.js
 25. **安全区免战（ADR-29）**：hub 内无击退 KO、无碎地；被连扇 180 帧位置/deaths/hitsTaken 零变化；Bot 不进攻。
 26. **hub 空挥闸（ADR-33，Round 2 起生效）**：`playerInHub` 为真时按住 `slap` 任意帧数 ⇒ 零 `slapStart/slap` 事件、`stats.slaps` 不变、`attack.phase` 恒 `'idle'`；`skill` / 战斗 `dash` 同样不起。`phase==='hub'` 但人在裂岛坐标上（旧测/harness）**不受闸**。移动/跳/interact/switchGlove 不受影响。
 27. **hub 换掌 = 主副交换（v4.2 按实现登记；`sim/hub-actions.test.js`）**：`playerInHub` 内 `switchGlove` 上升沿 ⇒ `gloveId/offhandId` 互换、`activeSlot === 0`、`switchLockT === 0`（连按连换、长按不连发）、发 `switch { slot: 0, gloveId: 交换后主掌 }`；两格都挑过时 `hub.mainGloveId/offGloveId` 随行交换；arena 语义不变（activeSlot 切换 + 0.4s 锁）。
-28. **机位喂入空间（ADR-37，v4.3）**：`lookPayload({ yaw: θ })` 产出 `simYaw === cameraYawToSimYaw(θ)`；`feedLook(renderer, { yaw: θ })` 后 `renderer.getLook().yaw === cameraYawToSimYaw(θ)`——取 θ 使两值不同（如 θ = 0 ⇒ lookYaw = −π/2），断言相机系角**没有**落进 `lookYaw`。直连路径：`setLook({ yaw: s })`（无 simYaw 键）后 `getLook().yaw === s`（当 sim 角收）；`setLook({ simYaw: s, yaw: 任意 })` 后 `=== s`（simYaw 优先）；`setLook({ simYaw: null })` 后 `=== null`（回落跟角色）。
-29. **lookMode 通道与缺省（ADR-38，v4.3）**：`createInput` 后 `getLookMode() === 'locked'`；`setLookMode('free')` 触发 `onLookModeChange` 恰一次，同值再调不触发，非法值忽略；KeyV 上升沿 toggle 且**不**置位任何动作（sample 的 jump/skill/interact/slap/dash/switchGlove 全 false）；存档 `lookMode` 经 `loadSave/updateSave` 往返保留，老档缺失 ⇒ `'locked'`；`?look=free` 覆盖存档初值但不回写。
+28. **机位喂入空间（ADR-37，v4.3；v4.4 补一句）**：`lookPayload({ yaw: θ })` 产出 `simYaw === cameraYawToSimYaw(θ)`；`feedLook(renderer, { yaw: θ })` 后 `renderer.getLook().yaw === cameraYawToSimYaw(θ)`——取 θ 使两值不同（如 θ = 0 ⇒ lookYaw = −π/2），断言相机系角**没有**落进 `lookYaw`。直连路径：`setLook({ yaw: s })`（无 simYaw 键）后 `getLook().yaw === s`（当 sim 角收）；`setLook({ simYaw: s, yaw: 任意 })` 后 `=== s`（simYaw 优先）；`setLook({ simYaw: null })` 后 `=== null`（回落跟角色）。**v4.4 补**：`payload.yaw === payload.simYaw`（同值同空间，相机系角不出输入层）且 payload 键集恰为 `{ yaw, pitch, simYaw, lookMode }`（无第三套朝向字段）。
+29. **lookMode 通道与缺省（ADR-38，v4.3；v4.4 按实现更正回调路径）**：`createInput` 后 `getLookMode() === 'locked'`；**`toggleLookMode()` / KeyV 上升沿**触发 `onLookModeChange` 恰一次；`setLookMode` 是**静默 setter**——触发零次、非法值保持现值（`setLookMode('banana')` 后回读仍是原模式，不偷偷回 locked；`createInput({ lookMode: 非法 })` 则落 `'locked'`——两处兜底不同，都已锁测）；KeyV **不**置位任何动作（sample 的 jump/skill/interact/slap/dash/switchGlove 全 false）；存档 `lookMode` 经 `loadSave/updateSave` 往返保留，老档缺失 ⇒ `'locked'`；`?look=free` 覆盖存档初值但不回写。
 30. **locked 1:1 面向（ADR-38，v4.3）**：`lookMode='locked'` 下任意 θ：`sample(θ).yaw === cameraYawToSimYaw(θ)`（§14-15 原式，缺省模式零回归）；喂 sim 一步后 `p0.yaw` 与之逐位相等（`handleActions` 直赋、无平滑）；同帧 `feedLook` 后 `renderer.getLook().yaw` 与 `p0.yaw` 同值——「人物水平面向 ≡ 相机水平前向」在 sim 与机位两端同时闭环。pitch 不受影响（照走 ADR-35 通路，上下看自由）。
 31. **free 面向解耦（ADR-38，v4.3）**：`lookMode='free'` 下：零移动 ⇒ `sample(θ).yaw === null`；有移动 ⇒ `sample(θ).yaw === atan2(-moveX, -moveZ)`（用纯 D 断言：期望面朝 = 屏幕右方向的 sim 角 ≠ `cameraYawToSimYaw(θ)`，证明面向已与镜头解耦）；机位喂入仍是 simYaw（§14-28 在 free 下同样成立——空间纪律与模式无关）。
 32. **过门 snap（ADR-39，v4.3）**：按 §13.2 顺序执行 `setLook → feedLook → snapCamera` 后，相机与跟随目标距离 ≤ `CAMERA_SNAP_MAX_DIST`（20m），且机位在视线反向半平面（`forward(lookYaw) · (camPos − focus) < 0` = 身后）；`enterArena` / `enterHub` / 开局后连续 60 帧相机-角色距离恒 < `CAMERA_SNAP_TELEPORT`（60m）——无 ~120m 弹簧飞越、无贴脸穿模。
 33. **teleport 自动保险（ADR-39，v4.3）**：不调 `snapCamera`、把跟随目标单帧从 hub 坐标（z≈−120）搬到裂岛原点再 `sync` 一帧 ⇒ 相机与目标距离即 ≤ `CAMERA_SNAP_MAX_DIST`（渲染器内建 `CAMERA_SNAP_TELEPORT` 阈值自动 snap）；局内重生级瞬移（≤ 40m）**不得**触发自动 snap（弹簧甩镜手感保留）。
+34. **sample() 分派封闭表（ADR-38 实装收口，v4.4；Round 1 LK-04 FAIL 的补洞，归 O4 落地、G1 锁测）**：对任意相机方位角 θ 与任意按键/摇杆组合，`sample(θ)` 的返回对象**自足可测**（只看返回值，不需内部状态）且恰满足其一：
+    - `getLookMode() === 'locked'` ⇒ `yaw === cameraYawToSimYaw(θ)`——不看移动、`setEnabled(false)` 时同样成立（§14-15/30 原式，缺省模式零回归）；
+    - `getLookMode() === 'free'` ∧ `(moveX, moveZ) ≠ (0, 0)` ⇒ `yaw === atan2(-moveX, -moveZ)`（与 §4.1 既有导出 `yawFromDir(moveX, moveZ)` 逐位同值；等价断言 `forward(yaw) ≈` 单位化 `(moveX, moveZ)`——`yawFromDir` 是 `forwardX/forwardZ` 的逆）；
+    - `getLookMode() === 'free'` ∧ `(moveX, moveZ) === (0, 0)`（含 WASD 对冲归零、`setEnabled(false)`）⇒ `yaw === null`。
+    配套四条：**sim 不覆盖**——`yaw: null` 连喂 `step` 任意帧数，`p.yaw` 逐位不变（`step.js` 的 `Number.isFinite(input.yaw)` 门是既有语义，O1 零改动）；**切换当帧生效**——同一按键状态下 `setLookMode`/`toggleLookMode` 后**下一次** `sample` 即按新模式分派，无跨帧缓存；**移动映射与模式无关**——两模式下 `moveX/moveZ` 与 §14-15 逐位相同（W 永远朝镜头水平前方）；**值域封闭**——`sample().yaw` 只可能是上述三种产出，相机方位角 θ 原值在任何模式下不得出现在 `Input.yaw`（取 θ 为 `cameraYawToSimYaw` 的非不动点即可反证），**禁止第四套朝向**（§1-11，`RENDER_YAW_OFFSET` 恒 0）。
+35. **机位跟随角按模式选源（v4.4 按实现登记；`render/look.test.js` 已锁，LK-04 重判的 render 半边）**：`setLook(lookPayload({...}))` 喂入后——`lookMode === 'locked'` ⇒ 跟随机位绕**角色自身 yaw**（喂入的 `lookYaw` 拧不动机位，镜头钉身后、永不绕到正脸）；`'free'` ⇒ 绕 `lookYaw`，`lookYaw === null` 回落角色 yaw。payload 恒携 `lookMode`（缺省收 `'locked'`——不带模式喂一帧就把渲染器掰回 locked，证明镜像活不过一帧、input 仍是唯一运行期权威）；两分支的机位都必须在对应跟随角的**身后半平面**（§14-32 同式）。sim 与 view 快照不感知 lookMode（ADR-38 余下禁令原样）。

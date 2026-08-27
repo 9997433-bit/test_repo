@@ -41,6 +41,20 @@ function input(over = {}) {
   return { ...ZERO_INPUT, ...over };
 }
 
+/** 移动矢量的「算不算在走」阈值，与壳层 `input/index.js` 的 MOVE_EPS 同值 */
+const MOVE_EPS = 1e-6;
+
+/**
+ * 手搓的 free 分派（契约 §14-34 free 半边的封闭表）：有位移送走向角、零位移送 null。
+ * 这里**不** import `src/input`——sim 的测试不许把壳层拽进依赖图；真 `sample()` 的闭环
+ * 由 `tests/look-round2-lk04.test.js` 与 probe 端到端跑，本文件只钉 sim 收到这两种值之后
+ * 的行为。
+ */
+function freeInput(moveX, moveZ, over = {}) {
+  const moving = Math.hypot(moveX, moveZ) > MOVE_EPS;
+  return input({ moveX, moveZ, yaw: moving ? yawFromDir(moveX, moveZ) : null, ...over });
+}
+
 function hubInput(over = {}) {
   return { ...HUB_ZERO_INPUT, ...over };
 }
@@ -172,6 +186,120 @@ describe("free：yaw 为空时不覆盖朝向", () => {
       expect(p.yaw).toBe(yaw);
       expect(facingDot(p.yaw, mx, mz)).toBeCloseTo(1, 6);
     }
+  });
+});
+
+// 上面几条是单帧语义；这一组是 free 的**整段**行为：壳层每帧按走向 / 静止分派，连着喂进
+// step 之后，人物面向要一路贴着实际走向，松手之后停在最后那个角上（LK-04 的 sim 半边）。
+describe("free 集成：按走向分派连着喂，朝向一路跟到位", () => {
+  it("一路直走：每帧 p.yaw 都是走向角，走出来的位移方向就是面向", () => {
+    const s = createMatch({ seed: 3, botCount: 0, phase: "arena" });
+    const p = getPlayer(s, "p0");
+    place(p, 0, 0, 0, 2.5); // 起手朝向与走向无关，free 下由壳层的走向角接管
+
+    const cmd = freeInput(0.6, -0.8);
+    const from = { x: p.x, z: p.z };
+    for (let i = 0; i < 60; i++) {
+      step(s, { p0: cmd }, DT);
+      expect(p.yaw).toBe(cmd.yaw); // 逐帧逐位相等：sim 直赋，不平滑
+    }
+
+    expect(Math.hypot(p.x - from.x, p.z - from.z)).toBeGreaterThan(1);
+    expect(facingDot(p.yaw, p.x - from.x, p.z - from.z)).toBeCloseTo(1, 6);
+  });
+
+  it("拐弯：换走向那一帧朝向就跟着换，速度随后收敛到新面向", () => {
+    const s = createMatch({ seed: 3, botCount: 0, phase: "arena" });
+    const p = getPlayer(s, "p0");
+    place(p, 0, 0, 0, 0);
+
+    const east = freeInput(1, 0);
+    const north = freeInput(0, 1);
+    run(s, { p0: east }, 0.5);
+    expect(p.yaw).toBe(east.yaw);
+
+    step(s, { p0: north }, DT);
+    expect(p.yaw).toBe(north.yaw); // 惯性还在往 +X 滑，面向已经先转过去了
+    run(s, { p0: north }, 1);
+    expect(facingDot(p.yaw, p.vx, p.vz)).toBeGreaterThan(0.99);
+  });
+
+  it("松手：零位移送 null，朝向停在最后的走向上，不回弹也不归零", () => {
+    const s = createMatch({ seed: 3, botCount: 0, phase: "arena" });
+    const p = getPlayer(s, "p0");
+    place(p, 0, 0, 0, -2.1);
+
+    const cmd = freeInput(-0.4, -0.9);
+    run(s, { p0: cmd }, 0.5);
+    const travelYaw = p.yaw;
+    expect(travelYaw).toBe(cmd.yaw);
+
+    const at = { x: p.x, z: p.z };
+    run(s, { p0: freeInput(0, 0) }, 1.5);
+    expect(p.yaw).toBe(travelYaw);
+    expect(Math.hypot(p.x - at.x, p.z - at.z)).toBeGreaterThan(0); // 惯性滑了一段，脸没动
+    expect(Math.hypot(p.vx, p.vz)).toBeLessThan(0.05); // 也确实停住了
+  });
+
+  it("按键对冲的零矢量必须落回 null：yawFromDir(0,0) 是 -PI，喂进来就是原地翻身", () => {
+    expect(yawFromDir(0, 0)).toBe(-Math.PI); // 分派表要挡的就是这个值
+    expect(freeInput(0, 0).yaw).toBe(null);
+
+    const s = createMatch({ seed: 3, botCount: 0, phase: "arena" });
+    const p = getPlayer(s, "p0");
+    place(p, 0, 0, 0, 0.9);
+    run(s, { p0: freeInput(0, 0) }, 0.5);
+    expect(p.yaw).toBe(0.9);
+
+    // 对照组：真把 -PI 喂进来，人就翻过去了——所以零位移只能送 null
+    step(s, { p0: input({ yaw: yawFromDir(0, 0) }) }, DT);
+    expect(p.yaw).toBe(-Math.PI);
+  });
+
+  it("走出来的朝向就是出掌前向：打得到人，且 reach 一分没多", () => {
+    const reach = COTTON.slapRange + createMatch({ seed: 1, botCount: 0 }).config.playerRadius;
+
+    /** 先在 free 下朝 +X 走一段，把面向交给走向；停稳后按 dist 摆靶再出掌 */
+    function travelThenSlap(dist) {
+      const s = createMatch({ seed: 5, botCount: 1, phase: "arena" });
+      const a = getPlayer(s, "p0");
+      const b = getPlayer(s, "b0");
+      place(b, 0, 0, -12); // 先停在台面上远处等着：摆到台外它会掉下去 KO
+      a.invulnT = 0;
+      b.invulnT = 0;
+
+      place(a, 0, 0, 0, Math.PI); // 起手背对 +X
+      const walk = freeInput(1, 0);
+      run(s, { p0: walk }, 0.5);
+      expect(a.yaw).toBe(walk.yaw);
+      place(a, a.x, 0, a.z, a.yaw); // 停稳，避免前摇里的滑步偷偷改距离
+
+      place(b, a.x + forwardX(a.yaw) * dist, 0, a.z + forwardZ(a.yaw) * dist);
+      b.invulnT = 0;
+      // 静止出掌：yaw 送 null，靠的就是刚才走出来的那个面向
+      run(s, { p0: freeInput(0, 0, { slap: true }) }, COTTON.windup + 0.05);
+      expect(a.yaw).toBe(walk.yaw);
+      return { s, a, b };
+    }
+
+    const near = travelThenSlap(reach - 0.3);
+    expect(near.b.hitsTaken, "面朝走向的人应当打得到").toBeGreaterThan(0);
+
+    const far = travelThenSlap(reach + 0.3);
+    expect(far.b.hitsTaken, "free 不许靠放大 reach 来「打得到」").toBe(0);
+  });
+
+  it("大厅的空挥闸对 free 一视同仁：静止不出招，朝向也不被闸门改", () => {
+    const s = createMatch({ seed: 0x4f31, botCount: 0 });
+    const p = getPlayer(s, "p0");
+    expect(playerInHub(s, p)).toBe(true);
+    const yaw0 = p.yaw;
+
+    const seen = collect(s, { p0: hubInput({ ...freeInput(0, 0), slap: true }) }, 0.5);
+    expect(seen.map((e) => e.type)).not.toContain("slapStart");
+    expect(s.stats.slaps).toBe(0);
+    expect(p.attack.phase).toBe("idle");
+    expect(p.yaw).toBe(yaw0);
   });
 });
 
