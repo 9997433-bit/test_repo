@@ -716,13 +716,19 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 ### 12.7 Round 3 实测记分（F4 最终验收席 @ 父分支 `372a8dd`，2026-08-27，全套命令实跑）
 
-**执行口径**：Round 3 已合席位的最终验收。已合：**O2 机位复核补交**（R2 DEFER 销号：`4696ee0`+`91fd888` @ merge `f202877`）/ **F1** 契约 v4.4 实现态登记（`e7eae97` @ `cf644fa`）/ **F2** ART §18.7 SOTA 收口审计（`7f71689` @ `ff61b2f`）/ **F3** GDD §15 locked 硬顶与切模式不传送机位登记（`a8ceb70` @ `9061829`）/ **O1** reach 镜像与 1e-4 边界复核（`4c322d9`）/ **O3** 水平锥与 Bot 路径锁测（`9947c05`+`255ec8f` @ merge `372a8dd`）/ **G2** 切模式机位连续性探针 + 跨层锁测（`a3f9e4d`+`2284321`+`74290f0`）。**未合（不装绿）**：R3 **O4 边角**与**另一份 R3 O2 复核**仍在飞（`git diff c97723d..HEAD` 零 `src/input`/`src/ui`/`src/main.js` diff 实锤 O4 未合）；合入后按防回退复跑，不计入本轮判定。工作分支 `cursor/yizhang-look-r3-f4-db8d`（仅动本文件与 `ACCEPTANCE.md`，不改 src）。自动化全套实跑；本环境仍无交互桌面——§13.4 实机八步以 **probe 硬门 + headless Chrome 148（SwiftShader WebGL）CDP 驱动 `smoke.html` 截图**替代并逐步写清口径（见下），不装成手测过。命令原文见 ACCEPTANCE §13.8。
+**执行口径**：Round 3 已合席位的最终验收。已合：**O2 机位复核补交**（R2 DEFER 销号：`4696ee0`+`91fd888` @ merge `f202877`）/ **F1** 契约 v4.4 实现态登记（`e7eae97` @ `cf644fa`）/ **F2** ART §18.7 SOTA 收口审计（`7f71689` @ `ff61b2f`）/ **F3** GDD §15 locked 硬顶与切模式不传送机位登记（`a8ceb70` @ `9061829`）/ **O1** reach 镜像与 1e-4 边界复核（`4c322d9`）/ **O3** 水平锥与 Bot 路径锁测（`9947c05`+`255ec8f` @ merge `372a8dd`）/ **G2** 切模式机位连续性探针 + 跨层锁测（`a3f9e4d`+`2284321`+`74290f0`）。F4 签字当时登记 **R3 O4 边角**与**另一份 R3 O2 复核**仍在飞（当时 `git diff c97723d..HEAD` 零 `src/input`/`src/ui`/`src/main.js` diff）。**编排层收口：二者已合入父分支**（见下补记），WARNING 销号。工作分支 `cursor/yizhang-look-r3-f4-db8d`（仅动本文件与 `ACCEPTANCE.md`，不改 src）。自动化全套实跑；本环境仍无交互桌面——§13.4 实机八步以 **probe 硬门 + headless Chrome 148（SwiftShader WebGL）CDP 驱动 `smoke.html` 截图**替代并逐步写清口径（见下），不装成手测过。命令原文见 ACCEPTANCE §13.8。
 
 **三件套实测**（勾选依据）：
 
 - `npm test`：**737/737（52 文件）**，退出码 0（Round 2 基线 717/51 → 737/52，零红零减量。新增 20 条：`render/look.test.js` 15→27（O2 硬顶锁测 +12）、`sim/look-yaw.test.js` 25→28（O1 +3）、`tests/look-round3-cross-layer.test.js` 新 ×3（G2）、`combat/look-invariants.test.js` 11→12（O3 +1）、`ai/look-mode-blind.test.js` 8→9（O3 +1）；`ai/bot-yaw-finite.test.js` 行内加固不变 8）。
 - `npm run probe`：**PASS** 退出码 0，3/3 固定 seed。R2 读数全部复跑无回退：`cameraSnapMaxDist:7.1`（开局 7.1 / 过门 pre-snap 127.0–127.2 → post 7.1，`snappedFrames:2`）、`lockedForwardMinDot:1 / lockedForwardMaxAngleDeg:0`（每 seed 3601 帧）、`lockedTurnMinAngleDeg:47.67`、`lockedCameraMaxBehindness:-7.1`、`freeStationaryMaxYawDeltaDeg:0`、`freeMoveMaxYawErrorDeg:0.00021`；**G2 Round 3 新增硬门全过**：`modeSwitchCameraMaxDist:7.133 ≤ 20`（V 真实 keydown/keyup 双向切换 ×2，`observeModeSwitchCamera` 断言切模式不武装 `_snapPending` 且 `_followCamera` 返回未 snap）、`lockedReturnYawError ≈ 1.7e-16`（free→locked 首帧即恢复 1:1 直赋）、`lookModeTransitions:2 / modeSwitchCameraFrames:2` 逐 seed 全录。沿用门全绿：`wiredCombat:true`、`ai:"think"`、arenaKills 1/2/2、botSlapAttempts 2191/3425/3636（> 哨兵 1900）、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`、p99StepMs 0.104–0.116（≤0.5）；横幅 `MODEL_SLUG: yizhang-probe`。
 - `npm run build`：退出码 0；主 chunk 681.44kB / gzip 188.54kB（>500kB 警告既知，含 three）。
+
+**编排层收口补记（R3 O2+O4 合入后）**：F4 签字基线是 **737/52 @ `372a8dd`**（上列三件套为 F4 亲跑；本收口不假装 F4 复跑了后续测）。其后父分支合入：
+- R3 O2（merge `58052e8`）：急甩背后咬合闸 `BEHIND_LIMIT` + `CAMERA_SNAP_TELEPORT=60`，与 R2 `LOCKED_YAW_SPAN` 迟滞两套并存（`holdBehindLimit` vs `holdBehind`；`_phaseChanged` + `_notePhase`）
+- R3 O4（merge `b3f5d03`）：`toggleLookMode` 认 `state.enabled` 闸、回调 try/catch、当帧 `sample()`、跨层 `look-switch.test.js`
+
+合入后父分支测基线是 **775 passed / 54 files**（merge 工人在 `ea1c825` 上跑的）；本收口再复跑确认。
 
 **O2 机位复核收口（R2 DEFER 改勾）**：`src/render/camera.js` 落地 locked 背后半平面**硬顶**——`LOCKED_YAW_SPAN = π/2 − 0.1`（留 0.1rad 余量使 behindness 断言恒取到确定负数）、`lockedHoldSlack`（30rad/s 生效带宽，0.25–1.2 夹，掉帧自适应）、`holdBehind/insideBehind`（yaw 份）+ `holdPosBehind`（机位份，位置阻尼 λ6.2 < yaw λ7.5 故单夹 yaw 不够）；**迟滞双位分记**（`behindHold/behindPosHold`：上一帧在半平面里才拽得动这一帧——转身挤出去的无感拽回，朝向被瞬移/归位途中整只让路）；`renderer._behindYaw` 只在 locked 且 yaw 有限时下发（free 恒不夹）；**切模式不入 snap 名单**（`_notePhase` 只认 hub↔arena 换区）。锁测 +12 覆盖判决面：720°/s 甩镜绕不到正脸、free 同甩法不受硬顶、`setLookMode`/payload 不武装 snap、free→locked 弹簧归位不甩镜、归位途中硬顶让路逐帧与纯弹簧逐位相同、过门仍 snap、常规转速 ≤270°/s 硬顶零介入（手感一行没改）、`holdBehind` 三分支。F4 复验：probe 机位读数（7.1 / −7.1 / dot 1.0）复跑无回退，GDD §15（F3）与 ART §18.7（F2）登记与实现同词。
 
@@ -754,8 +760,8 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 **WARNING 清单（记录不否决）**：
 
-- **真机段延后**（§13.4 八步的交互原教旨口径：键鼠转向手感、触屏 free/locked、转向手感评分卡）：本环境无交互桌面与真机，以上表替代口径如实标注；有真机后按 §13.4 复跑即销。
-- **R3 O4 边角与另一份 R3 O2 复核在飞**：未合不计分不装绿；合入后由 F4 按 LG-01/LG-02 + `render/look.test.js` 复跑防回退。
-- **W2 hit-stop 零余量哨兵**结转（§11.9）。
+- **真机段延后**（§13.4 八步的交互原教旨口径：键鼠转向手感、触屏 free/locked、转向手感评分卡）：本环境无交互桌面与真机，以上表替代口径如实标注；有真机后按 §13.4 复跑即销。**保留。**
+- **R3 O4 边角与另一份 R3 O2 复核**：**已合入父分支** `ea1c825`（O2 咬合闸 + snap=60；O4 切 V / disabled 闸 / 连按 HUD）。销号。F4 未复跑 775；收口复跑见上补记。
+- **W2 hit-stop 零余量哨兵**结转（§11.9）。**保留。**
 
-**判定：视角轮 Round 3 = PASS-WITH-WARNINGS**（判定表与证据见 ACCEPTANCE §13.8；LG 六门全绿、LK 九条全绿（含 O2 DEFER 改勾）、LT 八条全在场真实断言 + R3 新增 20 条锁测、六条用户验收线 6/6 复验无回退；WARNING 全部为环境性延后与在飞席位登记，无实现缺口、无红线命中）。
+**判定：视角轮 Round 3 = PASS-WITH-WARNINGS**（判定表与证据见 ACCEPTANCE §13.8；LG 六门全绿、LK 九条全绿（含 O2 DEFER 改勾）、LT 八条全在场真实断言 + R3 新增 20 条锁测、六条用户验收线 6/6 复验无回退；WARNING 仅余真机段延后与 W2 hit-stop 哨兵，R3 O2/O4 在飞已销；无实现缺口、无红线命中）。

@@ -647,9 +647,9 @@ npm run build   # LG-03：退出码 0
 
 ### 13.8 异掌视角轮 Round 3 验收判定（F4 最终验收席 · 签字轮）
 
-- 被验分支/commit：`cursor/yizhang-look-db8d` @ `372a8dd`（Round 3 已合席位：O2 机位复核补交 `4696ee0`+`91fd888` @ merge `f202877`——R2 唯一 DEFER 销号 / F1 契约 v4.4 实现态登记 `e7eae97` / F2 ART §18.7 收口审计 `7f71689` / F3 GDD §15 硬顶登记 `a8ceb70` / O1 reach 镜像与 1e-4 边界复核 `4c322d9` / O3 水平锥与 Bot 路径锁测 `9947c05`+`255ec8f` / G2 切模式探针与跨层锁测 `a3f9e4d`+`2284321`+`74290f0`；**未合、不装绿**：R3 O4 边角、另一份 R3 O2 复核——在飞，合入后防回退复跑）；Round 2 判定点 `c97723d`。
-- 验收人/日期：Fable-4 最终验收席 / 2026-08-27（全套命令实跑：静态检查 → `npm test` → `npm run probe` → `npm run build` → headless Chrome CDP 冒烟截图 ×6）。工作分支 `cursor/yizhang-look-r3-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md` 与本文件，不改 src）。
-- 结论：**PASS-WITH-WARNINGS**（R2 唯一 DEFER——O2 机位复核——合入并复验改勾；六条用户验收线 6/6 复验无回退；WARNING 全部为环境性延后（真机段）与在飞席位登记（R3 O4 / 另一份 R3 O2），无实现缺口、无红线命中）。
+- 被验分支/commit：`cursor/yizhang-look-db8d` @ `372a8dd`（F4 签字基线。Round 3 当时已合：O2 机位复核补交 `4696ee0`+`91fd888` @ merge `f202877`——R2 唯一 DEFER 销号 / F1 契约 v4.4 实现态登记 `e7eae97` / F2 ART §18.7 收口审计 `7f71689` / F3 GDD §15 硬顶登记 `a8ceb70` / O1 reach 镜像与 1e-4 边界复核 `4c322d9` / O3 水平锥与 Bot 路径锁测 `9947c05`+`255ec8f` / G2 切模式探针与跨层锁测 `a3f9e4d`+`2284321`+`74290f0`）。F4 当时登记 R3 O4 边角、另一份 R3 O2 复核在飞；**编排层收口：二者已合入父分支 `ea1c825`**（merge `58052e8` / `b3f5d03`）。Round 2 判定点 `c97723d`。
+- 验收人/日期：Fable-4 最终验收席 / 2026-08-27（全套命令实跑：静态检查 → `npm test` → `npm run probe` → `npm run build` → headless Chrome CDP 冒烟截图 ×6）。工作分支 `cursor/yizhang-look-r3-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md` 与本文件，不改 src）。收口工人补记：F4 未复跑合入 O2+O4 后的 775 测；merge 工人基线 775/54 @ `ea1c825`，收口再复跑确认。
+- 结论：**PASS-WITH-WARNINGS**（R2 唯一 DEFER——O2 机位复核——合入并复验改勾；六条用户验收线 6/6 复验无回退；WARNING 仅余真机段延后与 W2 hit-stop 哨兵；R3 O2/O4 在飞已销号为「已合入父分支」，无实现缺口、无红线命中）。
 
 | 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
 |---|---|---|
@@ -662,13 +662,13 @@ npm run build   # LG-03：退出码 0
 
 **命令实测原文摘要**：
 
-- `npm test`：**Test Files 52 passed (52) / Tests 737 passed (737)**，退出码 0（Round 2 717/51 → 737/52，零减量；新增分解见 SOTA §12.7）。
+- `npm test`：**Test Files 52 passed (52) / Tests 737 passed (737)**，退出码 0（F4 签字基线 @ `372a8dd`；Round 2 717/51 → 737/52，零减量；新增分解见 SOTA §12.7）。合入 R3 O2+O4 后父分支测基线 **775/54**（merge 工人 @ `ea1c825`）；收口复跑确认，不假装 F4 亲跑 775。
 - `npm run probe`：退出码 0，`{"status":"pass","seedCount":3,"kills":1,"arenaKills":1,"cameraSnapMaxDist":7.1,"modeSwitchCameraMaxDist":7.133,"lockedForwardMinDot":1,"lockedForwardMaxAngleDeg":0,"lockedTurnMinAngleDeg":47.67,"lockedCameraMaxBehindness":-7.1,"freeStationaryMaxYawDeltaDeg":0,"freeMoveMaxYawErrorDeg":0.00021,"p99StepMs":0.116,"ai":"think","wiredCombat":true,…}`；三 seed 逐条——`0x1a2b3c4d`：kills 1、p99 0.116、botSlapAttempts 2191、modeSwitch 7.107；`0x5eed1234`：kills 2、p99 0.104、botSlapAttempts 3425、modeSwitch 7.133；`0xc0ffee42`：kills 2、p99 0.113、botSlapAttempts 3636、modeSwitch 7.106；三条均 `openingCameraDistance:7.1`、`arenaEntryPreSnapDistance:127.0–127.2`、`arenaEntryCameraDistance:7.1`、`snappedFrames:2`、`lockedTargets:3601`、`lockedReturnYawError≈1.7e-16`、`lookModeTransitions:2 / modeSwitchCameraFrames:2`、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`；横幅 `MODEL_SLUG: yizhang-probe`。
 - `npm run build`：退出码 0；主 chunk 681.44kB / gzip 188.54kB（>500kB 警告既知，含 three）；build 后 `rg googleapis|gstatic src dist index.html` 零命中。
-- 静态面：`RENDER_YAW_OFFSET = 0`；换算实现唯一（`core/view.js:173/178`，其余 10 文件只 import）；`rg yawFromDir src/input` 命中（分派在位）；`rg "yz-look" src/ui src/main.js` 命中（HUD DOM 在位）；`git diff c97723d..HEAD --stat -- src/render` **有 diff**（O2 硬顶合入实锤：camera.js +120 / renderer.js +55 / look.test.js +331）；同区间 `src/input`/`src/ui`/`src/main.js` **零 diff**（R3 O4 未合实锤）；隔离 diff 过滤后零残留。
+- 静态面：`RENDER_YAW_OFFSET = 0`；换算实现唯一（`core/view.js:173/178`，其余 10 文件只 import）；`rg yawFromDir src/input` 命中（分派在位）；`rg "yz-look" src/ui src/main.js` 命中（HUD DOM 在位）；`git diff c97723d..HEAD --stat -- src/render` **有 diff**（O2 硬顶合入实锤：camera.js +120 / renderer.js +55 / look.test.js +331）；F4 签字当时同区间 `src/input`/`src/ui`/`src/main.js` **零 diff**（R3 O4 未合实锤）。收口时二者已合入：`src/input`（`toggleLookMode` 认 `state.enabled`、回调 try/catch、当帧 `sample()`）+ `src/ui/look-switch.test.js`。隔离 diff 过滤后零残留。
 
 **验证方式限定（诚实口径）**：本轮仍无交互桌面与真机——§13.4 实机八步的交互原教旨口径**未做**；以 probe 硬门（3601 帧 locked 逐帧 + V 双向切换零 snap + 127m 远跳前提）+ headless Chrome 148（SwiftShader WebGL）CDP 驱动 `smoke.html` 截图 ×6（locked 开局背后 / V→free 同帧位 / free 独立转镜露侧面 / free→locked 机位连续 / 弹簧归位背后 / tour 穿门首帧机位在身后）逐步替代并如实标注（八步 × 替代证据对照表见 SOTA §12.7）；触屏一步无替代，DEFER 真机段。
 
-- WARNING 清单：真机段延后（§13.4 交互原教旨口径 + 触屏 + 转向手感评分卡）；R3 O4 边角与另一份 R3 O2 复核在飞（合入后 F4 防回退复跑）；W2 hit-stop 零余量哨兵结转（§11.9）。
-- 修复指派：无实现缺口待派；在飞席位合入后由 F4 复跑 LG-01/LG-02 + `render/look.test.js` 补验；真机到位后按 §13.4 八步复跑销首条 WARNING。
+- WARNING 清单：真机段延后（§13.4 交互原教旨口径 + 触屏 + 转向手感评分卡）**保留**；R3 O4 边角与另一份 R3 O2 复核 **已合入父分支**（`ea1c825`，销号）；W2 hit-stop 零余量哨兵结转（§11.9）**保留**。
+- 修复指派：无实现缺口待派；真机到位后按 §13.4 八步复跑销首条 WARNING。
 - 证据包：命令原文（上列）+ probe JSON 三 seed 全文 + 冒烟截图 6 张（存验收工作台，不入 `games/yizhang/src`）随本轮验收 PR 描述提交。
