@@ -14,6 +14,10 @@
 //
 // WebGL 在 node 里起不来，所以与 look.test.js 同一手法：只装配镜头链路，
 // cameraRig / setLook / _followYaw / _followCamera / _phaseChanged 全是生产代码。
+//
+// 参照系说明：这里把角色 yaw **原样**当跟随角喂进去。生产路径上 `_followYaw` 拿的是
+// `characters.get(id).yaw` —— 那份还带一层 λ=16 的转身阻尼（characters.js），也就是
+// 画面上模型真正的朝向。原样喂比生产更陡（少一层缓冲），所以这里绿了，实机只会更稳。
 
 import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
