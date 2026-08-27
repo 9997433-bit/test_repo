@@ -3,8 +3,8 @@
 维护者：Fable-4（SOTA 验收）。上游依据：`.agent_workspace/yizhang/DESIGN_SEED.md`、`.agent_workspace/yizhang/CONTRACT.md`、`games/yizhang/docs/VISUAL_HANDBOOK.md`。
 执行规程见同目录 `ACCEPTANCE.md`。数值调参（击退量、掌意增速等）以 Fable-3 的 `GDD.md` 为单一事实源；本清单只锁**契约常量、行为、可验证阈值**。
 
-> **当前生效轮次：手感轮（Feel Round 1–3，父分支 `cursor/yizhang-feel-db8d`）—— 验收以 §10 为唯一记分表。**
-> §0–§9 是上一系列（骨架→精品，`cursor/yizhang-db8d`，2026-08-26 以 197 测全绿收口）的存档；其命令、红线表与判定记录仍被 §10 回归门引用作防回退基准，不得删改。
+> **当前生效轮次：安全区大厅轮（Hub Round 1–3，父分支 `cursor/yizhang-hub-db8d`）—— 验收以 §11 为唯一记分表。**
+> §10 是手感轮（`cursor/yizhang-feel-db8d`，大厅轮分支即由其拉出）的记分表，其 FG/FD/FS/FV/FJ 条目被 §11 回归门（HG-06）引用作防回退基准；§0–§9 是骨架→精品系列（`cursor/yizhang-db8d`，2026-08-26 以 197 测全绿收口）的存档。两段均不得删改。
 
 ## 0. 判定规则
 
@@ -384,3 +384,99 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 | **FR-03** | 复制第二份游戏目录 / 改其他 `games/*` | GOAL 首段 | `git diff --name-only` 审读（FG-05） |
 | **FR-04** | 皮肤用下载贴图 / 版权素材 | OWNERSHIP 红线（R-13 同源） | 资产审读 + `rg -n "https?://" src` |
 | **FR-05** | 弱化既有断言骗绿（删测试、改阈值、空 expect） | §4 造假条款 | 测试 diff 审读（FG-01 唯一豁免：view.test.js:130 翻转） |
+
+---
+
+## 11. 安全区大厅轮（Hub Round 1–3）验收清单 —— 安全区 → 走道选掌 → 传送门 → 裂岛
+
+维护者：Fable-4（SOTA 验收）。上游依据：`.agent_workspace/yizhang-hub/GOAL.md`（用户原话）、`.agent_workspace/yizhang-hub/OWNERSHIP.md`（握手四条）、`docs/ARCHITECTURE.md` §4.6（双区状态机）、`docs/API_CONTRACT.md` §3.3/§4.4（HUB 布局与大厅交互语义）、`docs/GDD.md` §12（布局数值，F3 单一事实源）。执行规程见 `ACCEPTANCE.md` §12。
+**大厅 ADR 记 29…32（手感轮占用 25…28）**：ADR-29 双区状态机与安全区免战、ADR-30 走道选掌与 `HUB` 布局、ADR-31 传送门、ADR-32 `interact` 输入与 Bot 静默。
+判定规则沿用 §0：全部二值可勾选、勾选只由验收流程执行、红线即时否决、上级默认包含下级（复验防回退）。**契约-实现漂移收口（§11.6 洞 4）前，验收按实现名判读**（`phase/skipHub`、`portalNear`、`hubLocked`、`enterArena/enterHub`）。
+
+### 11.0 轮次门槛（Hub Gate）
+
+| 轮次 | 必须全绿 | 允许延后 / 最小实现 |
+|---|---|---|
+| Round 1（L1 可玩线） | HG-01…06 全部（HG-02 修复探针对齐后复跑）；HB-01…12 全部；HV-01/02/03 至少几何桩级在场（可辨形，材质打磨延后）；HT-01…07 真实断言；红线 HR-01…05、FR-01…05、R-10…13 零命中 | HV-04 idle VFX 允许「按掌分派在、粒子打磨延后」但禁纯色光球；HV-05 门体允许几何桩 + 现有 `.yz-warp` 淡场；HV-06（F2 真源归一）延后；HB-12 回程 UX 打磨延后（API 面已锁）；HT-08 可 todo 占位 |
+| Round 2 | 复验 Round 1 全绿（回退按 FAIL 计）；HV-01…06 全实装；§11.6 洞 1–7 逐条销号；HT-01…08 全部真实断言 | HV-04 盲辨预跑（记录不记分） |
+| Round 3（SOTA 签字） | 复验全表；HV-04 八掌 idle 盲辨 ≥6/8（协议 ACCEPTANCE §12.5）；真机触控走完大厅全链（HB-11 真机段）；性能不回归（probe p99StepMs ≤0.5ms、桌面 high 档 60fps、hub 场景 draw calls 并入 L3-10 预算）；红线全表零命中 | — |
+
+### 11.1 HG- 回归门（每轮前置；任何一项红 → 直接 REJECT，不再往下记分）
+
+- [ ] **HG-01 测试全绿且不减量** — `npm test` 退出码 0，通过数 **≥306**（开工基线 @ `1b4371f`：306/306、23 文件）。弱化/删除既有断言按造假计（§4 规则 4；FR-05 同源）。
+- [ ] **HG-02 探针走通大厅全链** — `npm run probe` 退出码 0、`status:"pass"`，输出 `hubJourney` 段：hub 起步（`mainGloveId=null`、`portalReady=false`）→ 聚焦目标掌（`focusObserved`）→ 装主掌（`equippedAtStep`）→ 穿门（`enteredArenaAtStep` 有值，≤1200 步）→ `arenaKills ≥ 1`；`wiredCombat:true`、`ai:"think"` 沿用。**开工实测即红**（`probe must start in hub phase; got arena`，详见 §11.5 基线与 §11.6 洞 3）：harness 缺省 `phase:'arena'` 与 probe 的 hub 剧本对齐失败，一行修复归 GPT-sol-2；修复合入前本门按「已知红、待修」记，不发 PASS。
+- [ ] **HG-03 构建过** — `npm run build`（vite）退出码 0（基线通过，主 chunk 含 three >500kB 警告既知）。
+- [ ] **HG-04 隔离** — 改动只落 `games/yizhang/**` 与 `.agent_workspace/yizhang-hub/**`；不碰其他 `games/*`、`pages/`、workflow、不复制第二份游戏目录（FR-03 同源）。验证：`git diff --name-only origin/main...HEAD` 审读。
+- [ ] **HG-05 依赖与外链纪律** — 运行时依赖仍仅 `three`；`rg -n "googleapis|gstatic" src dist index.html` 零命中；大厅场景（走道/台座/展掌/门）全部低面数几何 + 程序纹理，零下载素材（R-13/FR-04 同源）。
+- [ ] **HG-06 手感轮回归抽验（用户回归线：键鼠方向 / 皮肤 / 战斗 VFX）** — ① 方向：`RENDER_YAW_OFFSET === 0` 静态在位 + FD-06 相机半平面单测仍绿 + 大厅走道里 W=屏幕深处实机复验（§12.4 步 2）；② 皮肤：FS-03/04 存档 roundtrip 与 `view.players[].skinId` 单测仍绿 + 选非默认皮肤后走道与裂岛模型均生效；③ 战斗 VFX：FV-01/02/03 事件带掌 id、渲染分派表 8 键、ghosts 单测仍绿 + 传送后放技能特效无回退；④ hit-stop：FJ-01 上界锁仍绿。任何一项回退按该项 FAIL 计并引用 §10 原条目定位。
+
+### 11.2 HB- 大厅流程行为（sim/壳层，全部自动化可锁）
+
+- [ ] **HB-01 开局在安全区、不在裂岛中央** — 产品路径（`main.startMatch` 不带 `skipHub`）⇒ `createMatch` 缺省 `phase='hub'`（`sim/state.js resolvePhase`；`skipHub`/`phase:'arena'`/`config.skipHub` 三条旧路保留）；p0 落 `HUB.spawn` (0, −106)、yaw=0 面向门；断言 `Math.hypot(p0.x, p0.z) > 22`（裂岛盘 20+2m 缓冲之外）；相机跟在角色身后、开局即面向走道纵深。验证：`src/sim/sim.test.js`「默认 phase=hub」+ 手动开局录屏。
+- [ ] **HB-02 八座台座布局硬约束** — `view.hub.pedestals.length === 8`、`gloveId` 唯一覆盖 8 掌、顺序 = GLOVES 图鉴顺序；`interactRadius` 2.0 ∈ [1.6, 2.2]；任两座间距 > 2×interactRadius；大厅全部几何距裂岛盘（20+2m）不重叠；spawn/座/门都在 bounds 内、门区不碰任何交互圈；数据表深冻结、JSON 纯净。验证：`src/data/hub.test.js` ×10（契约 §3.3 硬约束 1–4 逐条）。
+- [ ] **HB-03 靠近聚焦 / 离开取消** — p0 入 interactRadius ⇒ `focusGloveId` = 该掌 + `hubFocus` 事件；离圈 ⇒ null；并列取台座表序靠前（同 seed 稳定）。验证：`tests/hub-flow.test.js`「靠近时聚焦」「离开交互半径后取消聚焦」。
+- [ ] **HB-04 interact 边沿装备、长按不连发** — E / 触控「选」输出 `interact` 持续位，sim 在 `p.prev.interact` 做上升沿；按住按键走到另一座不得重复消费同一次按下。验证：tests/hub-flow 第 1 条（按住换座不装）+ `src/input/index.test.js`「安全区的 interact 采样」组。
+- [ ] **HB-05 双掌先主后副** — 主空装主 → 已是主掌 no-op（`changed:false`）→ 副掌再按提为主掌（原主退副）→ 副空装副 → 双满换副；副掌未选时写回玩家 `offhandId = mainGloveId`（不让人白捡没选过的掌）；`hubEquip` 事件带 `slot/changed`；HUD 配装条主/副实时更新。验证：`src/core/hub-flow.test.js`「equipIntent · 先主后副」×6 + tests/hub-flow 主副装备序列。
+- [ ] **HB-06 未解锁可见但拒绝** — `unlocked` 缺省 fail-closed（`unlock==='default'` 集合 + 调用方明确携带的两掌；cotton 恒可用；空集回落表首掌防八座全灰）；聚焦未解锁掌 + interact ⇒ 配装逐字段不变、发 `hubLocked {unlock}`、说明牌写解锁条件而非「按 E」、toast 报解锁条件。验证：tests/hub-flow 第 2 条 + hub-flow.test.js「未解锁的台座显示解锁条件」。
+- [ ] **HB-07 门未就绪提示** — `portalReady === false`（主掌未选）时进门圈：不传送、发 `hubPortalNear {ready:false}`、toast「传送门认掌不认人 · 先挑一只主掌」、HUD 门提示三段语气（先选掌 → 已就绪 → 门前）状态驱动。验证：hub-flow.test.js「传送门三段语气」「没选主掌时走进传送门不放行」。
+- [ ] **HB-08 传送同 tick、loadout 保留、计时域切换** — `portalReady ∧ 进门半径`（现实现为圆形 `portal.radius=2.4`，穿门即传送、无需再按 interact，键鼠触控同路径）⇒ 同 tick `phase='arena'`、p0 走既有出生链路落岛上（`hypot < arenaRadius`、`hasFloorUnder` true、`invulnT ≥ invulnTime`）、`gloveId/offhandId` 原样保留、对局计时从进岛起算（`match.startTime = state.time`）、`isMatchOver` 在 hub 恒 `over:false`（逛大厅不吃对局时间）。验证：tests/hub-flow 第 3 条 + `src/ai/view-contract.test.js` hub 集成。
+- [ ] **HB-09 安全区免战** — hub 体积内：`applyKnockback` 返回 0、无 KO/掉落判定、combat `inSafeZone` 拒绝出招（`resolveSlap/resolveSkill` 返回 `reason:'hub'`）；被连扇 180 帧位置/deaths/hitsTaken 零变化。规则按「实体所处空间」生效——摆在裂岛坐标的旧测不受影响。验证：tests/hub-flow 第 4 条 + `src/combat/util.js inSafeZone`（sim 单份实现，combat 不抄第二份）。
+- [ ] **HB-10 Bot 仅 arena 出现** — hub 开局 Bot 全部落裂岛盘（原点 20m 内）不进走道（`state.js`「安全区不放 Bot」，距安全区最近缘 ≥78m，大厅视野不可见）；`think` 在 hub 视图下恒零输入（`isHubView` fail-safe：缺 phase 但带 hub 数据也休眠）；main 在 hub 期不喂 Bot 输入；传送后 Bot 才开打（probe `arenaKills ≥ 1` 佐证活性）。验证：`src/ai/bots.test.js`「安全区守卫」组 + view-contract「phase=hub 时 think 一律零输入」。
+- [ ] **HB-11 触控与键鼠同一套靠近+确认** — `input.setPhase('hub')` 下 E 只发 interact、扇击/技能不出（安全区不对展掌开技）；触控「选」按钮走 `setTouchButton('interact', down, {slot})` 同通路、可指定主/副槽；确认键章触屏显示「选」键鼠显示「E」（`.yz-inspect-key`，独立于被触屏隐藏的 `.yz-kbd`）；切回 arena 后 E 复位技能。触控钮尺寸沿用 L1-07/G-06 阈值。验证：`src/input/index.test.js` interact 组 + hub-flow.test.js「触控写『选』」+ devtools 触控仿真实测。
+- [ ] **HB-12 存档写回与回程 API** — 传送帧 `rememberHubLoadout → updateSave({loadout})` 把走道所选落盘（「直接进裂岛」与「再来一局」吃它）；`enterHub(state)` 回程 API 在场且有测（sim.test.js「enterHub 能把人送回安全区再选」）、`main.returnToHub` 不刷新页面回大厅；2D `.yz-home` 配掌板降为暂停面板备选入口、不删（HR-05 红线）。验证：单测 + 手动存档链（§12.4 步 8）。
+
+### 11.3 HV- 走道与传送门渲染（SOTA 面；**开工实测 O2/F2 未合入**——`rg -i "hub|pedestal|portal" src/render` 零命中，本组全红起步，见 §11.6 洞 1/2）
+
+- [ ] **HV-01 3D 安全区场景在场** — hub 阶段画面有可见走道地面与边界（对应 bounds/walkway 15×39m），与裂岛同世界摆放（z≈−120）不穿帮不遮挡；隐形墙位置与 sim 钳制一致（贴墙走无穿模、无「撞空气」错位）。验证：实机录屏 + 走道边界绕一圈。
+- [ ] **HV-02 台座 ×8 有形有源** — 座体高 0.95、位置/朝向全部读 `view.hub.pedestals`（禁第二份硬编码坐标，HR-04）；SOTA 面：台座有磨损与该掌识别色漆线（`color` 字段）。验证：代码审读（数据源唯一）+ 截图。
+- [ ] **HV-03 展掌手指朝上 + 悬浮呼吸** — 掌模型掌心/手指朝 +Y、几何中心 y=1.35（数据表 `GLOVE_HOVER_Y`）、轻微悬浮或呼吸；yaw 面向走道中线（左排面 +X、右排面 −X，ADR-17 直用零补偿）。验证：截图 + 慢放。
+- [ ] **HV-04 idle VFX 可辨掌** — 8 座各有可辨识 idle 特效（霜雾/岩屑/风带/磁弧等，特效语言归 F2/O2 规范）；禁纯色光球（R-05）、禁发光描边（R-02）、禁 Bloom 糊屏（R-03）。Round 3 盲辨：遮掌名按 idle 特效认掌 **≥6/8**（协议 §12.5）。
+- [ ] **HV-05 传送门可见 + 门内过渡** — 走道尽头有门体（位置读 `view.hub.portal`）；`portalReady` 前后有可辨状态差（未就绪暗 / 就绪亮，识别色克制）；穿门过渡为短淡场/门光（现 `.yz-warp` ≤400ms），**禁加载条糊屏**（HR-03）。验证：录屏对比。
+- [ ] **HV-06 大厅 HUD 视觉真源归一** — F2 在 `src/styles/**` 落 `.yz-inspect`/说明牌/门提示/配装条视觉终稿（饱和识别色只给当前聚焦掌，R-09 纪律）；O4 的 `src/ui/hub.css` 收缩为结构性 fallback，双源同名类不打架（上一系列 K-1 风险的大厅版，§11.6 洞 2）。验证：devtools 生效样式来源核对 + 截图。
+
+### 11.4 HT- 测试锁表（MUST EXIST；开工在场性实测 @ `1b4371f`）
+
+| ID | 锁什么 | 关联条目 | 载体（实测在场性） | 责任 | 生效轮次 |
+|---|---|---|---|---|---|
+| **HT-01** | hub 确定性流程：聚焦/边沿装备/未解锁/传送/免战 | HB-03…09 | `tests/hub-flow.test.js` ×4 ✅ | G1 | Round 1 |
+| **HT-02** | HUB 布局硬约束 1–4 + 深冻结 + sim 接管冒烟 | HB-02 | `src/data/hub.test.js` ×10 ✅ | F3/G1 | Round 1 |
+| **HT-03** | interact 采样：hub/arena 键位切换、触控槽位、禁用不外泄 | HB-04/11 | `src/input/index.test.js` interact 组 ✅ | O4/G1 | Round 1 |
+| **HT-04** | Bot 安全区守卫：`isHubView`、零输入、fail-safe 偏不出手 | HB-10 | `src/ai/bots.test.js` + `view-contract.test.js` ✅ | O3/G1 | Round 1 |
+| **HT-05** | phase 缺省 hub / skipHub 三条旧路 / enterHub 回程 | HB-01/12 | `src/sim/sim.test.js` ✅ | O1 | Round 1 |
+| **HT-06** | 探针大厅全链：hub 起步→聚焦→装掌→穿门→arena kills≥1 | HG-02 | `scripts/probe.mjs` hubJourney ✅在场 **❌当前红**（洞 3） | G2 | Round 1 |
+| **HT-07** | 壳层视图模型：CTA 六态、说明牌、门三段语气、键盘 E 整链 | HB-05/06/07/11 | `src/core/hub-flow.test.js` ✅ | O4/G1 | Round 1 |
+| **HT-08** | 渲染消费冒烟：台座 mesh=8、坐标源自 view.hub、门体在场 | HV-01/02/05 | 待 O2 落地后补 | O2/G1 | Round 2 |
+
+### 11.5 L1 可玩线 vs SOTA 线（差距标注 · 开工基线 @ `1b4371f` 实测 2026-08-27）
+
+**基线实测**：`npm test` **306/306**（23 文件）退出码 0；`npm run probe` **FAIL 退出码 1**（`probe must start in hub phase; got arena`，洞 3）；`npm run build` 退出码 0；`rg -i "hub|pedestal|portal" src/render` **零命中**（O2 未合入）；`src/styles/**` 无大厅样式、`docs/ART_DIRECTION.md` 无大厅章节（F2 未合入）；`RENDER_YAW_OFFSET = 0` 在位、`rg googleapis src index.html` 零命中（手感轮成果未回潮）。
+
+| 用户目标 | 现状基线（Fable-4 实测） | L1 可玩线（Round 1 全绿即达） | SOTA 线（Round 2/3 才算兑现） |
+|---|---|---|---|
+| 开局在另一区域（安全区） | sim/壳层全链在：缺省 `phase='hub'`、p0 落走道 (0,−106)、免战免掉落、Bot 留裂岛；**3D 画面无走道**（O2 缺席，「盲走」） | HB-01 + HV-01 几何桩：脚下有可见走道 | 场景光影/磨损/暮蓝暖黄按 R 表评审；灰度剪影可读 |
+| 走道两排手套 + 台子、指朝上、对应特效 | 数据/sim 面 8 座齐（HB-02 十测锁死：坐标/朝向/硬约束）；渲染零呈现 | HV-02/03 桩级：8 座可辨形、掌指朝上 +Y | HV-04 idle 盲辨 ≥6/8 + 台座磨损与识别色漆线 |
+| 靠近能选择和说明 | 聚焦/装备/说明牌/CTA 六态/触控「选」全链在且有测（HT-01/03/07）；键鼠触控同通路 | 已达，复验即可 | F2 说明牌材质化（HV-06）+ 饱和识别色纪律 |
+| 传送门进格斗区 | sim 传送/计时域/免战边界在且有测；`.yz-warp` 淡场在；probe 全链剧本在但**当前红** | HG-02 修复 + HB-07/08 复验 | HV-05 门体可见 + 就绪状态差 + 门内粒子 |
+
+### 11.6 Round 2/3 必须补的洞（Round 1 已知无法收口的部分，验收侧备案）
+
+1. **O2 渲染整章缺席（最高优先）**：`src/render` 零 hub 消费——现在进大厅是「盲走」：HUD/聚焦/装备/传送全对，但画面没有走道、台座、展掌、门。GOAL 验收线「8 座展示掌可走过去看、可辨特效」整条不可测。Round 1 若 O2 不落地，HV-01…05 全部记 FAIL/延后并在判定表明示；Round 2 必须收口，HT-08 渲染冒烟随行。
+2. **F2 视觉真源缺席 + 双 CSS 回潮风险**：`.yz-inspect` 等类名现由 O4 `src/ui/hub.css` 顶班；契约 §13 规定「类名由 F2 在 `src/styles` 定义，shell 按语义挂类」。F2 落地后同名类两源（上一系列 §5.1 K-1 风险的大厅版）——Round 2 裁定：视觉唯一真源归 `src/styles`，`ui/hub.css` 收缩为结构 fallback，devtools 逐类核对生效来源。
+3. **probe 对齐漂移（开工即红，HG-02 挡）**：`scripts/harness.mjs createFourPlayerMatch` 缺省 `phase:'arena'`（护旧探针与 feel-probe），`scripts/probe.mjs` 的 hub 剧本调用未传 `phase:'hub'` 覆盖——`8f178d6` 调和 harness 时漏掉，探针自身 `createHubJourney` 硬断言 hub 起步故直接 FAIL。一行修复（probe 调用处显式传 `phase:'hub'`）归 GPT-sol-2；修复后 HG-02 按字面判读。
+4. **契约-实现漂移表（F1 vs O1/O4，Round 2 必须收口一边）**：契约 §4.1/§4.4 为冻结文本但与实现有七处名/义漂移——① 选项名 `startPhase`（§4.1 注释称缺省 `'arena'`）vs 实现 `phase`/`skipHub`（缺省 `'hub'`；硬约束 20 与实现一致、§4.1 注释自相矛盾）；② 事件 `phaseChange{from,to,yaw}` vs 实现 `enterArena`/`enterHub`；③ `hubDeny{reason:'locked'}` vs 实现 `hubLocked{unlock}`；④ HubView `nearPortal`/`mainChosen/offChosen` vs 实现 `portalNear`/`mainGloveId/offGloveId`；⑤ 传送触发「进 `portal.aabb`」vs 实现圆形 `portal.radius`（数据表两种字段都给，sim 只读 radius）；⑥ 装备规则「已落位 ⇒ no-op」vs 实现「副掌再按提为主掌」（promote，UX 更优）；⑦ 音效映射 `hubEquip→equip / hubDeny→deny / phaseChange→portal` vs main 实际按实现事件名接。收口方向建议：契约向实现修（实现已被 306 测锁定）；收口前验收按实现名判读，防 G1 按契约名写测锁不住实现。
+5. **hub 内 switchGlove 交换语义未验**：契约 §4.4 定义 hub 里换掌键 = 主副交换（无 switchLock 代价）；实现是否落地未核。Round 2 核对：落地则补测，未落地则契约随洞 4 一并修。
+6. **回程链路 UX**：`enterHub` API + `returnToHub`（重开一局落 hub）在场；「对局结束结算板 → 回安全区再选」的入口与原局回程（不重开）归 Round 2（GOAL §7），验收补手动步骤。
+7. **hub 阶段渲染性能预算**：O2 落地后走道 8 座 idle VFX + 同世界裂岛常驻——Round 2 复测 draw calls（mid ≤120 沿用 L3-10）与 probe p99StepMs（红线 0.5ms）；关注 78m+ 外裂岛的雾/视距剔除处理。
+8. **真机缺口**：Round 1–2 触控靠 devtools 仿真；Round 3 真机走完「摇杆走道 → 选按钮装掌 → 穿门 → 开打」全链 + 多点触控不互斥。
+9. **皮肤 UI 与走道选掌的入口层级**：大厅选皮肤（手感轮 FS-02）与走道选掌并存后谁在主菜单、谁进走道，Round 2 定稿；皮肤在 hub 走道模型上同样生效（HG-06 ② 抽验）。
+10. **isMatchOver 计时域回归哨兵**：hub 恒 `over:false` 依赖 `enteredArenaAt`/`match.startTime` 记账；任何动对局计时的 PR 必须复跑 tests/hub-flow 传送条与 sim 计时测，防「逛大厅吃对局时间」回潮。
+
+### 11.7 HR- 红线增补（大厅轮即时否决，叠加 §10.9 FR-01…05 与 §5 R-10…13）
+
+| ID | 红线 | 依据 | 检查方法 |
+|---|---|---|---|
+| **HR-01** | 开局把玩家扔进裂岛中央（缺省回退 arena） | 用户验收线（GOAL） | HB-01 断言 + `main.js` 审读（产品路径不带 `skipHub`） |
+| **HR-02** | 大厅绕过解锁（未解锁掌可装备 / `unlocked` 缺省 fail-open） | GOAL §4 | HB-06 单测 + `resolveUnlocked` 审读 |
+| **HR-03** | 传送用加载条糊屏 | GOAL §6 明令 | 录屏 + `rg -in "loading|progress" src/ui src/render` 判读 |
+| **HR-04** | 渲染/UI 硬编码第二份台座/门坐标（绕过 `view.hub`） | 契约 §3.3 | O2/O4 代码审读：坐标只准来自 `view.hub` |
+| **HR-05** | 删 2D 配掌板到无法配装 | GOAL 附则 | `.yz-home` 与暂停入口在场性 + 手动 |

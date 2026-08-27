@@ -2,8 +2,8 @@
 
 维护者：Fable-4（SOTA 验收）。指标定义与阈值以同目录 `SOTA_CHECKLIST.md` 的 ID 为唯一事实源，本文只定义**执行顺序、证据要求、否决规则、判定模板**，不重复定义数值。
 
-> **当前生效轮次：手感轮（Feel Round 1–3，父分支 `cursor/yizhang-feel-db8d`）—— 执行规程见 §11，指标见 SOTA_CHECKLIST §10。**
-> §1–§10 是上一系列（骨架→精品）的存档规程；§2 的命令与 §8 的性能协议仍被 §11 引用，不得删改。
+> **当前生效轮次：安全区大厅轮（Hub Round 1–3，父分支 `cursor/yizhang-hub-db8d`）—— 执行规程见 §12，指标见 SOTA_CHECKLIST §11。**
+> §11 是手感轮（`cursor/yizhang-feel-db8d`）的规程，其方向脚本（§11.4）与皮肤/VFX 评审段被 §12 的回归段引用；§1–§10 是骨架→精品系列的存档规程，§2 命令与 §8 性能协议仍被引用。均不得删改。
 
 ## 1. 范围与环境
 
@@ -345,3 +345,108 @@ npm run build   # FG-03：退出码 0
 - 静态面：`RENDER_YAW_OFFSET = Math.PI` 在场（**FD-01 当前红，即用户所报反转**）；`src/data/skins.js` 不存在；`getView` 无 `skinId`/`ghosts` 字段；`rg googleapis src index.html` 零命中；`vite.config.js` `base:"./"` + 4181 双端口在位。
 - 打击感底子：`src/core/juice.js` hit-stop 在场（max 90ms、本人限定、冷却 0.14s，`juice.test.js` 有测）；`renderer.js` 事件→`cameraRig.impulse` 已接线；`src/sim/physics.js` 认 `stun` 状态但 combat 从不下发（僵直缺失）；受击反馈为去饱和帧、无红晕。
 - 差距标注与 Round 2/3 洞：见 SOTA_CHECKLIST §10.7 / §10.8。
+
+---
+
+## 12. 安全区大厅轮（Hub Round 1–3）验收规程
+
+指标 ID 与阈值以 SOTA_CHECKLIST **§11** 为唯一事实源（HG 回归门 / HB 大厅流程 / HV 渲染视觉 / HT 测试锁 / HR 红线）。
+验收对象：`games/yizhang/**` 合入 **`cursor/yizhang-hub-db8d`** 的状态（或待合子分支）。每轮 7 步顺序执行；任何一步 FAIL 即出 REJECT 报告，后续步骤照跑用于收集修复清单。**HG 回归门任何一项红 → 直接 REJECT，不再往下记分。**
+**判读口径**：契约-实现漂移收口（SOTA §11.6 洞 4）前，一律按实现名判读（`phase/skipHub`、`portalNear`、`hubLocked`、`enterArena/enterHub`、圆形 `portal.radius`）。
+
+### 12.1 第 1 步 · 拉取安装与隔离（HG-04）
+
+```sh
+git fetch origin cursor/yizhang-hub-db8d && git checkout <被验分支>
+cd games/yizhang && npm ci
+git diff --name-only origin/main...HEAD | grep -v '^games/yizhang/' | grep -v '^\.agent_workspace/'
+```
+
+最后一条只允许剩共享只读文件的已声明改动；出现其他 `games/*`、`pages/`、workflow → FR-03/HG-04 即时否决。
+
+### 12.2 第 2 步 · 静态检查（HG-05/06、HB-01、HV 在场性、HR 静态面）
+
+```sh
+rg -n "skipHub|phase" src/main.js                    # HB-01/HR-01：产品路径 startMatch 不带 skipHub、phase 交 sim 缺省
+rg -i "hub|pedestal|portal" src/render               # HV 组在场性：零命中 = O2 未合入，HV-01…05 全组记 FAIL/延后
+ls src/data/hub.js src/data/hub.test.js              # HB-02/HT-02：布局表与硬约束测试在场
+rg -n "RENDER_YAW_OFFSET" src/core/view.js           # HG-06①：必须为 0（手感轮 FD-01 防回潮）
+rg -n "googleapis|gstatic" src dist index.html       # HG-05：零命中
+rg -n "cameraYawToSimYaw" src                        # FR-02 沿用：唯一换算点，无第四套约定
+rg -n "\-120|interactRadius" src/render src/ui       # HR-04：渲染/UI 疑似第二份坐标（命中需人工判读是否读 view.hub）
+rg -in "loading|progress" src/ui src/render          # HR-03：无加载条过渡（命中人工判读）
+```
+
+### 12.3 第 3–5 步 · 测试 / 探针 / 构建（HG-01/02/03、HT 表）
+
+```sh
+npm test        # HG-01：退出码 0，通过数 ≥306
+npm run probe   # HG-02：退出码 0 + hubJourney 全链 + arenaKills≥1 + wiredCombat:true + ai:"think"
+npm run build   # HG-03：退出码 0
+```
+
+- HT 在场速查：`ls tests/hub-flow.test.js src/data/hub.test.js src/core/hub-flow.test.js` + `rg -ln "安全区" src/ai src/input tests`；抽读断言内容防空壳（§4 规则 4；FR-05）。
+- **probe 判读（开工已知红）**：输出 `probe must start in hub phase; got arena` = harness/probe 对齐漂移（`harness.mjs createFourPlayerMatch` 缺省 `phase:'arena'`，probe 的 hub 剧本未传覆盖，SOTA §11.6 洞 3），**不是 sim 回退**——先以 `src/sim/sim.test.js`「默认 phase=hub」确认 sim 缺省未动，再催修（GPT-sol-2，一行）。修复合入后按字面判读：再红即门红。
+- probe 复跑规则：任何动 phase 缺省 / 传送 / Bot 守卫 / 解锁缺省 / harness 的 PR 合入后必须复跑本步。
+
+### 12.4 第 6 步 · 大厅手动脚本（键鼠 + 触控仿真，全程录屏）
+
+`npm run dev`（4181 端口），开始一局后按序执行：
+
+1. **开局位置**：出生在走道一端、相机在角色身后、正对走道纵深与远端门；**不在裂岛中央**、身边无 Bot（HB-01/10、HR-01）。
+2. **方向回归**：走道里 W=屏幕深处、S=向相机、A/D=屏幕左右、鼠标右移右转（HG-06①；完整六步沿用 §11.4 手感轮方向脚本）。
+3. **未就绪门**：不选掌直走到门口——不传送，出「先挑一只主掌」类提示（HB-07）。
+4. **逐座看掌**：沿走道走过 8 座，逐座靠近出说明牌（名称/职能/一句话/解锁态），离开即收；任意站位至多一块说明牌（HB-03；O2 合入后同验 HV-02/03/04：台座/掌指朝上/idle 特效可辨）。
+5. **装备主副**：E 装主掌（toast + 配装条更新 + 门提示转「已就绪」）；另一座 E 装副掌；回到副掌座再按 E 提为主掌（HB-05）。
+6. **未解锁拒绝**：靠近未解锁座按 E——配装不变、说明牌/toast 报解锁条件（HB-06）。
+7. **穿门**：走进门圈——短淡场（无加载条）、落裂岛台上带无敌帧、Bot 开打、HUD 换战斗脸、配装为走道所选（HB-08/10、HV-05）。
+8. **存档链**：结束或中退后回大厅/刷新页面——「直接进裂岛」与「再来一局」吃走道所选配装（HB-12）。
+9. **回归项**：裂岛内非默认皮肤可辨、扇击/技能 VFX 按掌分派、hit-stop 无回退（HG-06②③④）。
+10. **触控仿真**（devtools；Round 3 换真机）：摇杆走到台座前、「选」钮装备（确认键章显示「选」）、槽位可指定主/副、走进门圈传送；触控钮尺寸复测 L1-07 阈值；摇杆+「选」同按不互斥（HB-11）。
+
+### 12.5 第 7 步 · 视觉评审（HV 组 + R 表）
+
+- **O2 未合入时**：HV-01…05 记 FAIL/延后并在判定表明示，不做「无画面当过」处理；证据以「HUD 全链 + 盲走」录屏替代并注明。
+- **O2 合入后**：截图 ≥8——走道全景、台座特写 ×2、展掌指朝上特写、门未就绪/已就绪对比、门内过渡帧、说明牌、配装条。R 表重点：R-05 纯色光球（idle VFX）、R-02 描边（聚焦高亮）、R-09 饱和纪律（识别色只给聚焦掌）、R-08 磨损（台座）、R-07 主光方向。
+- **Round 3 盲辨（HV-04）**：遮 HUD 掌名逐座看 idle 特效认掌，**≥6/8** 过；同场复跑手感轮 §7 评分卡防打击感回退。
+
+### 12.6 证据包
+
+- 12.1–12.3 全部命令原始输出（含退出码）与 probe JSON 原文（`hubJourney` 段完整）。
+- 大厅手动脚本完整录屏 ≥90s（12.4 十步齐；穿门帧慢放）。
+- 截图按 12.5 清单；O2 未合入轮次按替代口径并注明。
+- 回归段：方向/皮肤/VFX 各一段短录屏，或引用手感轮证据包增量。
+
+### 12.7 判定模板（大厅轮）
+
+```markdown
+# 异掌大厅轮 Round <N> 验收判定
+- 被验分支/commit：
+- 验收人/日期：
+- 结论：PASS | PASS-WITH-WARNINGS | REJECT
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| HG 回归门 | x/6 | |
+| HB 大厅流程 | x/12 | |
+| HV 渲染视觉 | x/6 | |
+| HT 测试锁 | x/8 | |
+| HR/FR/R 否决 | 命中列表 | |
+
+- WARNING 清单：
+- 修复指派（按 .agent_workspace/yizhang-hub/OWNERSHIP.md）：
+- 证据包链接：
+```
+
+**修复指派对照（大厅轮 OWNERSHIP）**：双区状态机/靠近/装备/传送/免战 → Opus-1；安全区场景/走道/台座/展掌 idle VFX/传送门渲染 → Opus-2；Bot 静默/combat 安全区拒绝 → Opus-3；开局进 hub/说明牌与门提示 HUD/触控「选」/存档写回/过渡 → Opus-4；HUB 布局表 → Fable-3；台座/门/说明牌视觉规范与 `src/styles` → Fable-2；契约与 ADR-29…32 → Fable-1；tests → GPT-sol-1；scripts/探针 → GPT-sol-2。
+
+### 12.8 Round 1 开工基线（Fable-4 实测 @ `1b4371f`，2026-08-27，全套命令实跑）
+
+- `npm test`：**306/306**（23 文件），退出码 0（手感轮基线 197 → 大厅十席合入后 306，零红）。
+- `npm run probe`：**FAIL，退出码 1** —— `probe must start in hub phase; got arena`。根因：`scripts/harness.mjs createFourPlayerMatch` 缺省 `phase:'arena'`（护旧探针/feel-probe），`scripts/probe.mjs` 的 hub 剧本调用只传了 `gloveId:null / offhandId:null / unlocked:['cotton']` 未传 `phase:'hub'`，而探针自身 `createHubJourney` 硬断言 hub 起步。一行修复归 GPT-sol-2（SOTA §11.6 洞 3）。剧本本身完备：hub 起步校验 → 聚焦 → 装掌 → 穿门计步（1200 步超时）→ `arenaKills ≥ 1` 硬门 + `wiredCombat` 硬断言。
+- `npm run build`：退出码 0（主 chunk >500kB 警告既知，含 three）。
+- 渲染/视觉侧：`rg -i "hub|pedestal|portal" src/render` **零命中**（O2 未合入——hub 阶段画面无走道/台座/展掌/门，HV 组全红起步）；`src/styles/**` 无大厅样式、`docs/ART_DIRECTION.md` 无大厅章节（F2 未合入）；`.yz-inspect` 等类名由 O4 `src/ui/hub.css` 顶班。
+- 流程侧全链在且有测：sim（缺省 `phase='hub'`、免战、传送、`enterHub` 回程）、data（布局表 + 10 测）、ai/combat（双守卫）、input（interact/「选」）、core+ui（视图模型/说明牌/门三段语气/`.yz-warp` 淡场）、main（开局进 hub、存档写回、2D 板降级为暂停备选）。
+- 契约-实现漂移七处已登记（SOTA §11.6 洞 4），收口前按实现名判读。
+- 静态面：`RENDER_YAW_OFFSET = 0` 在位（手感轮修复未回潮）；`rg googleapis src index.html` 零命中；`vite.config.js` `base:"./"` + 4181 双端口在位。
+- 差距标注与 Round 2/3 洞：见 SOTA_CHECKLIST §11.5 / §11.6。
