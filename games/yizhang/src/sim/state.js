@@ -318,7 +318,8 @@ export function createMatch(opts = {}) {
     placeAtSpawn(state, players[i], false);
   }
 
-  state.hub = createHubState(opts, deps, deps.HUB);
+  // 每局自带一份布局，别和 deps 缓存共享可变对象
+  state.hub = createHubState(opts, deps, structuredClone(deps.HUB));
   if (state.phase === "hub") {
     let humanIndex = 0;
     for (const p of players) {
