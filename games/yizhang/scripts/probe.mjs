@@ -1,4 +1,9 @@
-import { isMainThread, parentPort, Worker } from 'node:worker_threads';
+import {
+  isMainThread,
+  parentPort,
+  Worker,
+  workerData,
+} from 'node:worker_threads';
 import { performance } from 'node:perf_hooks';
 
 import {
@@ -21,18 +26,58 @@ const P99_WARNING_MS = 50;
 const HANG_TIMEOUT_MS = 5_000;
 const MOVEMENT_EPSILON_SQUARED = 1e-8;
 const HUB_SCRIPT_TIMEOUT_STEPS = 60 * 20;
-const MODEL_SLUG = 'gpt-5.6-sol-xhigh-fast';
+const DEFAULT_PROBE_SEEDS = Object.freeze([
+  0x1a2b3c4d, 0x5eed1234, 0xc0ffee42,
+]);
+const MODEL_SLUG = process.env.MODEL_SLUG || 'yizhang-probe';
 
 if (isMainThread) {
   console.log(`MODEL_SLUG: ${MODEL_SLUG}`);
-  await superviseProbe();
+  await superviseProbe(readProbeSeeds(process.env.PROBE_SEED));
 } else {
   await executeProbeWorker();
 }
 
-function superviseProbe() {
+async function superviseProbe(seeds) {
+  const runs = [];
+  for (const seed of seeds) {
+    runs.push(await superviseProbeSeed(seed));
+  }
+
+  const passedRuns = runs.filter((run) => run.status === 'pass');
+  const allPassed = passedRuns.length === runs.length;
+  const summary = {
+    status: allPassed ? 'pass' : 'fail',
+    seedCount: runs.length,
+    steps: PROBE_STEPS,
+    simulatedSeconds: PROBE_STEPS * DT,
+    kills: minimumMetric(passedRuns, 'kills'),
+    arenaKills: minimumMetric(passedRuns, 'arenaKills'),
+    movedPlayers: minimumMetric(passedRuns, 'movedPlayers'),
+    p99StepMs: maximumMetric(passedRuns, 'p99StepMs'),
+    ai: passedRuns.every((run) => run.ai === 'think') ? 'think' : 'unavailable',
+    wiredCombat:
+      allPassed && passedRuns.every((run) => run.wiredCombat === true),
+    runs,
+  };
+
+  console.log(
+    allPassed
+      ? `PROBE PASS: ${runs.length}/${runs.length} fixed seeds passed`
+      : `PROBE FAIL: ${passedRuns.length}/${runs.length} fixed seeds passed`,
+  );
+  console.log(JSON.stringify(summary));
+  if (!allPassed) {
+    process.exitCode = 1;
+  }
+}
+
+function superviseProbeSeed(seed) {
   return new Promise((resolve) => {
-    const worker = new Worker(new URL(import.meta.url));
+    const seedLabel = formatSeed(seed);
+    const worker = new Worker(new URL(import.meta.url), {
+      workerData: { seed },
+    });
     let settled = false;
     let phase = 'startup';
     let activeStep = null;
@@ -49,12 +94,11 @@ function superviseProbe() {
         await worker.terminate();
         const location =
           activeStep === null ? phase : `${phase} at step ${activeStep}`;
-        console.error(
-          `PROBE FAIL: hang detected during ${location}; no progress for ` +
-            `${HANG_TIMEOUT_MS}ms`,
-        );
-        process.exitCode = 1;
-        resolve();
+        const message =
+          `hang detected during ${location}; no progress for ` +
+          `${HANG_TIMEOUT_MS}ms`;
+        console.error(`PROBE FAIL [${seedLabel}]: ${message}`);
+        resolve({ status: 'fail', seed: seedLabel, error: message });
       }, HANG_TIMEOUT_MS);
     };
 
@@ -75,9 +119,12 @@ function superviseProbe() {
       if (message?.type === 'failure') {
         settled = true;
         clearTimeout(watchdog);
-        console.error(`PROBE FAIL: ${message.message}`);
-        process.exitCode = 1;
-        resolve();
+        console.error(`PROBE FAIL [${seedLabel}]: ${message.message}`);
+        resolve({
+          status: 'fail',
+          seed: seedLabel,
+          error: message.message,
+        });
         return;
       }
 
@@ -94,7 +141,8 @@ function superviseProbe() {
         }
 
         console.log(
-          `PROBE PASS: ${PROBE_STEPS} steps (${result.simulatedSeconds}s), ` +
+          `PROBE PASS [${seedLabel}]: ${PROBE_STEPS} steps ` +
+            `(${result.simulatedSeconds}s), ` +
             `hub→${result.phase}, ${result.arenaKills} arena kill(s), ` +
             `real combat ` +
             (result.wiredCombat === undefined
@@ -103,8 +151,7 @@ function superviseProbe() {
                 ? 'wired'
                 : 'not wired'),
         );
-        console.log(JSON.stringify(result));
-        resolve();
+        resolve(result);
       }
     });
 
@@ -114,9 +161,9 @@ function superviseProbe() {
       }
       settled = true;
       clearTimeout(watchdog);
-      console.error(`PROBE FAIL: worker error: ${errorMessage(error)}`);
-      process.exitCode = 1;
-      resolve();
+      const message = `worker error: ${errorMessage(error)}`;
+      console.error(`PROBE FAIL [${seedLabel}]: ${message}`);
+      resolve({ status: 'fail', seed: seedLabel, error: message });
     });
 
     worker.once('exit', (code) => {
@@ -125,17 +172,55 @@ function superviseProbe() {
       }
       settled = true;
       clearTimeout(watchdog);
-      console.error(
-        `PROBE FAIL: worker exited before reporting a result (exit ${code})`,
-      );
-      process.exitCode = 1;
-      resolve();
+      const message = `worker exited before reporting a result (exit ${code})`;
+      console.error(`PROBE FAIL [${seedLabel}]: ${message}`);
+      resolve({ status: 'fail', seed: seedLabel, error: message });
     });
   });
 }
 
+function readProbeSeeds(value) {
+  if (value === undefined || value.trim() === '') {
+    return DEFAULT_PROBE_SEEDS;
+  }
+
+  const normalized = value.trim();
+  if (!/^(?:0x[0-9a-f]+|\d+)$/i.test(normalized)) {
+    throw new Error(
+      `PROBE_SEED must be a uint32 integer; got ${JSON.stringify(value)}`,
+    );
+  }
+  const seed = Number(normalized);
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) {
+    throw new Error(
+      `PROBE_SEED must be a uint32 integer; got ${JSON.stringify(value)}`,
+    );
+  }
+  return [seed];
+}
+
+function formatSeed(seed) {
+  return `0x${seed.toString(16).padStart(8, '0')}`;
+}
+
+function minimumMetric(runs, field) {
+  return runs.length > 0
+    ? Math.min(...runs.map((run) => run[field]))
+    : undefined;
+}
+
+function maximumMetric(runs, field) {
+  return runs.length > 0
+    ? Math.max(...runs.map((run) => run[field]))
+    : undefined;
+}
+
 async function executeProbeWorker() {
   try {
+    const seed = workerData?.seed;
+    if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) {
+      throw new Error(`worker received invalid seed: ${String(seed)}`);
+    }
     heartbeat('purity scan');
     const purity = await scanProbePurity();
     heartbeat('loading');
@@ -146,6 +231,7 @@ async function executeProbeWorker() {
     }
     let state = createFourPlayerMatch(simulation, {
       phase: 'hub',
+      seed,
       gloveId: null,
       offhandId: null,
       unlocked: ['cotton'],
@@ -175,7 +261,7 @@ async function executeProbeWorker() {
     let maximumMovementSquared = 0;
     const movedPlayerIds = new Set();
     const stepDurations = [];
-    const random = makeSeededRandom(0x5eed1234);
+    const random = makeSeededRandom(seed ^ 0x5eed1234);
     const activity = { botThinkCalls: 0, botSlapAttempts: 0 };
 
     for (let stepIndex = 0; stepIndex < PROBE_STEPS; stepIndex += 1) {
@@ -297,6 +383,7 @@ async function executeProbeWorker() {
       type: 'result',
       result: {
         status: 'pass',
+        seed: formatSeed(seed),
         steps: PROBE_STEPS,
         players: initialPlayers.length,
         dt: DT,
