@@ -21,6 +21,8 @@ const SIMULATION_URL = new URL('../src/sim/index.js', import.meta.url);
 const AI_URL = new URL('../src/ai/bots.js', import.meta.url);
 const RENDERER_URL = new URL('../src/render/renderer.js', import.meta.url);
 const CAMERA_URL = new URL('../src/render/camera.js', import.meta.url);
+const INPUT_URL = new URL('../src/input/index.js', import.meta.url);
+const LOOK_URL = new URL('../src/core/look.js', import.meta.url);
 const PROBE_URL = new URL('./probe.mjs', import.meta.url);
 const FORBIDDEN_PURITY_DIRECTORIES = new Set(['render', 'ui']);
 const STATIC_MODULE_SPECIFIER =
@@ -101,13 +103,55 @@ export async function loadHeadlessLookRenderer() {
 }
 
 /**
+ * 加载生产输入与视线 payload 链。调用方提供最小事件节点，因此不需要浏览器 DOM。
+ */
+export async function loadHeadlessLookInput() {
+  let input;
+  let look;
+  try {
+    [input, look] = await Promise.all([
+      import(moduleSpecifier('YIZHANG_INPUT_MODULE', INPUT_URL)),
+      import(moduleSpecifier('YIZHANG_LOOK_MODULE', LOOK_URL)),
+    ]);
+  } catch (error) {
+    throw new Error(
+      `could not load headless look input: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+
+  if (typeof input.createInput !== 'function') {
+    throw new Error(
+      'input module must export function createInput() for look probe',
+    );
+  }
+  if (typeof look.lookPayload !== 'function') {
+    throw new Error(
+      'look module must export function lookPayload() for look probe',
+    );
+  }
+
+  return {
+    createInput: input.createInput,
+    lookPayload: look.lookPayload,
+  };
+}
+
+/**
  * 静态遍历探针、生产 sim/AI 与显式白名单相机链的本地依赖图。这里只读源码；
  * sim/AI 若经普通依赖越界到 render/ui 会失败，白名单相机链则只供无头装配。
  */
 export async function scanProbePurity() {
   // renderer/camera 是显式白名单入口：只加载模块与相机数学，不调用 WebGL 构造器。
   // 其它被测图若通过普通 import 越界到 render/ 或 ui/，assertPureSpecifier 仍会失败。
-  const pending = [PROBE_URL, SIMULATION_URL, RENDERER_URL, CAMERA_URL];
+  const pending = [
+    PROBE_URL,
+    SIMULATION_URL,
+    RENDERER_URL,
+    CAMERA_URL,
+    INPUT_URL,
+    LOOK_URL,
+  ];
   if (existsSync(AI_URL)) {
     pending.push(AI_URL);
   }

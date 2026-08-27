@@ -14,6 +14,7 @@ import {
   findNonFinite,
   getWiredCombat,
   getPlayers,
+  loadHeadlessLookInput,
   loadHeadlessLookRenderer,
   loadOptionalAi,
   loadSimulation,
@@ -35,6 +36,9 @@ const LOCKED_FORWARD_MAX_ANGLE_DEGREES = 3;
 const LOCKED_FORWARD_MAX_ANGLE_RADIANS =
   (LOCKED_FORWARD_MAX_ANGLE_DEGREES * Math.PI) / 180;
 const LOCKED_TARGET_MAX_ANGLE_RADIANS = 1e-9;
+const LOOK_TURN_MIN_ANGLE_RADIANS = 0.5;
+const LOOK_YAW_MAX_ERROR_RADIANS = 1e-9;
+const LOCKED_CAMERA_MAX_BEHINDNESS = -3;
 const DEFAULT_PROBE_SEEDS = Object.freeze([
   0x1a2b3c4d,
   0x5eed1234,
@@ -70,6 +74,19 @@ async function superviseProbe(seeds) {
     lockedForwardMaxAngleDeg: maximumMetric(
       passedRuns,
       'lockedForwardMaxAngleDeg',
+    ),
+    lockedTurnMinAngleDeg: minimumMetric(passedRuns, 'lockedTurnAngleDeg'),
+    lockedCameraMaxBehindness: maximumMetric(
+      passedRuns,
+      'lockedCameraBehindness',
+    ),
+    freeStationaryMaxYawDeltaDeg: maximumMetric(
+      passedRuns,
+      'freeStationaryYawDeltaDeg',
+    ),
+    freeMoveMaxYawErrorDeg: maximumMetric(
+      passedRuns,
+      'freeMoveYawErrorDeg',
     ),
     p99StepMs: maximumMetric(passedRuns, 'p99StepMs'),
     ai:
@@ -166,6 +183,10 @@ function superviseProbeSeed(seed) {
             `hub→${result.phase}, ${result.arenaKills} arena kill(s), ` +
             `camera snap ≤${result.cameraSnapMaxDist.toFixed(3)}m, ` +
             `locked dot ≥${result.lockedForwardMinDot.toFixed(6)}, ` +
+            `locked turn ${result.lockedTurnAngleDeg.toFixed(3)}°, ` +
+            `behind ${result.lockedCameraBehindness.toFixed(3)}m, ` +
+            `free hold Δ${result.freeStationaryYawDeltaDeg.toFixed(6)}°, ` +
+            `free move error ${result.freeMoveYawErrorDeg.toFixed(6)}°, ` +
             `real combat ` +
             (result.wiredCombat === undefined
               ? 'status unavailable'
@@ -249,9 +270,16 @@ async function executeProbeWorker() {
     const simulation = await loadSimulation();
     const ai = await loadOptionalAi();
     const lookModules = await loadHeadlessLookRenderer();
+    const lookInputModules = await loadHeadlessLookInput();
     if (!ai) {
       throw new Error('AI module is required to verify bot think() calls');
     }
+    const lookBehavior = runLookModeBehaviorProbe(
+      simulation,
+      lookModules,
+      lookInputModules,
+      seed,
+    );
     let state = createFourPlayerMatch(simulation, {
       phase: 'hub',
       seed,
@@ -435,6 +463,13 @@ async function executeProbeWorker() {
         lockedForwardMinDot: lookProbe.minimumForwardDot,
         lockedForwardMaxAngleDeg:
           (lookProbe.maximumForwardAngle * 180) / Math.PI,
+        lockedTurnAngleDeg:
+          (lookBehavior.lockedTurnAngle * 180) / Math.PI,
+        lockedCameraBehindness: lookBehavior.lockedCameraBehindness,
+        freeStationaryYawDeltaDeg:
+          (lookBehavior.freeStationaryYawDelta * 180) / Math.PI,
+        freeMoveYawErrorDeg:
+          (lookBehavior.freeMoveYawError * 180) / Math.PI,
         maxMovement: Math.sqrt(maximumMovementSquared),
         entityUpdateSteps: entityUpdates,
         p99StepMs: sortedDurations[p99Index],
@@ -460,6 +495,7 @@ async function executeProbeWorker() {
           arenaEntryCameraDistance: lookProbe.arenaEntryCameraDistance,
           arenaEntryPreSnapDistance: lookProbe.arenaEntryPreSnapDistance,
           checks: lookProbe.checks,
+          modes: lookBehavior,
         },
         purityFilesScanned: purity.filesScanned,
       },
@@ -513,6 +549,277 @@ function createLookProbe({ YizhangRenderer, createCamera }) {
       snappedFrames: 0,
     },
   };
+}
+
+/**
+ * 真 input.sample() → sim.step() → 真 camera rig 的最小闭环。
+ * 鼠标事件实际修改输入层视角，避免只拿手搓 yaw 测数学公式。
+ */
+function runLookModeBehaviorProbe(
+  simulation,
+  lookModules,
+  { createInput, lookPayload },
+  seed,
+) {
+  const eventHarness = createInputEventHarness(createInput);
+  try {
+    let state = simulation.createMatch({
+      seed: seed ^ 0x10c04f31,
+      botCount: 0,
+      phase: 'arena',
+    });
+    const rendererProbe = createLookProbe(lookModules);
+    const renderer = rendererProbe.renderer;
+
+    const lockedLookBefore = eventHarness.input.getLook();
+    const lockedInputBefore = eventHarness.input.sample(lockedLookBefore.yaw);
+    state =
+      simulation.step(state, { p0: lockedInputBefore }, DT) ?? state;
+    const lockedPlayerBefore = humanPlayer(
+      simulation.getView(state),
+      'locked before view turn',
+    );
+
+    const lockedTurn = rotateInputView(
+      eventHarness,
+      320,
+      'locked view turn',
+    );
+    renderer.setLook(lookPayload(lockedTurn.after));
+    const lockedInputAfter = eventHarness.input.sample(lockedTurn.after.yaw);
+    if (!Number.isFinite(lockedInputAfter.yaw)) {
+      throw new Error('locked view turn emitted a non-finite player yaw');
+    }
+    const emittedLockedTurn = Math.abs(
+      shortestAngle(lockedInputBefore.yaw, lockedInputAfter.yaw),
+    );
+    if (emittedLockedTurn < LOOK_TURN_MIN_ANGLE_RADIANS) {
+      throw new Error(
+        `locked view turn changed emitted yaw by only ` +
+          `${formatDegrees(emittedLockedTurn)}°`,
+      );
+    }
+
+    state = simulation.step(state, { p0: lockedInputAfter }, DT) ?? state;
+    const lockedPlayerAfter = humanPlayer(
+      simulation.getView(state),
+      'locked after view turn',
+    );
+    const lockedYawError = Math.abs(
+      shortestAngle(lockedInputAfter.yaw, lockedPlayerAfter.yaw),
+    );
+    if (
+      lockedYawError > LOOK_YAW_MAX_ERROR_RADIANS ||
+      Math.abs(
+        shortestAngle(lockedPlayerBefore.yaw, lockedPlayerAfter.yaw),
+      ) < LOOK_TURN_MIN_ANGLE_RADIANS
+    ) {
+      throw new Error(
+        `locked view turn did not rotate the player 1:1 ` +
+          `(error=${formatDegrees(lockedYawError)}°)`,
+      );
+    }
+
+    const lockedFocus = positionOf(lockedPlayerAfter);
+    renderer.snapCamera();
+    if (
+      renderer._followCamera(
+        DT,
+        lockedFocus,
+        renderer._followYaw(lockedPlayerAfter),
+      ) !== true
+    ) {
+      throw new Error('locked view turn did not snap the headless camera');
+    }
+    assertLockedCameraForward(
+      rendererProbe,
+      lockedPlayerAfter,
+      'locked after view turn',
+    );
+    const lockedCameraBehindness = cameraBehindness(
+      renderer.camera.position,
+      lockedPlayerAfter,
+    );
+    if (lockedCameraBehindness >= LOCKED_CAMERA_MAX_BEHINDNESS) {
+      throw new Error(
+        `locked camera is not behind the player ` +
+          `(projection=${lockedCameraBehindness.toFixed(6)}m, max ` +
+          `${LOCKED_CAMERA_MAX_BEHINDNESS}m)`,
+      );
+    }
+
+    if (eventHarness.input.setLookMode('free') !== 'free') {
+      throw new Error('headless input refused free look mode');
+    }
+    const freeYawBefore = lockedPlayerAfter.yaw;
+    const freeTurn = rotateInputView(eventHarness, -280, 'free view turn');
+    const freePayload = lookPayload(freeTurn.after);
+    renderer.setLook(freePayload);
+    if (renderer.getLook().lookMode !== 'free') {
+      throw new Error('headless renderer refused free look payload');
+    }
+    const freeCameraTurn = Math.abs(
+      shortestAngle(
+        renderer._followYaw(lockedPlayerAfter),
+        lockedPlayerAfter.yaw,
+      ),
+    );
+    if (freeCameraTurn < LOOK_TURN_MIN_ANGLE_RADIANS) {
+      throw new Error(
+        `free view turn did not decouple camera and player yaw ` +
+          `(${formatDegrees(freeCameraTurn)}°)`,
+      );
+    }
+
+    const freeStationaryInput = eventHarness.input.sample(freeTurn.after.yaw);
+    if (freeStationaryInput.yaw !== null) {
+      throw new Error(
+        `stationary free view turn emitted yaw ` +
+          `${String(freeStationaryInput.yaw)} instead of null`,
+      );
+    }
+    state =
+      simulation.step(state, { p0: freeStationaryInput }, DT) ?? state;
+    const freeStationaryPlayer = humanPlayer(
+      simulation.getView(state),
+      'free stationary after view turn',
+    );
+    const freeStationaryYawDelta = Math.abs(
+      shortestAngle(freeYawBefore, freeStationaryPlayer.yaw),
+    );
+    if (freeStationaryYawDelta > LOOK_YAW_MAX_ERROR_RADIANS) {
+      throw new Error(
+        `free view turn rotated a stationary player by ` +
+          `${formatDegrees(freeStationaryYawDelta)}°`,
+      );
+    }
+
+    eventHarness.window.emit('keydown', { code: 'KeyD' });
+    const freeMovingInput = eventHarness.input.sample(freeTurn.after.yaw);
+    eventHarness.window.emit('keyup', { code: 'KeyD' });
+    const movementLength = Math.hypot(
+      freeMovingInput.moveX,
+      freeMovingInput.moveZ,
+    );
+    if (!(movementLength > 0)) {
+      throw new Error('moving free input produced a zero movement vector');
+    }
+    const movementYaw = Math.atan2(
+      -freeMovingInput.moveX,
+      -freeMovingInput.moveZ,
+    );
+    const emittedFreeMoveError = Math.abs(
+      shortestAngle(movementYaw, freeMovingInput.yaw),
+    );
+    if (emittedFreeMoveError > LOOK_YAW_MAX_ERROR_RADIANS) {
+      throw new Error(
+        `moving free input yaw missed its travel direction by ` +
+          `${formatDegrees(emittedFreeMoveError)}°`,
+      );
+    }
+
+    state = simulation.step(state, { p0: freeMovingInput }, DT) ?? state;
+    const freeMovingPlayer = humanPlayer(
+      simulation.getView(state),
+      'free moving after view turn',
+    );
+    const freeMoveYawError = Math.abs(
+      shortestAngle(movementYaw, freeMovingPlayer.yaw),
+    );
+    if (freeMoveYawError > LOOK_YAW_MAX_ERROR_RADIANS) {
+      throw new Error(
+        `moving free player yaw missed its travel direction by ` +
+          `${formatDegrees(freeMoveYawError)}°`,
+      );
+    }
+
+    return {
+      lockedTurnAngle: Math.abs(
+        shortestAngle(lockedPlayerBefore.yaw, lockedPlayerAfter.yaw),
+      ),
+      lockedYawError,
+      lockedCameraBehindness,
+      freeLookTurnAngle: freeTurn.angle,
+      freeStationaryYawDelta,
+      freeMoveYawError,
+      checks: {
+        lockedViewTurns: 1,
+        lockedBehindFrames: 1,
+        freeStationaryViewTurns: 1,
+        freeMovementDirections: 1,
+      },
+    };
+  } finally {
+    eventHarness.dispose();
+  }
+}
+
+function createInputEventHarness(createInput) {
+  const doc = createEventTarget({ hidden: false, pointerLockElement: null });
+  const canvas = createEventTarget();
+  const windowTarget = createEventTarget();
+  doc.pointerLockElement = canvas;
+
+  const hadWindow = Object.hasOwn(globalThis, 'window');
+  const previousWindow = globalThis.window;
+  globalThis.window = windowTarget;
+
+  let input;
+  try {
+    input = createInput(doc, canvas, {
+      lookMode: 'locked',
+      phase: 'arena',
+      pointerLock: false,
+    });
+  } catch (error) {
+    restoreGlobalWindow(hadWindow, previousWindow);
+    throw error;
+  }
+
+  return {
+    input,
+    window: windowTarget,
+    dispose() {
+      input.dispose();
+      restoreGlobalWindow(hadWindow, previousWindow);
+    },
+  };
+}
+
+function createEventTarget(initial = {}) {
+  const handlers = new Map();
+  return Object.assign(initial, {
+    addEventListener(type, handler) {
+      if (!handlers.has(type)) handlers.set(type, new Set());
+      handlers.get(type).add(handler);
+    },
+    removeEventListener(type, handler) {
+      handlers.get(type)?.delete(handler);
+    },
+    emit(type, event = {}) {
+      for (const handler of [...(handlers.get(type) ?? [])]) {
+        handler({ preventDefault() {}, ...event });
+      }
+    },
+  });
+}
+
+function rotateInputView(eventHarness, movementX, label) {
+  const before = eventHarness.input.getLook();
+  eventHarness.window.emit('mousemove', { movementX, movementY: 0 });
+  const after = eventHarness.input.getLook();
+  const angle = Math.abs(shortestAngle(before.yaw, after.yaw));
+  if (angle < LOOK_TURN_MIN_ANGLE_RADIANS) {
+    throw new Error(
+      `${label} changed input look by only ${formatDegrees(angle)}°`,
+    );
+  }
+  return { before, after, angle };
+}
+
+function restoreGlobalWindow(hadWindow, previousWindow) {
+  if (hadWindow) globalThis.window = previousWindow;
+  else delete globalThis.window;
 }
 
 function observeLockedTarget(probe, view, label) {
@@ -695,6 +1002,14 @@ function horizontalForward(yaw) {
 
 function horizontalDistance(left, right) {
   return Math.hypot(left.x - right.x, left.z - right.z);
+}
+
+function cameraBehindness(cameraPosition, player) {
+  const forward = horizontalForward(player.yaw);
+  return (
+    (cameraPosition.x - player.x) * forward.x +
+    (cameraPosition.z - player.z) * forward.z
+  );
 }
 
 function shortestAngle(from, to) {
