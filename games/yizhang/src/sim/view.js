@@ -1,6 +1,7 @@
 // 渲染快照：纯 JSON，不含 class / 函数 / 引用共享的可变对象。
 
 import { crackOf } from "./arena.js";
+import { ghostsView } from "./combat-bridge.js";
 import { resolveGlove } from "./deps.js";
 import { hubView } from "./hub.js";
 import { activeGloveId } from "./state.js";
@@ -27,6 +28,8 @@ function playerView(p) {
     id: p.id,
     kind: p.kind,
     persona: p.persona,
+    // 不透明装饰标签，消费端 resolveSkin 兜底（ADR-26）
+    skinId: p.skinId ?? null,
 
     x: round4(p.x),
     y: round4(p.y),
@@ -134,6 +137,8 @@ export function getView(state) {
       tiles: state.arena.tiles.map(tileView),
     },
     players: state.players.map(playerView),
+    // 分身残影：没有残影时是空数组，render 恒可读（ADR-27）
+    combat: { ghosts: ghostsView(state) },
     events: state.events.map((e) => ({ ...e })),
     stats: { ...state.stats },
   };

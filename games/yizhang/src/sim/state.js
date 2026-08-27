@@ -10,11 +10,13 @@ import { createRngState, nextRange, nextU32 } from "./rng.js";
 
 const PERSONAS = ["brute", "fox", "bully"];
 
-function makePlayer(id, kind, slotIndex, gloveId, offhandId, persona) {
+function makePlayer(id, kind, slotIndex, gloveId, offhandId, persona, skinId) {
   return {
     id,
     kind, // 'human' | 'bot'
     persona: persona || null,
+    // 皮肤纯装饰（ADR-26）：sim 只当不透明字符串存取，不校验、不 import skins 表
+    skinId: skinId ?? null,
     spawnSlot: slotIndex,
     spawnAngle: 0,
 
@@ -242,6 +244,11 @@ export function activeGlove(player) {
   return resolveGlove(activeGloveId(player));
 }
 
+/** 皮肤标签只做形状兜底：不是非空字符串就当没给（ADR-26，合法性归消费端 resolveSkin）。 */
+function asSkinId(v) {
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
 /** 开局在哪：默认安全区。`phase:'arena'` / `skipHub` / `config.skipHub` 直接进岛。 */
 function resolvePhase(opts, config) {
   if (opts.phase === "arena" || opts.phase === "hub") return opts.phase;
@@ -253,6 +260,8 @@ function resolvePhase(opts, config) {
  * createMatch(opts)
  * opts: {
  *   seed, gloveId, offhandId, botCount = 3, botPersonas?, config?,
+ *   skinId?: string,              // 人类皮肤：不透明字符串原样存取，缺省 null（ADR-26）
+ *   botSkinIds?: (string|null)[], // 与 bot 序号对齐（b0 取 [0]…），缺省 null
  *   phase?: 'hub' | 'arena',      // 缺省 'hub'（开局在安全区）
  *   skipHub?: boolean,            // 等价于 phase:'arena'，config.skipHub 也认
  *   unlocked?: string[] | Set | Record<string, boolean> | 'all',
@@ -272,13 +281,22 @@ export function createMatch(opts = {}) {
 
   const botCount = Number.isFinite(opts.botCount) ? Math.max(0, Math.floor(opts.botCount)) : 3;
   const personas = opts.botPersonas && opts.botPersonas.length ? opts.botPersonas : PERSONAS;
+  const botSkinIds = Array.isArray(opts.botSkinIds) ? opts.botSkinIds : [];
 
-  const players = [makePlayer("p0", "human", 0, gloveId, offhandId, null)];
+  const players = [makePlayer("p0", "human", 0, gloveId, offhandId, null, asSkinId(opts.skinId))];
   const botOffPool = deps.GLOVES.filter((g) => g.id !== "cotton");
   for (let i = 0; i < botCount; i++) {
     const off = botOffPool.length ? botOffPool[nextU32(rng) % botOffPool.length].id : "cotton";
     players.push(
-      makePlayer(`b${i}`, "bot", i + 1, "cotton", off, personas[i % personas.length]),
+      makePlayer(
+        `b${i}`,
+        "bot",
+        i + 1,
+        "cotton",
+        off,
+        personas[i % personas.length],
+        asSkinId(botSkinIds[i]),
+      ),
     );
   }
 

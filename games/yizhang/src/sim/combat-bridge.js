@@ -13,7 +13,7 @@
 
 import * as combat from "../combat/index.js";
 import { PHYSICS } from "./constants.js";
-import { FACE, wrapAngle } from "./math.js";
+import { FACE, round4, wrapAngle } from "./math.js";
 
 /**
  * 技能 id -> `src/combat/skills.js` 的 handler id。
@@ -249,6 +249,42 @@ export function tickStatuses(state, dt) {
 
 export function applyAwaken(attacker, glove) {
   return combat.applyAwaken(attacker, toCombatGlove(glove));
+}
+
+// ---------------------------------------------------------------- 残影导出
+
+const numOr = (v, d) => (Number.isFinite(v) ? v : d);
+
+/**
+ * `state.combat.ghosts` -> 契约 §4.3 的 `ViewGhost[]`（`sim/view.js` 用它填
+ * `view.combat.ghosts`）。
+ *
+ * 残影的位姿是 combat 在 `inCombatFrame` 里落笔的，yaw 还是 combat 的 +Z 基，
+ * 这里减回 -Z 并 wrap——combat 基的朝向换算依旧只住在本桥（ADR-17/25/27）。
+ * `ttl0` 是渲染淡出用的初始寿命，combat 没写就拿当前 `ttl` 兜底。
+ * 返回纯 JSON：无 undefined / NaN / Infinity，可 structuredClone。
+ */
+export function ghostsView(state) {
+  const raw = state && state.combat && Array.isArray(state.combat.ghosts) ? state.combat.ghosts : [];
+  const out = [];
+  for (const gh of raw) {
+    if (!gh || typeof gh !== "object") continue;
+    const ttl = Math.max(0, numOr(gh.ttl, 0));
+    out.push({
+      id: typeof gh.id === "string" ? gh.id : String(gh.id ?? ""),
+      ownerId: typeof gh.ownerId === "string" ? gh.ownerId : null,
+      x: round4(numOr(gh.x, 0)),
+      y: round4(numOr(gh.y, 0)),
+      z: round4(numOr(gh.z, 0)),
+      yaw: round4(wrapAngle(numOr(gh.yaw, 0) - FACE.combatOffset)),
+      ttl: round4(ttl),
+      ttl0: round4(Math.max(ttl, numOr(gh.ttl0, ttl))),
+      fake: !!gh.fake,
+      // O3 给残影记出处掌时原样透传，没有就 null（VFX 分派键，ADR-27）
+      gloveId: typeof gh.gloveId === "string" ? gh.gloveId : null,
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- 真身识别
