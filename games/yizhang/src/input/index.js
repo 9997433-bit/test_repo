@@ -10,11 +10,17 @@
 // sample() 返回给 sim 的 `yaw` 已经换算成 **sim 约定**（yaw=0 面向 -Z）。
 // 位移向量 moveX/moveZ 一律是世界系，sim 的 readMoveVector 默认就这么读。
 //
+// 视角模式（lookMode，ADR-38）只影响 `Input.yaw` 这一个字段，**移动换算两模式共用一条**
+// （W 永远朝镜头水平前方）。sim 与 renderer 都不感知模式，分派全在 sample() 里：
+//   locked（缺省，固定人物视角）—— yaw = cameraYawToSimYaw(θ)，人物面向 ≡ 相机水平前向
+//   free（自由视角）—— 镜头与面向解耦：有位移送 yawFromDir(moveX, moveZ)（面朝走向），
+//                      零位移送 `null`（sim 见非有限值就保持当前朝向，绝不送 NaN）
+//
 // 阶段（phase）：安全区与裂岛共用这一套采样，只有两处差别 ——
 // hub 里 E / 触控「选」输出 `interact`（sim 自己做边沿），且扇击与技能一律不输出，
 // 免得在安全区里对着展掌开技能。切到 arena 后 E 回到技能位，interact 仍照发（sim 会忽略）。
 
-import { cameraYawToSimYaw } from "../core/view.js";
+import { cameraYawToSimYaw, yawFromDir } from "../core/view.js";
 import { normalizeLookMode } from "../core/look.js";
 
 const KEY_MOVE = {
@@ -50,6 +56,8 @@ const LOOK_SCALE = 0.0026;
 const TOUCH_LOOK_SCALE = 0.0055;
 const PITCH_LIMIT = Math.PI / 2.6;
 const STICK_DEADZONE = 0.16;
+/** 「有没有在走」的判据：摇杆死区之下、按键互相抵消后的残渣一律算静止。 */
+const MOVE_EPS = 1e-6;
 
 let current = null;
 
@@ -337,11 +345,16 @@ export function createInput(dom, canvas, opts = {}) {
         if (name === "slap" || name === "skill" || name === "interact") state.hold[name] = false;
       }
     },
-    /** 采样一帧输入。cameraYaw 缺省时用输入层自己维护的偏航。 */
+    /**
+     * 采样一帧输入。cameraYaw 缺省时用输入层自己维护的偏航。
+     * `out.yaw` 按 lookMode 分派：locked 恒 1:1 送相机角的 sim 版；free 先按「保持朝向」
+     * 起手（null），下面算出位移非零再改成走向角。禁用输入 = 零位移，free 下自然是 null。
+     */
     sample(cameraYaw) {
       const out = emptyInput();
       const yaw = typeof cameraYaw === "number" ? cameraYaw : state.yaw;
-      out.yaw = cameraYawToSimYaw(yaw);
+      const free = state.lookMode === "free";
+      out.yaw = free ? null : cameraYawToSimYaw(yaw);
       if (!state.enabled) {
         state.edge.jump = false;
         state.edge.dash = false;
@@ -375,6 +388,9 @@ export function createInput(dom, canvas, opts = {}) {
       const move = moveFromCameraYaw(ix, iz, yaw);
       out.moveX = move.x;
       out.moveZ = move.z;
+      // free 的面朝走向。阈值不是洁癖：W+S 同按会合成零矢量，atan2(-0, -0) 会算出 -PI，
+      // 那等于原地翻个身——零位移必须落回 null（保持朝向）。
+      if (free && Math.hypot(move.x, move.z) > MOVE_EPS) out.yaw = yawFromDir(move.x, move.z);
 
       const inHub = state.phase === "hub";
       // 安全区不出招：E 归「选/确认」，左键只用来抓指针锁定。

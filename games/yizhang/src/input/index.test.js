@@ -6,8 +6,9 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { cameraYawToSimYaw } from "../core/view.js";
+import { cameraYawToSimYaw, yawFromDir } from "../core/view.js";
 import { forwardX, forwardZ } from "../sim/math.js";
+import { createMatch, getPlayer, step } from "../sim/index.js";
 import { createInput, moveFromCameraYaw } from "./index.js";
 
 function fakeNode() {
@@ -66,6 +67,21 @@ function align(v, ref) {
 }
 
 const CAMERA_YAWS = [-Math.PI / 2, 0, 0.9, 2.4, -2.1];
+
+const DT = 1 / 60;
+
+/** 只有本人的裂岛对局，用来把 sample() 的 yaw 真的喂进 sim 看 p.yaw 动不动。 */
+function arena(seed = 0x100c) {
+  const state = createMatch({ seed, botCount: 0, phase: "arena" });
+  return { state, player: getPlayer(state, "p0") };
+}
+
+/** 按主循环（main.js collectInputs）的那条路采样并步进一帧。 */
+function tick(state) {
+  const sampled = input.sample(input.getLook().yaw);
+  step(state, { p0: sampled }, DT);
+  return sampled;
+}
 
 describe("moveFromCameraYaw", () => {
   it("W 沿相机水平前向，S 沿反向", () => {
@@ -347,6 +363,168 @@ describe("视角模式（lookMode / V 键）", () => {
     expect(after.yaw).toBe(before.yaw);
     expect(after.pitch).toBe(before.pitch);
     expect(after.lookMode).toBe("free");
+  });
+});
+
+// Input.yaw 是 sim 唯一的朝向入口，两种视角模式在这里分道：locked 把相机角 1:1 送出去
+// （打人朝向 = 视线），free 只送走向、静止不送。sim 不感知 lookMode，所以这条分派线一旦
+// 塌回「恒送相机角」，free 就会悄悄退化成 locked——本组用真 sim 步进钉死两边的差别。
+describe("Input.yaw 按 lookMode 分派", () => {
+  describe("locked（缺省）：朝向 = 视线，1:1", () => {
+    it("任意相机角都是 cameraYawToSimYaw(θ)，与转视角前的既有行为逐字一致", () => {
+      for (const cam of CAMERA_YAWS) {
+        expect(input.sample(cam).yaw).toBe(cameraYawToSimYaw(cam));
+      }
+    });
+
+    it("转视角就改 p.yaw：喂进 sim 一帧后逐位相等", () => {
+      const { state, player } = arena();
+      tick(state);
+      const before = player.yaw;
+
+      dragLook(160);
+      const sampled = tick(state);
+
+      expect(sampled.yaw).toBe(cameraYawToSimYaw(input.getLook().yaw));
+      expect(player.yaw).toBe(sampled.yaw);
+      expect(player.yaw).not.toBe(before);
+    });
+
+    it("横着走不改朝向：按 D 时 yaw 仍是视线角，不是走向角", () => {
+      press("KeyD");
+      const out = input.sample(-Math.PI / 2);
+      release("KeyD");
+      expect(out.yaw).toBe(cameraYawToSimYaw(-Math.PI / 2));
+      expect(out.yaw).not.toBe(yawFromDir(out.moveX, out.moveZ));
+    });
+  });
+
+  describe("free：镜头与面向解耦", () => {
+    beforeEach(() => {
+      input.setLookMode("free");
+    });
+
+    it("零移动送 null —— 是 null，不是 NaN，也不是 0", () => {
+      const out = input.sample(0.9);
+      expect(out.yaw).toBe(null);
+      expect(Number.isNaN(out.yaw)).toBe(false);
+      expect(out.yaw).not.toBe(cameraYawToSimYaw(0.9));
+    });
+
+    it("转视角不改 p.yaw：连拖三下镜头，人一动不动", () => {
+      const { state, player } = arena();
+      player.yaw = 1.234;
+
+      for (const dx of [160, -240, 90]) {
+        dragLook(dx);
+        const sampled = tick(state);
+        expect(sampled.yaw).toBe(null);
+        expect(player.yaw).toBe(1.234);
+      }
+      // 镜头是真的转过了：不是「输入没进来」造成的假通过
+      expect(input.getLook().yaw).not.toBe(-Math.PI / 2);
+    });
+
+    it("按 D 走时面朝 +X（相机朝 -Z 的缺省机位）", () => {
+      press("KeyD");
+      const out = input.sample(-Math.PI / 2);
+      release("KeyD");
+
+      expect(out.yaw).toBe(yawFromDir(out.moveX, out.moveZ));
+      expect(out.yaw).toBeCloseTo(-Math.PI / 2, 12); // yaw=-π/2 就是面朝 +X
+      expect(forwardX(out.yaw)).toBeCloseTo(1, 12);
+      expect(forwardZ(out.yaw)).toBeCloseTo(0, 12);
+      expect(out.yaw).not.toBe(cameraYawToSimYaw(-Math.PI / 2));
+    });
+
+    it("任意方向都面朝走向：forward(yaw) 与 moveX/Z 同向", () => {
+      const cam = 0.7;
+      for (const code of ["KeyW", "KeyA", "KeyS", "KeyD"]) {
+        press(code);
+        const out = input.sample(cam);
+        release(code);
+        expect(align({ x: forwardX(out.yaw), z: forwardZ(out.yaw) }, { x: out.moveX, z: out.moveZ })).toBeCloseTo(1, 9);
+      }
+    });
+
+    it("走着走着转镜头，朝向跟走向不跟镜头", () => {
+      const { state, player } = arena();
+      press("KeyD");
+      const first = tick(state);
+      dragLook(200);
+      const second = tick(state);
+      release("KeyD");
+
+      // 镜头转了，走向跟着相机换算也转了，但朝向始终等于走向、不等于视线
+      expect(second.yaw).not.toBe(first.yaw);
+      expect(player.yaw).toBe(second.yaw);
+      expect(second.yaw).toBe(yawFromDir(second.moveX, second.moveZ));
+      expect(second.yaw).not.toBe(cameraYawToSimYaw(input.getLook().yaw));
+    });
+
+    it("W+S 抵消出的零位移落回 null，不会被 atan2(-0,-0) 拧成 -π", () => {
+      press("KeyW");
+      press("KeyS");
+      const out = input.sample(0.3);
+      release("KeyW");
+      release("KeyS");
+      expect(Math.hypot(out.moveX, out.moveZ)).toBeLessThan(1e-9);
+      expect(out.yaw).toBe(null);
+    });
+
+    it("摇杆与键盘同一条分派：推杆也面朝走向，回中即 null", () => {
+      const cam = 2.0;
+      input.setStick(1, 0);
+      const pushed = input.sample(cam);
+      input.setStick(0, 0);
+      const centered = input.sample(cam);
+
+      expect(pushed.yaw).toBe(yawFromDir(pushed.moveX, pushed.moveZ));
+      expect(centered.yaw).toBe(null);
+    });
+
+    it("移动换算不分模式：W 照样沿相机水平前向走", () => {
+      press("KeyW");
+      for (const cam of CAMERA_YAWS) {
+        const out = input.sample(cam);
+        expect(align({ x: out.moveX, z: out.moveZ }, { x: Math.cos(cam), z: Math.sin(cam) })).toBeCloseTo(1, 9);
+      }
+      release("KeyW");
+    });
+
+    it("禁用输入时送 null 而不是相机角：暂停面板上不该悄悄转身", () => {
+      press("KeyD");
+      input.setEnabled(false);
+      expect(input.sample(0.4).yaw).toBe(null);
+      input.setEnabled(true);
+    });
+
+    it("V 键切回 locked 立刻恢复 1:1，不留残留", () => {
+      expect(input.sample(0.4).yaw).toBe(null);
+      press("KeyV");
+      release("KeyV");
+      expect(input.getLookMode()).toBe("locked");
+      expect(input.sample(0.4).yaw).toBe(cameraYawToSimYaw(0.4));
+    });
+  });
+
+  it("同一串操作在两种模式下给出不同的 p.yaw —— free 不是 locked 的马甲", () => {
+    function runOnce(mode) {
+      input.setLookMode(mode);
+      const { state, player } = arena(0x2f11);
+      player.yaw = 0;
+      press("KeyD");
+      tick(state);
+      dragLook(180);
+      tick(state);
+      release("KeyD");
+      return player.yaw;
+    }
+
+    const lockedYaw = runOnce("locked");
+    input.setLook(-Math.PI / 2, 0);
+    const freeYaw = runOnce("free");
+    expect(freeYaw).not.toBe(lockedYaw);
   });
 });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { forwardFromYaw } from "../render/view.js";
-import { forwardX, forwardZ } from "../sim/math.js";
+import { forwardX, forwardZ, yawFromDir as simYawFromDir } from "../sim/math.js";
 import { createMatch, getView, step } from "../sim/index.js";
 import {
   RENDER_YAW_OFFSET,
@@ -12,6 +12,7 @@ import {
   normalizeEvent,
   simYawToCameraYaw,
   toRenderView,
+  yawFromDir,
 } from "./view.js";
 
 const GLOVE_BY_ID = {
@@ -124,6 +125,36 @@ describe("yaw 空间换算", () => {
     const sim = cameraYawToSimYaw(cam);
     expect(-Math.sin(sim)).toBeCloseTo(Math.cos(cam), 6);
     expect(-Math.cos(sim)).toBeCloseTo(Math.sin(cam), 6);
+  });
+});
+
+describe("yawFromDir（壳层这份）", () => {
+  const DIRS = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [0.6, -0.8],
+    [-3, 2],
+  ];
+
+  it("与 sim/math.js 的同名函数逐位相同：壳层不能 import sim，但值必须一模一样", () => {
+    for (const [x, z] of DIRS) {
+      expect(yawFromDir(x, z)).toBe(simYawFromDir(x, z));
+    }
+  });
+
+  it("是 forwardX/forwardZ 的逆：求出来的角，前向就是那个方向", () => {
+    for (const [x, z] of DIRS) {
+      const len = Math.hypot(x, z);
+      const yaw = yawFromDir(x, z);
+      expect(forwardX(yaw)).toBeCloseTo(x / len, 12);
+      expect(forwardZ(yaw)).toBeCloseTo(z / len, 12);
+    }
+  });
+
+  it("+X 方向对应 yaw = -π/2（free 下按 D 就该是这个角）", () => {
+    expect(yawFromDir(1, 0)).toBeCloseTo(-Math.PI / 2, 12);
   });
 });
 
