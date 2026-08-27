@@ -137,15 +137,16 @@ export async function loadOptionalAi() {
   return ai;
 }
 
-export function createFourPlayerMatch(simulation) {
-  // 探针量的是格斗区：createMatch 缺省开在安全区，而安全区里 Bot 休眠、不进 combat
-  // 管线，所以这里显式要一局裂岛。走完「hub → 选掌 → 门 → 岛」的剧本归 probe 自己排。
+export function createFourPlayerMatch(simulation, matchOptions = {}) {
+  // 缺省量格斗区：createMatch 默认开在安全区，Bot 会休眠。
+  // hub → 选掌 → 门 → 岛 的剧本由 probe 自己排，可经 matchOptions 覆盖。
   const state = simulation.createMatch({
     seed: 0x1a2b3c4d,
     gloveId: 'cotton',
     offhandId: 'granite',
     botCount: 3,
     phase: 'arena',
+    ...matchOptions,
   });
 
   if (!state || typeof state !== 'object') {
