@@ -49,10 +49,12 @@ export const LOCKED_YAW_SPAN = Math.PI / 2 - 0.1;
 /**
  * 硬顶的生效带宽（rad/s → 每帧允许的转身量）。
  *
- * 「转身」与「朝向被瞬移」是两回事：前者要把镜头推着走（硬顶），后者（切视角模式
- * 那一帧壳层还没把角色转过来、重生改写朝向、掉帧后补的一大步）硬顶就成了一帧
- * 甩镜 —— 那种时候让弹簧自己归位，回到半平面里硬顶自然重新接管。
- * 30rad/s ≈ 1700°/s：真人甩鼠标的持续转速远在其下。
+ * 硬顶带迟滞：**上一帧还在半平面里**才拽得动这一帧（见 update 里的 behindHold）。
+ * 于是「转身把镜头挤出去了」与「朝向被瞬移 / 正在归位」被分开处理 —— 前者每帧只
+ * 超出一点点（转速 × dt），拽回去是无感的；后者一上来就差半圈（切视角模式那一帧
+ * 壳层还没把角色转过来、重生改写朝向），硬拽就是一记甩镜，让弹簧自己走回来才对。
+ * 带宽只用来兜住「一帧转得特别多」的转身：30rad/s ≈ 1700°/s，真人甩鼠标的持续
+ * 转速远在其下；再快就当朝向被瞬移。
  */
 const LOCKED_HOLD_RATE = 30;
 const LOCKED_HOLD_MIN = 0.25;
@@ -100,6 +102,11 @@ export function holdBehind(angle, faceYaw, slack = lockedHoldSlack(1 / 60)) {
   return faceYaw + (lag > 0 ? LOCKED_YAW_SPAN : -LOCKED_YAW_SPAN);
 }
 
+/** 这个方位角还在角色背后半平面里吗。夹到边界上的值算「在里面」。 */
+export function insideBehind(angle, faceYaw) {
+  return Math.abs(shortestAngle(faceYaw, angle)) <= LOCKED_YAW_SPAN + 1e-9;
+}
+
 /**
  * 机位：yaw = 0 面向 -Z（与 sim 的 forwardX/forwardZ 一致），
  * 所以「身后」是 +(sin yaw, cos yaw)，镜头就架在那儿。
@@ -131,18 +138,24 @@ function desiredLook(out, focus, sy, cy, lead, pitch, basePitch) {
  *
  * 只夹 yaw 是不够的：位置比 yaw 跟得还慢（λ 6.2 vs 7.5），持续快速转身时
  * 目标机位已经贴在半平面边界上，实际机位仍能被甩到边界外面去。
+ *
+ * 迟滞与 yaw 那份各记各的（位置比 yaw 晚一步进半平面，共用一个位就会在归位
+ * 途中拽一把）。
+ *
+ * @returns {boolean} 这一帧结束时机位在不在半平面里（下一帧的 hold）
  */
-function holdPosBehind(pos, focus, faceYaw, slack) {
+function holdPosBehind(pos, focus, faceYaw, slack, hold) {
   const dx = pos.x - focus.x;
   const dz = pos.z - focus.z;
   const r = Math.hypot(dx, dz);
-  if (r < 1e-4) return pos;
+  if (r < 1e-4) return hold;
   const bearing = Math.atan2(dx, dz);
-  const held = holdBehind(bearing, faceYaw, slack);
-  if (held === bearing) return pos;
-  pos.x = focus.x + Math.sin(held) * r;
-  pos.z = focus.z + Math.cos(held) * r;
-  return pos;
+  const held = hold ? holdBehind(bearing, faceYaw, slack) : bearing;
+  if (held !== bearing) {
+    pos.x = focus.x + Math.sin(held) * r;
+    pos.z = focus.z + Math.cos(held) * r;
+  }
+  return insideBehind(held, faceYaw);
 }
 
 export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
@@ -159,6 +172,12 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
     /** 本帧真正用掉的俯角 = pitch + pitchBias，夹在 ±PITCH_LIMIT。 */
     pitchOut: BASE_PITCH,
     dist: 7.4,
+    /**
+     * locked 硬顶的迟滞位（yaw 与机位各一份）：上一帧还在半平面里才拽得动这一帧。
+     * free / 归位途中恒 false，硬顶整只让路。
+     */
+    behindHold: false,
+    behindPosHold: false,
     shake: 0,
     shakeFreq: 26,
     fovKick: 0,
@@ -208,7 +227,13 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
       // 角度阻尼走最短弧：yaw 从 +3.1 跳到 -3.1 是转 6°，不是转 354°
       state.yaw = dampAngle(state.yaw, Number.isFinite(yaw) ? yaw : state.yaw, 7.5, dt);
       // locked：阻尼可以慢，但不许慢到绕去正脸
-      if (behindYaw !== null) state.yaw = holdBehind(state.yaw, behindYaw, slack);
+      if (behindYaw === null) {
+        state.behindHold = false;
+        state.behindPosHold = false;
+      } else {
+        if (state.behindHold) state.yaw = holdBehind(state.yaw, behindYaw, slack);
+        state.behindHold = insideBehind(state.yaw, behindYaw);
+      }
       // 抬头/低头有阻尼：鼠标一格一格跳，镜头不能跟着一格一格跳
       const wantBias = Number.isFinite(opts.pitchBias) ? opts.pitchBias : 0;
       state.pitchBias = damp(state.pitchBias, wantBias, 14, dt);
@@ -228,7 +253,15 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
       state.pos.x = damp(state.pos.x, desired.x, 6.2, dt);
       state.pos.y = damp(state.pos.y, desired.y, 5.0, dt);
       state.pos.z = damp(state.pos.z, desired.z, 6.2, dt);
-      if (behindYaw !== null) holdPosBehind(state.pos, focus, behindYaw, slack);
+      if (behindYaw !== null) {
+        state.behindPosHold = holdPosBehind(
+          state.pos,
+          focus,
+          behindYaw,
+          slack,
+          state.behindPosHold
+        );
+      }
 
       // 视点前引：朝移动方向偏一点，构图不会永远把角色钉在正中
       if (vel) {

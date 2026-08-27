@@ -27,8 +27,9 @@
 //   ?glove=afterimage       本人主掌；配 ?phase=arena 就能盯着那一掌的战斗特效看
 //   ?off=frost              本人副掌
 //   ?pitch=0.6              起始俯角（正 = 往下看）。运行时右键拖拽 / ↑↓ 也能改
-//   ?look=locked|free       视角模式（缺省 locked = 固定人物视角，镜头钉在角色背后）。
-//                           free 下横向拖拽 / ←→ 转镜头（喂的是 sim 空间的 simYaw）
+//   ?look=locked|free       起始视角模式（缺省 locked = 固定人物视角，镜头钉在角色背后）。
+//                           free 下横向拖拽 / ←→ 转镜头（喂的是 sim 空间的 simYaw）；
+//                           运行时按 V 切换（= 壳层的 V 键），切模式不吸附机位
 //
 // 就绪后 window.smoke 可用；异步引导的 Promise 在 window.smokeReady 上。
 
@@ -375,7 +376,9 @@ export async function bootSmoke(canvas) {
   globalThis.addEventListener?.('resize', fit);
 
   // 视角模式。缺省 locked（固定人物视角）：镜头钉在角色背后，朝向跟角色自己的 yaw。
-  const lookMode = opt('look', 'locked') === 'free' ? 'free' : 'locked';
+  // 运行时按 V 切换（壳层是 input 的 V 键，这里直接调渲染层的口）—— 切模式不该吸附机位，
+  // 想看这条就按着 V 来回切，镜头只会顺着弹簧转过去。
+  let lookMode = opt('look', 'locked') === 'free' ? 'free' : 'locked';
   setLookMode(lookMode);
 
   // 抬头 / 低头 + 转镜头。壳层那边由 O4 每帧喂 input.getLook()；冒烟台自己拖鼠标，
@@ -493,7 +496,20 @@ export async function bootSmoke(canvas) {
       return simYaw;
     },
     getSimYaw: () => simYaw,
-    lookMode,
+    /**
+     * 切视角模式（= 壳层的 V 键）。切到 free 时把视线从当前机位角接过来 ——
+     * 输入层那边的相机方位角本来就一直在走，切模式不该让视线跳一下。
+     */
+    setLookMode(mode) {
+      lookMode = mode === 'free' ? 'free' : 'locked';
+      if (lookMode === 'free') simYaw = getLook()?.cameraYaw ?? simYaw;
+      setLookMode(lookMode);
+      applyLook();
+      return lookMode;
+    },
+    get lookMode() {
+      return lookMode;
+    },
     getLook,
     stats: getStats,
     simStats: () => match.stats(),
@@ -529,6 +545,8 @@ export async function bootSmoke(canvas) {
       // free 模式下左右也能转镜头（locked 时镜头跟角色，喂了也不用）
       if (e.key === 'ArrowLeft') api.setSimYaw(simYaw + 0.1);
       if (e.key === 'ArrowRight') api.setSimYaw(simYaw - 0.1);
+      // V = 切视角模式，与壳层同键位
+      if (e.key === 'v' || e.key === 'V') api.setLookMode(lookMode === 'free' ? 'locked' : 'free');
     });
     // 按住拖拽 = 上下看（free 下横向拖拽 = 转镜头）。
     // 冒烟台没有指针锁，用拖拽足够验证这条链路通了。

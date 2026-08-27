@@ -383,6 +383,29 @@ describe('切视角模式不吸附机位', () => {
     expect(behindness(r.cameraRig.camera.position, focus, local.yaw)).toBeLessThan(-3);
   });
 
+  it('归位途中硬顶让路：机位从正脸转回背后，逐帧走位与纯弹簧逐位相同', () => {
+    // 角色**不转身**地停在那里（冒烟台 ?tour=0 就是这个局面），镜头得自己从正脸绕回去。
+    // 这一段路上硬顶必须整只让路：拽一把就是一记甩镜，而不是「镜头有重量」。
+    const held = createCamera({});
+    const spring = createCamera({});
+    const at = new Vector3(0, 0, 0);
+    held.snap(at, Math.PI);
+    spring.snap(at, Math.PI);
+
+    let maxStep = 0;
+    let prev = held.state.pos.clone();
+    for (let i = 0; i < 180; i++) {
+      held.update(DT, at, 0, null, { behindYaw: 0 });
+      spring.update(DT, at, 0, null, {});
+      maxStep = Math.max(maxStep, held.state.pos.distanceTo(prev));
+      prev = held.state.pos.clone();
+      expect(held.state.pos.distanceTo(spring.state.pos)).toBeLessThan(1e-9);
+    }
+    // 弹簧自己的最快一帧就在 0.8m 上下；硬顶插手的话这里会翻两三倍
+    expect(maxStep).toBeLessThan(0.9);
+    expect(behindness(held.state.pos, at, 0)).toBeLessThan(-3);
+  });
+
   it('过门仍然要吸附：换区武装 snap，切模式与同区帧都不武装', () => {
     const r = rigged({ lookMode: 'locked' });
     const local = { yaw: 0 };
@@ -447,6 +470,24 @@ describe('locked 背后半平面硬顶（camera.js）', () => {
     // 没夹的那台被甩到了半平面外面 —— 硬顶不是摆设
     expect(Math.abs(shortestAngle(yaw, loose.state.yaw))).toBeGreaterThan(LOCKED_YAW_SPAN);
     expect(behindness(loose.state.pos, focus, yaw)).toBeGreaterThan(0);
+  });
+
+  it('常规转速（≤270°/s）下硬顶逐位不介入：手感一行没改', () => {
+    const focus = new Vector3(0, 0, 0);
+    for (const degPerSec of [90, 180, 270]) {
+      const held = createCamera({});
+      const plain = createCamera({});
+      held.snap(focus, 0);
+      plain.snap(focus, 0);
+      let yaw = 0;
+      for (let i = 0; i < 240; i++) {
+        yaw += ((degPerSec * Math.PI) / 180) * DT;
+        held.update(DT, focus, yaw, null, { behindYaw: yaw });
+        plain.update(DT, focus, yaw, null, {});
+        expect(held.state.pos.distanceTo(plain.state.pos)).toBe(0);
+        expect(held.state.yaw).toBe(plain.state.yaw);
+      }
+    }
   });
 });
 
