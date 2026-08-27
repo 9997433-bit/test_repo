@@ -451,3 +451,32 @@ npm run build   # HG-03：退出码 0
 - 静态面：`RENDER_YAW_OFFSET = 0` 在位（手感轮修复未回潮）；`rg googleapis src index.html` 零命中；`vite.config.js` `base:"./"` + 4181 双端口在位。
 - 差距标注与 Round 2/3 洞：见 SOTA_CHECKLIST §11.5 / §11.6。
 - **编排层补记**：O2 已于 `86e619f` 合入父分支（走道/八座展掌/idle VFX/传送门两态）；本基线里「渲染零命中 / HV 全红起步」仅描述 `@ 1b4371f` 当时状态，复验按合入后代码。F2 仍未合入；probe 对齐漂移（洞 3）仍待 GPT-sol-2。
+
+### 12.9 异掌大厅轮 Round 2 验收判定（F4 复验席 · 收口前复验）
+
+- 被验分支/commit：`cursor/yizhang-hub-db8d` @ `06b92b8`（九席合入后）；验收工作分支 `cursor/yizhang-hub-r2-f4-sota-db8d`（只动 `docs/SOTA_CHECKLIST.md` 与本文件）。
+- 验收人/日期：Fable-4 复验席 / 2026-08-27（全套命令实跑：`npm ci` → 静态检查 → `npm test` → `npm run probe` → `npm run build` → headless 冒烟截图）。
+- 结论：**PASS-WITH-WARNINGS**
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| HG 回归门 | 6/6 | 无 |
+| HB 大厅流程 | 12/12 | 无（自动化断言全绿 + 冒烟旁证；§12.4 交互十步未做，见「验证方式限定」） |
+| HV 渲染视觉 | 6/6 | 无（headless 冒烟截图 + `hub.test.js`/`hub-css.test.js`；HV-04 盲辨预跑仅确认 2/8 座，Round 3 记分） |
+| HT 测试锁 | 8/8 | 无（HT-06 probe 全链已由开工红转绿；HT-08 渲染冒烟由 `src/render/hub.test.js` 落地） |
+| HR/FR/R 否决 | 零命中 | 无 |
+
+**验证方式限定（诚实口径）**：本轮无交互桌面环境——§12.4 键鼠十步、devtools 触控仿真、`.yz-warp` 淡场实机帧**未做**；以 500 条单测 + probe hubJourney 全链 + headless Chrome（SwiftShader）冒烟截图（走道全景/台座与展掌特写/门封与门通两态/pitch 俯视/皮肤参数生效/arena 三皮肤同框与碎地岩屑帧）替代并如实标注。交互面走查并入 Round 3 真机段。
+
+**命令实测原文摘要**：
+
+- `npm test`：**Test Files 37 passed (37) / Tests 500 passed (500)**，退出码 0。
+- `npm run probe`：退出码 0，JSON 原文——`{"status":"pass","steps":3600,"players":4,"dt":0.016666666666666666,"simulatedSeconds":60,"phase":"arena","kills":1,"arenaKills":1,"movedPlayers":4,"maxMovement":124.84,"entityUpdateSteps":3600,"p99StepMs":0.1087,"maxStepMs":1.437,"ai":"think","botThinkCalls":10800,"botSlapAttempts":3779,"usingRealCombat":true,"wiredCombat":true,"hubJourney":{"targetGloveId":"cotton","focusObserved":true,"equippedMainGloveId":"cotton","equippedAtStep":51,"enteredArenaAtStep":227,"killsAtArenaEntry":0},"purityFilesScanned":35}`。
+- `npm run build`：退出码 0；主 chunk 663.28kB / gzip 183.10kB（>500kB 警告既知，含 three）。
+- 静态面：`rg googleapis|gstatic src dist index.html` 零命中；`git diff --name-only origin/main...HEAD` 过滤后零残留（改动只落 `games/yizhang/**` 与 `.agent_workspace/{PROGRESS.md,yizhang-feel,yizhang-hub}`）；`RENDER_YAW_OFFSET = 0`；`vite.config.js` `base:"./"` + 4181 双端口在位。
+- 冒烟 HUD 实读（draw calls/tris）：high 档 hub draw 301–307 / tris ≈238k；**mid 档 hub draw 305 / tris 138k、arena draw 352 / tris 95k**（洞 7 读数，超 L3-10 预算记 WARNING）。
+
+- WARNING 清单：W1 渲染预算超标（mid 档 draw/tris 超 L3-10，归 O2，Round 3 收敛）；W2 `HIT_STOP.max=0.12` 顶界零余量（FJ-01 哨兵）；W3 `scripts/probe.mjs`/`feel-probe.mjs` 硬编码 `MODEL_SLUG` 横幅（G2 残留噪音，顺手清）；W4 probe 单 seed 结转；W5 bloom low 档不可关结转。明细见 SOTA_CHECKLIST §11.8。
+- 洞 1–10 销号：1/2/3/4/5/6/10 关，7 已测记警告（W1），8 延后真机，9 记现状（皮肤=主菜单选皮肤板 + 暂停 2D 配掌板备选；走道=选掌主路径）。
+- 修复指派（均不否决本轮）：W1 → Opus-2（O2）；W3 → GPT-sol-2（G2）；W4 → GPT-sol-2；W5 → Opus-2/Fable-2。
+- 证据包：命令原文（上列）+ 冒烟截图 8 张（走道 tour ×3、门封/门通对比、pitch 0.59 俯视、皮肤 wildhorn 生效、arena 三皮肤同框、VFX+碎地帧）随本轮验收 PR 描述提交；截图存验收工作台，不入 `games/yizhang/src`。
