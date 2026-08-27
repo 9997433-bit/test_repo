@@ -30,6 +30,8 @@ const MOVEMENT_EPSILON_SQUARED = 1e-8;
 const HUB_SCRIPT_TIMEOUT_STEPS = 60 * 20;
 // 视角契约阈值：snap 后水平机位必须在角色 20m 内，禁止 hub→arena 的 ~120m 飞越。
 const CAMERA_SNAP_MAX_DIST = 20;
+// 对局内切 locked↔free 只能绕角色转，不能把机位甩回相隔 ~120m 的另一区域。
+const MODE_SWITCH_CAMERA_MAX_DIST = 20;
 // locked 下角色前向与相机水平前向近似同向；同时钉点积与夹角，避免单一指标误读。
 const LOCKED_FORWARD_MIN_DOT = 0.999;
 const LOCKED_FORWARD_MAX_ANGLE_DEGREES = 3;
@@ -72,6 +74,10 @@ async function superviseProbe(seeds) {
     arenaKills: minimumMetric(passedRuns, 'arenaKills'),
     movedPlayers: minimumMetric(passedRuns, 'movedPlayers'),
     cameraSnapMaxDist: maximumMetric(passedRuns, 'cameraSnapMaxDist'),
+    modeSwitchCameraMaxDist: maximumMetric(
+      passedRuns,
+      'modeSwitchCameraMaxDist',
+    ),
     lockedForwardMinDot: minimumMetric(passedRuns, 'lockedForwardMinDot'),
     lockedForwardMaxAngleDeg: maximumMetric(
       passedRuns,
@@ -184,6 +190,7 @@ function superviseProbeSeed(seed) {
             `(${result.simulatedSeconds}s), ` +
             `hub→${result.phase}, ${result.arenaKills} arena kill(s), ` +
             `camera snap ≤${result.cameraSnapMaxDist.toFixed(3)}m, ` +
+            `mode switch ≤${result.modeSwitchCameraMaxDist.toFixed(3)}m, ` +
             `locked dot ≥${result.lockedForwardMinDot.toFixed(6)}, ` +
             `locked turn ${result.lockedTurnAngleDeg.toFixed(3)}°, ` +
             `behind ${result.lockedCameraBehindness.toFixed(3)}m, ` +
@@ -462,6 +469,7 @@ async function executeProbeWorker() {
         arenaKills,
         movedPlayers: movedPlayerIds.size,
         cameraSnapMaxDist: lookProbe.maximumSnapDistance,
+        modeSwitchCameraMaxDist: lookBehavior.modeSwitchCameraMaxDistance,
         lockedForwardMinDot: lookProbe.minimumForwardDot,
         lockedForwardMaxAngleDeg:
           (lookProbe.maximumForwardAngle * 180) / Math.PI,
@@ -491,6 +499,7 @@ async function executeProbeWorker() {
         },
         lookProbe: {
           cameraSnapMaxDist: CAMERA_SNAP_MAX_DIST,
+          modeSwitchCameraMaxDist: MODE_SWITCH_CAMERA_MAX_DIST,
           lockedForwardMinDot: LOCKED_FORWARD_MIN_DOT,
           lockedForwardMaxAngleDeg: LOCKED_FORWARD_MAX_ANGLE_DEGREES,
           openingCameraDistance: lookProbe.openingCameraDistance,
@@ -650,9 +659,7 @@ function runLookModeBehaviorProbe(
       );
     }
 
-    if (eventHarness.input.setLookMode('free') !== 'free') {
-      throw new Error('headless input refused free look mode');
-    }
+    toggleLookMode(eventHarness, 'free', 'locked→free');
     const freeYawBefore = lockedPlayerAfter.yaw;
     const freeTurn = rotateInputView(eventHarness, -280, 'free view turn');
     const freePayload = lookPayload(freeTurn.after);
@@ -672,6 +679,11 @@ function runLookModeBehaviorProbe(
           `(${formatDegrees(freeCameraTurn)}°)`,
       );
     }
+    const lockedToFreeCamera = observeModeSwitchCamera(
+      rendererProbe,
+      lockedPlayerAfter,
+      'locked→free',
+    );
 
     const freeStationaryInput = eventHarness.input.sample(freeTurn.after.yaw);
     if (freeStationaryInput.yaw !== null) {
@@ -735,20 +747,70 @@ function runLookModeBehaviorProbe(
       );
     }
 
+    const lockedLookAfterFree = toggleLookMode(
+      eventHarness,
+      'locked',
+      'free→locked',
+    );
+    renderer.setLook(lookPayload(lockedLookAfterFree));
+    if (renderer.getLook().lookMode !== 'locked') {
+      throw new Error('headless renderer refused locked look payload');
+    }
+    const lockedReturnInput = eventHarness.input.sample(
+      lockedLookAfterFree.yaw,
+    );
+    if (!Number.isFinite(lockedReturnInput.yaw)) {
+      throw new Error('free→locked emitted a non-finite player yaw');
+    }
+    state = simulation.step(state, { p0: lockedReturnInput }, DT) ?? state;
+    const lockedReturnPlayer = humanPlayer(
+      simulation.getView(state),
+      'locked after free mode',
+    );
+    const lockedReturnYawError = Math.abs(
+      shortestAngle(lockedReturnInput.yaw, lockedReturnPlayer.yaw),
+    );
+    if (lockedReturnYawError > VIEW_YAW_MAX_ERROR_RADIANS) {
+      throw new Error(
+        `free→locked did not restore 1:1 player yaw ` +
+          `(error=${formatDegrees(lockedReturnYawError)}°)`,
+      );
+    }
+    const freeToLockedCamera = observeModeSwitchCamera(
+      rendererProbe,
+      lockedReturnPlayer,
+      'free→locked',
+    );
+    const modeSwitchCameraMaxDistance = Math.max(
+      lockedToFreeCamera.beforeDistance,
+      lockedToFreeCamera.afterDistance,
+      freeToLockedCamera.beforeDistance,
+      freeToLockedCamera.afterDistance,
+    );
+
     return {
       lockedTurnAngle: Math.abs(
         shortestAngle(lockedPlayerBefore.yaw, lockedPlayerAfter.yaw),
       ),
       lockedYawError,
+      lockedReturnYawError,
       lockedCameraBehindness,
       freeLookTurnAngle: freeTurn.angle,
       freeStationaryYawDelta,
       freeMoveYawError,
+      modeSwitchCameraMaxDistance,
+      modeSwitchCameraDistances: {
+        lockedToFree: lockedToFreeCamera,
+        freeToLocked: freeToLockedCamera,
+      },
       checks: {
         lockedViewTurns: 1,
+        lockedReturnDirections: 1,
         lockedBehindFrames: 1,
         freeStationaryViewTurns: 1,
         freeMovementDirections: 1,
+        lookModeTransitions: 2,
+        modeSwitchCameraFrames: 2,
       },
     };
   } finally {
@@ -817,6 +879,49 @@ function rotateInputView(eventHarness, movementX, label) {
     );
   }
   return { before, after, angle };
+}
+
+function toggleLookMode(eventHarness, expectedMode, label) {
+  const before = eventHarness.input.getLookMode();
+  eventHarness.window.emit('keydown', { code: 'KeyV' });
+  eventHarness.window.emit('keyup', { code: 'KeyV' });
+  const after = eventHarness.input.getLookMode();
+  if (after !== expectedMode || after === before) {
+    throw new Error(
+      `${label}: KeyV changed look mode from ${String(before)} to ` +
+        `${String(after)} instead of ${expectedMode}`,
+    );
+  }
+  return eventHarness.input.getLook();
+}
+
+function observeModeSwitchCamera(probe, player, label) {
+  const renderer = probe.renderer;
+  if (renderer._snapPending) {
+    throw new Error(`${label}: look mode switch incorrectly armed camera snap`);
+  }
+  const focus = positionOf(player);
+  const beforeDistance = horizontalDistance(renderer.camera.position, focus);
+  const snapped = renderer._followCamera(
+    DT,
+    focus,
+    renderer._followYaw(player),
+  );
+  if (snapped !== false) {
+    throw new Error(`${label}: look mode switch incorrectly snapped the camera`);
+  }
+  const afterDistance = horizontalDistance(renderer.camera.position, focus);
+  const maximumDistance = Math.max(beforeDistance, afterDistance);
+  if (
+    !Number.isFinite(maximumDistance) ||
+    maximumDistance >= MODE_SWITCH_CAMERA_MAX_DIST
+  ) {
+    throw new Error(
+      `${label}: camera reached ${String(maximumDistance)}m from player ` +
+        `(MODE_SWITCH_CAMERA_MAX_DIST=${MODE_SWITCH_CAMERA_MAX_DIST}m)`,
+    );
+  }
+  return { beforeDistance, afterDistance };
 }
 
 function restoreGlobalWindow(hadWindow, previousWindow) {
