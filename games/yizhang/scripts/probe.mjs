@@ -32,13 +32,17 @@ const HUB_SCRIPT_TIMEOUT_STEPS = 60 * 20;
 const CAMERA_SNAP_MAX_DIST = 20;
 // 对局内切 locked↔free 只能绕角色转，不能把机位甩回相隔 ~120m 的另一区域。
 const MODE_SWITCH_CAMERA_MAX_DIST = 20;
+// 与生产 camera.js 的 BEHIND_LIMIT 同值：look 段必须跨过这道闸，探针才真正覆盖咬合/放手。
+const BEHIND_LIMIT_RADIANS = Math.PI / 2.4;
+// O2 放手带落地后，大转角的无 snap 帧应与切 V 同级，而不是绕焦点横旋约 11m。
+const NO_SNAP_CAMERA_MAX_STEP = 1;
 // locked 下角色前向与相机水平前向近似同向；同时钉点积与夹角，避免单一指标误读。
 const LOCKED_FORWARD_MIN_DOT = 0.999;
 const LOCKED_FORWARD_MAX_ANGLE_DEGREES = 3;
 const LOCKED_FORWARD_MAX_ANGLE_RADIANS =
   (LOCKED_FORWARD_MAX_ANGLE_DEGREES * Math.PI) / 180;
 const LOCKED_TARGET_MAX_ANGLE_RADIANS = 1e-9;
-const LOOK_TURN_MIN_ANGLE_RADIANS = 0.5;
+const LOOK_TURN_MIN_ANGLE_RADIANS = BEHIND_LIMIT_RADIANS;
 const INPUT_YAW_MAX_ERROR_RADIANS = 1e-9;
 // getView() 的公开契约把 yaw round4；容差略高于最坏 0.00005rad 量化误差。
 const VIEW_YAW_MAX_ERROR_RADIANS = 0.0001;
@@ -77,6 +81,11 @@ async function superviseProbe(seeds) {
     modeSwitchCameraMaxDist: maximumMetric(
       passedRuns,
       'modeSwitchCameraMaxDist',
+    ),
+    lookTurnMinAngleDeg: minimumMetric(passedRuns, 'lookTurnMinAngleDeg'),
+    noSnapFrameMaxDisplacement: maximumMetric(
+      passedRuns,
+      'noSnapFrameMaxDisplacement',
     ),
     lockedForwardMinDot: minimumMetric(passedRuns, 'lockedForwardMinDot'),
     lockedForwardMaxAngleDeg: maximumMetric(
@@ -191,6 +200,8 @@ function superviseProbeSeed(seed) {
             `hub→${result.phase}, ${result.arenaKills} arena kill(s), ` +
             `camera snap ≤${result.cameraSnapMaxDist.toFixed(3)}m, ` +
             `mode switch ≤${result.modeSwitchCameraMaxDist.toFixed(3)}m, ` +
+            `look turn ≥${result.lookTurnMinAngleDeg.toFixed(3)}°, ` +
+            `no-snap step ≤${result.noSnapFrameMaxDisplacement.toFixed(3)}m, ` +
             `locked dot ≥${result.lockedForwardMinDot.toFixed(6)}, ` +
             `locked turn ${result.lockedTurnAngleDeg.toFixed(3)}°, ` +
             `behind ${result.lockedCameraBehindness.toFixed(3)}m, ` +
@@ -470,6 +481,10 @@ async function executeProbeWorker() {
         movedPlayers: movedPlayerIds.size,
         cameraSnapMaxDist: lookProbe.maximumSnapDistance,
         modeSwitchCameraMaxDist: lookBehavior.modeSwitchCameraMaxDistance,
+        lookTurnMinAngleDeg:
+          (lookBehavior.lookTurnMinAngle * 180) / Math.PI,
+        noSnapFrameMaxDisplacement:
+          lookBehavior.noSnapFrameMaxDisplacement,
         lockedForwardMinDot: lookProbe.minimumForwardDot,
         lockedForwardMaxAngleDeg:
           (lookProbe.maximumForwardAngle * 180) / Math.PI,
@@ -500,6 +515,8 @@ async function executeProbeWorker() {
         lookProbe: {
           cameraSnapMaxDist: CAMERA_SNAP_MAX_DIST,
           modeSwitchCameraMaxDist: MODE_SWITCH_CAMERA_MAX_DIST,
+          behindLimitDeg: (BEHIND_LIMIT_RADIANS * 180) / Math.PI,
+          noSnapCameraMaxStep: NO_SNAP_CAMERA_MAX_STEP,
           lockedForwardMinDot: LOCKED_FORWARD_MIN_DOT,
           lockedForwardMaxAngleDeg: LOCKED_FORWARD_MAX_ANGLE_DEGREES,
           openingCameraDistance: lookProbe.openingCameraDistance,
@@ -593,7 +610,7 @@ function runLookModeBehaviorProbe(
 
     const lockedTurn = rotateInputView(
       eventHarness,
-      320,
+      600,
       'locked view turn',
     );
     renderer.setLook(lookPayload(lockedTurn.after));
@@ -661,7 +678,7 @@ function runLookModeBehaviorProbe(
 
     toggleLookMode(eventHarness, 'free', 'locked→free');
     const freeYawBefore = lockedPlayerAfter.yaw;
-    const freeTurn = rotateInputView(eventHarness, -280, 'free view turn');
+    const freeTurn = rotateInputView(eventHarness, -600, 'free view turn');
     const freePayload = lookPayload(freeTurn.after);
     renderer.setLook(freePayload);
     if (renderer.getLook().lookMode !== 'free') {
@@ -679,13 +696,35 @@ function runLookModeBehaviorProbe(
           `(${formatDegrees(freeCameraTurn)}°)`,
       );
     }
-    const lockedToFreeCamera = observeModeSwitchCamera(
+    const lockedToFreeCamera = observeNoSnapCameraFrames(
       rendererProbe,
       lockedPlayerAfter,
       'locked→free',
     );
 
-    const freeStationaryInput = eventHarness.input.sample(freeTurn.after.yaw);
+    // 先让 free 机位在当前视线后稳定、背后闸重新咬合，再一帧猛甩近 π。
+    // 这样测到的是 O2 放手带本身，而不是切模式时 releaseBehind() 已经松开的闸。
+    const freeSettleCamera = observeNoSnapCameraFrames(
+      rendererProbe,
+      lockedPlayerAfter,
+      'free settle before large turn',
+      240,
+    );
+    const freeGateTurn = rotateInputView(
+      eventHarness,
+      1200,
+      'free view turn beyond BEHIND_LIMIT',
+    );
+    renderer.setLook(lookPayload(freeGateTurn.after));
+    const freeGateCamera = observeNoSnapCameraFrames(
+      rendererProbe,
+      lockedPlayerAfter,
+      'free view turn beyond BEHIND_LIMIT',
+    );
+
+    const freeStationaryInput = eventHarness.input.sample(
+      freeGateTurn.after.yaw,
+    );
     if (freeStationaryInput.yaw !== null) {
       throw new Error(
         `stationary free view turn emitted yaw ` +
@@ -709,7 +748,7 @@ function runLookModeBehaviorProbe(
     }
 
     eventHarness.window.emit('keydown', { code: 'KeyD' });
-    const freeMovingInput = eventHarness.input.sample(freeTurn.after.yaw);
+    const freeMovingInput = eventHarness.input.sample(freeGateTurn.after.yaw);
     eventHarness.window.emit('keyup', { code: 'KeyD' });
     const movementLength = Math.hypot(
       freeMovingInput.moveX,
@@ -776,7 +815,7 @@ function runLookModeBehaviorProbe(
           `(error=${formatDegrees(lockedReturnYawError)}°)`,
       );
     }
-    const freeToLockedCamera = observeModeSwitchCamera(
+    const freeToLockedCamera = observeNoSnapCameraFrames(
       rendererProbe,
       lockedReturnPlayer,
       'free→locked',
@@ -787,6 +826,17 @@ function runLookModeBehaviorProbe(
       freeToLockedCamera.beforeDistance,
       freeToLockedCamera.afterDistance,
     );
+    const lookTurnMinAngle = Math.min(
+      lockedTurn.angle,
+      freeTurn.angle,
+      freeGateTurn.angle,
+    );
+    const noSnapFrameMaxDisplacement = Math.max(
+      lockedToFreeCamera.maxFrameDisplacement,
+      freeSettleCamera.maxFrameDisplacement,
+      freeGateCamera.maxFrameDisplacement,
+      freeToLockedCamera.maxFrameDisplacement,
+    );
 
     return {
       lockedTurnAngle: Math.abs(
@@ -796,12 +846,19 @@ function runLookModeBehaviorProbe(
       lockedReturnYawError,
       lockedCameraBehindness,
       freeLookTurnAngle: freeTurn.angle,
+      freeGateTurnAngle: freeGateTurn.angle,
+      lookTurnMinAngle,
       freeStationaryYawDelta,
       freeMoveYawError,
       modeSwitchCameraMaxDistance,
+      noSnapFrameMaxDisplacement,
       modeSwitchCameraDistances: {
         lockedToFree: lockedToFreeCamera,
         freeToLocked: freeToLockedCamera,
+      },
+      noSnapCameraFrames: {
+        freeSettle: freeSettleCamera,
+        freeGateTurn: freeGateCamera,
       },
       checks: {
         lockedViewTurns: 1,
@@ -811,6 +868,11 @@ function runLookModeBehaviorProbe(
         freeMovementDirections: 1,
         lookModeTransitions: 2,
         modeSwitchCameraFrames: 2,
+        noSnapCameraFrames:
+          lockedToFreeCamera.frames +
+          freeSettleCamera.frames +
+          freeGateCamera.frames +
+          freeToLockedCamera.frames,
       },
     };
   } finally {
@@ -873,9 +935,10 @@ function rotateInputView(eventHarness, movementX, label) {
   eventHarness.window.emit('mousemove', { movementX, movementY: 0 });
   const after = eventHarness.input.getLook();
   const angle = Math.abs(shortestAngle(before.yaw, after.yaw));
-  if (angle < LOOK_TURN_MIN_ANGLE_RADIANS) {
+  if (angle <= LOOK_TURN_MIN_ANGLE_RADIANS) {
     throw new Error(
-      `${label} changed input look by only ${formatDegrees(angle)}°`,
+      `${label} changed input look by only ${formatDegrees(angle)}°; ` +
+        `must exceed BEHIND_LIMIT ${formatDegrees(BEHIND_LIMIT_RADIANS)}°`,
     );
   }
   return { before, after, angle };
@@ -895,23 +958,38 @@ function toggleLookMode(eventHarness, expectedMode, label) {
   return eventHarness.input.getLook();
 }
 
-function observeModeSwitchCamera(probe, player, label) {
+function observeNoSnapCameraFrames(probe, player, label, frames = 1) {
   const renderer = probe.renderer;
   if (renderer._snapPending) {
-    throw new Error(`${label}: look mode switch incorrectly armed camera snap`);
+    throw new Error(`${label}: no-snap camera frame started with snap armed`);
   }
   const focus = positionOf(player);
   const beforeDistance = horizontalDistance(renderer.camera.position, focus);
-  const snapped = renderer._followCamera(
-    DT,
-    focus,
-    renderer._followYaw(player),
-  );
-  if (snapped !== false) {
-    throw new Error(`${label}: look mode switch incorrectly snapped the camera`);
+  let previousPosition = renderer.camera.position.clone();
+  let maxFrameDisplacement = 0;
+  let maximumDistance = beforeDistance;
+  for (let frame = 0; frame < frames; frame += 1) {
+    const snapped = renderer._followCamera(
+      DT,
+      focus,
+      renderer._followYaw(player),
+    );
+    if (snapped !== false) {
+      throw new Error(`${label}: camera snapped on no-snap frame ${frame + 1}`);
+    }
+    const frameDisplacement =
+      renderer.camera.position.distanceTo(previousPosition);
+    maxFrameDisplacement = Math.max(
+      maxFrameDisplacement,
+      frameDisplacement,
+    );
+    maximumDistance = Math.max(
+      maximumDistance,
+      horizontalDistance(renderer.camera.position, focus),
+    );
+    previousPosition = renderer.camera.position.clone();
   }
   const afterDistance = horizontalDistance(renderer.camera.position, focus);
-  const maximumDistance = Math.max(beforeDistance, afterDistance);
   if (
     !Number.isFinite(maximumDistance) ||
     maximumDistance >= MODE_SWITCH_CAMERA_MAX_DIST
@@ -921,7 +999,23 @@ function observeModeSwitchCamera(probe, player, label) {
         `(MODE_SWITCH_CAMERA_MAX_DIST=${MODE_SWITCH_CAMERA_MAX_DIST}m)`,
     );
   }
-  return { beforeDistance, afterDistance };
+  if (
+    !Number.isFinite(maxFrameDisplacement) ||
+    maxFrameDisplacement >= NO_SNAP_CAMERA_MAX_STEP
+  ) {
+    throw new Error(
+      `${label}: no-snap frame moved camera ` +
+        `${String(maxFrameDisplacement)}m ` +
+        `(NO_SNAP_CAMERA_MAX_STEP=${NO_SNAP_CAMERA_MAX_STEP}m)`,
+    );
+  }
+  return {
+    frames,
+    beforeDistance,
+    afterDistance,
+    maximumDistance,
+    maxFrameDisplacement,
+  };
 }
 
 function restoreGlobalWindow(hadWindow, previousWindow) {
