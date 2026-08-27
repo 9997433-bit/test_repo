@@ -1,6 +1,6 @@
-# 异掌 · 架构总纲（固定人物视角轮 Round 1 · 叠大厅轮 + 手感轮）
+# 异掌 · 架构总纲（固定人物视角轮 Round 2 · 叠大厅轮 + 手感轮）
 
-> 状态：**冻结（LOOK-R1 + HUB-R3 + 手感轮）**。父分支 **`cursor/yizhang-look-db8d`**（大厅轮父分支 `cursor/yizhang-hub-db8d` 已收口合回 main）。手感轮 ADR-25…28（朝向零补偿、皮肤、每掌 VFX、hit-stop）沿用；大厅轮 **ADR-29…32**（双区状态机、走道选掌、传送门、`interact` / Bot 静默）；大厅 Round 2 **ADR-33…35**（hub 空挥闸、skinId+ghosts 导出、相机 pitch 通路）；大厅 Round 3 **ADR-36**（双区渲染子树互斥）。**视角轮 Round 1 新增 ADR-37…39**（机位 yaw 喂入 = sim 空间、`lookMode: 'locked'|'free'`、过门相机 snap，见 §5.1.2 与 §10）——修「视角转换很奇怪」的根因（`feedLook` 把相机系 yaw 写进 `renderer.lookYaw`）并冻结「固定人物视角」为产品缺省。O1 已落地 `createMatch` **缺省 `phase:'hub'`**，旧测靠裂岛坐标/空间规则或 `skipHub` 零回归，不以「缺省 arena」回退实现。契约现为 **v4.3**（`API_CONTRACT.md`：§0.1 视角轮名义登记、§7.1 机位契约、§8 lookMode、§13.2 通道与时序、不变量 28–33）。变更流程：先改本文与 `docs/API_CONTRACT.md`，再改代码。
+> 状态：**冻结（LOOK-R2 + HUB-R3 + 手感轮）**。父分支 **`cursor/yizhang-look-db8d`**（大厅轮父分支 `cursor/yizhang-hub-db8d` 已收口合回 main）。手感轮 ADR-25…28（朝向零补偿、皮肤、每掌 VFX、hit-stop）沿用；大厅轮 **ADR-29…32**（双区状态机、走道选掌、传送门、`interact` / Bot 静默）；大厅 Round 2 **ADR-33…35**（hub 空挥闸、skinId+ghosts 导出、相机 pitch 通路）；大厅 Round 3 **ADR-36**（双区渲染子树互斥）。**视角轮 Round 1 新增 ADR-37…39**（机位 yaw 喂入 = sim 空间、`lookMode: 'locked'|'free'`、过门相机 snap，见 §5.1.2 与 §10）——修「视角转换很奇怪」的根因（`feedLook` 把相机系 yaw 写进 `renderer.lookYaw`）并冻结「固定人物视角」为产品缺省。O1 已落地 `createMatch` **缺省 `phase:'hub'`**，旧测靠裂岛坐标/空间规则或 `skipHub` 零回归，不以「缺省 arena」回退实现。**视角轮 Round 2（LOOK-R2，零新 ADR）**：Round 1 合入终态 = locked 全链、过门 snap、锁视角 HUD DOM（`.yz-look-flash` + `#hud[data-look]`）、O3 Bot 护栏、F3 GDD 文案**均已在父分支**（F4 清单相应 DEFER 过时，改勾归 F4）；**唯一实现缺口 = `input.sample()` 未按 ADR-38 分派**（恒送 `cameraYawToSimYaw(θ)`，free 等同 locked，F4 判 LK-04 FAIL）——Round 2 归 O4 落地，可测封闭表升格进契约（§14-34/35）。ADR-37/38 各带一条 R2 按实现补记（payload.yaw = simYaw、渲染器随帧镜像——运行期权威仍唯一住 input）；`RENDER_YAW_OFFSET` 恒 0、只有两套角空间、**禁止第四套朝向**（重申，一字不动）。契约现为 **v4.4**（`API_CONTRACT.md`：§0.1/§0.2 名义登记、§7.1 机位契约、§8 lookMode、§13.2 通道与时序、不变量 28–35）。变更流程：先改本文与 `docs/API_CONTRACT.md`，再改代码。
 
 ## 0. 一句话架构
 
@@ -65,8 +65,10 @@
 3. alpha = acc / dt
 4. view = lerpView(prevView, curView, alpha)  # core/interp.js，编排层完成插值
 5. feedLook(renderer, input.getLook())        # 每 rAF 一次（sync 之前）：core/look.js 产出
-                                              # { simYaw, pitch }，机位水平角只喂 sim 空间
-                                              # （ADR-37）；观战/主菜单也照喂，pitch 不卡
+                                              # { yaw(=simYaw 同值), pitch, simYaw, lookMode }，
+                                              # 机位水平角只喂 sim 空间（ADR-37，相机系角不出
+                                              # 输入层）；lookMode 随帧覆盖渲染器镜像（ADR-38
+                                              # R2 补记）；观战/主菜单也照喂，pitch 不卡
 6. renderer.sync(view)                        # renderer 收到的已是插值后的快照
 7. shell.updateHud(curView, 'p0')             # 节流 ~30Hz
 ```
@@ -231,13 +233,16 @@ sim 收到的就是世界系（`moveSpace` 缺省 `'world'`；`'local'` 仅供�
 
 #### 5.1.2 视角模式与机位喂入（视角轮 Round 1，冻结；ADR-37/38/39）
 
-**机位喂入数据流（唯一形状）**：
+**机位喂入数据流（唯一形状；R2 按合入实现更新 payload 形状）**：
 
 ```
-input.getLook() ──► core/look.js lookPayload：{ yaw(相机系，仅调试读数),
-                    pitch, simYaw = cameraYawToSimYaw(yaw) }
+input.getLook() ──► core/look.js lookPayload：{ yaw(=simYaw 同值，v4.4 更正——
+                    相机系角不出输入层), pitch, simYaw = cameraYawToSimYaw(yaw),
+                    lookMode(随帧透传，缺省收 'locked') }
                 ──► renderer.setLook：simYaw 优先落 lookYaw（有 simYaw 键绝不读 yaw 键；
-                    无 simYaw 键时把 yaw 当 sim 角收）──► cameraRig.update(…, lookYaw, …)
+                    无 simYaw 键时把 yaw 当 sim 角收）；lookMode 键 = 每帧覆盖渲染器的
+                    模式镜像 ──► cameraRig.update(…, _followYaw(local), …)
+                    （locked ⇒ 角色自身 yaw；free ⇒ lookYaw ?? 角色 yaw，契约 §14-35）
 ```
 
 修掉的 bug（本轮根因）：`feedLook` 曾让 payload 的相机系 `yaw` 落进 `renderer.lookYaw`，`sync` 的 `lookYaw == null ? local.yaw : lookYaw` 把相机系角当 sim 角用——两套角零点/旋向不同，镜头方位随 θ 值域扭来扭去，即用户说的「视角转换很奇怪」。收口后 `lookYaw` 全生命周期只见 sim 空间（契约 §7.1，ADR-37）。
@@ -246,12 +251,14 @@ input.getLook() ──► core/look.js lookPayload：{ yaw(相机系，仅调试
 
 | | `locked`（产品缺省 = 固定人物视角） | `free`（可切回的高级项） |
 | --- | --- | --- |
-| 人物水平面向 | ≡ 相机水平前向：`sample` 产出 `Input.yaw = cameraYawToSimYaw(θ)`，sim 直赋（无平滑）⇒ 逐 tick 1:1 | 与镜头解耦：有移动 ⇒ `Input.yaw = atan2(-moveX, -moveZ)`（面朝走向）；零移动 ⇒ `null`（保持朝向） |
-| 机位 | 钉角色身后（lookYaw = 视线 sim 角，机位在 `focus + (sin, cos)·dist`） | 同一条机位公式；鼠标绕看时人物不跟转 |
+| 人物水平面向 | ≡ 相机水平前向：`sample` 产出 `Input.yaw = cameraYawToSimYaw(θ)`，sim 直赋（无平滑）⇒ 逐 tick 1:1 | 与镜头解耦：有移动 ⇒ `Input.yaw = atan2(-moveX, -moveZ)`（面朝走向，= `sim/math.js yawFromDir`）；零移动 ⇒ `null`（sim 的 `Number.isFinite` 门不覆盖，保持朝向） |
+| 机位跟随角（R2 按实现登记，契约 §14-35） | 绕**角色自身 yaw**——喂入的 lookYaw 拧不动机位；1:1 不变量保证它与视线同值，镜头钉身后、壳层没喂/晚一帧也不绕到正脸 | 绕 `lookYaw`（视线 sim 角）；没喂回落角色 yaw。机位公式同一条（`focus + (sin, cos)·dist` 即身后），变的只是绕的角选谁 |
 | pitch | 自由上下看（ADR-35 通路不变） | 同左 |
 | 移动换算 | §2 公式，W = 镜头水平前方 | 同一条公式（移动永远相对相机） |
 
-sim 与 renderer 都**不感知** lookMode——模式差异只发生在 input 的 `Input.yaw` 产出。切换四通道（键 V / 设置项 / `?look=locked|free` / 存档 `lookMode`）与初值取值链见契约 §13.2；老档缺失补 `'locked'`。
+**sim 与 view 快照不感知 lookMode**；渲染器持有的是 payload 每帧覆盖的**随帧镜像**（R2 按实现修订 ADR-38 措辞——运行期权威仍唯一住 input，镜像活不过一帧、不构成第二状态源）。模式对模拟的全部影响收敛在 input 的 `Input.yaw` 产出。切换四通道（键 V / 设置项 / `?look=locked|free` / 存档 `lookMode`）与初值取值链见契约 §13.2；老档缺失补 `'locked'`。
+
+**Round 2 状态（LOOK-R2 唯一实现缺口，归 O4）**：Round 1 合入的 `input.sample()` **未分派**——恒走 locked 分支送 `cameraYawToSimYaw(θ)`，free 行为等同 locked（F4 判 **LK-04 FAIL**）。上表 free 列的 sim 半边（`yaw: null` 不覆盖门）与 render 半边（跟随角选源）都已在位且有测——缺口只在 input 这一段，落地即闭环。可测封闭表 = 契约 **§14-34**（三分支 + 切换当帧生效 + 值域封闭：相机方位角 θ 原值任何模式不得出现在 `Input.yaw`，**禁止第四套朝向**、`RENDER_YAW_OFFSET` 恒 0）；G1 出 free ≠ locked 单测、G2 探针复验朝向一致性后由 F4 重判 LK-04。
 
 **过门机位 snap（ADR-39）**：hub（z≈−120）与裂岛（原点）水平错开，phase 切换时跟随目标单帧瞬移 ~120m——弹簧相机会飞越全程（贴脸/穿模/晕眩）。裁定：渲染句柄冻结追加 `snapCamera()`（阻尼状态立即置稳态，契约 §7.1）；O4 在开局 / `enterArenaFx` / `enterHubFx` 按 `input.setLook → feedLook → snapCamera` 顺序调用（契约 §13.2）；第二道保险 = `sync` 内目标单帧位移 > `CAMERA_SNAP_TELEPORT`（60m）自动 snap，局内重生瞬移（≤ 40m）不触发、甩镜手感保留。与 `lerpView` 传送帧跳插值（ADR-31）叠加：角色不滑步、机位不飞行。
 
@@ -338,6 +345,6 @@ R1 裁定（1–15）中仍然有效的沿用；被 Round 2 推翻的标注「�
 34. **skinId 与 combat.ghosts 进 getView（HUB-R2 新增，冻结；O1 导出、O2 消费、G1 锁测）**：`getView().players[].skinId`——sim 视为**不透明字符串**原样透传（不校验、不 import skins.js，缺省 null，消费端 `resolveSkin` 兜底，ADR-26）；`view.combat.ghosts`——源 `state.combat.ghosts` 经桥 `ghostsView` 翻译（yaw 还原 -Z、数值 round、`ttl/ttl0` 齐全），**恒存在**（无残影 = 空数组）、纯 JSON。两个名字冻结为 `players[].skinId` / `combat.ghosts`，皮肤五段链（F3 表 → O4 传参 → O1 透传 → O2 换件）与残影双段接线（O1 导出 → O2 绘制）都以此为对接面。形状见契约 §4.3，不变量 §14-18/19。
 35. **相机 pitch 通路（HUB-R2 新增，冻结；O2 开 API、O4 每帧喂）**：`input.getLook().pitch` 是俯仰的**唯一权威源**（ADR-4 同源）。渲染句柄冻结追加 `setPitch(pitch: number)`（弧度，render 内部 clamp 防翻转），O4 每 rAF 在 `sync` 前调用；O2 的 `cameraRig` 消费该值（内部签名自便，现状 `update(dt, focus, yaw, vel)` 不吃 pitch 即本条要修的断链）。禁止 render/ui 各自维护第二份 pitch 状态、禁止把 pitch 塞进 view 快照。
 36. **双区渲染子树互斥（HUB-R3 新增，冻结；归 O2，L3-10 预算前提）**：安全区与裂岛在同一世界里错开（走道 z≈-120）、从来不同框，`view.phase` 决定哪棵子树整棵 `visible=false`——hub 阶段裂岛子树整棵关（台面 InstancedMesh 是 `frustumCulled=false`，不显式关会在走道上照画整座岛），arena 阶段安全区子树整棵关（R2 已有做法的反向补齐）。叠加手段：阴影贴图每帧只烘一次、mid 档辉光只画挡光替身层、角色按材质合批（识别色与皮肤本色走顶点色）、非本区角色远距剔除、碎岩/雾凇/裂纹贴花实例化。Round 3 实测 mid 档 hub 峰值 ≈94 draw / 47.8k tris、arena ≈117 / 70.0k——L3-10（≤120 / ≤80k）两区达标；测量口唯一 = 渲染句柄 `getStats()`（契约 §7）。降耗的视觉底线归 ART_DIRECTION §17 互锁合同：八掌 idle/战斗 VFX 不许合并、皮肤剪影不许砍，预算与 HV-04 盲辨在同一份 mid 档构建上验。
-37. **机位 yaw 喂入 = sim 空间（视角轮 R1 新增，冻结；O2 收口 `setLook`、O4 收口 `feedLook`）**：凡是落进 `renderer.lookYaw` 的水平角必须已是 sim 空间（yaw=0 → -Z）。`setLook` 消费规则冻结于契约 §7.1：**`simYaw` 优先**（有 simYaw 键绝不读 yaw 键——feedLook 的 payload 里 `yaw` 是相机系调试读数）；无 simYaw 键时把传入 `yaw` 当 sim 角收；null 清除、回落跟角色自身 yaw。`core/look.js lookPayload` 恒携 `simYaw = cameraYawToSimYaw(yaw)`——换算点仍只有 ADR-17 的两处，本条不新增换算点、只堵住「喂错空间」这条路。根因见 §5.1.2；全项目**只有两套角空间**（相机系 / sim 系），禁止第四套（契约 §1-11）。
-38. **`lookMode: 'locked'|'free'`（视角轮 R1 新增，冻结；状态归 input，O4 接通道）**：`locked`（**产品缺省** = 固定人物视角）——`sample` 产出 `Input.yaw = cameraYawToSimYaw(θ)`，sim 直赋 ⇒ 人物水平面向与相机水平前向逐 tick 1:1，镜头钉身后，pitch 仍自由；`free`——面向与镜头解耦：有移动 ⇒ `Input.yaw = atan2(-moveX, -moveZ)`（面朝走向，同空间求角、非换算点），零移动 ⇒ `null`。移动换算两模式同一条公式（W 永远朝镜头前方）。**sim 与 renderer 都不感知 lookMode**——模式差异只住在 input 的 `Input.yaw` 产出；禁止把 lookMode 塞进 view 快照、renderer 状态或第二份运行期副本。切换四通道：键 V（KeyV，边沿 toggle、不占既有键）、设置项、`?look=locked|free`（仅本会话、不回写）、存档 `lookMode`（老档缺省 `'locked'`）。缺省 locked 下 `sample` 行为与 v4.2 逐位一致——既有 557 测零回归。
+37. **机位 yaw 喂入 = sim 空间（视角轮 R1 新增，冻结；O2 收口 `setLook`、O4 收口 `feedLook`）**：凡是落进 `renderer.lookYaw` 的水平角必须已是 sim 空间（yaw=0 → -Z）。`setLook` 消费规则冻结于契约 §7.1：**`simYaw` 优先**（有 simYaw 键绝不读 yaw 键——feedLook 的 payload 里 `yaw` 是相机系调试读数）；无 simYaw 键时把传入 `yaw` 当 sim 角收；null 清除、回落跟角色自身 yaw。`core/look.js lookPayload` 恒携 `simYaw = cameraYawToSimYaw(yaw)`——换算点仍只有 ADR-17 的两处，本条不新增换算点、只堵住「喂错空间」这条路。根因见 §5.1.2；全项目**只有两套角空间**（相机系 / sim 系），禁止第四套（契约 §1-11）。**R2 按实现补记**：合入的 `lookPayload` 比原裁定更严——`payload.yaw === payload.simYaw`（同值同空间，键集恰 `{yaw, pitch, simYaw, lookMode}`），相机系角**根本不出输入层**，「渲染器不得消费相机系角」由「链路上没有相机系角」保证；simYaw 优先规则原样保留（防直连调用方只给 `yaw` 键的空间歧义）。唯一相机系读数出口 = `input.getLook().yaw`。裁定本体不变。
+38. **`lookMode: 'locked'|'free'`（视角轮 R1 新增，冻结；状态归 input，O4 接通道）**：`locked`（**产品缺省** = 固定人物视角）——`sample` 产出 `Input.yaw = cameraYawToSimYaw(θ)`，sim 直赋 ⇒ 人物水平面向与相机水平前向逐 tick 1:1，镜头钉身后，pitch 仍自由；`free`——面向与镜头解耦：有移动 ⇒ `Input.yaw = atan2(-moveX, -moveZ)`（面朝走向，同空间求角、非换算点），零移动 ⇒ `null`。移动换算两模式同一条公式（W 永远朝镜头前方）。**sim 与 view 快照不感知 lookMode**；禁止第二份**运行期权威**副本。切换四通道：键 V（KeyV，边沿 toggle、不占既有键）、设置项、`?look=locked|free`（仅本会话、不回写）、存档 `lookMode`（老档缺省 `'locked'`）。缺省 locked 下 `sample` 行为与 v4.2 逐位一致——既有 557 测零回归。**R2 按实现修订两处**：① 原「renderer 不感知」收窄为上句——合入实现（F4 已验、`render/look.test.js` 锁定）给渲染器一份 **payload 每帧覆盖的随帧镜像**（`setLook` 的 `lookMode` 键 / `setLookMode/getLookMode`），驱动机位跟随角选源（locked ⇒ 角色自身 yaw，喂入 lookYaw 拧不动；free ⇒ lookYaw ?? 角色 yaw——契约 §7.1/§14-35）；镜像活不过一帧，不构成第二权威，禁令原意「防状态分叉」不变。HUD 的 `#hud[data-look]` 同理是展示镜像。② **实装缺口点名（Round 2 P0，归 O4）**：Round 1 的 `sample()` 未分派、恒走 locked 分支（F4 判 LK-04 FAIL）——free 的 sim 半边与 render 半边均已在位，input 分派按契约 §14-34 封闭表落地。回调路径按实现更正：触发 `onLookModeChange` 的是 KeyV / `toggleLookMode()`，`setLookMode` 是静默 setter（契约 §8/§14-29）。裁定本体（值域、缺省、四通道、分派公式）不变。
 39. **过门相机 snap（视角轮 R1 新增，冻结；O2 实现、O4 调用）**：渲染句柄冻结追加 `snapCamera()`——跟随相机全部阻尼状态（pos/look/yaw/pitchBias/dist/lead）立即置为「当前跟随目标 + 当前 lookYaw/lookPitch」稳态、清 shake/fovKick，幂等，无本地玩家时 no-op。调用点与顺序冻结（契约 §13.2）：开局 / `enterArenaFx` / `enterHubFx` 按 `input.setLook → feedLook → snapCamera`。第二道保险归 O2：`sync` 内跟随目标单帧位移 > `CAMERA_SNAP_TELEPORT`（60m）自动 snap——hub↔arena（~120m）必触发、局内重生瞬移（≤ 2×radius = 40m）必不触发（甩镜手感保留）。snap 后相机-目标距离 ≤ `CAMERA_SNAP_MAX_DIST`（20m）且机位在视线反向半平面（身后）。禁止用「调大阻尼系数」冒充 snap——稳态置位是语义，不是调参。
