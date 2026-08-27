@@ -443,18 +443,18 @@ describe("残影经 sim.step 进 view", () => {
 });
 
 describe("安全区经 sim.step 仍然免战", () => {
-  it("大厅里按住扇击 180 帧：零命中、零残影、人也没被推动", () => {
+  it("走道上按住扇击 + 技能 180 帧：不出招、不受击、不留残影", () => {
     const state = createMatch({ seed: 701, botCount: 3, phase: "hub", unlocked: "all" });
     const p0 = state.players.find((p) => p.id === "p0");
-    const before = { x: p0.x, y: p0.y, z: p0.z, hitsTaken: p0.hitsTaken, deaths: p0.deaths };
+    const before = { x: p0.x, z: p0.z, slaps: state.stats.slaps, hitsTaken: p0.hitsTaken, deaths: p0.deaths };
 
-    const inputs = {};
-    for (const p of state.players) inputs[p.id] = input({ slap: true, skill: true });
-    const events = advance(state, 3, inputs);
+    // 只有 p0 在走道上（Bot 留在裂岛坐标，按 ADR-33 不受闸），所以只喂 p0。
+    const events = advance(state, 3, { p0: input({ slap: true, skill: true }) });
 
     expect(state.phase).toBe("hub");
-    expect(state.stats.hits).toBe(0);
-    expect(events.some((e) => e.type === "hit")).toBe(false);
+    expect(p0.attack.phase).toBe("idle");
+    expect(state.stats.slaps).toBe(before.slaps);
+    expect(events.some((e) => e.id === "p0" && ["slapStart", "slap", "skill", "hit"].includes(e.type))).toBe(false);
     expect(getView(state).combat.ghosts).toEqual([]);
     expect(p0.x).toBeCloseTo(before.x, 6);
     expect(p0.z).toBeCloseTo(before.z, 6);
