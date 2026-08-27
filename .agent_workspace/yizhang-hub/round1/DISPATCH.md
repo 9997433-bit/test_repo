@@ -28,8 +28,9 @@
 
 | 席位 | 模型 | Agent ID |
 | --- | --- | --- |
-| F1 双区契约 | `claude-fable-5-thinking-xhigh` | `bc-0c7cf4a9-c177-5160-b2dc-8f6eafd52f7b` |
+| F1 双区契约 | `claude-fable-5-thinking-xhigh` | `bc-0c7cf4a9-c177-5160-b2dc-8f6eafd52f7b` | 运行中 |
+| O1 hub 模拟 | `claude-opus-5-thinking-high-fast` | `bc-aaa7b471-0831-5c1b-996b-fb7368bea8f9` | 运行中 |
 
 ### 待派发
 
-F2、F3、F4、O1、O2、O3、O4、G1、G2
+F2、F3、F4、O2、O3、O4、G1、G2
