@@ -26,6 +26,14 @@
 
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
-| O2 画调用预算 | `claude-opus-5-thinking-high-fast` | `bc-5c7aff90-8768-5308-9ca1-eb1cc7161816` | 已派出；mid ≤120 draw / ≤80k tris |
+| O2 画调用预算 | `claude-opus-5-thinking-high-fast` | `bc-5c7aff90-8768-5308-9ca1-eb1cc7161816` | 已合入 `cursor/yizhang-hub-r3-o2-budget-db8d`（mid hub 峰值 94/47.8k，arena 117/70.0k） |
+
+### Wave 2
+
+| 席位 | 模型 | Agent ID | 状态 |
+| --- | --- | --- | --- |
+| F1 契约对齐 | `claude-fable-5-thinking-xhigh` | （派出后回填） | L3-10 实测数字、分派词、皮肤形写入契约 |
+| O4 结算回走道 | `claude-opus-5-thinking-high-fast` | （派出后回填） | 再来一局≠回安全区 UX 打磨 |
+| G1 锁表 | `gpt-5.6-sol-xhigh-fast` | （派出后回填） | 三 seed / 预算不减量；不重复 O2 渲染测 |
 | F2 视觉合同 | `claude-fable-5-thinking-xhigh` | `bc-cb240001-77aa-5dff-a3cb-57e0a4caf7b3` | 已合入 `cursor/yizhang-hub-r3-f2-art-db8d`（ART_DIRECTION §17；CSS 未改） |
 | G2 三 seed 探针 | `gpt-5.6-sol-xhigh-fast` | `bc-ad2d29e4-3542-5ae7-aa83-72f1d3290244` | 已合入 `cursor/yizhang-hub-r3-g2-probe-db8d`（3/3 seed pass；横幅 `yizhang-probe`） |
