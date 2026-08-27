@@ -45,3 +45,26 @@ export const RULES = {
   streakBreakOnDeath: true, // 自己坠落断连胜（种子文档要求）
   botCountDefault: 3,
 };
+
+// 机位（第三人称跟随相机）距离 / 阻尼 / snap 阈值对照登记表（LOOK-R1，GDD §15）。
+// 实现权威在 render/camera.js（O2 域，距离与阻尼）与契约 §7.1（CAMERA_SNAP 两阈值）；
+// 本表登记**同一套数字**供 GDD 与测试引用，不另造一套——render 侧改值时回修此表，
+// 对照测试 src/data/tuning.test.js 锁两边同数。阻尼 λ 是指数弹簧系数：
+// x' = x + (target − x)·(1 − e^(−λ·dt))，λ 越大跟得越紧。
+export const CAMERA = {
+  dist: 7.4, // 机位距离初值（render camera state.dist，开机第一帧的跟随距离）
+  restDist: 7.1, // 静止跟随距离（render REST_DIST）：目标距离基准，snap 落位直接用它
+  distSpeedGain: 0.11, // 距离随速拉远：目标距离 = restDist + min(distSpeedMax, 速度×gain) + 滞空高度×distAirGain
+  distSpeedMax: 1.6, // 拉远封顶（地面全速 6.2 稳态 ≈ 7.8，冲刺顶到 8.7）
+  distAirGain: 0.12, // 滞空每米再拉远一点点
+  basePitch: 0.22, // 静止俯角（render BASE_PITCH，弧度；正 = 往下看）
+  yawDamping: 7.5, // 方位角阻尼（走最短弧，跨 ±π 不兜整圈）
+  posDamping: 6.2, // 机位水平阻尼
+  posDampingY: 5, // 机位竖直阻尼（略慢于水平，转身画面才有重量）
+  lookDamping: 9, // 视点水平阻尼（恒快于机位：先看后到）
+  lookDampingY: 7, // 视点竖直阻尼
+  distDamping: 3.2, // 距离阻尼（拉远 / 收近都柔）
+  pitchDamping: 14, // 抬头量阻尼（鼠标一格一格跳，镜头不能跟着跳）
+  snapTeleport: 60, // = 契约 CAMERA_SNAP_TELEPORT（§7.1）：跟随目标单帧位移 > 此值 ⇒ 渲染器自动 snap
+  snapMaxDist: 20, // = 契约 CAMERA_SNAP_MAX_DIST（§7.1）：snap 后相机-目标距离上界（G1/G2 断言用）
+};
