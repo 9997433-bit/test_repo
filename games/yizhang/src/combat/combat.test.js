@@ -92,6 +92,37 @@ describe("resolveSlap 基础", () => {
     expect(resolveSlap(back.state, back.a, undefined, 0)).toHaveLength(0);
   });
 
+  it("判定是横着的一片扇形：左右张得开，上下只由高度闸门管（与横扇动画同形）", () => {
+    // 木棉 slapAngleDeg 100 → 半角 50°，slapRange 2.6 + playerRadius，HIT.reachHeight 2.2。
+    // A 站原点、yaw=0（combat 内部约定 = 面向 +Z），目标绕着他摆在扇面上。
+    const shot = (deg, dy = 0, dist = 1.6) => {
+      const rad = (deg * Math.PI) / 180;
+      const a = makePlayer("A", { gloveId: "cotton", x: 0, z: 0, yaw: 0 });
+      const b = makePlayer("B", {
+        gloveId: "cotton",
+        x: Math.sin(rad) * dist,
+        z: Math.cos(rad) * dist,
+        y: dy,
+      });
+      return resolveSlap(makeState([a, b]), a, undefined, 0);
+    };
+
+    // 横向：正前方与左右各 45° 都在扇面里 —— 一整片横着扫过去
+    for (const deg of [-45, -25, 0, 25, 45]) {
+      expect(shot(deg), `${deg}°`).toHaveLength(1);
+    }
+    // 出了张角就打不到：扇面横向是有边的，不是一圈
+    for (const deg of [-70, 70, 180]) {
+      expect(shot(deg), `${deg}°`).toHaveLength(0);
+    }
+    // 纵向：同一片扇面里，脚下与齐胸都照打；人窜到三米高就够不着 ——
+    // 判定从来不是「从脚扫到头」的竖锥，改成横扇不需要动它
+    expect(shot(30, 0)).toHaveLength(1);
+    expect(shot(30, 1.4)).toHaveLength(1);
+    expect(shot(0, 3)).toHaveLength(0);
+    expect(shot(0, -3)).toHaveLength(0);
+  });
+
   it("冷却期内重复调用返回空数组", () => {
     const { state, a } = duel("cotton", 1.6);
     expect(resolveSlap(state, a, undefined, 0)).toHaveLength(1);
