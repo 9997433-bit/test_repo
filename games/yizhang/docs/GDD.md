@@ -211,7 +211,7 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 
 可战胜性由三个旋钮保证：`reactionSeconds`（感知延迟 0.2–0.28）、`mistakeRate`（.08–.18 随机失误）、`punishRead`（只有狸缘接近人类的抓后摇水平）。磐石 Bot（蛮古）0.42s 前摇 + 高失误率 = 木棉玩家的第一个「可学习」对手：引它挥空 → 绕背 → 两三掌送下岛。
 
-皮肤（契约 §3.2 规则 3，ADR-26）：`skinId` 纯装饰、不挂数值；三人互异且不等于默认皮肤 `drifter`，Bot 不得全员同一造型。id 取皮肤词表 v1 冻结值；`src/data/skins.js` 真表落地前，壳层 `assignSkins` 对表里查无此 id 的值安全回落轮转，行为不破。
+皮肤（契约 §3.2 规则 3，ADR-26）：`skinId` 纯装饰、不挂数值；三人互异且不等于默认皮肤 `drifter`，Bot 不得全员同一造型。id 取皮肤词表 v1 冻结值，逐 id 对应 `src/data/skins.js` 真表（HUB-R2 已落地，见 §13）；壳层 `assignSkins` 对表里查无此 id 的值仍会安全回落轮转，行为不破。
 
 ## 11. 调参指南（改哪个数字、动什么）
 
@@ -267,5 +267,73 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 | 走道太挤 / 太空 | `ROW_X 4.2`、`ROW_Z` 间距 6 | 座距恒 > 2 × interactRadius；ROW_X 恒 > interactRadius |
 | 误入传送门 | `PORTAL_RADIUS 2.4`、门−末排 z 距 6 | 门 AABB 与台座交互圈净距恒 > 0 |
 | 安全区整体搬家 | `HUB_Z −120` | zone 最近缘距裂岛圆心恒 > 22m |
+
+## 13. 皮肤真表（`skins.js`，HUB-R2，ADR-26；契约 §3.2）
+
+`src/data/skins.js` 是壳层 `core/skins.js` 头注预告的那份「真表」：导出 `SKINS` / `SKIN_BY_ID` / `DEFAULT_SKIN_ID`（`'drifter'`）/ `resolveSkin`，`data/index.js` 已转发。壳层 `resolveSkins(dataModule)` 拿到 `src/data` 命名空间即自动翻 `source:'data'`，兜底表（ash/kiln/… 六套原创 id）退役为数据缺席时的降级，两套不混用；兜底 id 不升格为默认皮肤。
+
+### 13.1 形状取舍（真表用哪套字段）
+
+场上有两套候选形状：壳层兜底表的**比例数值**形状（`build:{height,mass,shoulder}` + `cloth/trim/accent` + `accessory`），和契约 §3.2 冻结的**枚举组合**形状（`build/headgear/back/palette`）。真表**只用契约形状**，理由：
+
+- 契约已冻结且 O2 的实现策略围绕它设计——每个枚举值各做一次几何/材质件，F3 填组合表即可并行（§3.2 开篇）；比例数值形状无法保证「配件形制互异」这条灰度剪影底线。
+- 枚举可测：`build ∈ {slim,stock,broad}`、`headgear` 六选一、`back` 三选一，词表越界直接测试红（`src/data/skins.test.js`）。
+
+消费分两层，各管各的：**对象级**兜底走数据层 `resolveSkin(id)`（未知/缺省 → `SKIN_BY_ID[DEFAULT_SKIN_ID]`，契约 §14-17）；**id 级**归一（存档往返、`assignSkins` 分配）仍走壳层 `normalizeSkinId(id, resolveSkins(data))`，壳层零改动。
+
+### 13.2 皮肤表 v1（id 词表冻结于契约 §3.2；表序 = 大厅选择器顺序）
+
+| id | 名 | 定位 | build | headgear | back | 衣料底色 / 灰阶位 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `drifter` | 行脚 | **缺省**；风尘行脚客 | stock | hood | panel | 尘灰蓝 `#5d6572`，中间灰阶 |
+| `mason` | 石契 | 宽肩石匠 | broad | bare | pack | 赭土 `#8a6f4d`，中高灰阶 |
+| `crane` | 鹤羽 | 瘦高背旗（Bot fox） | slim | topknot | banner | 鹤羽灰白 `#b9bfc2`，全表最亮 |
+| `reed` | 苇笠 | 斗笠蓑客 | stock | strawHat | panel | 苇绿 `#4c6248`，中低灰阶 |
+| `nuo` | 傩面 | 傩戏面客（Bot bully；原创民俗剪影） | slim | mask | banner | 夜漆青黑 `#2f2b3a`，全表最暗 |
+| `wildhorn` | 荒角 | 兽角蛮客（Bot brute） | broad | horns | pack | 生革锈褐 `#6e4a33`，暗暖灰阶 |
+
+**灰度剪影判据**（测试锁死）：六套 `headgear` 互不相同——蒙掉颜色，头部剪影件就够认人；`build × back` 又把六套分成三族两两对照（stock+panel / slim+banner / broad+pack），族内靠 headgear 分（兜帽 vs 斗笠、发髻 vs 面具、光头 vs 荒角）。配色再补一层保险：衣料明度从鹤羽（最亮）到傩面（最暗）拉开阶梯。
+
+**纪律**：`skinId` 纯装饰、不挂数值（ADR-26，测试断言表内无战斗键）；`back` 件必须承载当前激活掌识别色（§3.2 规则 1，皮肤只换载体形状不能取消）；palette 全部压饱和——全屏唯一饱和峰值永远是当前掌识别色（ART §1.2）；Bot 三人格 wildhorn/crane/nuo 互异且 ≠ `drifter`（§3.2 规则 3）。新皮肤 / 新枚举值 = 先登记契约 §3.2 再进表。
+
+### 13.3 `trim` 微调参词表（F3/O2 协商制，先登记再用；O2 可安全忽略）
+
+| 键 | 类型 | 用于 | 语义 |
+| --- | --- | --- | --- |
+| `hoodDepth` | number | drifter | 兜帽前探深度系数（0..1，越大脸越藏） |
+| `packBulk` | number | mason | 行囊体积倍率（1 = 基准背包件） |
+| `bannerHeight` | number | crane / nuo | 背旗高度倍率（鹤羽 1.25 高扬、傩面 0.95 收敛） |
+| `hatRadius` | number | reed | 笠檐半径（米，剪影关键） |
+| `hornSpread` | number | wildhorn | 双角外张半距（米） |
+
+## 14. 每掌战斗 VFX 参数表（`vfx.js`，HUB-R2；Round 1 遗留 3）
+
+大厅 idle 特效已可辨（ART §13.4，O2 已渲染）；本表管**裂岛里的扇击与技能**——Round 1 里它们还是一套通用壳。`src/data/vfx.js` 导出 `GLOVE_VFX`（数组，GLOVES 图鉴顺序）/ `GLOVE_VFX_BY_ID` / `GLOVE_VFX_BY_SKILL` / `resolveGloveVfx`，`data/index.js` 已转发。
+
+**消费方式（O2 分派）**：扇击事件带 gloveId → `GLOVE_VFX_BY_ID[gloveId].slap`；技能事件线上的 `skillId` 是 §3.1 右列 handler id → `GLOVE_VFX_BY_SKILL[skillId]`（表内 `skill.skillId` 就登记为 handler id，木棉无主动技不在此表）；分身残影读 `view.combat.ghosts`（O1 导出），视觉规格取 afterimage 的 `skill.ghosts`；未知/缺省 gloveId `resolveGloveVfx` 回落木棉（与 `createMatch` 同一约定）。
+
+**职责边界**：判定几何（`slapRange`/`slapAngleDeg`/技能半径）的唯一事实源仍是 `gloves.js`/combat，O2 按 gloveId 自取——本表**不复制战斗数字**，只带视觉参数（形状关键词、粒子数、寿命秒、高度米、贴花种类）；识别色 `ident` 直接引用 `GLOVE_BY_ID[id].color`，不产生第三份色源（HUD/样式仍走 tokens.css，ART §1.3 注）。
+
+### 14.1 八掌速览（完整参数见 `vfx.js`；关键词与 ART §7 逐行对齐）
+
+| 掌 | 扇击 burst（主形） | trail（过程痕） | residue（残留） | 技能（handler id → 形） |
+| --- | --- | --- | --- | --- |
+| 木棉 | `gustFan` 掌风压出的贴地尘楔 | `fiberWisp` 布纤维碎屑 | `fluff` 棉絮缓落 | 无；觉醒 combo3 第三掌走 `slap.finisher`（同形 ×1.5，不换形不加光） |
+| 磐石 | `stoneWedge` 石屑抛物线楔 | `gritDrag` 重尘拖曳 | `grit` 石屑弹跳滞留 + 金缮裂纹贴花 | `groundPound` → `slamShock`：尘幕 2s + 放射金缮裂纹 |
+| 疾风 | `windShear` 被扰动的尘与草屑 | `chaffWake` 贴地草屑尾流 | `chaff` 打旋沉降 | `dashSlap` → `rushWake`：地面尘线 + 双布条 |
+| 冰霜 | `rimeFan` 扇面闪结霜晶 | `coldFog` 贴地冷雾 | `frost` 化成湿痕 + 枝晶贴花 | `frostArc` → `dendriteWave`：枝晶波前；觉醒冻结带 `iceShell` 厚度 0.08m |
+| 弹簧 | `coilSnap` 簧圈形变 + 高光游走 | `coilArc` 三圈簧弧 | `dustPop` 弹起的灰 | `parry` → `coilGuard`：压缩 0.12s → 释放弹尘 |
+| 分身 | `ghostCut` 挥击剥离残影 | `poseGhost` 保留姿态、边缘先散、去饱和 | `ashMotes` 灰烬微尘 | `blinkSwap` → `swapVeil`：换位两端各留残影（ghosts ×2，寿命 0.7s，禁蓝色光柱） |
+| 磁掌 | `fieldArcs` 尘埃吸成弧线场纹 | `filingStream` 铁屑流 | `filings` 铁屑微颤 + 拖擦贴花 | `magnetPull` → `pullField`：场弧收束 + 一帧磁弧 `snapFlash`（禁持续电弧） |
+| 陨掌 | `emberImpact` 冲击环 + 余烬迸散 | `emberStreak` 余烬拖痕 | `embers` 呼吸余烬（全表唯一 additive）+ 焦痕贴花 | `meteorSlam` → `craterFall`：腾空遮光 → 冲击环 + 尘幕 + 焦痕环 |
+
+### 14.2 纪律（`src/data/vfx.test.js` 逐条锁死）
+
+1. **禁纯色光球**：burst 形 / trail 痕 / residue 残留三列各自八掌互异，不许「同团换 hue」（拒收 §9-11 的数据层前置）。
+2. **识别色只做点缀**：着色粒子占比 ≤ `identMaxShare`（0.2，ART §13.4 的两成纪律战斗同用）。
+3. **加法混合只给真高温**：全表 `blend:"additive"` 仅陨掌余烬，其余 Normal（手册 §10）。
+4. **事后残留必查**：每掌 residue 有种类、数量 ≥1、寿命 >0——尘/屑/霜/烬至少留一样，打完不能像没发生（手册 §14-13）。
+
+**调参指南**：想让某掌特效更「重」，先动 residue `count`/`lifeSeconds`（残留即重量感），再动 burst 寿命；不要加发光、不要动三列关键词（改词 = 改识别语言，需过 F2 视觉规范）；改完跑 `src/data/vfx.test.js` 与 `src/data/skins.test.js`。
 
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。
