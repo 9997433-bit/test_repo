@@ -4,10 +4,18 @@
 //  1. 有阻尼 —— 位置与视点都是弹簧跟随，快速移动时先滞后再追上（手册 §11.5）
 //  2. 有呼吸 —— 即使静止也有极轻微的漂移，避免「引擎默认机位」的死板
 //  3. 震动按质量给 —— 轻掌几乎不震，重击才震；移动端整体乘 0.45，避免小屏晕眩
+//
+// 例外只有一个：`snap()`。弹簧是给「角色在走」准备的，不是给「角色换了个岛」准备的
+// —— 安全区在 z ≈ -120、裂岛在原点，过门后老老实实跟随的话镜头要飞越 120m，
+// 那一秒画面里既没有角色也没有场景。过门 / 换跟随目标 / 开局第一帧一律 snap。
 
 import { PerspectiveCamera, Vector3 } from 'three';
 
 const BASE_FOV = 54;
+const TAU = Math.PI * 2;
+
+/** 静止跟随距离（update 里的 wantDist 基准，snap 直接用它架机位）。 */
+const REST_DIST = 7.1;
 
 /**
  * 静止机位的俯角（弧度）。
@@ -27,6 +35,43 @@ function clamp(v, lo, hi) {
 
 function damp(current, target, lambda, dt) {
   return current + (target - current) * (1 - Math.exp(-lambda * dt));
+}
+
+/** 角差收进 (-π, π]：yaw 绕过 ±π 时镜头走近路，不许兜一整圈。 */
+export function shortestAngle(from, to) {
+  let d = (to - from) % TAU;
+  if (d > Math.PI) d -= TAU;
+  else if (d < -Math.PI) d += TAU;
+  return d;
+}
+
+function dampAngle(current, target, lambda, dt) {
+  return current + shortestAngle(current, target) * (1 - Math.exp(-lambda * dt));
+}
+
+/**
+ * 机位：yaw = 0 面向 -Z（与 sim 的 forwardX/forwardZ 一致），
+ * 所以「身后」是 +(sin yaw, cos yaw)，镜头就架在那儿。
+ */
+function desiredPos(out, focus, sy, cy, dist, pitch) {
+  out.set(focus.x + sy * dist, focus.y + 2.5 + Math.sin(pitch) * dist * 0.9, focus.z + cy * dist);
+  // 别钻进云海，也别贴着台面刮
+  if (out.y < focus.y + 1.2) out.y = focus.y + 1.2;
+  if (out.y < 1.4) out.y = 1.4;
+  return out;
+}
+
+/**
+ * 视点落在角色正前方一米多的地方，构图上人物就不会永远钉在画面正中。
+ * 抬头时视点跟着抬、低头时跟着压：镜头只是升降的话，画面里的地平线不会动。
+ */
+function desiredLook(out, focus, sy, cy, lead, pitch, basePitch) {
+  out.set(
+    focus.x + lead.x - sy * 1.1,
+    focus.y + 1.45 - Math.sin(pitch - basePitch) * 2.4,
+    focus.z + lead.z - cy * 1.1
+  );
+  return out;
 }
 
 export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
@@ -84,7 +129,8 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
      */
     update(dt, focus, yaw, vel, opts = {}) {
       const airborne = Math.max(0, focus.y);
-      state.yaw = damp(state.yaw, yaw, 7.5, dt);
+      // 角度阻尼走最短弧：yaw 从 +3.1 跳到 -3.1 是转 6°，不是转 354°
+      state.yaw = dampAngle(state.yaw, Number.isFinite(yaw) ? yaw : state.yaw, 7.5, dt);
       // 抬头/低头有阻尼：鼠标一格一格跳，镜头不能跟着一格一格跳
       const wantBias = Number.isFinite(opts.pitchBias) ? opts.pitchBias : 0;
       state.pitchBias = damp(state.pitchBias, wantBias, 14, dt);
@@ -93,23 +139,12 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
 
       // 速度越快镜头拉远一点点，给出「被甩开」的感觉
       const speed = vel ? Math.hypot(vel.x, vel.z) : 0;
-      const wantDist = 7.1 + Math.min(1.6, speed * 0.11) + airborne * 0.12;
+      const wantDist = REST_DIST + Math.min(1.6, speed * 0.11) + airborne * 0.12;
       state.dist = damp(state.dist, wantDist, 3.2, dt);
 
-      // yaw = 0 面向 -Z（与 sim 的 forwardX/forwardZ 一致），
-      // 所以「身后」是 +(sin yaw, cos yaw)，镜头就架在那儿。
       const sy = Math.sin(state.yaw);
       const cy = Math.cos(state.yaw);
-      const height = 2.5 + Math.sin(pitch) * state.dist * 0.9;
-
-      desired.set(
-        focus.x + sy * state.dist,
-        focus.y + height,
-        focus.z + cy * state.dist
-      );
-      // 别钻进云海，也别贴着台面刮
-      if (desired.y < focus.y + 1.2) desired.y = focus.y + 1.2;
-      if (desired.y < 1.4) desired.y = 1.4;
+      desiredPos(desired, focus, sy, cy, state.dist, pitch);
 
       // 位置比视点跟得慢一点，转身时画面才有重量
       state.pos.x = damp(state.pos.x, desired.x, 6.2, dt);
@@ -121,13 +156,7 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
         state.lead.x = damp(state.lead.x, vel.x * 0.16, 4, dt);
         state.lead.z = damp(state.lead.z, vel.z * 0.16, 4, dt);
       }
-      // 视点落在角色正前方一米多的地方，构图上人物就不会永远钉在画面正中。
-      // 抬头时视点跟着抬、低头时跟着压：镜头只是升降的话，画面里的地平线不会动。
-      lookTarget.set(
-        focus.x + state.lead.x - sy * 1.1,
-        focus.y + 1.45 - Math.sin(pitch - state.pitch) * 2.4,
-        focus.z + state.lead.z - cy * 1.1
-      );
+      desiredLook(lookTarget, focus, sy, cy, state.lead, pitch, state.pitch);
       state.look.x = damp(state.look.x, lookTarget.x, 9, dt);
       state.look.y = damp(state.look.y, lookTarget.y, 7, dt);
       state.look.z = damp(state.look.z, lookTarget.z, 9, dt);
@@ -168,6 +197,45 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
         camera.fov = damp(camera.fov, wantFov, 10, dt);
         camera.updateProjectionMatrix();
       }
+    },
+
+    /**
+     * 瞬时把机位架到 focus 身后，并把本帧的弹簧状态一起归零。
+     *
+     * 用在「世界位置整个换了一处」的时刻：hub ↔ arena 过门、结算回程、换跟随目标、
+     * 开局第一帧。不 snap 的话弹簧会老老实实地把镜头从上一处拖过来 —— 安全区与裂岛
+     * 隔着 120m，那就是一秒钟的空镜飞越。
+     *
+     * @param {Vector3} focus 玩家脚下位置
+     * @param {number} yaw    sim 空间的朝向（yaw = 0 面向 -Z）
+     * @param {{pitchBias?: number, dist?: number}} [opts]
+     * @returns {Vector3} 落位后的机位（= state.pos）
+     */
+    snap(focus, yaw, opts = {}) {
+      state.yaw = Number.isFinite(yaw) ? Math.atan2(Math.sin(yaw), Math.cos(yaw)) : state.yaw;
+      // 抬头量直接到位：过门那一帧不该再补一段「镜头慢慢抬起来」
+      state.pitchBias = Number.isFinite(opts.pitchBias) ? opts.pitchBias : 0;
+      const pitch = clamp(state.pitch + state.pitchBias, -PITCH_LIMIT, PITCH_LIMIT);
+      state.pitchOut = pitch;
+      state.dist = Number.isFinite(opts.dist) ? opts.dist : REST_DIST;
+      state.lead.set(0, 0, 0);
+      // 上一处的震动 / 变焦不跟着人过门
+      state.shake = 0;
+      state.fovKick = 0;
+
+      const sy = Math.sin(state.yaw);
+      const cy = Math.cos(state.yaw);
+      state.pos.copy(desiredPos(desired, focus, sy, cy, state.dist, pitch));
+      state.look.copy(desiredLook(lookTarget, focus, sy, cy, state.lead, pitch, state.pitch));
+
+      camera.position.copy(state.pos);
+      camera.lookAt(state.look);
+      camera.rotation.z = 0;
+      if (camera.fov !== BASE_FOV) {
+        camera.fov = BASE_FOV;
+        camera.updateProjectionMatrix();
+      }
+      return state.pos;
     },
 
     /**

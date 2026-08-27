@@ -100,6 +100,13 @@ const GHOST_CAP = 6;
  * 人也照同一条规矩走。裂岛自己最远才 50 米上下，这条线在场内不会误伤。
  */
 const CULL_DISTANCE = 80;
+/**
+ * 一帧之内位置挪了这么远就当成传送（米），插值直接跳过去。
+ *
+ * 位置是弹簧插值的（damp 22），过门那 120m 会被它摊成一秒的「滑行」：镜头已经
+ * 吸附到裂岛，人还在从安全区滑过来。正常位移一帧最多一米出头，这条线不会误伤。
+ */
+const TELEPORT_DISTANCE = 16;
 /** 这几种配件自己就盖住了头顶，素帽不必再长出来（也就不进躯干那份烘焙）。 */
 const ACCESSORY_HIDES_CAP = new Set(['hood', 'turban']);
 
@@ -1226,11 +1233,21 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
         }
         if (!alive) continue;
 
-        // 位置插值：sim 是 60Hz 定步，渲染可能更快，直接跟随会有台阶感
+        // 位置插值：sim 是 60Hz 定步，渲染可能更快，直接跟随会有台阶感。
+        // 但传送不是位移：过门 / 复活时人要直接出现在新位置，不能滑过去。
         c.prev.copy(c.pos);
-        c.pos.x = damp(c.pos.x, p.x ?? 0, 22, dt);
-        c.pos.y = damp(c.pos.y, p.y ?? 0, 24, dt);
-        c.pos.z = damp(c.pos.z, p.z ?? 0, 22, dt);
+        const tx = p.x ?? 0;
+        const tz = p.z ?? 0;
+        if (Math.hypot(tx - c.pos.x, tz - c.pos.z) > TELEPORT_DISTANCE) {
+          c.pos.set(tx, p.y ?? 0, tz);
+          c.prev.copy(c.pos);
+          c.speed = 0;
+          c.yaw = p.yaw ?? c.yaw;
+        } else {
+          c.pos.x = damp(c.pos.x, tx, 22, dt);
+          c.pos.y = damp(c.pos.y, p.y ?? 0, 24, dt);
+          c.pos.z = damp(c.pos.z, tz, 22, dt);
+        }
         c.rootGroup.position.copy(c.pos);
 
         const dx = c.pos.x - c.prev.x;

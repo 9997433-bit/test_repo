@@ -20,6 +20,10 @@
 //   · view.players[].skinId 决定剪影（见 ./skins.js）：换 skinId 就换一个人，不是换贴图
 //   · view.combat.ghosts 是分身残影，渲染成半透复本（见 ./characters.js syncGhosts）
 //   · 抬头低头走 setLook({ pitch })：不调就维持静止机位的俯角
+//   · 镜头朝向也走 setLook，字段是 **simYaw**（sim 空间，yaw = 0 面向 -Z）；
+//     相机系角原样丢进来会把机位拧到脸前，见 setLook 注释
+//   · 固定人物视角 setLookMode('locked' | 'free')，缺省 locked：镜头钉在角色背后
+//   · 传送 / 换人 snapCamera()：过门时机位吸附，不许弹簧飞越 120m
 
 import { QUALITY, QUALITY_TIERS, PALETTE, GLOVE_TINT } from './config.js';
 import { COMBAT_VFX_KIND, SKILL_VFX_KIND, combatVfxKind, skillVfxKind } from './combat-vfx.js';
@@ -105,15 +109,49 @@ export function setFollow(id) {
 }
 
 /**
- * 抬头 / 低头。壳层每帧把 `input.getLook()` 原样丢进来即可：
+ * 抬头 / 低头 + 镜头朝向。壳层每帧把 `core/look.js lookPayload()` 的产物丢进来：
  *
- *   render.setLook(input.getLook());   // { yaw, pitch }
+ *   render.setLook(lookPayload(input.getLook()));   // { yaw, pitch, simYaw }
  *
- * pitch 与 `src/input` 同约定（正 = 往下看，弧度）。yaw 是可选的，且必须是
- * 项目唯一那套朝向（yaw = 0 面向 -Z）；不给 yaw 时镜头跟角色自己的朝向。
+ * pitch 与 `src/input` 同约定（正 = 往下看，弧度）。朝向只认 **sim 空间**
+ * （yaw = 0 面向 -Z）：`simYaw` 优先，没有 simYaw 时才读 `yaw`，而那个 yaw
+ * 必须已经是 sim 空间 —— 输入层内部那个相机方位角要先过 `cameraYawToSimYaw`。
+ * 两个都不给时镜头跟角色自己的朝向。`lookMode` 一起收（见 setLookMode）。
  */
 export function setLook(look) {
   return active && !active.disposed ? active.setLook(look) : null;
+}
+
+/**
+ * 固定人物视角开关。
+ *
+ *   'locked'（缺省）—— 镜头钉在角色背后，用角色自己的 yaw，绕不到正脸；
+ *   'free'         —— 用 setLook 喂进来的 simYaw，没喂就跟角色 yaw。
+ *
+ * @param {'locked'|'free'} mode
+ */
+export function setLookMode(mode) {
+  return active && !active.disposed ? active.setLookMode(mode) : null;
+}
+
+/** 当前视角模式。 */
+export function getLookMode() {
+  return active && !active.disposed ? active.getLookMode() : null;
+}
+
+/**
+ * 机位吸附：下一帧把镜头瞬时架到跟随目标身后，不走弹簧。
+ *
+ * 过门（hub ↔ arena）、焦点整跳与换跟随目标渲染层会自己认出来；这个入口是给
+ * 壳层用的 —— 传送前一帧调一次，镜头就不会从上一处飞越过来。
+ */
+export function snapCamera() {
+  return active && !active.disposed ? active.snapCamera() : null;
+}
+
+/** snapCamera 的别名（壳层语义：重新架机位跟人）。 */
+export function resetFollow() {
+  return snapCamera();
 }
 
 /** setLook 的单值写法。 */
@@ -121,7 +159,7 @@ export function setPitch(pitch) {
   return active && !active.disposed ? active.setPitch(pitch) : null;
 }
 
-/** 当前俯角读数（含静止机位基准），探针与冒烟台用。 */
+/** 当前俯角 + 实际在用的 sim yaw + 视角模式，探针与冒烟台用。 */
 export function getLook() {
   return active && !active.disposed ? active.getLook() : null;
 }
