@@ -31,11 +31,12 @@ function behindness(camPos, focus, simYaw) {
 }
 
 /** 只装配镜头链路的渲染器。 */
-function rigged({ lookMode = 'locked', lookYaw = null } = {}) {
+function rigged({ lookMode = 'locked' } = {}) {
   const r = Object.create(YizhangRenderer.prototype);
   r.cameraRig = createCamera({});
   r.lookPitch = null;
-  r.lookYaw = lookYaw;
+  // 朝向只能经 setLook 进来（构造函数的缺省也是 null），测试不许直塞 lookYaw
+  r.lookYaw = null;
   r.lookMode = lookMode;
   r._vel = new Vector3();
   r._snapPending = true;
