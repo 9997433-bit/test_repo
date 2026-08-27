@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { forwardFromYaw } from "../render/view.js";
+import { forwardX, forwardZ } from "../sim/math.js";
 import { createMatch, getView, step } from "../sim/index.js";
 import {
+  RENDER_YAW_OFFSET,
   SELF_ID,
   adaptView,
   cameraYawToSimYaw,
@@ -124,11 +127,72 @@ describe("yaw 空间换算", () => {
 });
 
 describe("toRenderView", () => {
-  it("给渲染快照补 π 朝向偏移，其余字段照传", () => {
+  it("不再补偏移：sim 与 render 共用同一个 yaw", () => {
+    expect(RENDER_YAW_OFFSET).toBe(0);
     const view = { tiles: [], events: [], players: [{ id: "p0", yaw: 0.5, x: 1 }] };
     const out = toRenderView(view);
-    expect(out.players[0].yaw).toBeCloseTo(0.5 + Math.PI, 9);
+    expect(out.players[0].yaw).toBeCloseTo(0.5, 9);
     expect(out.players[0].x).toBe(1);
     expect(view.players[0].yaw).toBe(0.5);
+  });
+
+  it("yaw 缺席时收成 0，原快照不被改写", () => {
+    const view = { tiles: [], events: [], players: [{ id: "p0", x: 2 }] };
+    expect(toRenderView(view).players[0].yaw).toBe(0);
+    expect(view.players[0].yaw).toBeUndefined();
+  });
+});
+
+describe("朝向不变量：sim / render / camera 同一套", () => {
+  const ANGLES = [0, 0.7, -1.9, Math.PI / 2, 3.0, -2.4];
+
+  it("渲染快照的前向与 sim 的前向逐字一致", () => {
+    for (const yaw of ANGLES) {
+      const rendered = toRenderView({
+        tiles: [],
+        events: [],
+        players: [{ id: "p0", yaw }],
+      }).players[0].yaw;
+      const f = forwardFromYaw(rendered);
+      expect(f.x).toBeCloseTo(forwardX(yaw), 9);
+      expect(f.z).toBeCloseTo(forwardZ(yaw), 9);
+    }
+  });
+
+  it("机位在角色背后：camera.js 的 focus+(sin,cos)*dist 与前向反号", () => {
+    for (const yaw of ANGLES) {
+      // src/render/camera.js update()：desired = focus + (sin yaw, cos yaw) * dist
+      const rig = { x: Math.sin(yaw), z: Math.cos(yaw) };
+      const f = forwardFromYaw(yaw);
+      expect(rig.x * f.x + rig.z * f.z).toBeCloseTo(-1, 9);
+    }
+  });
+
+  it("相机方位角 → sim yaw 后，sim 前向就是相机水平前向", () => {
+    for (const cam of ANGLES) {
+      const simYaw = cameraYawToSimYaw(cam);
+      expect(forwardX(simYaw)).toBeCloseTo(Math.cos(cam), 9);
+      expect(forwardZ(simYaw)).toBeCloseTo(Math.sin(cam), 9);
+    }
+  });
+
+  it("鼠标右移（相机方位角变大）让 sim 朝向向右转", () => {
+    const cam = 0.4;
+    const before = cameraYawToSimYaw(cam);
+    const after = cameraYawToSimYaw(cam + 0.05);
+    // FACE 约定 yaw=0 面向 -Z、right=+X，右转 = yaw 减小
+    expect(after).toBeLessThan(before);
+    // 转后的前向落在转前「右手边」那一侧：right(yaw) = (cos yaw, -sin yaw)
+    const rightX = Math.cos(before);
+    const rightZ = -Math.sin(before);
+    expect(forwardX(after) * rightX + forwardZ(after) * rightZ).toBeGreaterThan(0);
+  });
+
+  it("开局镜头在人背后：simYawToCameraYaw 的往返不搬动前向", () => {
+    for (const simYaw of ANGLES) {
+      const cam = simYawToCameraYaw(simYaw);
+      expect(Math.cos(cam)).toBeCloseTo(forwardX(simYaw), 9);
+      expect(Math.sin(cam)).toBeCloseTo(forwardZ(simYaw), 9);
+    }
   });
 });

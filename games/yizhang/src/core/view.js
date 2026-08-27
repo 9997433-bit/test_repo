@@ -9,12 +9,16 @@
 export const SELF_ID = "p0";
 
 /**
- * 朝向桥接。sim 冻结的约定是 yaw=0 面向 -Z（src/sim/math.js forwardX/forwardZ），
- * 而 src/render 的相机与角色模型按 yaw=0 面向 +Z 搭建（camera.js 把机位放在
- * focus-(sin,cos)*dist，characters.js 的胸带在 +Z 面）。差一个 π。
- * 渲染快照统一加这个偏移，镜头才在背后而不是脸前。
+ * 朝向桥接。全工程只有一套约定：yaw=0 面向 -Z。
+ * sim 的 forward=(-sin yaw, -cos yaw)（src/sim/math.js FACE），
+ * render 的 forwardFromYaw（src/render/view.js）与之逐字一致，
+ * camera.js 又把机位架在 focus+(sin yaw, cos yaw)*dist，也就是前向的反面 —— 背后。
+ *
+ * 所以渲染快照**不需要**任何偏移。以前这里加 π，等于把机位挪到角色脸前：
+ * 第三人称看见正脸，W 朝镜头走、A/D 左右镜像、鼠标右移镜头往身前甩。
+ * 偏移保留为常量（值 0）只是为了留一处集中的开关，不是给人重新填 π 的。
  */
-export const RENDER_YAW_OFFSET = Math.PI;
+export const RENDER_YAW_OFFSET = 0;
 
 const DEFAULT_BOT_NAMES = ["蛮古", "狸缘", "欺霸"];
 const NEUTRAL_COLOR = "#7f8c9e";
@@ -128,7 +132,10 @@ export function adaptView(raw, ctx = {}) {
   };
 }
 
-/** 交给 renderer 前补上朝向偏移；其余字段引用透传。 */
+/**
+ * 交给 renderer 前的最后一道整形。sim 与 render 同一套朝向，
+ * 这里只把 yaw 收成有限数（插值帧偶尔会给 undefined），不再做角度变换。
+ */
 export function toRenderView(view) {
   if (!view) return view;
   return {

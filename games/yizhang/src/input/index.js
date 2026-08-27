@@ -23,6 +23,24 @@ const KEY_MOVE = {
   ArrowRight: [1, 0],
 };
 
+/**
+ * 相机相对输入 → 世界位移。**WASD、方向键、触屏摇杆共用这一处换算**，
+ * 不存在第二套映射（朝向换算本身只有 core/view.js 的 cameraYawToSimYaw 一处）。
+ *
+ * 入参用的是「相机方位角」：水平前向 forward = (cos yaw, sin yaw)。
+ * 屏幕右手边 right = cross(forward, up) = (-sin yaw, cos yaw)。
+ * ix 右为正、iz 前为负（与 KEY_MOVE 同号），于是
+ *   world = forward * (-iz) + right * ix
+ * 即 W（iz=-1）沿相机水平前向走向屏幕深处，D（ix=1）走屏幕右侧。
+ *
+ * @returns {{x:number, z:number}} 世界系位移方向
+ */
+export function moveFromCameraYaw(ix, iz, cameraYaw) {
+  const fx = Math.cos(cameraYaw);
+  const fz = Math.sin(cameraYaw);
+  return { x: -fx * iz - fz * ix, z: -fz * iz + fx * ix };
+}
+
 const LOOK_SCALE = 0.0026;
 const TOUCH_LOOK_SCALE = 0.0055;
 const PITCH_LIMIT = Math.PI / 2.6;
@@ -308,11 +326,9 @@ export function createInput(dom, canvas, opts = {}) {
         iz /= mag;
       }
 
-      // 相机相对 → 世界坐标：forward = (cos yaw, sin yaw)，right 是它在 xz 平面顺时针 90°。
-      const fx = Math.cos(yaw);
-      const fz = Math.sin(yaw);
-      out.moveX = -fx * iz - fz * ix;
-      out.moveZ = -fz * iz + fx * ix;
+      const move = moveFromCameraYaw(ix, iz, yaw);
+      out.moveX = move.x;
+      out.moveZ = move.z;
 
       out.slap = state.hold.slap || state.edge.slap;
       out.skill = state.hold.skill || state.edge.skill;
