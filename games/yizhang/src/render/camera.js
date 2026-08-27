@@ -5,9 +5,14 @@
 //  2. 有呼吸 —— 即使静止也有极轻微的漂移，避免「引擎默认机位」的死板
 //  3. 震动按质量给 —— 轻掌几乎不震，重击才震；移动端整体乘 0.45，避免小屏晕眩
 //
-// 例外只有一个：`snap()`。弹簧是给「角色在走」准备的，不是给「角色换了个岛」准备的
-// —— 安全区在 z ≈ -120、裂岛在原点，过门后老老实实跟随的话镜头要飞越 120m，
-// 那一秒画面里既没有角色也没有场景。过门 / 换跟随目标 / 开局第一帧一律 snap。
+// 弹簧有两个例外：
+//
+//  · `snap()` —— 弹簧是给「角色在走」准备的，不是给「角色换了个岛」准备的：安全区在
+//    z ≈ -120、裂岛在原点，过门后老老实实跟随的话镜头要飞越 120m，那一秒画面里既
+//    没有角色也没有场景。过门 / 换跟随目标 / 开局第一帧一律 snap。
+//  · `update(..., { behindYaw })` —— 固定人物视角（locked）的背后半平面硬顶。阻尼
+//    只是「慢一点」，快速转身时它会慢到镜头绕去正脸，而 locked 承诺的就是绕不到正脸。
+//    自由视角（free）不传这个参数：那边本来就该能看到角色侧面。
 
 import { PerspectiveCamera, Vector3 } from 'three';
 
@@ -29,6 +34,32 @@ export const BASE_PITCH = 0.22;
 /** 与 src/input 的 PITCH_LIMIT（π/2.6）同量级：再多镜头就翻过头顶了。 */
 export const PITCH_LIMIT = Math.PI / 2.6;
 
+/**
+ * 固定人物视角（locked）下，机位允许落后角色面向的最大夹角。
+ *
+ * 严格的「背后半平面」是 π/2；这里留 0.1rad 余量，夹住之后机位到角色前向的
+ * 投影恒 ≤ -sin(0.1) × 距离（7.1m 上约 -0.7m），断言拿得到确定的负数，
+ * 而不是一个可正可负的 0。
+ *
+ * 阻尼跟随本身只是「慢一点」，快速转身时它会慢到镜头绕去正脸 —— locked 的
+ * 产品承诺是「绕不到正脸」，所以这条线是硬顶，不是又一层弹簧。
+ */
+export const LOCKED_YAW_SPAN = Math.PI / 2 - 0.1;
+
+/**
+ * 硬顶的生效带宽（rad/s → 每帧允许的转身量）。
+ *
+ * 硬顶带迟滞：**上一帧还在半平面里**才拽得动这一帧（见 update 里的 behindHold）。
+ * 于是「转身把镜头挤出去了」与「朝向被瞬移 / 正在归位」被分开处理 —— 前者每帧只
+ * 超出一点点（转速 × dt），拽回去是无感的；后者一上来就差半圈（切视角模式那一帧
+ * 壳层还没把角色转过来、重生改写朝向），硬拽就是一记甩镜，让弹簧自己走回来才对。
+ * 带宽只用来兜住「一帧转得特别多」的转身：30rad/s ≈ 1700°/s，真人甩鼠标的持续
+ * 转速远在其下；再快就当朝向被瞬移。
+ */
+const LOCKED_HOLD_RATE = 30;
+const LOCKED_HOLD_MIN = 0.25;
+const LOCKED_HOLD_MAX = 1.2;
+
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
@@ -47,6 +78,33 @@ export function shortestAngle(from, to) {
 
 function dampAngle(current, target, lambda, dt) {
   return current + shortestAngle(current, target) * (1 - Math.exp(-lambda * dt));
+}
+
+/** 本帧硬顶还认多大的落后量。dt 越大（掉帧）一帧能转的越多，带宽跟着放宽。 */
+export function lockedHoldSlack(dt) {
+  const d = Number.isFinite(dt) && dt > 0 ? dt : 1 / 60;
+  return clamp(LOCKED_HOLD_RATE * d, LOCKED_HOLD_MIN, LOCKED_HOLD_MAX);
+}
+
+/**
+ * 把一个方位角收回「角色背后半平面」。
+ *
+ * @param {number} angle   要夹的角（机位绕着的 yaw，或机位相对角色的方位）
+ * @param {number} faceYaw 角色面向（sim 空间）
+ * @param {number} slack   生效带宽，见 LOCKED_HOLD_RATE
+ * @returns {number} 夹过的角；本来就在半平面里、或落后得太多（朝向被瞬移）时原样返回
+ */
+export function holdBehind(angle, faceYaw, slack = lockedHoldSlack(1 / 60)) {
+  const lag = shortestAngle(faceYaw, angle);
+  const off = Math.abs(lag);
+  if (off <= LOCKED_YAW_SPAN) return angle;
+  if (off > LOCKED_YAW_SPAN + slack) return angle;
+  return faceYaw + (lag > 0 ? LOCKED_YAW_SPAN : -LOCKED_YAW_SPAN);
+}
+
+/** 这个方位角还在角色背后半平面里吗。夹到边界上的值算「在里面」。 */
+export function insideBehind(angle, faceYaw) {
+  return Math.abs(shortestAngle(faceYaw, angle)) <= LOCKED_YAW_SPAN + 1e-9;
 }
 
 /**
@@ -74,6 +132,32 @@ function desiredLook(out, focus, sy, cy, lead, pitch, basePitch) {
   return out;
 }
 
+/**
+ * 机位本身也收回背后半平面。绕 focus 转，半径与高度一个都不动 ——
+ * 沿前向推开会把构图（距离、俯角）一起改掉，转过去才是「镜头被转身推着走」。
+ *
+ * 只夹 yaw 是不够的：位置比 yaw 跟得还慢（λ 6.2 vs 7.5），持续快速转身时
+ * 目标机位已经贴在半平面边界上，实际机位仍能被甩到边界外面去。
+ *
+ * 迟滞与 yaw 那份各记各的（位置比 yaw 晚一步进半平面，共用一个位就会在归位
+ * 途中拽一把）。
+ *
+ * @returns {boolean} 这一帧结束时机位在不在半平面里（下一帧的 hold）
+ */
+function holdPosBehind(pos, focus, faceYaw, slack, hold) {
+  const dx = pos.x - focus.x;
+  const dz = pos.z - focus.z;
+  const r = Math.hypot(dx, dz);
+  if (r < 1e-4) return hold;
+  const bearing = Math.atan2(dx, dz);
+  const held = hold ? holdBehind(bearing, faceYaw, slack) : bearing;
+  if (held !== bearing) {
+    pos.x = focus.x + Math.sin(held) * r;
+    pos.z = focus.z + Math.cos(held) * r;
+  }
+  return insideBehind(held, faceYaw);
+}
+
 export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
   const camera = new PerspectiveCamera(BASE_FOV, aspect, 0.35, 1600);
   camera.position.set(0, 6, 14);
@@ -88,6 +172,12 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
     /** 本帧真正用掉的俯角 = pitch + pitchBias，夹在 ±PITCH_LIMIT。 */
     pitchOut: BASE_PITCH,
     dist: 7.4,
+    /**
+     * locked 硬顶的迟滞位（yaw 与机位各一份）：上一帧还在半平面里才拽得动这一帧。
+     * free / 归位途中恒 false，硬顶整只让路。
+     */
+    behindHold: false,
+    behindPosHold: false,
     shake: 0,
     shakeFreq: 26,
     fovKick: 0,
@@ -125,12 +215,25 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
      * @param {Vector3} focus 玩家脚下位置
      * @param {number} yaw    玩家/输入朝向
      * @param {Vector3} vel   水平速度，用于视点前引
-     * @param {{pitchBias?: number}} [opts] pitchBias：叠在 BASE_PITCH 上的抬头/低头量
+     * @param {{pitchBias?: number, behindYaw?: number}} [opts]
+     *   pitchBias：叠在 BASE_PITCH 上的抬头/低头量；
+     *   behindYaw：locked 专用，机位必须待在这个朝向的**背后半平面**里（见 LOCKED_YAW_SPAN）。
+     *   free 不传，自由视角本来就允许绕到侧面 / 正脸。
      */
     update(dt, focus, yaw, vel, opts = {}) {
       const airborne = Math.max(0, focus.y);
+      const behindYaw = Number.isFinite(opts.behindYaw) ? opts.behindYaw : null;
+      const slack = behindYaw === null ? 0 : lockedHoldSlack(dt);
       // 角度阻尼走最短弧：yaw 从 +3.1 跳到 -3.1 是转 6°，不是转 354°
       state.yaw = dampAngle(state.yaw, Number.isFinite(yaw) ? yaw : state.yaw, 7.5, dt);
+      // locked：阻尼可以慢，但不许慢到绕去正脸
+      if (behindYaw === null) {
+        state.behindHold = false;
+        state.behindPosHold = false;
+      } else {
+        if (state.behindHold) state.yaw = holdBehind(state.yaw, behindYaw, slack);
+        state.behindHold = insideBehind(state.yaw, behindYaw);
+      }
       // 抬头/低头有阻尼：鼠标一格一格跳，镜头不能跟着一格一格跳
       const wantBias = Number.isFinite(opts.pitchBias) ? opts.pitchBias : 0;
       state.pitchBias = damp(state.pitchBias, wantBias, 14, dt);
@@ -150,6 +253,15 @@ export function createCamera({ aspect = 16 / 9, mobile = false } = {}) {
       state.pos.x = damp(state.pos.x, desired.x, 6.2, dt);
       state.pos.y = damp(state.pos.y, desired.y, 5.0, dt);
       state.pos.z = damp(state.pos.z, desired.z, 6.2, dt);
+      if (behindYaw !== null) {
+        state.behindPosHold = holdPosBehind(
+          state.pos,
+          focus,
+          behindYaw,
+          slack,
+          state.behindPosHold
+        );
+      }
 
       // 视点前引：朝移动方向偏一点，构图不会永远把角色钉在正中
       if (vel) {
