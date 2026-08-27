@@ -35,5 +35,13 @@
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
 | F1 契约对齐 | `claude-fable-5-thinking-xhigh` | `bc-767c53b9-6eb1-528d-a057-ba8c2ed03105` | 已合入 `cursor/yizhang-hub-r3-f1-contract-db8d`（API_CONTRACT v4.2 + ADR-36） |
-| O4 结算回走道 | `claude-opus-5-thinking-high-fast` | `bc-83aeb01c-d8e2-54ab-8ce6-94ff66eb00b5` | 已派出 |
+| O4 结算回走道 | `claude-opus-5-thinking-high-fast` | `bc-83aeb01c-d8e2-54ab-8ce6-94ff66eb00b5` | 已合入 `cursor/yizhang-hub-r3-o4-shell-db8d`（再来一局≠回安全区文案+淡场） |
+
+### Wave 3
+
+| 席位 | 模型 | Agent ID | 状态 |
+| --- | --- | --- | --- |
+| F3 GDD 同词 | `claude-fable-5-thinking-xhigh` | （派出后回填） | GDD §13 与 skins/vfx 同词，不改战斗数值 |
+| O1 回程边角 | `claude-opus-5-thinking-high-fast` | （派出后回填） | 计时域/enterHub；不回退空间闸 |
+| O3 拒战边角 | `claude-opus-5-thinking-high-fast` | （派出后回填） | 战斗事件/残影；hub 继续拒战 |
 | G1 锁表 | `gpt-5.6-sol-xhigh-fast` | `bc-6d9dd333-eb90-5729-aa76-67cb719e6260` | 已合入 `cursor/yizhang-hub-r3-g1-tests-db8d`（round3-hub-sota 8 条） |
