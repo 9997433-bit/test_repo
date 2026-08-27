@@ -3,7 +3,7 @@
 // 结算板 / 暂停板的回归测试。钉住 Round 1 遗留 6 的 UI 侧：
 // 「再 来 一 局」和「回 安 全 区 换 掌」必须打到**两个不同的回调**上。
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GLOVES, GLOVE_BY_ID, SKINS } from "../data/index.js";
 import { resolveSkins } from "../core/skins.js";
@@ -16,7 +16,7 @@ function noopBag() {
   return new Proxy({}, { get: () => () => {} });
 }
 
-function mount(callbacks = {}) {
+function mount(callbacks = {}, opts = {}) {
   const root = document.createElement("div");
   document.body.appendChild(root);
   const calls = [];
@@ -31,6 +31,7 @@ function mount(callbacks = {}) {
     matchConfig: { killsToWin: 7, switchLock: 0.4 },
     isUnlocked: () => true,
     unlockTextOf: () => "局内挑战",
+    ...opts,
     callbacks: {
       onRestart: () => calls.push("restart"),
       onReturnHub: () => calls.push("returnHub"),
@@ -58,6 +59,11 @@ function sheetButtons(root) {
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  delete document.documentElement.dataset.touch;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("结算板", () => {
@@ -192,6 +198,104 @@ describe("暂停 / 结算板压屏时的触控层", () => {
     const { shell } = mount();
     shell.showMenu();
     expect(shell.touch.el.hidden).toBe(true);
+  });
+});
+
+describe("视角模式接线（LOOK-R1 · ART_DIRECTION §18）", () => {
+  /** 设置板里某一行的分段器按钮。行结构 = 标签 span + 控件，见 settingRow。 */
+  function segOptions(root, label) {
+    const tag = [...root.querySelectorAll(".yz-screen--frost .yz-glove-role")].find(
+      (n) => n.textContent === label
+    );
+    return tag ? [...tag.parentElement.querySelectorAll(".yz-seg-opt")] : [];
+  }
+
+  it("开局就把镜像贴上，但不放回执：locked + 反馈不亮", () => {
+    const { shell, root } = mount();
+    expect(shell.hud.el.dataset.look).toBe("locked");
+    expect(root.querySelector(".yz-look-flash").classList.contains("is-on")).toBe(false);
+  });
+
+  it("URL / 存档给的开局模式也照贴（面板灯与准星锁刻同一个源）", () => {
+    const { shell } = mount({}, { lookMode: "free" });
+    expect(shell.hud.el.dataset.look).toBe("free");
+    expect(shell.settings.lookMode).toBe("free");
+  });
+
+  it("切换后 data-look 跟上、.yz-look-flash 写文案并亮 0.9s", () => {
+    vi.useFakeTimers();
+    const { shell, root } = mount();
+    const flash = root.querySelector(".yz-look-flash");
+
+    shell.setLookMode("free");
+    expect(shell.hud.el.dataset.look).toBe("free");
+    expect(flash.classList.contains("is-on")).toBe(true);
+    expect(flash.textContent).toContain("自由视角");
+
+    vi.advanceTimersByTime(900);
+    expect(flash.classList.contains("is-on")).toBe(false);
+
+    shell.setLookMode("locked");
+    expect(shell.hud.el.dataset.look).toBe("locked");
+    expect(flash.textContent).toContain("视角锁定");
+  });
+
+  it("模式提示只有这一枚：中央短讯那块大字不跟着开", () => {
+    const { shell, root } = mount();
+    shell.setLookMode("free");
+    expect(root.querySelector(".yz-center-note").hidden).toBe(true);
+    expect(root.querySelectorAll(".yz-look-flash")).toHaveLength(1);
+  });
+
+  it("同一个模式再喂一遍不亮回执（每帧同步不该在屏上闪）", () => {
+    const { shell, root } = mount();
+    shell.setLookMode("locked");
+    expect(root.querySelector(".yz-look-flash").classList.contains("is-on")).toBe(false);
+  });
+
+  it("设置板分段器：标签「视角模式」+ 两枚 .yz-seg-opt，当前态亮着", () => {
+    const { shell, root } = mount();
+    shell.showPause();
+    const opts = segOptions(root, "视角模式");
+    expect(opts.map((b) => b.textContent)).toEqual(["固定视角", "自由视角"]);
+    expect(opts.map((b) => b.classList.contains("is-on"))).toEqual([true, false]);
+  });
+
+  it("设置板那条路与 V 键走同一枚反馈（main 拿 input 收敛后的值回喂）", () => {
+    const { shell, root } = mount({
+      onSettingsChange: (next) => shell.setLookMode(next.lookMode),
+    });
+    shell.showPause();
+    segOptions(root, "视角模式")[1].click();
+    expect(shell.settings.lookMode).toBe("free");
+    expect(shell.hud.el.dataset.look).toBe("free");
+    expect(root.querySelector(".yz-look-flash").classList.contains("is-on")).toBe(true);
+  });
+
+  it("V 键切换时设置板正开着也不许亮旧灯", () => {
+    const { shell, root } = mount();
+    shell.showPause();
+    shell.setLookMode("free");
+    expect(segOptions(root, "视角模式").map((b) => b.classList.contains("is-on"))).toEqual([
+      false,
+      true,
+    ]);
+  });
+
+  it("键位表写着「切换视角 · V」，触屏整块照旧靠 .yz-kbd 收起", () => {
+    const { shell, root } = mount();
+    shell.showPause();
+    const keys = [...root.querySelectorAll(".yz-screen--frost .yz-kbd")].map((n) => n.textContent);
+    expect(keys).toContain("V");
+    expect(root.querySelector(".yz-screen--frost .yz-panel").textContent).toContain("切换视角");
+  });
+
+  it("触屏隐藏键帽走的是 F2 那条选择器，DOM 结构对得上", () => {
+    const { root } = mount();
+    document.documentElement.dataset.touch = "1";
+    expect(document.querySelector('[data-touch="1"] .yz-look-flash kbd')).toBe(
+      root.querySelector(".yz-look-flash kbd")
+    );
   });
 });
 

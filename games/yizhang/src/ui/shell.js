@@ -16,7 +16,7 @@ import { createTouchLayer } from "./touch.js";
 const KEYMAP = [
   ["移动", "W A S D"],
   ["视角", "鼠标"],
-  ["锁定视角", "V"],
+  ["切换视角", "V"],
   ["扇击", "左键 / F"],
   ["技能 / 选掌", "E"],
   ["换掌", "Q"],
@@ -84,6 +84,9 @@ export function createShell(opts) {
   }
 
   const hud = createHud();
+  // 开局就把 #hud[data-look] 贴上（§18.2 的装饰镜像），但不放一瞬反馈：
+  // 那是「切换回执」，进游戏第一帧没人切过任何东西。
+  hud.setLookMode(settings.lookMode);
   const feed = createKillFeed();
   hud.mountFeed(feed.el);
   // 大厅 HUD 与战斗 HUD 同住 #hud，靠 #hud[data-phase] 互斥显示（见 ui/hub.css）
@@ -185,12 +188,13 @@ export function createShell(opts) {
           }
         )
       ),
+      // 视角模式（§18.3）：与画质分段器完全同一套 .yz-seg 玻璃钢框，不新增组件
       settingRow(
-        "视角",
+        "视角模式",
         segment(
           [
-            ["locked", "锁定"],
-            ["free", "自由"],
+            ["locked", "固定视角"],
+            ["free", "自由视角"],
           ],
           () => settings.lookMode,
           (v) => {
@@ -637,12 +641,25 @@ export function createShell(opts) {
       menu.setSave(next);
     },
     getSave: () => currentSave,
-    /** V 键切换后的回写：设置面板正开着也不许亮旧灯。 */
-    setLookMode(mode) {
+    /**
+     * 视角模式的回写口（V 键与设置板两条切换路共用，契约 §13.2）：
+     * `#hud[data-look]` 跟上、放一瞬反馈、设置面板正开着也不许亮旧灯。
+     * 模式的权威在 input —— 这里收到的永远是 `input.getLookMode()` 的结果，
+     * 壳层只做镜像与反馈，不自己决定模式。
+     *
+     * @param {'locked'|'free'|string} mode
+     * @param {{flash?: boolean}} [opts] flash=false 用于初始化这类「没人切过」的同步
+     */
+    setLookMode(mode, opts = {}) {
       const next = normalizeLookMode(mode, settings.lookMode);
-      if (next === settings.lookMode) return settings.lookMode;
-      settings.lookMode = next;
-      if (sheetMode === "pause" || sheetMode === "settings") openSheet(sheetMode);
+      // 换没换以 HUD 上贴着的那份镜像为准：设置板那条路是先改 settings 再回喂，
+      // 拿 settings 比会把自己比没了，一瞬反馈就只剩 V 键那一条路有。
+      const changed = hud.setLookMode(next);
+      if (changed && opts.flash !== false) hud.flashLook(next);
+      if (next !== settings.lookMode) {
+        settings.lookMode = next;
+        if (sheetMode === "pause" || sheetMode === "settings") openSheet(sheetMode);
+      }
       return settings.lookMode;
     },
     refreshSettingsUi() {
