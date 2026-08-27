@@ -75,6 +75,7 @@ jobs:
         working-directory: src/games/yizhang
         run: |
           npm ci
+          npm test
           npm run build
 
       - name: Stage subdirectories + catalog
