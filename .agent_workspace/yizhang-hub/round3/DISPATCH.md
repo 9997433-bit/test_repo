@@ -1,0 +1,31 @@
+# Round 3 派发 · 异掌安全区大厅（SOTA 打磨与签字）
+
+基座：`cursor/yizhang-hub-db8d`
+必读：`GOAL.md`、`OWNERSHIP.md`、`round2/BRIEF.md`、本文件。
+子 PR base：**`cursor/yizhang-hub-db8d`**。
+输出**首行**：`MODEL_SLUG: <实际 slug>`。严禁静默降级。
+
+## 并发 10 席
+
+| id | 模型 | 主攻 |
+| --- | --- | --- |
+| F1 | fable `claude-fable-5-thinking-xhigh` | 契约/GDD/ADR 与实现终对齐（分派词、皮肤形、预算数字） |
+| F2 | fable | HV-04 idle 盲辨规范 + 预算下仍可辨的视觉合同（§17） |
+| F3 | fable | GDD §13 与 `skins.js`/`vfx.js` 同词；不改战斗数值 |
+| F4 | fable | Round 3 签字；重跑全表；W1 修后按字面勾 L3-10 |
+| O1 | opus-fast `claude-opus-5-thinking-high-fast` | 计时域/回程边角；不回退空间闸 |
+| O2 | opus-fast | **P0 画调用预算**；hub 关裂岛；idle 降档；禁砍 8 掌可辨 |
+| O3 | opus-fast | 战斗事件/残影边角；hub 继续拒战 |
+| O4 | opus-fast | 结算回走道 UX 打磨；说明牌/门提示跟 F2 |
+| G1 | gpt-sol `gpt-5.6-sol-xhigh-fast` | 预算/三 seed/盲辨锁表；不减量 |
+| G2 | gpt-sol | probe 三固定 seed；去掉误导 MODEL_SLUG 横幅 |
+
+云端同时最多 **3** 个新 VM。
+
+### Wave 1（本轮先派）
+
+| 席位 | 模型 | Agent ID | 状态 |
+| --- | --- | --- | --- |
+| O2 画调用预算 | `claude-opus-5-thinking-high-fast` | （派出后回填） | mid ≤120 draw / ≤80k tris |
+| F2 视觉合同 | `claude-fable-5-thinking-xhigh` | （派出后回填） | §17 预算下可辨；HV-04 |
+| G2 三 seed 探针 | `gpt-5.6-sol-xhigh-fast` | （派出后回填） | T-07；横幅不再冒充席位模型 |
