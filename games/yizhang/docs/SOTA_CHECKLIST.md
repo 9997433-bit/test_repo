@@ -728,7 +728,7 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 - R3 O2（merge `58052e8`）：急甩背后咬合闸 `BEHIND_LIMIT` + `CAMERA_SNAP_TELEPORT=60`，与 R2 `LOCKED_YAW_SPAN` 迟滞两套并存（`holdBehindLimit` vs `holdBehind`；`_phaseChanged` + `_notePhase`）
 - R3 O4（merge `b3f5d03`）：`toggleLookMode` 认 `state.enabled` 闸、回调 try/catch、当帧 `sample()`、跨层 `look-switch.test.js`
 
-合入后父分支测基线是 **775 passed / 54 files**（merge 工人在 `ea1c825` 上跑的）；本收口再复跑确认。
+合入后父分支测基线是 **775 passed / 54 files**（merge 工人在 `ea1c825` 上跑的）；本收口复跑确认 **775/54**、probe 3/3、build 0（F4 未复跑 775）。
 
 **O2 机位复核收口（R2 DEFER 改勾）**：`src/render/camera.js` 落地 locked 背后半平面**硬顶**——`LOCKED_YAW_SPAN = π/2 − 0.1`（留 0.1rad 余量使 behindness 断言恒取到确定负数）、`lockedHoldSlack`（30rad/s 生效带宽，0.25–1.2 夹，掉帧自适应）、`holdBehind/insideBehind`（yaw 份）+ `holdPosBehind`（机位份，位置阻尼 λ6.2 < yaw λ7.5 故单夹 yaw 不够）；**迟滞双位分记**（`behindHold/behindPosHold`：上一帧在半平面里才拽得动这一帧——转身挤出去的无感拽回，朝向被瞬移/归位途中整只让路）；`renderer._behindYaw` 只在 locked 且 yaw 有限时下发（free 恒不夹）；**切模式不入 snap 名单**（`_notePhase` 只认 hub↔arena 换区）。锁测 +12 覆盖判决面：720°/s 甩镜绕不到正脸、free 同甩法不受硬顶、`setLookMode`/payload 不武装 snap、free→locked 弹簧归位不甩镜、归位途中硬顶让路逐帧与纯弹簧逐位相同、过门仍 snap、常规转速 ≤270°/s 硬顶零介入（手感一行没改）、`holdBehind` 三分支。F4 复验：probe 机位读数（7.1 / −7.1 / dot 1.0）复跑无回退，GDD §15（F3）与 ART §18.7（F2）登记与实现同词。
 

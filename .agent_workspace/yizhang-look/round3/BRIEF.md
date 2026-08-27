@@ -10,7 +10,7 @@
 
 - F4 签字基线：737/52 @ `372a8dd`（F4 亲跑）
 - 合入 O2+O4 后父分支：775/54 @ `ea1c825`（merge 工人）
-- 收口复跑：见下方回填（期望 ≥775 / probe 3/3 / build 0）
+- 收口复跑 @ `f74189c`：**775 passed / 54 files**；probe 3/3 PASS（seed `0x1a2b3c4d` / `0x5eed1234` / `0xc0ffee42`）；`npm run build` 退出码 0
 
 ## 残留 WARNING
 
