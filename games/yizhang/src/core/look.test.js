@@ -8,16 +8,22 @@ import { bindRenderer } from "./modules.js";
 import { cameraYawToSimYaw } from "./view.js";
 
 describe("lookPayload", () => {
-  it("原样透出相机方位角与俯仰，并附上 sim 那套 yaw（不新造第三套）", () => {
+  it("给渲染器的 yaw 是 sim 那套，相机方位角另开 cameraYaw（不新造第三套）", () => {
     const out = lookPayload({ yaw: 0.8, pitch: -0.4 });
-    expect(out.yaw).toBe(0.8);
-    expect(out.pitch).toBe(-0.4);
     expect(out.simYaw).toBeCloseTo(cameraYawToSimYaw(0.8), 12);
+    // 渲染器把 yaw 当 sim yaw 用（cameraRig 的机位角），所以这里必须已经换算过
+    expect(out.yaw).toBe(out.simYaw);
+    expect(out.cameraYaw).toBe(0.8);
+    expect(out.pitch).toBe(-0.4);
   });
 
   it("缺字段 / 非有限数一律收成 0，不把 NaN 喂进渲染器", () => {
-    expect(lookPayload(null)).toMatchObject({ yaw: 0, pitch: 0 });
-    expect(lookPayload({ yaw: Number.NaN, pitch: undefined })).toMatchObject({ yaw: 0, pitch: 0 });
+    expect(lookPayload(null)).toMatchObject({ cameraYaw: 0, pitch: 0 });
+    expect(lookPayload({ yaw: Number.NaN, pitch: undefined })).toMatchObject({
+      cameraYaw: 0,
+      pitch: 0,
+    });
+    expect(Number.isFinite(lookPayload({}).yaw)).toBe(true);
     expect(Number.isFinite(lookPayload({}).simYaw)).toBe(true);
   });
 });
@@ -28,7 +34,12 @@ describe("feedLook", () => {
     const out = feedLook(renderer, { yaw: 0.25, pitch: 0.5 });
     expect(out.fed).toBe("setLook");
     expect(renderer.setLook).toHaveBeenCalledTimes(1);
-    expect(renderer.setLook.mock.calls[0][0]).toMatchObject({ yaw: 0.25, pitch: 0.5 });
+    expect(renderer.setLook.mock.calls[0][0]).toMatchObject({
+      yaw: cameraYawToSimYaw(0.25),
+      simYaw: cameraYawToSimYaw(0.25),
+      cameraYaw: 0.25,
+      pitch: 0.5,
+    });
   });
 
   it("只有 setPitch 的渲染器退而求其次，只喂俯仰", () => {
@@ -80,7 +91,7 @@ describe("bindRenderer 的视角口", () => {
     expect(typeof bound.setLook).toBe("function");
     expect(typeof bound.setPitch).toBe("function");
     expect(feedLook(bound, { yaw: 0.1, pitch: 0.9 }).fed).toBe("setLook");
-    expect(calls[0]).toMatchObject({ yaw: 0.1, pitch: 0.9 });
+    expect(calls[0]).toMatchObject({ yaw: cameraYawToSimYaw(0.1), cameraYaw: 0.1, pitch: 0.9 });
   });
 
   it("模块级导出同样接得住（契约允许两种姿势）", () => {

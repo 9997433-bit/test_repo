@@ -7,10 +7,15 @@
 // 不必再为了接一个 setter 走一遍装配层。
 //
 // yaw 空间仍然只有两套，这里一套都不新造：
-//   yaw    —— 输入层维护的**相机方位角**（水平前向 = (cos yaw, sin yaw)），原样透出
-//   simYaw —— `core/view.js cameraYawToSimYaw` 的产物（yaw=0 面向 -Z），
-//             sim / render / camera 共用的那一套；换算实现仍只有那一处
-// 两个字段一起给，渲染器读哪个都不用自己再转一次角度。
+//   simYaw    —— `core/view.js cameraYawToSimYaw` 的产物（yaw=0 面向 -Z），
+//                sim / render / camera 共用的那一套；换算实现仍只有那一处
+//   cameraYaw —— 输入层维护的**相机方位角**（水平前向 = (cos yaw, sin yaw)），原样透出
+//
+// `yaw` 是给渲染器的那一份，值等于 `simYaw`：`YizhangRenderer.setLook` 把它存成
+// `lookYaw`，`sync` 再拿它当 cameraRig 的 sim yaw。以前这里把相机系的角度写在 `yaw`
+// 上，下游按 sim 约定解释，机位就与角色面向、扇击锥分了家（默认视角正好差 90°）——
+// 玩家对着画面里的人出掌，判定打向另一边，表现为「打别人打不到」。
+// 相机系的原值改名放在 `cameraYaw`，谁也不会再把它误当成 sim yaw 用。
 //
 // invertY 在输入层就吃掉了（`applyLook` 按 `state.invertY` 定号），
 // 这里拿到的 pitch 已经是玩家期望的方向，不要在链路上再翻一次。
@@ -24,11 +29,12 @@ function num(v) {
 /**
  * 把 `input.getLook()` 整形成渲染器能直接吃的一帧视角。
  * @param {{yaw?:number, pitch?:number}|null} look
- * @returns {{yaw:number, pitch:number, simYaw:number}}
+ * @returns {{yaw:number, pitch:number, simYaw:number, cameraYaw:number}}
  */
 export function lookPayload(look) {
-  const yaw = num(look && look.yaw);
-  return { yaw, pitch: num(look && look.pitch), simYaw: cameraYawToSimYaw(yaw) };
+  const cameraYaw = num(look && look.yaw);
+  const simYaw = cameraYawToSimYaw(cameraYaw);
+  return { yaw: simYaw, pitch: num(look && look.pitch), simYaw, cameraYaw };
 }
 
 /**
@@ -37,7 +43,7 @@ export function lookPayload(look) {
  *
  * @param {object|null} renderer  bindRenderer 的产物或渲染器实例
  * @param {{yaw?:number, pitch?:number}|null} look  input.getLook()
- * @returns {{fed:'setLook'|'setPitch'|'none'|'error', payload:{yaw:number,pitch:number,simYaw:number}}}
+ * @returns {{fed:'setLook'|'setPitch'|'none'|'error', payload:{yaw:number,pitch:number,simYaw:number,cameraYaw:number}}}
  */
 export function feedLook(renderer, look) {
   const payload = lookPayload(look);

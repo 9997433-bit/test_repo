@@ -244,7 +244,11 @@ export class YizhangRenderer {
    * （`simYawToCameraYaw`），别原样丢进来 —— 不给 yaw 时镜头跟角色自己的朝向，
    * 那条路一直是对的。
    *
-   * @param {{pitch?: number, yaw?: number}|number} look
+   * `core/look.js` 每帧给的那份 payload 会额外带一个 `simYaw`。**它优先**：
+   * 相机系的角度混进 `yaw` 时机位会与角色面向、扇击锥分家，玩家对着画面里的人
+   * 出掌会打向另一边。
+   *
+   * @param {{pitch?: number, yaw?: number, simYaw?: number}|number} look
    * @returns {{pitch: number|null, yaw: number|null}}
    */
   setLook(look = {}) {
@@ -254,8 +258,9 @@ export class YizhangRenderer {
     } else if (o.pitch === null) {
       this.lookPitch = null;
     }
-    if (Number.isFinite(o.yaw)) this.lookYaw = o.yaw;
-    else if (o.yaw === null) this.lookYaw = null;
+    const yaw = o.simYaw === undefined ? o.yaw : o.simYaw;
+    if (Number.isFinite(yaw)) this.lookYaw = yaw;
+    else if (yaw === null) this.lookYaw = null;
     return { pitch: this.lookPitch, yaw: this.lookYaw };
   }
 
