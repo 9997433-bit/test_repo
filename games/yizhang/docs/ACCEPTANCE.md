@@ -535,8 +535,8 @@ git diff --name-only origin/main...HEAD | grep -v '^games/yizhang/' | grep -v '^
 ```sh
 rg -n "RENDER_YAW_OFFSET" src/core/view.js        # LR-01：恒 0，禁止回 Math.PI
 rg -ln "cameraYawToSimYaw|simYawToCameraYaw" src  # 换算实现只在 core/view.js，其余只 import
-rg -n "yawFromDir" src/input src/main.js src/core # LK-04 产出分派在场性（Round 1 已知零命中）
-rg -n "yz-look" src/ui src/main.js src/core       # LK-09 DOM 在场性（Round 1 已知零命中，CSS 在 styles/hud.css）
+rg -n "yawFromDir" src/input src/main.js src/core # LK-04 产出分派在场性（Round 1 零命中=缺口；Round 2 起 src/input 必须命中）
+rg -n "yz-look" src/ui src/main.js src/core       # LK-09 DOM 在场性（Round 1 零命中=缺口；Round 2 起 ui/hud.js 与 main.js 必须命中，CSS 在 styles/hud.css）
 rg -n "googleapis|gstatic" src dist index.html    # LG-05：零命中
 git diff <基线>..HEAD --stat -- src/ai docs/GDD.md # O3/F3 席合入判读（零 diff = 未合，相关条目按 DEFER 记）
 ```
@@ -615,4 +615,32 @@ npm run build   # LG-03：退出码 0
 
 - WARNING 清单：实机段延后（§13.4 八步）；free≡locked 用户可感差（V 能切、有提示、落存档，但 free 行为无差——建议设置面板标注或随 O4 收口一并交付）；W2 hit-stop 零余量哨兵结转（§11.9）。
 - 修复指派：LK-04 free 产出分派 + LK-09 `.yz-look-flash` DOM → Opus-4（连带 LT-07/08 → GPT-sol-1）；GDD 视角章（默认 lookMode/键位文案/机位 tuning）→ Fable-3；Bot lookMode 不变性显式锁测 + 观战 orbit 复验 → Opus-3；用户「打不中」专项合入后复跑 LK-05/06 防回退 → F4 复验。
+- 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（无桌面环境，如实标注）。
+
+### 13.7 异掌视角轮 Round 2 验收判定（F4 SOTA 验收席）
+
+- 被验分支/commit：`cursor/yizhang-look-db8d` @ `c97723d`（Round 2 已合席位：O4 `sample()` 分派 `5a09b67` + HUD DOM `cf1333d` / G1 LK-04 锁测 `ea8cdc3` / G2 locked-free 探针 `a088c7e` / F1 契约 v4.4 `f95b1cc` / F2 free 侧视线合同 `bd235f8` / F3 GDD §15.1 对账 `e726330` / O1 free 集成测 `ac4e11e` / O3 护栏 `06a7cba` + Bot yaw 有限闸 `c97723d` / 打人朝向专项 `5f09ccc`；未合：O2 机位复核）；Round 1 判定点 `4ca6ac9`。
+- 验收人/日期：Fable-4 SOTA 验收席 / 2026-08-27（全套命令实跑：静态检查 → `npm test` → `npm run probe` → `npm run build`）。工作分支 `cursor/yizhang-look-r2-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md` 与本文件，不改 src）。
+- 结论：**PASS-WITH-WARNINGS**（Round 1 唯一 FAIL 项 LK-04 经 O4 落地重判 **PASS**；R1 过时 DEFER——HUD DOM / O3 / F3 / 打人专项——全部改勾收口；WARNING 仅余环境性延后（实机段）与在飞席位登记（O2 机位复核 DEFER），无实现缺口、无红线命中）。
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| LG 回归门 | 6/6 | 无（LG-01 717≥631 零减量；LG-02 三 seed 视角硬门 + G2 新增 free/转镜头读数全过；LG-06 大厅四点抽验在 717 内绿） |
+| LK 视角行为 | 9/9 | 无（LK-04 重判 PASS 见 SOTA §12.2/§12.6；LK-09 DOM 已合改勾） |
+| LT 测试锁 | 8/8 | 无（LT-07 `tests/look-round2-lk04.test.js` ×3 + input lookMode 分派组；LT-08 `ui/hud.test.js` ×9 + `ui/shell.test.js` look 组——两条 Round 2 生效项均真实断言补齐） |
+| LR/HR/FR/R 否决 | 零命中 | 无 |
+
+**六条用户验收线（Round 2 重表）**：开局背后 **PASS** / 过门不飞跃 **PASS** / locked 面向=视线 **PASS** / free 可解耦 **PASS（R1 FAIL → R2 重判）** / 横扇读向 **PASS** / 打人朝向一致 **PASS** —— 6/6，逐条证据见 SOTA §12.6 重表。
+
+**命令实测原文摘要**：
+
+- `npm test`：**Test Files 51 passed (51) / Tests 717 passed (717)**，退出码 0（Round 1 631/44 → 717/51，零减量；Round 2 新增/扩充：`tests/look-round2-lk04.test.js` ×3、`tests/aim-alignment.test.js` ×7、`src/combat/look-invariants.test.js` ×11、`src/ai/bot-yaw-finite.test.js` ×8、`src/ai/look-mode-blind.test.js` ×8、`src/ui/hud.test.js` ×9、`input/index.test.js` 扩至 44、`sim/look-yaw.test.js` 扩至 25）。
+- `npm run probe`：退出码 0，`{"status":"pass","seedCount":3,"kills":1,"arenaKills":1,"cameraSnapMaxDist":7.1,"lockedForwardMinDot":1,"lockedForwardMaxAngleDeg":0,"lockedTurnMinAngleDeg":47.67,"lockedCameraMaxBehindness":-7.1,"freeStationaryMaxYawDeltaDeg":0,"freeMoveMaxYawErrorDeg":0.00021,"p99StepMs":0.134,"ai":"think","wiredCombat":true,…}`；三 seed 逐条——`0x1a2b3c4d`：kills 1、p99 0.134、botSlapAttempts 2191；`0x5eed1234`：kills 2、p99 0.128、botSlapAttempts 3425；`0xc0ffee42`：kills 2、p99 0.117、botSlapAttempts 3636；三条均 `openingCameraDistance:7.1`、`arenaEntryPreSnapDistance:127.0–127.2`（真实压过远跳）、`arenaEntryCameraDistance:7.1`、`snappedFrames:2`、`lockedTargets:3601`、free 段 `freeStationaryViewTurns:1 / freeMovementDirections:1`、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`；横幅 `MODEL_SLUG: yizhang-probe`。
+- `npm run build`：退出码 0；主 chunk 680.55kB / gzip ≈186.4kB（>500kB 警告既知，含 three）。
+- 静态面：`RENDER_YAW_OFFSET = 0`（`core/view.js:21`）；`rg googleapis|gstatic src dist index.html` 零命中；`rg yawFromDir src/input` **命中**（`sample()` 分派 + 头注封闭表，R1 缺口实销）；`rg "yz-look" src/ui src/main.js` **命中**（`ui/hud.js` 常驻节点 + `main.js` 消费，R1 缺口实销）；换算实现唯一（`cameraYawToSimYaw/simYawToCameraYaw` 只实现在 `core/view.js`；`core/view.js yawFromDir` 系契约 §1-11 登记的同空间备份）；`git diff 4ca6ac9..HEAD --stat -- src/ai docs/GDD.md` 有 diff（O3/F3 已合实锤：`bot-yaw-finite.test.js` + `look-mode-blind.test.js` + `bots.js` 收敛 + GDD §15 视角章 46 行）；`git diff 4ca6ac9..HEAD --stat -- src/render` **零 diff**（O2 机位复核未合实锤，DEFER）；隔离 diff 过滤后零残留。
+
+**验证方式限定（诚实口径）**：本轮仍无交互桌面环境——§13.4 实机八步（转视角手感、V 切换目视、过门淡场帧、触屏 free/locked）**未做**；以 103 条视角相关锁测（LT-01…08 全在场）+ 三 seed lookProbe 逐帧断言（locked 3601 帧 dot=1.0 且真实转镜头 47.67° 后仍 1:1、free 静止/移动双段、127m 远跳前提、开局+过门双 snap 点）替代并如实标注。实机段归 Round 3。
+
+- WARNING 清单：实机段延后（§13.4 八步 + 转向手感评分卡预跑，结转 Round 3）；O2 机位复核在飞（合入后 F4 复跑 `render/look.test.js` ×15 + probe 机位读数防回退）；W2 hit-stop 零余量哨兵结转（§11.9）。
+- 修复指派：无实现缺口待派；O2 机位复核合入后由 F4 补验；Round 3 实机段（§13.4 八步 + 触屏）到位后复跑即可销首条 WARNING。
 - 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（无桌面环境，如实标注）。

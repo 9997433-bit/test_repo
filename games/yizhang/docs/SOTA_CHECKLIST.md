@@ -602,12 +602,12 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 - [x] **LK-01 开局镜头在角色背后** — 开局（hub 走道）第一帧：机位已架在角色身后、水平距离 ≤20m（无「从裂岛飞过来」的首帧漂移）；locked 下相机水平前向与 `p0.yaw` 同向（dot ≥0.999）。验证：probe `snapAndObserveCamera('opening first frame')`（实测 openingCameraDistance=7.1m、dot=1.0）+ `render/look.test.js` 锁「locked 钉背后、绕不到正脸」半平面断言 + HB-01 出生朝向沿用（`spawn.yaw=0` 面向门）。
 - [x] **LK-02 过门机位不飞跃** — hub↔arena 传送、开局、结算回程三处机位**立即吸附**：`alignCameraToSelf`（`main.js`）按冻结顺序 `input.setLook(simYawToCameraYaw(self.yaw))` → `feedLook` → `snapLook(renderer)` 收尾于 `startMatch` / `enterArenaFx` / `enterHubFx`（契约 §13.2）；渲染层另有 hub↔arena 切换与 >TELEPORT_DIST 整跳的自动 snap 兜底、观战→跟随切换也 snap。验证：probe hub→arena 首帧 pre-snap ~127m → post-snap ≤7.1m、`snappedFrames:2`（开局+过门）三 seed 全过 + `core/look.test.js` snapLook 组（snapCamera/resetCamera/snap 按序探测、无口 no-op、抛错不带走主循环）。
 - [x] **LK-03 locked 面向 = 视线（1:1 逐 tick）** — `Input.yaw` 有限数 ⇒ sim `p.yaw = input.yaw` **直赋**：逐位相等、不平滑、不 wrap、多子步只留最后一次；移动不改写朝向；安全区里照样能转向（空挥闸只拦出招不拦看）。验证：`sim/look-yaw.test.js`「locked 直赋」组 ×4 + `tests/look-round1-invariants.test.js`「locked input / sim yaw / camera-forward 同 tick 相等」+ probe `lockedForwardMaxAngleDeg=0`（3601 帧 ×3 seed）。
-- [ ] **LK-04 free 可解耦（面向与镜头）** — 契约 §8（ADR-38 冻结）：free 下移动矢量非零 ⇒ `Input.yaw = yawFromDir(moveX,moveZ)`、零移动 ⇒ `Input.yaw = null`（保持朝向），镜头独立看。**Round 1 实测 FAIL（产出半边未实装）**：`src/input/index.js sample()` 不分模式恒 `out.yaw = cameraYawToSimYaw(θ)`（`rg yawFromDir src/input src/main.js src/core` 零命中）——free 今天行为等同 locked，「仍可独立看」不成立。已实装且有测的两半：sim 承接面（`yaw:null` 不覆盖、非有限值当没给、`yawFromDir` 直赋即面朝走向，`sim/look-yaw.test.js` free 组 ×4）与 render 机位面（free 用喂入 simYaw、没喂跟角色 yaw，`render/look.test.js`）。指派 O4（input 产出分派），Round 2 收口；缺省 locked 是产品主路径故不挡本轮。
+- [x] **LK-04 free 可解耦（面向与镜头）** — 契约 §8（ADR-38 冻结，v4.4 升格为 §14-34 sample 分派封闭表）：free 下移动矢量非零 ⇒ `Input.yaw = yawFromDir(moveX,moveZ)`、零移动 ⇒ `Input.yaw = null`（保持朝向），镜头独立看；locked 恒 `cameraYawToSimYaw(θ)` 1:1。**Round 1 实测 FAIL（产出半边未实装）→ Round 2 O4 落地后重判 PASS（F4 @ `c97723d`）**：`src/input/index.js sample()` 现按 `state.lookMode` 分派——free 起手 `out.yaw = null`，位移模 > `MOVE_EPS` 才改送 `yawFromDir(move.x, move.z)`（W+S 对消的合零矢量落回 null 不原地翻身；禁用输入零位移自然 null，绝不送 NaN），locked 恒送 `cameraYawToSimYaw(θ)` 与 Round 1 逐字一致。三层证据全绿：input 分派锁测（`input/index.test.js` lookMode 分派组，全文件 44 测 + `tests/look-round2-lk04.test.js` LT-07 整链 ×3）、sim 集成（`sim/look-yaw.test.js` 25 测含 O1 free 组：走向即面向、松手不回弹、走向即出掌前向）、探针（G2 free 段 ×3 seed：`freeStationaryMaxYawDeltaDeg = 0`（静止转镜头人不动）、`freeMoveMaxYawErrorDeg ≈ 0.0002°`（移动面朝走向））。`yawFromDir` 在 `core/view.js` 的同名备份为同空间矢量换角（契约 §1-11 登记、头注明示与 `sim/math.js` 逐字同式），不构成第四套换算。
 - [x] **LK-05 横扇读向（左→右横抽，非上撩）** — 扇击动画是**横抽**：肩关节 YXZ 序先端平再横扫，掌从角色左侧扫到右侧（跟随镜头里 = 屏幕左→右），纵向行程 ~1.5cm vs 横向 ~1.1m；判定同形：**横着的一片扇形**（左右由 `slapAngleDeg` 张角管、上下只由高度闸门管），不是竖锥；VFX 扇面跟掌横扫（`combat-vfx.js` 绕出掌方向左→右）。验证：`characters.js` 出掌曲线注释与常量 + `combat/combat.test.js`「判定是横着的一片扇形」+ `tests/look-round1-invariants.test.js`「render adapter 侧向主导 strike」。
 - [x] **LK-06 打人朝向一致（扇击前向 ≡ p.yaw ≡ locked 视线）** — 扇击前向就是 `p.yaw`（sim 空间）：横扫范围内（含 right 一侧）打得到、正后方与锥外一点点打不着、`reach = slapRange + playerRadius` 不偷偷放大、**本 tick 转的身本 tick 就作数**（locked 下「准星指谁打谁」无一帧滞后）。验证：`sim/look-yaw.test.js`「扇击前向 = p.yaw」组 ×6。用户「打不中」专项若另有产出，按其合入后复跑本条防回退。
 - [x] **LK-07 机位喂入空间唯一（ADR-37 收口）** — `core/look.js lookPayload`：`yaw === simYaw === cameraYawToSimYaw(θ)`（同值双名，相机系角不出输入层、payload 无第三套朝向字段）；`renderer.setLook` 消费序冻结：`simYaw` 优先 → `simYaw:null` 回落跟角色 → 无 simYaw 才读 `yaw`（此时必须已是 sim 空间）；反证测在场：把未换算的相机系角塞进 sim 口机位翻到正脸（修的就是这个 bug）。验证：`core/look.test.js` ×21 + `render/look.test.js` ×15 + 不变量 §14-28 取 θ 使两值不同的判决性断言。
 - [x] **LK-08 lookMode 四通道 + 缺省 locked** — 取值链 URL `?look=` > 存档 `lookMode` > 缺省 `locked`（URL 乱填落到存档不落缺省、不回写）；V 键上升沿 toggle（长按/repeat 不振荡、不抢 WASD/空格/E、禁用输入时不生效、切换不动 yaw/pitch）；`onLookModeChange` 落存档 + 设置面板同步灯；老档缺字段补 `locked` 不清档不升版本。验证：`input/index.test.js` lookMode 组 ×8 + `core/look.test.js` resolveLookMode 组 + `core/storage.test.js` 向后兼容组 + 跨层不变量「URL > 存档 > locked」。
-- [ ] **LK-09 V 切换一瞬反馈 HUD（`.yz-look-flash`）** — F2 视觉终稿已合（`src/styles/hud.css` §18.1：`.yz-look-flash` / `.is-on` / kbd 键章）；**O4 的 DOM 挂载未合**（`rg "yz-look" src/ui src/main.js src/core` 零命中），当前 V 反馈走通用 `shell.toast("锁 定 视 角"/"自 由 视 角")` 顶班——功能反馈在、专用样式没被消费。**DEFER**（指派 O4，Round 2 落 DOM 后按 CSS 类逐项复验）。
+- [x] **LK-09 V 切换一瞬反馈 HUD（`.yz-look-flash`）** — F2 视觉终稿已合（`src/styles/hud.css` §18.1：`.yz-look-flash` / `.is-on` / kbd 键章）；**O4 DOM 已合（`cf1333d`，Round 2 改勾）**：`.yz-look-flash` 为 `#hud` 常驻节点（`ui/hud.js`，`role="status"`，含 kbd 键帽），`main.js` 只经 `shell.setLookMode` 点亮一枚回执（文案「视角锁定 / 自由视角」，亮 0.9s `is-on`，连按重置计时不排队不叠字），`#hud[data-look]` 随模式翻转驱动准星样式；触屏收 kbd 键帽文本照常（`[data-touch="1"] .yz-look-flash kbd` 选得中）。F3 对账后 Round 1 记录的「toast 顶班」登记作废——切换**不开中央 toast**（`shell.test.js`「中央短讯那块大字不跟着开」锁死，GDD §15.1 同词）。验证：`ui/hud.test.js` ×9 + `ui/shell.test.js` look 组（LT-08）。
 
 ### 12.3 LT- 测试锁表（MUST EXIST；Round 1 在场性实测）
 
@@ -619,8 +619,8 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 | **LT-04** | lookMode 通道：V 键/缺省/回调/禁用/不动 yaw-pitch + 存档向后兼容 | LK-08 | `src/input/index.test.js` lookMode 组 + `src/core/storage.test.js` ✅ | O4/G1 | Round 1 |
 | **LT-05** | 跨层不变量：feedLook 同角双名、locked 三层同 tick 相等、URL 链、横扇侧向主导 | LK-03/05/07/08 | `tests/look-round1-invariants.test.js` ×5 ✅ | G1 | Round 1 |
 | **LT-06** | 探针视角硬门：snap ≤20m + 真实远跳前提 + locked dot ≥0.999 逐帧 | LG-02、LK-01/02/03 | `scripts/probe.mjs` lookProbe ✅ | G2 | Round 1 |
-| **LT-07** | free 产出分派：free 移动 ⇒ yawFromDir、静止 ⇒ null、locked ⇒ cameraYawToSimYaw | LK-04 | **缺席**（连锁 LK-04） | O4/G1 | Round 2 |
-| **LT-08** | `.yz-look-flash` DOM 挂载与 is-on 时序 | LK-09 | **缺席**（待 O4 DOM） | O4/G1 | Round 2 |
+| **LT-07** | free 产出分派：free 移动 ⇒ yawFromDir、静止 ⇒ null、locked ⇒ cameraYawToSimYaw | LK-04 | `tests/look-round2-lk04.test.js` ×3（input→sim 整链）+ `input/index.test.js` lookMode 分派组 ✅（Round 2 补齐） | O4/G1 | Round 2 |
+| **LT-08** | `.yz-look-flash` DOM 挂载与 is-on 时序 | LK-09 | `src/ui/hud.test.js` ×9 + `src/ui/shell.test.js` look 组 ✅（Round 2 补齐） | O4/G1 | Round 2 |
 
 ### 12.4 LR- 红线增补（视角轮即时否决，叠加 §11.7 HR、§10.9 FR、§5 R 表）
 
@@ -669,3 +669,45 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 - **W2 hit-stop 零余量哨兵**结转（§11.9）。
 
 **判定：视角轮 Round 1 = PASS-WITH-WARNINGS**（判定表与证据见 ACCEPTANCE §13.6；FAIL 仅 LK-04 产出半边且属 Round 1 门槛允许延后项，六条用户验收线 5 PASS / 1 FAIL-DEFER，无红线命中）。
+
+**编排层补记（Round 2 合入后）**：本节「未合项」五条中四条已过时——O4 HUD DOM（`cf1333d`）、O4 free 产出分派（`5a09b67`）、O3 席（`06a7cba` 护栏 + `c97723d` Bot yaw 有限闸）、F3 GDD（`e726330` §15 视角章）、用户「打不中」专项（`5f09ccc`，`tests/aim-alignment.test.js` ×7 + `combat/look-invariants.test.js` ×11）均已合入父分支；Round 2 改勾与重判见 §12.6。仅 **O2 机位复核仍在飞**（Round 1 后 `src/render` 零 diff），§12.6 按 DEFER 登记。
+
+### 12.6 Round 2 实测记分（F4 SOTA 验收席 @ 父分支 `c97723d`，2026-08-27，全套命令实跑）
+
+**执行口径**：Round 2 已合席位（O4 sample 分派 / G1 LK-04 锁测 / G2 locked-free 探针 / F1 契约 v4.4 / F2 free 侧视线合同 / F3 GDD §15.1 对账 / O1 free 集成测 / O3 Bot yaw 有限闸 + lookMode 盲区锁测 / 打人朝向专项）的复验与 LK-04 重判。工作分支 `cursor/yizhang-look-r2-f4-db8d`（仅动本文件与 `ACCEPTANCE.md`，不改 src）。自动化全套实跑；本环境仍无交互桌面——§13.4 实机八步**未做**，以 103 条视角相关锁测 + 三 seed lookProbe（locked 3601 帧逐帧 + free 双段）替代并如实标注，归 Round 3 实机段。命令原文见 ACCEPTANCE §13.7。
+
+**三件套实测**（勾选依据）：
+
+- `npm test`：**717/717（51 文件）**，退出码 0（Round 1 基线 631/44 → 717/51，零红零减量；新增含 `tests/look-round2-lk04.test.js` ×3、`tests/aim-alignment.test.js` ×7、`src/combat/look-invariants.test.js` ×11、`src/ai/bot-yaw-finite.test.js` ×8、`src/ai/look-mode-blind.test.js` ×8、`ui/hud.test.js` ×9；`input/index.test.js` 扩至 44、`sim/look-yaw.test.js` 扩至 25）。
+- `npm run probe`：**PASS** 退出码 0，3/3 固定 seed。视角读数：`cameraSnapMaxDist:7.1`（开局 7.1 / 过门 pre-snap 127.0–127.2 → post 7.1，`snappedFrames:2`）、`lockedForwardMinDot:1 / lockedForwardMaxAngleDeg:0`（每 seed 3601 帧）；**G2 Round 2 新增读数全过硬门**：`lockedTurnMinAngleDeg:47.67`（locked 段真实转过镜头再验 1:1，非静置空话）、`lockedCameraMaxBehindness:-7.1`（相机恒在面向反方向半平面）、`freeStationaryMaxYawDeltaDeg:0`（free 静止转镜头人不动）、`freeMoveMaxYawErrorDeg:0.00021`（free 移动面朝走向）。沿用门全绿：`wiredCombat:true`、`ai:"think"`、arenaKills 1/2/2、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`、p99StepMs 0.117–0.134。
+- `npm run build`：退出码 0；主 chunk 680.55kB / gzip ≈186.4kB（>500kB 警告既知，含 three）。
+
+**LK-04 重判（Round 1 唯一 FAIL → PASS）**：判据与三层证据见 §12.2 条目正文。要点：分派整只收在 `input.sample()`（sim/renderer 不感知 lookMode，ADR-38 原样）；locked 路径与 Round 1 逐字一致（`lockedForwardMinDot:1` 复跑无回退）；free 两半（静止 null / 移动 yawFromDir）由 input 锁测、sim 集成测、探针读数三层互证。
+
+**R1 过时 DEFER 改勾**：LK-09（HUD DOM）→ PASS（§12.2 改勾，LT-08 补齐）；O3 席 → 收口（`ai/look-mode-blind.test.js` 显式锁「Bot 不感知 lookMode」+ `ai/bot-yaw-finite.test.js` Bot yaw 帧帧有限闸，`bots.js` 收敛修复随行）；F3 GDD → 收口（§15 视角章 46 行：lookMode 缺省 locked / 0.9s 回执无 toast / 切换视角同词 / CAMERA 对照表）；打人朝向专项 → 已合并复跑防回退绿（aim-alignment ×7 + combat/look-invariants ×11 在 717 内全绿，probe locked dot=1.0 复跑无回退）。
+
+**六条用户验收线重表（Round 2）**：
+
+| # | 验收线 | R1 | R2 | 一句话证据 |
+|---|---|---|---|---|
+| 1 | 开局镜头在背后 | PASS | **PASS** | probe 开局首帧 7.1m + dot=1.0 + `lockedCameraMaxBehindness:-7.1`（新增负值硬门）×3 seed |
+| 2 | 过门不飞跃 | PASS | **PASS** | pre-snap 127.0–127.2m → post-snap 7.1m、`snappedFrames:2` ×3 seed 复跑无回退 |
+| 3 | locked 面向=视线 | PASS | **PASS** | 3601 帧 ×3 seed dot=1.0；G2 新增 locked 段真实转镜头 47.67° 后仍逐帧 1:1 |
+| 4 | free 可解耦 | FAIL | **PASS（重判）** | sample() 分派落地：静止 null（hold Δ0°）、移动 yawFromDir（误差 0.0002°）；LT-07 + O1 集成 + 探针三层互证 |
+| 5 | 横扇读向 | PASS | **PASS** | 判定横扇形 / 动画左→右横抽复验绿；F2 二审「横扇轴复核」`b5513e4` 随行 |
+| 6 | 打人朝向一致 | PASS | **PASS** | 扇击前向=p.yaw 复跑绿 + 专项 `aim-alignment` ×7 合入（本 tick 转身作数、正后方空掌、reach 冻结无作弊） |
+
+**未合项（不装绿）**：
+
+- **O2 机位复核**：Round 1 后 `src/render` 零 diff（`git diff 4ca6ac9..HEAD --stat -- src/render` 空）、`origin/cursor/yizhang-look-o2-db8d` 尖端仍是 Round 1 的 `00ad7f3`——Round 2 派发的机位复核未交卷。**DEFER**：渲染机位面以 Round 1 已合的 `render/look.test.js` ×15 + probe 机位读数复跑绿为准（无回退即不挡），其复核结论合入后由 F4 补验防回退。
+
+**红线扫描（全零命中）**：`RENDER_YAW_OFFSET = 0` 在位；`googleapis|gstatic` src/dist/index.html 零命中；相机系↔sim 系换算实现仍唯一（`cameraYawToSimYaw/simYawToCameraYaw` 只实现在 `core/view.js`；`core/view.js yawFromDir` 为契约 §1-11 登记的同空间矢量换角备份，非第四套）；lookMode 权威仍只住 input（renderer 持随帧镜像，v4.4 §7.1 措辞修订登记，非第二权威——LR-03 零命中）；测试 631→717 零减量；隔离 diff 过滤后零残留。
+
+**WARNING 清单（记录不否决）**：
+
+- **实机段延后**（§13.4 八步：转视角手感、V 切换目视、过门淡场帧、触屏 free/locked 切换）：本环境无交互桌面，结转 Round 3。
+- **O2 机位复核在飞**（上表 DEFER）：合入后 F4 复跑 probe 机位读数 + `render/look.test.js` 防回退。
+- **转向手感评分卡预跑未做**（§12.0 Round 2 允许延后项）：随实机段一并归 Round 3。
+- **W2 hit-stop 零余量哨兵**结转（§11.9）。
+
+**判定：视角轮 Round 2 = PASS-WITH-WARNINGS**（判定表与证据见 ACCEPTANCE §13.7；Round 1 唯一 FAIL 项 LK-04 重判 PASS，LK 九条全绿、LT 八条全在场真实断言，六条用户验收线 6/6 PASS；WARNING 全部为环境性延后与在飞席位登记，无实现缺口、无红线命中）。
