@@ -18,4 +18,4 @@
 |-------|------|------|
 | 1 初始构建与基线探索 | 已收口 | 十席全合入；见 `round1/BRIEF.md` |
 | 2 靶向重构与深度优化 | 已收口 | 十席全合入；F4 PASS-WITH-WARNINGS；见 `round2/BRIEF.md` |
-| 3 SOTA 打磨与最终验收 | 进行中 | Wave 1：O2 画调用 / F2 视觉合同 / G2 三 seed |
+| 3 SOTA 打磨与最终验收 | 进行中 | Wave 1 已派：O2 `bc-5c7aff90-8768-5308-9ca1-eb1cc7161816` / F2 `bc-cb240001-77aa-5dff-a3cb-57e0a4caf7b3` / G2 `bc-ad2d29e4-3542-5ae7-aa83-72f1d3290244` |

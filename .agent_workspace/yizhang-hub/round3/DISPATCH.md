@@ -26,6 +26,6 @@
 
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
-| O2 画调用预算 | `claude-opus-5-thinking-high-fast` | （派出后回填） | mid ≤120 draw / ≤80k tris |
-| F2 视觉合同 | `claude-fable-5-thinking-xhigh` | （派出后回填） | §17 预算下可辨；HV-04 |
-| G2 三 seed 探针 | `gpt-5.6-sol-xhigh-fast` | （派出后回填） | T-07；横幅不再冒充席位模型 |
+| O2 画调用预算 | `claude-opus-5-thinking-high-fast` | `bc-5c7aff90-8768-5308-9ca1-eb1cc7161816` | 已派出；mid ≤120 draw / ≤80k tris |
+| F2 视觉合同 | `claude-fable-5-thinking-xhigh` | `bc-cb240001-77aa-5dff-a3cb-57e0a4caf7b3` | 已派出；§17 预算下可辨；HV-04 |
+| G2 三 seed 探针 | `gpt-5.6-sol-xhigh-fast` | `bc-ad2d29e4-3542-5ae7-aa83-72f1d3290244` | 已派出；T-07；横幅不再冒充席位模型 |
