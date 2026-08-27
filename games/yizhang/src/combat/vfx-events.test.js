@@ -12,7 +12,17 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { AWAKEN, applyStatus, beginSlap, registerGloves, resolveSkill, resolveSlap, tickStatuses } from "./index.js";
+import {
+  AWAKEN,
+  applyStatus,
+  beginSlap,
+  canSkill,
+  canSlap,
+  registerGloves,
+  resolveSkill,
+  resolveSlap,
+  tickStatuses,
+} from "./index.js";
 import { FALLBACK_GLOVE_BY_ID, GHOSTS } from "./constants.js";
 import { normalizeSkillId } from "./skills.js";
 import { makePlayer, makeState, makeTiles, stepSim } from "./testkit.js";
@@ -413,6 +423,24 @@ describe("安全区仍然一掌不接", () => {
     expect(b.vx).toBe(before.vx);
     expect(b.vz).toBe(before.vz);
     expect(state.combat ? state.combat.ghosts : []).toHaveLength(0);
+  });
+
+  it("四道拒活口径一致：canSlap / canSkill 一律 false，两条起手报的都是 hub", () => {
+    // 磐石有主动技、冷却全好、没有任何状态：在裂岛上这一帧必定打得出去
+    const { state, a } = hubDuel("granite", 1.6);
+    expect(a.cd).toEqual({ slapAt: 0, skillAt: 0 });
+
+    expect(canSlap(state, a, undefined, 0)).toBe(false);
+    expect(canSkill(state, a, undefined, 0)).toBe(false);
+    // 拒的理由必须是 hub，不能含混成 cooldown / busy / no-skill——那几条一回裂岛就自己好了
+    expect(beginSlap(state, a, undefined, 0)).toMatchObject({ ok: false, reason: "hub" });
+    expect(resolveSkill(state, a, undefined, 0)).toMatchObject({ ok: false, reason: "hub" });
+    expect(resolveSlap(state, a, undefined, 0)).toHaveLength(0);
+    expect(state.events).toHaveLength(0);
+    // 拒活不留痕：冷却没被扣、后摇没被挂上，回裂岛第一帧照样能出手
+    expect(a.cd).toEqual({ slapAt: 0, skillAt: 0 });
+    expect(a.busyUntil).toBe(0);
+    expect(state.combat === undefined || state.combat.pending.length === 0).toBe(true);
   });
 
   it("大厅里放技能一律 no-op（分身也不许留残影）", () => {
