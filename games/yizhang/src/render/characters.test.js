@@ -19,6 +19,7 @@ import { BOT_PERSONAS } from '../data/bots.js';
 import { QUALITY } from './config.js';
 import { createCharacters } from './characters.js';
 import { ACCESSORIES, EXTRA_LOOKS, resolveSkinLook, sameLook, skinTable } from './skins.js';
+import * as dataModule from '../data/index.js';
 import { readView } from './view.js';
 
 /** 程序化贴图要 canvas；材质允许 map 为 null，形状照样能验。 */
@@ -27,9 +28,9 @@ function fakeTextures() {
   return { cloth: pair(), leather: pair(), metal: pair(), dust: null, ember: null };
 }
 
-function mount(tier = 'high') {
+function mount(tier = 'high', skins = null) {
   const scene = new Scene();
-  const chars = createCharacters({ scene, quality: QUALITY[tier], textures: fakeTextures() });
+  const chars = createCharacters({ scene, quality: QUALITY[tier], textures: fakeTextures(), skins });
   return { scene, chars };
 }
 
@@ -112,6 +113,35 @@ describe('皮肤 → 剪影', () => {
     // 空 id 落到表的默认皮肤，而不是随便散列一个
     expect(resolveSkinLook(null).source).toBe('default');
     expect(resolveSkinLook('').source).toBe('default');
+  });
+
+  it('F3 真表（契约枚举）六套各有配件，不走散列，Bot 人格也不掉 EXTRA_LOOKS', () => {
+    const table = skinTable(dataModule);
+    expect(table.source).toBe('data');
+    expect(table.defaultId).toBe('drifter');
+    const expected = {
+      drifter: 'hood',
+      mason: 'sash',
+      crane: 'banner',
+      reed: 'turban',
+      nuo: 'mask',
+      wildhorn: 'horns',
+    };
+    const looks = Object.keys(expected).map((id) => resolveSkinLook(id, table));
+    for (const look of looks) {
+      expect(look.source, look.id).toBe('data');
+      expect(look.accessory, look.id).toBe(expected[look.id]);
+      expect(ACCESSORIES).toContain(look.accessory);
+      expect(look.cloth, look.id).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+    expect(new Set(looks.map((l) => l.accessory)).size).toBe(6);
+    const mason = looks.find((l) => l.id === 'mason');
+    const crane = looks.find((l) => l.id === 'crane');
+    expect(mason.build.shoulder).toBeGreaterThan(crane.build.shoulder);
+    expect(crane.build.height).toBeGreaterThan(mason.build.height);
+    for (const id of BOT_PERSONAS.map((p) => p.skinId)) {
+      expect(resolveSkinLook(id, table).source, id).toBe('data');
+    }
   });
 });
 
@@ -203,6 +233,21 @@ describe('角色：不同 skinId 不是同一根胶囊', () => {
     const { chars } = mount('low');
     expect(() => chars.reconcile([player('p0', undefined)], 'p0')).not.toThrow();
     expect(chars.get('p0').look.accessory).toBe('wrap');
+    chars.dispose();
+  });
+
+  it('真表喂进角色后六套剪影互不相同，不是同一根胶囊换色', () => {
+    const table = skinTable(dataModule);
+    const { chars } = mount('high', table);
+    const ids = table.skins.map((s) => s.id);
+    chars.reconcile(
+      ids.map((id, i) => player(`p${i}`, id)),
+      'none'
+    );
+    const sigs = ids.map((_, i) => silhouette(chars.get(`p${i}`)));
+    expect(new Set(sigs).size).toBe(ids.length);
+    expect(chars.get('p0').look.accessory).toBe('hood'); // drifter
+    expect(chars.get('p1').look.accessory).toBe('sash'); // mason
     chars.dispose();
   });
 });

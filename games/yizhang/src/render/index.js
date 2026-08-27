@@ -23,7 +23,7 @@
 
 import { QUALITY, QUALITY_TIERS, PALETTE, GLOVE_TINT } from './config.js';
 import { COMBAT_VFX_KIND, SKILL_VFX_KIND, combatVfxKind, skillVfxKind } from './combat-vfx.js';
-import { ACCESSORIES, resolveSkinLook } from './skins.js';
+import { ACCESSORIES, accessoryFromAppearance, resolveSkinLook, skinTable } from './skins.js';
 import { DEFAULT_LOCAL_ID } from './view.js';
 import { YizhangRenderer } from './renderer.js';
 
@@ -42,6 +42,8 @@ let active = null;
  * @param {number}  [opts.arenaRadius=20] 缺省半径，view 给了以 view 为准
  * @param {string|number} [opts.localId] 本地玩家 id；不给就按 view 推断，最后落到 p0
  * @param {string|number} [opts.followId] 同义参数（main.js 用的名字），只有确实在名单里才生效
+ * @param {object} [opts.data]  src/data 命名空间。有 SKINS 就用真表剪影，没有就用兜底表
+ * @param {object} [opts.skins] 已经 `resolveSkins` / `skinTable` 过的表，优先于 `data`
  * @returns {YizhangRenderer}
  */
 export function createRenderer(canvas, opts = {}) {
@@ -147,5 +149,7 @@ export {
   skillVfxKind,
   // 皮肤剪影：配件形制表与解析函数（皮肤选择器要预览剪影时用得上）
   ACCESSORIES,
+  accessoryFromAppearance,
   resolveSkinLook,
+  skinTable,
 };

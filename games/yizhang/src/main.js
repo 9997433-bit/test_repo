@@ -141,6 +141,9 @@ async function boot() {
           quality: save.quality && save.quality !== "auto" ? save.quality : "mid",
           mobile: (navigator.maxTouchPoints || 0) > 0,
           pixelRatio: Math.min(2, window.devicePixelRatio || 1),
+          // 真表（F3 SKINS）经壳层 resolveSkins 喂给渲染层；不喂则角色走兜底剪影
+          skins: skinTable,
+          data: dataModule,
         });
         const bound = bindRenderer(mods.render.module, instance);
         if (bound.sync) return { api: bound, fallback: false };

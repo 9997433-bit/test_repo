@@ -41,6 +41,7 @@ import {
   sync,
 } from './index.js';
 import { mulberry32 } from './noise.js';
+import * as data from '../data/index.js';
 
 const params = new URLSearchParams(globalThis.location?.search ?? '');
 const opt = (k, d) => params.get(k) ?? d;
@@ -356,6 +357,7 @@ export async function bootSmoke(canvas) {
     arenaRadius: match.view.arena.radius,
     seed: 20240501,
     preserveDrawingBuffer: true,
+    data,
   });
 
   const dprOverride = numOpt('dpr', NaN);

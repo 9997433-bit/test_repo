@@ -15,6 +15,7 @@ import {
 import { GLOBAL_DPR_CAP, QUALITY, resolveTier } from './config.js';
 import { BASE_PITCH, PITCH_LIMIT, createCamera } from './camera.js';
 import { createCharacters } from './characters.js';
+import { skinTable } from './skins.js';
 import { combatVfxKind, createCombatVfx, skillVfxKind } from './combat-vfx.js';
 import { createHubScene } from './hub.js';
 import { createIsland } from './island.js';
@@ -51,6 +52,9 @@ export class YizhangRenderer {
     // 语义与 src/input 的 getLook().pitch 一致：正 = 往下看。
     this.lookPitch = Number.isFinite(opts.pitch) ? opts.pitch : null;
     this.lookYaw = Number.isFinite(opts.lookYaw) ? opts.lookYaw : null;
+    // 皮肤表：壳层把已经 resolveSkins 过的表、或 data 命名空间喂进来。
+    // 不喂就用兜底表，冒烟台 / 单测不必绑 src/data。
+    this.skins = opts.skins || skinTable(opts.data ?? null);
 
     this.renderer = new WebGLRenderer({
       canvas,
@@ -113,7 +117,12 @@ export class YizhangRenderer {
       arenaRadius: this.arenaRadius,
       seed: this.seed,
     });
-    this.characters = createCharacters({ scene: this.scene, quality: q, textures: this.textures });
+    this.characters = createCharacters({
+      scene: this.scene,
+      quality: q,
+      textures: this.textures,
+      skins: this.skins,
+    });
     // 安全区：phase === 'hub' 时才可见，裂岛那一套完全不受影响
     this.hub = createHubScene({
       scene: this.scene,

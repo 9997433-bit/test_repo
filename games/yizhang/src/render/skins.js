@@ -6,16 +6,20 @@
 //   build     —— 身高 / 体量 / 肩宽三个比例（缩放低面数几何体，不是换贴图）
 //   accessory —— 一件配件的形制（兜帽 / 肩胄 / 斗篷 / 缠布 / 兽角 / 面具 / 护臂…）
 //
-// 皮肤表由壳层的 `src/core/skins.js` 给：`src/data/skins.js` 真表落地后
-// `resolveSkins()` 自动改吃真表，这里一行都不用动。表里没有的 id（Bot 人格自带的
-// wildhorn / crane / nuo 在真表落地前就是这种情况）走两条兜底：
-//   1. EXTRA_LOOKS —— 三个已经在 `src/data/bots.js` 里写死了剪影描述的 id，照描述给形
+// 皮肤表由壳层的 `src/core/skins.js` 给。调用方把 data 命名空间（或已经
+// `resolveSkins` 过的表）喂进来，真表就上场；不喂则用兜底表（ash/kiln…）。
+//
+// 真表是契约枚举（build 'slim'|'stock'|'broad' · headgear · back · palette），
+// 兜底表是比例数值（build{height,mass,shoulder} · accessory · cloth）。两种
+// 形状一律先过 `skinAppearance()` 再映射成这一层的「比例 + 一件配件」。
+// 表里没有的 id 走两条兜底：
+//   1. EXTRA_LOOKS —— Bot 人格在真表缺席时的剪影（wildhorn/crane/nuo）
 //   2. 字符串散列 —— 任何别的 id，按 id 算出一组稳定的比例与配件
 // 两条兜底都是纯函数：同一个 id 每次结果一致，回放与截图对得上。
 //
 // 禁贴图包、禁版权素材：区分度全部来自比例与配件几何。
 
-import { resolveSkins } from '../core/skins.js';
+import { resolveSkins, skinAppearance } from '../core/skins.js';
 
 /** 配件形制。每一种都是一段可读的轮廓，不是一张贴片。 */
 export const ACCESSORIES = Object.freeze([
@@ -126,18 +130,41 @@ function normalizeBuild(build, fallback) {
   };
 }
 
+/**
+ * 契约枚举 → 渲染层那一件配件。头上的剪影件优先（一眼能认出），
+ * 背旗 / 行囊只在头是光头、发髻或斗笠时上场，避免鹤羽丢掉背旗、石契丢掉行囊。
+ *
+ *   hood / horns / mask  → 同名配件
+ *   back banner          → banner（鹤羽）
+ *   back pack            → sash（石契行囊用斜带+垂尾顶包袱轮廓）
+ *   topknot / strawHat   → turban（发髻绳 / 斗笠用头巾几何顶）
+ *   其余                 → 散列补齐，绝不退回统一缠布
+ */
+export function accessoryFromAppearance(app, seeded) {
+  if (app && ACCESSORY_SET.has(app.accessory)) return app.accessory;
+  const hg = app && app.headgear;
+  if (hg === 'hood' || hg === 'horns' || hg === 'mask') return hg;
+  const back = app && app.back;
+  if (back === 'banner') return 'banner';
+  if (back === 'pack') return 'sash';
+  if (hg === 'topknot' || hg === 'strawHat') return 'turban';
+  const fallback = seeded && seeded.accessory;
+  return ACCESSORY_SET.has(fallback) ? fallback : 'wrap';
+}
+
 function fromTableEntry(entry, skinId) {
-  // 真表可以只给配色不给剪影：缺的比例与配件按 id 散列补齐，
-  // 于是「表里新加一只皮肤但还没填 build」也不会退回统一胶囊
-  const seeded = synthesizeLook(entry.id ?? skinId);
-  const accessory = ACCESSORY_SET.has(entry.accessory) ? entry.accessory : seeded.accessory;
+  // 真表（枚举）和兜底表（比例）都先归一。缺的比例与配件按 id 散列补齐，
+  // 于是「表里新加一只皮肤但还没填 build」也不会退回统一胶囊。
+  const app = skinAppearance(entry);
+  const seeded = synthesizeLook(app.id ?? skinId);
+  const palette = app.palette || {};
   return {
-    id: entry.id ?? skinId,
-    build: normalizeBuild(entry.build, seeded.build),
-    accessory,
-    cloth: typeof entry.cloth === 'string' ? entry.cloth : DEFAULT_LOOK.cloth,
-    trim: typeof entry.trim === 'string' ? entry.trim : DEFAULT_LOOK.trim,
-    accent: typeof entry.accent === 'string' ? entry.accent : DEFAULT_LOOK.accent,
+    id: app.id ?? skinId,
+    build: normalizeBuild(app.build, seeded.build),
+    accessory: accessoryFromAppearance(app, seeded),
+    cloth: typeof palette.cloth === 'string' ? palette.cloth : DEFAULT_LOOK.cloth,
+    trim: typeof palette.clothDim === 'string' ? palette.clothDim : DEFAULT_LOOK.trim,
+    accent: typeof palette.accent === 'string' ? palette.accent : DEFAULT_LOOK.accent,
   };
 }
 
