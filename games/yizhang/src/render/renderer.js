@@ -277,8 +277,13 @@ export class YizhangRenderer {
    * 固定人物视角开关。
    *
    *   'locked' —— 镜头钉在角色**背后**，用角色自己的 yaw（locked 时它与视线一致，
-   *               见 GOAL：人物水平面向 ≡ 相机水平前向），镜头永远绕不到正脸；
-   *   'free'   —— 用壳层喂进来的 lookYaw（**sim 空间**），没喂就跟角色 yaw。
+   *               见 GOAL：人物水平面向 ≡ 相机水平前向），镜头永远绕不到正脸：
+   *               快速转身时也有硬顶兜着（camera.js 的 LOCKED_YAW_SPAN）；
+   *   'free'   —— 用壳层喂进来的 lookYaw（**sim 空间**），没喂就跟角色 yaw。角色
+   *               面朝走向、镜头面朝视线，所以画面里角色可以露出侧面。
+   *
+   * 切模式**不吸附机位**：人还站在原地，镜头顺着弹簧转过去就好（snap 只给传送，
+   * 见 _followCamera / ADR-39）。运行期权威仍在输入层，这里只是随帧收（ADR-38）。
    *
    * @param {'locked'|'free'} mode 认不出来的值不改现状
    * @returns {'locked'|'free'} 生效后的模式
@@ -373,6 +378,10 @@ export class YizhangRenderer {
    * locked：角色自己的 yaw —— 固定人物视角下人物面向 ≡ 视线，用它镜头必在背后，
    *         绝不会绕到正脸；壳层没接线时它也正好是原来那条对的路。
    * free  ：壳层喂的 lookYaw；没喂同样退回角色 yaw。
+   *
+   * 两条路的分野就在这里：free 下 `lookYaw` 与 `local.yaw` 是**两个独立的角**
+   * （角色面朝走向、镜头面朝视线，见 ADR-38），所以画面里角色可以露出侧面甚至正脸；
+   * locked 下它们是同一个角，镜头恒在背后。
    */
   _followYaw(local) {
     const charYaw = Number.isFinite(local?.yaw) ? local.yaw : 0;
@@ -381,8 +390,26 @@ export class YizhangRenderer {
   }
 
   /**
+   * locked 的背后半平面硬顶要拿哪个朝向当基准。free 恒不给：自由视角不夹。
+   *
+   * locked 下 `_followYaw` 返回的**就是**角色面向，所以跟随用的 yaw 与硬顶的基准
+   * 是同一个数 —— 这不是巧合式的复用，是「固定人物视角」的定义本身。
+   *
+   * 落后得太多的那一帧不夹（见 camera.js 的 LOCKED_HOLD_RATE）：切 V 那一帧壳层还
+   * 没把角色转到视线上、重生改写朝向，都属于「朝向被瞬移」，硬顶下去就是一帧甩镜。
+   */
+  _behindYaw(yaw) {
+    return this.lookMode === 'locked' && Number.isFinite(yaw) ? yaw : undefined;
+  }
+
+  /**
    * 跟随机位。传送（过门 / 结算回程 / 换人 / 开局第一帧）走 snap，其余走弹簧。
+   *
+   * **切视角模式不在 snap 名单里**：locked ↔ free 换的是「机位绕谁转」，角色还站在
+   * 原地，镜头该顺着弹簧转过去；这里硬吸一下就成了过门那种瞬移（ADR-39 只给传送）。
+   *
    * @param {Vector3} focus 本帧焦点（已经写进 this._focus）
+   * @param {number} yaw    本帧跟随朝向（locked = 角色面向，free = 壳层喂的视线）
    */
   _followCamera(dt, focus, yaw) {
     const jumped =
@@ -396,8 +423,26 @@ export class YizhangRenderer {
       this.cameraRig.snap(focus, yaw, { pitchBias: this._pitchBias() });
       return true;
     }
-    this.cameraRig.update(dt, focus, yaw, this._vel, { pitchBias: this._pitchBias() });
+    this.cameraRig.update(dt, focus, yaw, this._vel, {
+      pitchBias: this._pitchBias(),
+      behindYaw: this._behindYaw(yaw),
+    });
     return false;
+  }
+
+  /**
+   * 过门（hub ↔ arena）就武装一次吸附。
+   *
+   * 两区在世界里隔着 ~120m，弹簧跟过去是一秒钟的空镜飞越。同一区里反复调用不产生
+   * 副作用 —— 「换了个区」是唯一的触发条件，视角模式、画质、换皮肤都不算。
+   *
+   * @param {'hub'|'arena'} phase
+   * @returns {boolean} 本帧是否处于「待吸附」状态
+   */
+  _notePhase(phase) {
+    if (this._lastPhase !== null && phase !== this._lastPhase) this._snapPending = true;
+    this._lastPhase = phase;
+    return this._snapPending;
   }
 
   _arenaChanged(radius) {
@@ -624,9 +669,7 @@ export class YizhangRenderer {
     const inHub = this.hub.sync(v.hub, dt, this.time);
     this.island.setActive(!inHub);
     // 过门（hub ↔ arena）：两区在世界里隔着 ~120m，机位必须吸附过去，不许弹簧飞越
-    const phase = inHub ? 'hub' : 'arena';
-    if (this._lastPhase !== null && phase !== this._lastPhase) this._snapPending = true;
-    this._lastPhase = phase;
+    this._notePhase(inHub ? 'hub' : 'arena');
     this._consumeEvents(v, raw.events);
 
     // 距离剔除的圆心取本帧本地玩家在 sim 里的坐标 —— this._focus 是上一帧算完镜头才写的，
