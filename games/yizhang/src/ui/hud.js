@@ -1,10 +1,18 @@
 // 局内 HUD。DOM 与类名严格按 docs/ART_DIRECTION.md §11.3 的 Fable-2 合同挂载：
-// 顶带（刻度 / 计时 / 暂停）、右上播报、左下掌位坞、准星、受击去饱和、重组浮层、中央短讯。
+// 顶带（刻度 / 计时 / 暂停）、右上播报、左下掌位坞、准星、视角模式反馈、
+// 受击去饱和、重组浮层、中央短讯。
 // 这里不写样式，只按合同挂 class 和 CSS 变量（--meter / --cd / data-glove / .is-*）。
 
+import { DEFAULT_LOOK_MODE, normalizeLookMode } from "../core/look.js";
 import { h, clear, formatClock } from "./dom.js";
 
 const KILL_PIPS = 7;
+
+/** 视角模式一瞬反馈的文案（ART_DIRECTION §18.1，4~6 字）。 */
+const LOOK_LABEL = { locked: "视角锁定", free: "自由视角" };
+
+/** 反馈停留时长：比 toast（1.6s）短，它是确认回执不是通知（§18.1）。 */
+const LOOK_FLASH_MS = 900;
 
 function toggle(node, cls, on) {
   node.classList.toggle(cls, !!on);
@@ -58,6 +66,13 @@ export function createHud() {
 
   // ---- 中央与全屏反馈 ----
   const reticle = h("div", { class: "yz-reticle" });
+  // 视角模式一瞬反馈（§18.1）：常驻节点，JS 只写文本 + .is-on。文本是裸文本节点
+  // （不套 span），键帽 <kbd> 由 [data-touch="1"] 的样式整枚收起、文本照常。
+  const lookText = document.createTextNode(LOOK_LABEL.locked);
+  const lookFlash = h("div", { class: "yz-look-flash", role: "status" }, [
+    lookText,
+    h("kbd", { text: "V" }),
+  ]);
   const hitFlash = h("div", { class: "yz-hit-flash" });
   const respawnNum = h("div", { class: "yz-respawn-num yz-num", text: "0.0" });
   const respawn = h("div", { class: "yz-plate yz-respawn" }, [
@@ -67,10 +82,13 @@ export function createHud() {
   ]);
   const centerNote = h("div", { class: "yz-plate yz-center-note", hidden: true });
 
-  const el = h("div", { id: "hud" }, [
+  // data-look 开局先按产品缺省 locked 贴上，壳层装配时立刻用 input.getLookMode()
+  // 覆写（§18.2）；这里给初值只是别让 HUD 有一段「没有模式」的空窗。
+  const el = h("div", { id: "hud", dataset: { look: DEFAULT_LOOK_MODE } }, [
     top,
     dock,
     reticle,
+    lookFlash,
     hitFlash,
     respawn,
     centerNote,
@@ -80,6 +98,7 @@ export function createHud() {
   let lastGloveId = null;
   let noteTimer = 0;
   let flashTimer = 0;
+  let lookTimer = 0;
 
   function setCard(card, glove, active, cd, cdMax) {
     card.el.dataset.glove = (glove && glove.id) || "";
@@ -129,6 +148,9 @@ export function createHud() {
       maxSeen.dash = 2.4;
       lastGloveId = null;
       el.classList.remove("is-dead", "is-awakened");
+      // data-look 不清：视角模式跨局延续（权威在 input），清的只是这一瞬的回执。
+      clearTimeout(lookTimer);
+      lookFlash.classList.remove("is-on");
       clear(statusRow);
       centerNote.hidden = true;
       hitFlash.classList.remove("is-on");
@@ -164,6 +186,33 @@ export function createHud() {
         hitFlash.style.backdropFilter = "";
         hitFlash.style.webkitBackdropFilter = "";
       }, ms);
+    },
+    /**
+     * 视角模式的装饰镜像（§18.2）：`#hud[data-look]` 跟着 `input.getLookMode()` 走，
+     * locked 时准星两侧出两道 1px 短刻。权威仍在 input（ADR-38），这里不存第二份
+     * 模式状态 —— 属性值本身就是这份镜像。顺手把一瞬反馈的文案换成当前模式。
+     *
+     * @param {'locked'|'free'|string} mode
+     * @returns {boolean} 这次调用是否真的换了模式（壳层据此决定要不要放反馈）
+     */
+    setLookMode(mode) {
+      const next = normalizeLookMode(mode, el.dataset.look);
+      lookText.nodeValue = LOOK_LABEL[next];
+      if (el.dataset.look === next) return false;
+      el.dataset.look = next;
+      return true;
+    },
+    getLookMode: () => el.dataset.look || "",
+    /**
+     * V / 设置切换后的一瞬确认回执（§18.1）：写文本 + 加 `.is-on`，约 0.9s 后摘。
+     * 连按 V 只是重置计时，不排队、不叠第二块字。
+     * @param {'locked'|'free'|string} [mode] 不给就沿用节点上现有的文案
+     */
+    flashLook(mode, ms = LOOK_FLASH_MS) {
+      if (mode != null) lookText.nodeValue = LOOK_LABEL[normalizeLookMode(mode, el.dataset.look)];
+      lookFlash.classList.add("is-on");
+      clearTimeout(lookTimer);
+      lookTimer = setTimeout(() => lookFlash.classList.remove("is-on"), ms);
     },
     setToast(text, ms = 1600, gold = false) {
       centerNote.textContent = text;

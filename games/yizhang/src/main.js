@@ -202,13 +202,14 @@ async function boot() {
     lookMode: initialLookMode,
     onFirstGesture: () => audio.unlock(),
     onPause: () => togglePause(),
-    // V 键切换：落存档 + HUD 极短提示 + 设置面板同步灯。渲染器不用单独通知，
+    // V 键切换：落存档 + HUD 镜像/一瞬反馈 + 设置面板同步灯。渲染器不用单独通知，
     // feedRendererLook 每帧的 payload.lookMode 下一帧就带到新模式。
+    // 反馈只有 shell.setLookMode 里那一枚 .yz-look-flash（ART_DIRECTION §18.1）——
+    // 中央短讯那块大字不再另开一份，模式提示不与战斗信息抢眼。
     // （V 只在 input enabled 时生效，而 enabled 要等 startMatch —— 彼时 shell 已装配好。）
     onLookModeChange: (mode) => {
       save = updateSave({ lookMode: mode });
       shell.setLookMode(mode);
-      shell.toast(mode === "locked" ? "锁 定 视 角" : "自 由 视 角", 1200);
     },
   });
   input.setEnabled(false);
@@ -252,6 +253,8 @@ async function boot() {
   function applySettings(next) {
     // 视角模式：input 是运行时权威，先收敛再落盘（面板给了认不出的值就保持原样）
     input.setLookMode(next.lookMode);
+    // 收敛后的那个值才是镜像与一瞬反馈的依据：设置板这条路与 V 键走同一枚反馈
+    shell.setLookMode(input.getLookMode());
     save = updateSave({
       quality: next.quality,
       muted: next.muted,
