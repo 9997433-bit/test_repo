@@ -20,6 +20,8 @@ export const SELF_ID = "p0";
  */
 export const RENDER_YAW_OFFSET = 0;
 
+import { assignSkins, normalizeSkinId, resolveSkins } from "./skins.js";
+
 const DEFAULT_BOT_NAMES = ["蛮古", "狸缘", "欺霸"];
 const NEUTRAL_COLOR = "#7f8c9e";
 
@@ -27,10 +29,22 @@ function num(v, d = 0) {
   return Number.isFinite(v) ? v : d;
 }
 
-/** 玩家名/人格名只在开局算一次，之后每帧复用。 */
+/**
+ * 玩家名/人格名/皮肤只在开局算一次，之后每帧复用。
+ * @param {object} opts { selfId, personaById, skinTable, skinId }
+ */
 export function createRoster(view, opts = {}) {
   const selfId = opts.selfId || SELF_ID;
   const personaById = opts.personaById || null;
+  const skinTable = opts.skinTable || resolveSkins(null);
+  // 皮肤：sim 自报优先（Opus-1 落地后 getView 会带 skinId），否则壳层就地分配，
+  // 保证 bot 不会全员同一胶囊。
+  const skinById = assignSkins((view && view.players) || [], {
+    selfId,
+    selfSkinId: opts.skinId,
+    table: skinTable,
+    personaById,
+  });
   const roster = new Map();
   let botIndex = 0;
   for (const p of (view && view.players) || []) {
@@ -44,7 +58,11 @@ export function createRoster(view, opts = {}) {
         botIndex += 1;
       }
     }
-    roster.set(p.id, { name, kind: p.kind || (p.id === selfId ? "human" : "bot") });
+    roster.set(p.id, {
+      name,
+      kind: p.kind || (p.id === selfId ? "human" : "bot"),
+      skinId: skinById.get(p.id) || skinTable.defaultId,
+    });
   }
   return roster;
 }
@@ -90,14 +108,18 @@ export function adaptView(raw, ctx = {}) {
 
   const arena = raw.arena || null;
   const match = raw.match || null;
+  const skinTable = ctx.skinTable || resolveSkins(null);
 
   const players = ((raw.players && raw.players.length ? raw.players : []) || []).map((p) => {
     const entry = roster ? roster.get(p.id) : null;
     const activeId = activeGloveIdOf(p);
     const glove = gloveById[activeId] || null;
+    // 皮肤：sim 给了就认 sim 的，没给用开局分配的那份，最后才落默认皮肤。
+    const skinId = p.skinId || (entry && entry.skinId) || skinTable.defaultId;
     return {
       ...p,
       name: p.name || (entry && entry.name) || p.id,
+      skinId: normalizeSkinId(skinId, skinTable),
       activeGloveId: activeId,
       mainId: p.gloveId,
       offhandId: p.offhandId ?? p.gloveId,

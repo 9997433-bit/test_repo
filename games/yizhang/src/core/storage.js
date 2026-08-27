@@ -1,4 +1,9 @@
 // 本地存档。localStorage 在隐私模式/沙箱 iframe 里会抛异常，全部包 try。
+//
+// 版本号不动：skinId 是**向后兼容的新增字段**，v1 老档读出来照样能用，
+// 缺字段就落到默认皮肤（见 loadSave）。
+
+import { DEFAULT_SKIN_ID } from "./skins.js";
 
 export const SAVE_KEY = "yizhang-save-v1";
 
@@ -6,6 +11,7 @@ const DEFAULTS = {
   version: 1,
   unlocked: ["cotton"],
   loadout: { main: "cotton", off: "cotton" },
+  skinId: DEFAULT_SKIN_ID,
   quality: "auto",
   muted: false,
   lookSensitivity: 1,
@@ -35,6 +41,10 @@ export function loadSave() {
     base.stats = { ...DEFAULTS.stats, ...(parsed.stats || {}) };
     if (!Array.isArray(base.unlocked) || !base.unlocked.length) {
       base.unlocked = clone(DEFAULTS.unlocked);
+    }
+    // 老档（v1 首发）没有 skinId：不迁移、不清档，直接补默认皮肤。
+    if (typeof base.skinId !== "string" || !base.skinId.trim()) {
+      base.skinId = DEFAULTS.skinId;
     }
   }
   if (!base.unlocked.includes("cotton")) base.unlocked.unshift("cotton");
