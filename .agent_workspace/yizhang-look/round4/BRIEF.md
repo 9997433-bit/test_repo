@@ -30,7 +30,7 @@ yaw 偏移 0 / 缺省 hub / locked 缺省 / free 静止 null / W+S 对冲 null /
 
 ## 残留 WARNING
 
-1. **F3 GDD 已合入**（merge `ff12039`）：合入零冲突。GDD §15.2 与 §15.6 的 16≠60 复述由合并工人去重（§2 `CHARACTERS` 索引格已是一版）。
+1. **F3 GDD 已合入**（merge `ff12039`）：合入零冲突。GDD §15.2 对照表保留登记、§15.6 保留读感，16≠60 复述已去重（§2 `CHARACTERS` 索引格已是一版）。
 2. 真机触屏 DEFER（「视」钮 / invertY 拖动 / `preventDefault` 实机手势）。
 3. §13.4 桌面八步实机手测未做（无交互桌面；本轮零视觉改动，以 842 测 + 3 seed probe 替代，不假装）。
 4. W2 hit-stop 零余量哨兵结转（已锁测化）。

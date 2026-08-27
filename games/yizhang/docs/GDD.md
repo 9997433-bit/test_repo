@@ -408,7 +408,7 @@ idle 与战斗逐掌**押韵不复制**（ART §16.0 快慢架 / §17.4 对齐�
 
 **过门机位 snap（ADR-39）**：hub（z ≈ −120）与裂岛（原点）错开 ~120m，过门 / 开局 / 换跟随目标一律 `snapCamera()` 吸附，时序冻结为 `input.setLook → feedLook → snapCamera`（契约 §13.2，顺序反了 = snap 到旧角度）。自动保险：跟随目标单帧位移 > `snapTeleport 60` 时渲染器自 snap（实现常量 `CAMERA_SNAP_TELEPORT`，已取代内部 `TELEPORT_DIST 16`），局内重生瞬移（≤ 2×arenaRadius = 40m）不得触发、弹簧甩镜手感保留；snap 后相机-目标距离 ≤ `snapMaxDist 20` 且机位在身后半平面（§14-32/33）。吸附名单只认「世界位置换了一处」的传送时刻——**切视角模式不在名单里**（§15.4）。
 
-**模型瞬移 ≠ 机位瞬移（复盘 P0-3，`CHARACTERS` 登记）**：`render/characters.js` 的 `TELEPORT_DISTANCE = 16` 管**模型**——角色位置插值单帧位移 > 16m 直接跳过去（重生 ≤ 2×arenaRadius = 40m 时人要瞬移出现、不滑步）；`snapTeleport 60` 管**机位**——同一记重生不 snap、弹簧甩镜保留（§14-33）。两个阈值故意不是同一个数，`src/data/tuning.js` 的 `CHARACTERS.teleportDistance` 已登记、`tuning.test.js` 对照 render 源码同数。
+**模型瞬移 ≠ 机位瞬移（复盘 P0-3，`CHARACTERS` 登记）**：`CHARACTERS.teleportDistance = 16`（render `TELEPORT_DISTANCE`）管模型插值跳过；`snapTeleport 60` 管机位。两数故意不同，`tuning.test.js` 对照 render 源码同数。产品读感（人闪现、镜头追、40m 重生落在 16–60 之间）见 §15.6。
 
 **调参指南**：想镜头更贴身 / 更远先动 `restDist`（`dist` 初值同步 ±，两值保持 0.3 内）；想更「跟手」升 `posDamping`/`lookDamping`，但保持 look > pos（先看后到的次序别倒，`tuning.test.js` 锁死）；snap 两阈值是契约面，改值先过 §7.1 再动表。任何一处改完跑 `src/data/tuning.test.js`——它对照 render 实现逐项断言，两边不同数先红。
 
