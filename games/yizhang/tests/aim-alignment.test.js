@@ -104,9 +104,12 @@ describe("feedLook 喂给渲染器的 yaw", () => {
     for (const cam of CAMERA_YAWS) {
       const payload = lookPayload({ yaw: cam, pitch: 0.1 });
       expect(payload.simYaw).toBeCloseTo(cameraYawToSimYaw(cam), 12);
+      // 新口读 simYaw、旧口读 yaw，两个名字必须是同一个 sim 空间的值
       expect(payload.yaw).toBeCloseTo(payload.simYaw, 12);
-      // 相机系的原值仍然透出，只是换了个不会被误当成 sim yaw 的名字
-      expect(payload.cameraYaw).toBe(cam);
+      // 相机方位角不出输入层：payload 上任何字段都不该等于它（除非两者本来就重合）
+      if (Math.abs(cameraYawToSimYaw(cam) - cam) > 1e-6) {
+        expect(Object.values(payload)).not.toContain(cam);
+      }
     }
   });
 

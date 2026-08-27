@@ -205,6 +205,9 @@ export function wireSimDeps(sim, dataModule, combatModule) {
  * setLook / setPitch 是视角喂入口（Round 1 遗留 4）：O2 还没开这两个方法时
  * pick 给 null，`core/look.js feedLook` 会整只 no-op；哪天渲染器导出了，
  * 这里不用改一行就接上（所以名字先占着，别因为「现在还没有」把它删掉）。
+ *
+ * snapCamera / resetCamera 同理（视角轮）：过门 / 开局的机位吸附信号出口，
+ * `core/look.js snapLook` 按序探测这两个名字，没开口就整只 no-op。
  */
 export function bindRenderer(mod, instance) {
   const pick = (name) => {
@@ -221,6 +224,8 @@ export function bindRenderer(mod, instance) {
     setMobile: pick("setMobile"),
     setLook: pick("setLook"),
     setPitch: pick("setPitch"),
+    snapCamera: pick("snapCamera"),
+    resetCamera: pick("resetCamera"),
     getStats: pick("getStats"),
     dispose: pick("dispose"),
     render: pick("render"),

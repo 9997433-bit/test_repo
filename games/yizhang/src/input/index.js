@@ -15,6 +15,7 @@
 // 免得在安全区里对着展掌开技能。切到 arena 后 E 回到技能位，interact 仍照发（sim 会忽略）。
 
 import { cameraYawToSimYaw } from "../core/view.js";
+import { normalizeLookMode } from "../core/look.js";
 
 const KEY_MOVE = {
   KeyW: [0, -1],
@@ -78,6 +79,9 @@ export function createInput(dom, canvas, opts = {}) {
     phase: opts.phase === "hub" ? "hub" : "arena",
     yaw: opts.yaw ?? -Math.PI / 2,
     pitch: opts.pitch ?? 0.32,
+    // 视角模式（GOAL 冻结面）：locked = 固定人物视角（产品缺省），free = 自由视角。
+    // 运行时权威在这里（getLook 随帧透出），存档 / URL 的取值链在壳层收敛后传入。
+    lookMode: normalizeLookMode(opts.lookMode),
     sensitivity: opts.sensitivity ?? 1,
     invertY: !!opts.invertY,
     pointerLockWanted: opts.pointerLock !== false,
@@ -96,6 +100,7 @@ export function createInput(dom, canvas, opts = {}) {
   const listeners = [];
   const onPause = opts.onPause || null;
   const onFirstGesture = opts.onFirstGesture || null;
+  const onLookModeChange = opts.onLookModeChange || null;
   let gestureFired = false;
 
   function bind(node, type, fn, options) {
@@ -111,6 +116,13 @@ export function createInput(dom, canvas, opts = {}) {
 
   function pressEdge(name) {
     state.edge[name] = true;
+  }
+
+  /** V 键（与触控/菜单共用）的模式切换：翻一下并通知壳层（落存档 + HUD 提示）。 */
+  function toggleLookMode() {
+    state.lookMode = state.lookMode === "locked" ? "free" : "locked";
+    if (onLookModeChange) onLookModeChange(state.lookMode);
+    return state.lookMode;
   }
 
   function onKeyDown(e) {
@@ -149,6 +161,11 @@ export function createInput(dom, canvas, opts = {}) {
       case "KeyF":
         state.hold.slap = true;
         pressEdge("slap");
+        break;
+      // V 独占一键切视角模式：不与 E/WASD/空格/Q/F 任何既有键位冲突，
+      // 长按不振荡（e.repeat 在上面已经整只提前返回）。
+      case "KeyV":
+        toggleLookMode();
         break;
       default:
         break;
@@ -404,11 +421,20 @@ export function createInput(dom, canvas, opts = {}) {
       return state.phase;
     },
     getPhase: () => state.phase,
-    getLook: () => ({ yaw: state.yaw, pitch: state.pitch }),
+    /** 相机朝向权威源（契约冻结的两个字段不动，lookMode 是向后兼容的追加字段）。 */
+    getLook: () => ({ yaw: state.yaw, pitch: state.pitch, lookMode: state.lookMode }),
     setLook(yaw, pitch) {
       if (typeof yaw === "number") state.yaw = yaw;
       if (typeof pitch === "number") state.pitch = pitch;
     },
+    getLookMode: () => state.lookMode,
+    /** 静默 setter（菜单 / URL 用）：不回调 onLookModeChange，免得设置面板点一下弹两次提示。 */
+    setLookMode(mode) {
+      state.lookMode = normalizeLookMode(mode, state.lookMode);
+      return state.lookMode;
+    },
+    /** 与 V 键同一条路径（会触发 onLookModeChange），触控钮/调试都可以走它。 */
+    toggleLookMode,
     setSensitivity(v) {
       state.sensitivity = Math.max(0.2, Math.min(3, v));
     },
