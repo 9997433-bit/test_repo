@@ -88,6 +88,8 @@ export class YizhangRenderer {
     this.camera = this.cameraRig.camera;
 
     this._focus = new Vector3(0, 0, 0);
+    /** 角色距离剔除的圆心，见 update() 里的赋值。 */
+    this._cullAt = new Vector3(0, 0, 0);
     this._vel = new Vector3();
     this._tmp = new Vector3();
     this._tmp2 = new Vector3();
@@ -501,13 +503,21 @@ export class YizhangRenderer {
     this.island.setActive(!inHub);
     this._consumeEvents(v, raw.events);
 
-    this.characters.update(dt, this.time);
+    // 距离剔除的圆心取本帧本地玩家在 sim 里的坐标 —— this._focus 是上一帧算完镜头才写的，
+    // 第一帧还停在原点（= 裂岛），拿它当圆心会把岛上的 Bot 全判进圈、走道上一个都不留。
+    // 观战时没有本地玩家，圆心退回镜头焦点（绕岛环绕，本来就该看见岛上的人）。
+    const localView =
+      this.spectator || this.localId == null ? null : v.players.find((p) => p.id === this.localId);
+    if (localView) this._cullAt.set(localView.x ?? 0, 0, localView.z ?? 0);
+    else this._cullAt.set(this._focus.x, 0, this._focus.z);
+    this.characters.update(dt, this.time, this._cullAt);
     this.island.update(dt, this.time);
 
     // 环境反馈：走得快扬尘，觉醒冒余烬，掉下去拖一条尘尾
     for (const p of v.players) {
       const c = this.characters.get(p.id);
-      if (!c || !p.alive) continue;
+      // 被距离剔除掉的人（另一个区里的 Bot）不该往粒子池里挤尘
+      if (!c || !p.alive || !c.rootGroup.visible) continue;
       if (c.speed > 3.2 && p.grounded && this.frame % 3 === 0) {
         this.vfx.footDust(c.pos.x, Math.max(0, c.pos.y), c.pos.z, c.speed);
       }

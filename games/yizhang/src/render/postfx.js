@@ -8,10 +8,12 @@
 // 不跑自发光通道与模糊、合成着色器里也不编译 bloom 采样，一帧只剩「主渲染 + 合成」。
 // 色调映射链本身不受影响，低档与高档看到的是同一条 ACES 曲线。
 //
-// 中档留着辉光，但自发光通道只重画 OCCLUDER_LAYER（quality.bloomOccluders === 'tagged'）：
-// 遮挡这件事只有大块实体说了算 —— 台面挡住井底的光核、门柱与人挡住门里的光。
-// 一颗铆钉、一条束带对 1/4 分辨率再模糊两趟的遮罩没有可测量的贡献，却每样都要
-// 在这条通道里占一个 drawcall。高档仍旧整场重画，两档的差别是写在档位表里的。
+// 中档留着辉光，但这条通道只画两种东西（quality.bloomOccluders === 'tagged'）：
+// 会发光的，和登记过的遮挡体（OCCLUDER_LAYER —— 岩体 / 台面 / 走道 / 门柱 / 躯干）。
+// 遮挡这件事只有大块实体说了算；一颗铆钉、一条束带对一张 1/4 分辨率再模糊两趟的
+// 遮罩没有可测量的贡献，却每样都要在这条通道里占一个 drawcall。
+// 「会不会发光」是当场按代理材质判出来的，不是靠谁记得给自己打标记 —— 新加一个
+// 自发光体不会因为漏了一行 layers.enable 就在中档悄悄不亮。高档仍旧整场重画。
 //
 // 色调映射与 sRGB 编码都在合成着色器里手写完成：主场景渲进的是线性 HDR 贴图，
 // three 对 render target 不做 tone mapping，这里统一处理，全流程只有一处曲线。
@@ -32,7 +34,7 @@ import {
   Vector2,
   WebGLRenderTarget,
 } from 'three';
-import { BLOOM_LAYER, OCCLUDER_LAYER } from './config.js';
+import { OCCLUDER_LAYER } from './config.js';
 
 const FS_VERT = /* glsl */ `
   varying vec2 vUv;
@@ -232,6 +234,8 @@ export function createPost({ renderer, scene, quality }) {
         depthTest: material.depthTest !== false,
         side: material.side,
       });
+      // 'tagged' 档据此认出「这东西在辉光通道里只是个黑影」，见 renderEmissivePass
+      m.userData.emissiveProxyBlack = true;
       blackCache.set(material, m);
     }
     return m;
@@ -270,37 +274,33 @@ export function createPost({ renderer, scene, quality }) {
       m.color.copy(material.emissive).multiplyScalar(material.emissiveIntensity ?? 1);
       m.map = material.emissiveMap ?? null;
       m.opacity = material.opacity;
+      // MeshStandardMaterial 天生带一个 emissive 槽（默认纯黑）与 emissiveIntensity = 1，
+      // 所以「有 emissive 字段」并不等于「会发光」—— 得看算出来的颜色。
+      // 觉醒缝线 / 漆环这类是逐帧改 emissive 的，这个判断因此每帧重算。
+      m.userData.emissiveProxyBlack =
+        !m.map && m.color.r + m.color.g + m.color.b < 1e-4;
       return m;
     }
 
     return blackFor(material);
   }
 
-  function pushSwap(object) {
-    const original = object.material;
-    let replacement;
-    if (Array.isArray(original)) {
-      replacement = original.map((m) => proxyFor(m, object));
-    } else {
-      replacement = proxyFor(original, object);
-    }
-    if (replacement === original) return;
-    swapped.push({ object, original });
-    object.material = replacement;
-  }
+  const isBlackProxy = (m) =>
+    Array.isArray(m) ? m.every((x) => x?.userData?.emissiveProxyBlack) : !!m?.userData?.emissiveProxyBlack;
 
   function renderEmissivePass(camera) {
     swapped.length = 0;
     const hidden = [];
-    // 'tagged' 档只画自发光体与登记过的遮挡体：相机的 layer 掩码一收窄，
-    // 剩下的东西连遍历带材质替换一起省掉，不是「画成黑的」而是根本不进这条通道。
-    const mask = camera.layers.mask;
-    if (occluders === 'tagged') {
-      camera.layers.set(BLOOM_LAYER);
-      camera.layers.enable(OCCLUDER_LAYER);
-    }
+    const revealed = [];
     scene.traverse((o) => {
-      if (!o.visible) return;
+      // 只在这条通道里出现的低面替身（userData.emissiveOnly）：台面那 208 块板
+      // 只是用来挡住井底的光，不必把 25000 个三角形连倒角带侧壁再走一遍，
+      // 一层贴着顶面的薄片就够了。整场重画的高档用不上替身，本尊就在场上。
+      if (o.userData.emissiveOnly) {
+        if (occluders !== 'tagged' || o.visible) return;
+        o.visible = true;
+        revealed.push(o);
+      } else if (!o.visible) return;
       if (o.isPoints) {
         // 尘埃不发光也不该在辉光通道里挡光，直接跳过
         if (!o.userData.bloomSelf) {
@@ -310,8 +310,29 @@ export function createPost({ renderer, scene, quality }) {
         return;
       }
       if (!o.isMesh && !o.isInstancedMesh && !o.isBatchedMesh) return;
-      if (!camera.layers.test(o.layers)) return;
-      pushSwap(o);
+
+      const original = o.material;
+      const replacement = Array.isArray(original)
+        ? original.map((m) => proxyFor(m, o))
+        : proxyFor(original, o);
+
+      // 'tagged' 档：一个既不发光、又没登记成遮挡体的叶子网格，在这条通道里
+      // 只会画出一块黑 —— 而它盖住的本来就是黑底。直接不画，省下的是真 drawcall。
+      // 只砍叶子：中间节点底下可能还挂着会发光的东西，隐藏父级会一起带走。
+      if (
+        occluders === 'tagged' &&
+        o.children.length === 0 &&
+        isBlackProxy(replacement) &&
+        !o.layers.isEnabled(OCCLUDER_LAYER)
+      ) {
+        hidden.push(o);
+        o.visible = false;
+        return;
+      }
+
+      if (replacement === original) return;
+      swapped.push({ object: o, original });
+      o.material = replacement;
     });
 
     renderer.setRenderTarget(emissiveRT);
@@ -319,10 +340,10 @@ export function createPost({ renderer, scene, quality }) {
     renderer.clear(true, true, false);
     renderer.render(scene, camera);
 
-    camera.layers.mask = mask;
     for (const s of swapped) s.object.material = s.original;
     swapped.length = 0;
     for (const o of hidden) o.visible = true;
+    for (const o of revealed) o.visible = false;
   }
 
   function blur(iterations) {

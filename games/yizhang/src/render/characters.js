@@ -22,16 +22,21 @@
 
 import {
   BoxGeometry,
+  BufferAttribute,
   CapsuleGeometry,
   CircleGeometry,
   Color,
   ConeGeometry,
   CylinderGeometry,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  Skeleton,
+  SkinnedMesh,
+  Sphere,
   SphereGeometry,
   TorusGeometry,
   Object3D,
@@ -39,7 +44,7 @@ import {
   Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { BLOOM_LAYER, FALLBACK_TINT, PALETTE, markOccluder } from './config.js';
+import { BLOOM_LAYER, FALLBACK_TINT, OCCLUDER_LAYER, PALETTE, markOccluder } from './config.js';
 import { smoothstep } from './noise.js';
 import { resolveSkinLook, skinTable } from './skins.js';
 const TAU = Math.PI * 2;
@@ -47,6 +52,15 @@ const TAU = Math.PI * 2;
 const MAIN_SIDE = 1;
 /** 同时在场的残影上限。分身掌一次最多剥两三个，留出余量就够。 */
 const GHOST_CAP = 6;
+/**
+ * 离焦点多远之外的人不画（米）。
+ *
+ * 安全区在 z ≈ -120、裂岛在原点，两区相距 120 米：人在走道上时，三个 Bot 还站在
+ * 岛上，一转身就有三副完整骨架进视锥 —— 那是 90 来个绘制调用买一撮几个像素高、
+ * 还被雾吃掉一半的剪影。裂岛本体已经按阶段整棵关掉（island.setActive），
+ * 人也照同一条规矩走。裂岛自己最远才 50 米上下，这条线在场内不会误伤。
+ */
+const CULL_DISTANCE = 80;
 /** 这几种配件自己就盖住了头顶，素帽不必再长出来（也就不进躯干那份烘焙）。 */
 const ACCESSORY_HIDES_CAP = new Set(['hood', 'turban']);
 
@@ -82,6 +96,122 @@ function bakeRigid(scaffold) {
     if (merged) out.set(key, merged);
   }
   return out;
+}
+
+/**
+ * 一具角色的包围球（rootGroup 本地坐标，米）。
+ *
+ * 蒙皮网格的顶点会被骨骼推到哪里，三角形层面上算不出来 —— three 只好按绑定姿势
+ * 的包围盒去做视锥剔除，摆臂一挥就会在画面边缘闪。这里直接给一个够大的球：
+ * 人最高 ~2.0 米，背旗再高半米，挥掌时手伸到身侧 ~1 米。
+ */
+const BODY_SPHERE = new Sphere(new Vector3(0, 1.1, 0), 2.6);
+
+/**
+ * 角色在辉光通道里的「挡光替身」用的材质。
+ *
+ * 挡光这件事只关心形，不关心它是布是皮：所以全场角色共用这一份纯黑材质，
+ * 一具角色的挡光形状因此收成一个绘制调用，而不是「他身上有几种材质」那么多份。
+ */
+const OCCLUDER_MAT = new MeshBasicMaterial({ color: 0x000000 });
+
+/**
+ * 把一具角色身上所有零件按材质合成几份**刚性蒙皮**网格。
+ *
+ * 分节还是分节做的：髋 / 膝 / 肩 / 腕 / 掌 / 束带每一个都还是场景图里的节点，动画
+ * 照旧写它们的 rotation —— 变的只是「谁来画」。每个零件把自己当一根骨头（权重 1，
+ * 没有真的蒙皮形变），几何体按材质合并成一份，于是一具角色从 30 来个绘制调用
+ * 收成「他身上有几种材质」那么多份。剪影、摆放、比例一个数都没动。
+ *
+ * 原来的 Mesh 节点留在原地当骨头（`visible = false`）：动画、特效锚点、单测读到的
+ * 还是同一批节点，它们只是不再自己画自己。
+ *
+ * @param {Object3D} rootGroup 角色根节点，蒙皮网格会挂在它下面
+ * @param {Set<Object3D>} skip 不参与合并的网格（接地阴影这种要单独开关的）
+ * @returns {{meshes: import('three').SkinnedMesh[], skeleton: Skeleton}}
+ */
+function skinify(rootGroup, skip) {
+  rootGroup.updateMatrixWorld(true);
+  const toLocal = new Matrix4().copy(rootGroup.matrixWorld).invert();
+  const bindPose = new Matrix4();
+  const bones = [];
+  /** @type {Map<import('three').Material, {geos: any[], cast: boolean, receive: boolean, layers: number, bloomSelf: boolean}>} */
+  const buckets = new Map();
+
+  const parts = [];
+  rootGroup.traverse((o) => {
+    if (o.isMesh && !o.isSkinnedMesh && !skip.has(o)) parts.push(o);
+  });
+  /** 登记成辉光遮挡体的那几件，另外合成一份纯黑替身（见 OCCLUDER_MAT）。 */
+  const occGeos = [];
+
+  for (const mesh of parts) {
+    const boneIndex = bones.length;
+    bones.push(mesh);
+
+    const g = mesh.geometry.clone();
+    g.applyMatrix4(bindPose.multiplyMatrices(toLocal, mesh.matrixWorld));
+    const n = g.attributes.position.count;
+    const idx = new Uint16Array(n * 4);
+    const wgt = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      idx[i * 4] = boneIndex;
+      wgt[i * 4] = 1;
+    }
+    g.setAttribute('skinIndex', new BufferAttribute(idx, 4));
+    g.setAttribute('skinWeight', new BufferAttribute(wgt, 4));
+
+    if (mesh.layers.isEnabled(OCCLUDER_LAYER)) occGeos.push(g.clone());
+
+    let b = buckets.get(mesh.material);
+    if (!b) {
+      b = { geos: [], cast: false, receive: false, layers: 0, bloomSelf: false };
+      buckets.set(mesh.material, b);
+    }
+    b.geos.push(g);
+    b.cast ||= mesh.castShadow;
+    b.receive ||= mesh.receiveShadow;
+    // 挡光交给上面那份替身，本尊不必再进辉光通道
+    b.layers |= mesh.layers.mask & ~(1 << OCCLUDER_LAYER);
+    b.bloomSelf ||= !!mesh.userData.bloomSelf;
+
+    // 节点留着当骨头：动画写的是它的 rotation，特效锚的是它的世界坐标
+    mesh.visible = false;
+  }
+
+  const skeleton = new Skeleton(bones);
+  const meshes = [];
+  for (const [material, b] of buckets) {
+    const geometry = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
+    if (!geometry) continue;
+    if (b.geos.length > 1) for (const g of b.geos) g.dispose();
+    const sm = new SkinnedMesh(geometry, material);
+    sm.castShadow = b.cast;
+    sm.receiveShadow = b.receive;
+    sm.layers.mask = b.layers;
+    if (b.bloomSelf) sm.userData.bloomSelf = true;
+    sm.boundingSphere = BODY_SPHERE.clone();
+    rootGroup.add(sm);
+    sm.bind(skeleton, rootGroup.matrixWorld);
+    meshes.push(sm);
+  }
+
+  if (occGeos.length > 0) {
+    const geometry = occGeos.length === 1 ? occGeos[0] : mergeGeometries(occGeos, false);
+    if (occGeos.length > 1) for (const g of occGeos) g.dispose();
+    if (geometry) {
+      const shade = new SkinnedMesh(geometry, OCCLUDER_MAT);
+      shade.name = 'bloom-occluder';
+      shade.visible = false;
+      shade.userData.emissiveOnly = true;
+      shade.boundingSphere = BODY_SPHERE.clone();
+      markOccluder(shade);
+      rootGroup.add(shade);
+      shade.bind(skeleton, rootGroup.matrixWorld);
+      meshes.push(shade);
+    }
+  }
+  return { meshes, skeleton };
 }
 
 function shortestAngle(a, b) {
@@ -676,12 +806,17 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     contact.scale.setScalar(0.86 + build.mass * 0.18);
     rootGroup.add(contact);
 
+    // 分节搭完了，最后按材质合成几份刚性蒙皮网格（见 skinify）。
+    // 接地阴影是单独开关的半透片，不进这一份。
+    const skinned = skinify(rootGroup, new Set([contact]));
+
     return {
       rootGroup,
       body,
       mats,
       legs,
       arms,
+      skinned,
       // 躯干那一段烘成的几份网格：换角色时要连同这几份几何体一起回收
       bodyParts,
       contact,
@@ -751,6 +886,9 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
     }
     // 躯干那几份是这个角色自己烘的（肩宽、有没有素帽都写死在顶点里），跟着他一起走
     for (const mesh of c.bodyParts) mesh.geometry.dispose();
+    // 合并出来的蒙皮网格同理：一具角色一份
+    for (const mesh of c.skinned.meshes) mesh.geometry.dispose();
+    c.skinned.skeleton.dispose();
     c.contact.material.dispose();
   }
 
@@ -875,13 +1013,33 @@ export function createCharacters({ scene, quality, textures, skins = null }) {
       c.hitDir = dir ? tmpVec.copy(dir).normalize().clone() : new Vector3(0, 0, 1);
     },
 
-    update(dt, time) {
+    /**
+     * @param {number} dt
+     * @param {number} time
+     * @param {{x:number,z:number}} [focus] 镜头焦点。给了就按 CULL_DISTANCE 做距离剔除。
+     */
+    update(dt, time, focus = null) {
       for (const c of chars.values()) {
         const p = c.target;
         if (!p) continue;
 
         const alive = p.alive !== false;
-        c.rootGroup.visible = alive;
+        // 距离剔除：另一个区里的人不画（见 CULL_DISTANCE）。本地玩家永远画 ——
+        // 镜头就架在他身上，第一帧焦点还没跟上时不能把主角剔掉。
+        const far =
+          !c.isLocal &&
+          focus != null &&
+          Math.hypot((p.x ?? 0) - focus.x, (p.z ?? 0) - focus.z) > CULL_DISTANCE;
+        c.rootGroup.visible = alive && !far;
+        if (far) {
+          // 不画也要跟位：回到范围内时人要在他该在的地方，不能从上一帧的位置滑过来
+          c.pos.set(p.x ?? 0, p.y ?? 0, p.z ?? 0);
+          c.prev.copy(c.pos);
+          c.rootGroup.position.copy(c.pos);
+          c.yaw = p.yaw ?? c.yaw;
+          c.rootGroup.rotation.y = c.yaw;
+          continue;
+        }
         if (!alive) continue;
 
         // 位置插值：sim 是 60Hz 定步，渲染可能更快，直接跟随会有台阶感

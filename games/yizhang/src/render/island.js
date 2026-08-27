@@ -30,6 +30,7 @@ import {
   Object3D,
   PlaneGeometry,
   Shape,
+  ShapeGeometry,
   ShaderMaterial,
   Vector2,
   Vector3,
@@ -325,8 +326,11 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   markOccluder(bedrock);
   group.add(bedrock);
 
-  // 挂在岛底的碎岩：不对称，破掉「完美圆锥」的读法
+  // 挂在岛底的碎岩：不对称，破掉「完美圆锥」的读法。
+  // 同形不同姿，合批成一个实例网格 —— 各自的浮沉与自转写进实例矩阵。
   const chunks = [];
+  let chunkMesh = null;
+  const chunkDummy = new Object3D();
   if (quality.rockChunks > 0) {
     const chunkGeo = track(new IcosahedronGeometry(1, quality.name === 'low' ? 0 : 1));
     {
@@ -351,26 +355,28 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       }
       chunkGeo.setAttribute('color', new BufferAttribute(colors, 3));
     }
+    chunkMesh = new InstancedMesh(chunkGeo, cliffMat, quality.rockChunks);
+    chunkMesh.name = 'rock-chunks';
+    chunkMesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    chunkMesh.castShadow = false;
+    chunkMesh.receiveShadow = false;
     for (let i = 0; i < quality.rockChunks; i++) {
-      const m = new Mesh(chunkGeo, cliffMat);
       const ang = rand() * Math.PI * 2;
       const rad = R * (0.35 + rand() * 0.7);
       const y = -3 - rand() * 13;
-      m.position.set(Math.cos(ang) * rad, y, Math.sin(ang) * rad);
-      const s = 0.7 + rand() * 2.4;
-      m.scale.setScalar(s);
-      m.rotation.set(rand() * 3, rand() * 3, rand() * 3);
-      m.castShadow = false;
-      m.receiveShadow = false;
-      m.userData.bob = {
+      chunks.push({
+        x: Math.cos(ang) * rad,
+        z: Math.sin(ang) * rad,
+        scale: 0.7 + rand() * 2.4,
+        rot: new Vector3(rand() * 3, rand() * 3, rand() * 3),
         base: y,
         amp: 0.06 + rand() * 0.14,
         phase: rand() * 6.28,
         spin: (rand() - 0.5) * 0.05,
-      };
-      group.add(m);
-      chunks.push(m);
+      });
     }
+    group.add(chunkMesh);
+    disposables.push(chunkMesh);
   }
 
   // ---------- 缝底下的暖光井 ----------
@@ -454,6 +460,9 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   let deckGeo = null;
   let deckCapacity = 0;
   let deckTileSize = 0;
+  /** 台面在辉光通道里的低面替身，见 ensureDeck。 */
+  let deckShade = null;
+  const deckShadeMat = track(new MeshBasicMaterial({ color: 0x000000 }));
 
   function buildTileGeometry(size) {
     const half = Math.max(0.2, size / 2 - SEAM_GAP * 0.5);
@@ -470,6 +479,9 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     shape.lineTo(-half, half - chip);
     shape.lineTo(-half, -half + chip);
     shape.closePath();
+
+    const cap = new ShapeGeometry(shape);
+    cap.rotateX(-Math.PI / 2);
 
     const geo = new ExtrudeGeometry(shape, {
       depth: DECK_DEPTH,
@@ -506,7 +518,7 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       colors[i * 3 + 2] = c.b;
     }
     geo.setAttribute('color', new BufferAttribute(colors, 3));
-    return geo;
+    return { geo, cap };
   }
 
   function ensureDeck(tileSize, needed) {
@@ -517,10 +529,13 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       group.remove(deck);
       deck.dispose();
       deckGeo.dispose();
+      group.remove(deckShade);
+      deckShade.geometry.dispose();
     }
     deckTileSize = tileSize;
     deckCapacity = capacity;
-    deckGeo = buildTileGeometry(tileSize);
+    const built = buildTileGeometry(tileSize);
+    deckGeo = built.geo;
     deck = new InstancedMesh(deckGeo, [crustMat, tileSideMat], capacity);
     deck.name = 'deck';
     deck.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -530,8 +545,21 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     // 代价是它在安全区里也会照画不误，所以 setActive() 必须把整棵子树关掉。
     deck.frustumCulled = false;
     deck.count = 0;
-    markOccluder(deck);
     group.add(deck);
+
+    // 辉光通道里的替身：井底那道光只需要知道「哪儿被板子盖住了」，而板子挡光靠的
+    // 是贴着 y=0 的那层顶面 —— 倒角、侧壁、底面在这件事上一个像素都不改。
+    // 一块板 6 个三角形替下 120 个，208 块就是 25000 → 1200。缺角照旧，
+    // 光该从哪个菱形空洞漏上来还从哪儿漏。中档以外用不上它（整场重画本尊就在）。
+    deckShade = new InstancedMesh(built.cap, deckShadeMat, capacity);
+    deckShade.name = 'deck-occluder';
+    deckShade.instanceMatrix = deck.instanceMatrix;
+    deckShade.frustumCulled = false;
+    deckShade.count = 0;
+    deckShade.visible = false;
+    deckShade.userData.emissiveOnly = true;
+    markOccluder(deckShade);
+    group.add(deckShade);
     return true;
   }
 
@@ -948,10 +976,17 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
     update(dt, time) {
       coreMat.uniforms.uTime.value = time;
 
-      for (const chunk of chunks) {
-        const b = chunk.userData.bob;
-        chunk.position.y = b.base + Math.sin(time * 0.4 + b.phase) * b.amp;
-        chunk.rotation.y += b.spin * dt;
+      if (chunkMesh) {
+        for (let i = 0; i < chunks.length; i++) {
+          const c = chunks[i];
+          c.rot.y += c.spin * dt;
+          chunkDummy.position.set(c.x, c.base + Math.sin(time * 0.4 + c.phase) * c.amp, c.z);
+          chunkDummy.rotation.set(c.rot.x, c.rot.y, c.rot.z);
+          chunkDummy.scale.setScalar(c.scale);
+          chunkDummy.updateMatrix();
+          chunkMesh.setMatrixAt(i, chunkDummy.matrix);
+        }
+        chunkMesh.instanceMatrix.needsUpdate = true;
       }
 
       for (const rec of animating) {
@@ -981,6 +1016,8 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
         deck.instanceMatrix.needsUpdate = true;
         matrixDirty = false;
       }
+      // 替身和本尊共用同一份实例矩阵，只有条数要跟上
+      if (deckShade) deckShade.count = deck ? deck.count : 0;
 
       for (const rec of tiles.values()) {
         if (rec.decals.length === 0) continue;
