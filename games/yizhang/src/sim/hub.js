@@ -66,6 +66,19 @@ export const DEFAULT_HUB_LAYOUT = Object.freeze({
 
 const num = (v, d) => (Number.isFinite(v) ? v : d);
 
+/**
+ * 数据表没写 `spawn.yaw` 时的出生朝向：面向传送门。
+ * 契约 §3.3 的走道是「+Z 端出生、-Z 端是门」，内置布局按这条式子照样算出 0；
+ * 门摆在别处的布局也不会背对着门出生（缺省常数会让人一进走道就得先转 180°）。
+ */
+function spawnYawTowardPortal(x, z, portal) {
+  const dx = portal.x - x;
+  const dz = portal.z - z;
+  if (len2(dx, dz) < 1e-6) return DEFAULT_HUB_LAYOUT.spawn.yaw;
+  const yaw = yawFromDir(dx, dz);
+  return yaw === 0 ? 0 : yaw; // atan2 的 -0 会让 Object.is 断言炸掉
+}
+
 /** 布局字段补全：data 侧只给一半字段也不能把 sim 打成 NaN。 */
 export function normalizeHubLayout(raw) {
   const base = DEFAULT_HUB_LAYOUT;
@@ -100,25 +113,30 @@ export function normalizeHubLayout(raw) {
     index: Number.isFinite(p?.index) ? p.index : Math.floor(i / 2),
   }));
 
+  const portal = {
+    x: num(raw.portal?.x, origin.x),
+    y: num(raw.portal?.y, floorY),
+    z: num(raw.portal?.z, origin.z + (base.portal.z - base.origin.z)),
+    radius: Math.max(0.5, num(raw.portal?.radius, base.portal.radius)),
+  };
+
+  const spawnX = num(raw.spawn?.x, origin.x);
+  const spawnZ = num(raw.spawn?.z, origin.z + (base.spawn.z - base.origin.z));
+
   return {
     id: typeof raw.id === "string" ? raw.id : base.id,
     source: typeof raw.source === "string" ? raw.source : "data",
     origin,
     floorY,
     spawn: {
-      x: num(raw.spawn?.x, origin.x),
+      x: spawnX,
       y: num(raw.spawn?.y, floorY),
-      z: num(raw.spawn?.z, origin.z + (base.spawn.z - base.origin.z)),
-      yaw: num(raw.spawn?.yaw, base.spawn.yaw),
+      z: spawnZ,
+      yaw: num(raw.spawn?.yaw, spawnYawTowardPortal(spawnX, spawnZ, portal)),
     },
     walkway,
     zone,
-    portal: {
-      x: num(raw.portal?.x, origin.x),
-      y: num(raw.portal?.y, floorY),
-      z: num(raw.portal?.z, origin.z + (base.portal.z - base.origin.z)),
-      radius: Math.max(0.5, num(raw.portal?.radius, base.portal.radius)),
-    },
+    portal,
     interactRadius: Math.max(0.5, num(raw.interactRadius, base.interactRadius)),
     pedestalRadius: Math.max(0, num(raw.pedestalRadius, base.pedestalRadius)),
     pedestalHeight: Math.max(0, num(raw.pedestalHeight, base.pedestalHeight)),

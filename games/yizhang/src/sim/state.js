@@ -5,7 +5,7 @@ import { SIM_VERSION } from "./constants.js";
 import { getDeps, resolveGlove } from "./deps.js";
 import { pushEvent } from "./events.js";
 import { createHubState, placeAtHubSpawn } from "./hub.js";
-import { TAU, yawFromDir } from "./math.js";
+import { len2, TAU, yawFromDir } from "./math.js";
 import { createRngState, nextRange, nextU32 } from "./rng.js";
 
 const PERSONAS = ["brute", "fox", "bully"];
@@ -140,7 +140,9 @@ export function placeAtSpawn(state, player, airborne = false) {
   player.x = spot.x;
   player.z = spot.z;
   player.y = airborne ? 2.2 : 0;
-  player.yaw = yawFromDir(-player.x, -player.z); // 朝台心
+  // 朝台心。落点正压台心时方向没定义（台面碎光的兜底点就是 (0,0)），这时保留原朝向：
+  // 让 atan2(0,0) 把人钉成 -Z，过门 / 重生就成了随机转身。
+  if (len2(player.x, player.z) > 1e-6) player.yaw = yawFromDir(-player.x, -player.z);
 
   player.vx = 0;
   player.vy = 0;
