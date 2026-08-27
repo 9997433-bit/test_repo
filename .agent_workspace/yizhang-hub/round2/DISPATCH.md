@@ -50,4 +50,4 @@
 
 | 席位 | 模型 | Agent ID | 状态 |
 | --- | --- | --- | --- |
-| F4 复验 | `claude-fable-5-thinking-xhigh` | （派出后回填） | 只写 `docs/SOTA_CHECKLIST.md` / `docs/ACCEPTANCE.md`；保留手感 §10/§11 与大厅 §11/§12；重勾 HV、HG-02（已绿）、皮肤 mesh、pitch、空挥、再来一局≠回安全区 |
+| F4 复验 | `claude-fable-5-thinking-xhigh` | `bc-8fab2971-6e94-551f-bcd0-9cb97fad2663` | 已派出；只写 SOTA/ACCEPTANCE；保留手感 §10/§11 与大厅 §11/§12 |
