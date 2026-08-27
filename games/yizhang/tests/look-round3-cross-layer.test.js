@@ -205,8 +205,7 @@ describe("Round 3 look cross-layer continuity", () => {
       win.emit("mousemove", { movementX: 50, movementY: 0 });
       feedLook(renderer, input.getLook());
       const sampled = input.sample();
-      expect(sampled.moveX).toBe(0);
-      expect(sampled.moveZ).toBe(0);
+      expect(Math.hypot(sampled.moveX, sampled.moveZ)).toBe(0);
       expect(sampled.yaw).toBeNull();
       step(state, { p0: sampled }, DT);
       expect(player.yaw).toBe(originalYaw);
