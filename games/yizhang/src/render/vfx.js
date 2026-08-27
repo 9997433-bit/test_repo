@@ -10,11 +10,9 @@
 
 import {
   AdditiveBlending,
-  BufferGeometry,
   Color,
   DoubleSide,
   DynamicDrawUsage,
-  Float32BufferAttribute,
   Group,
   IcosahedronGeometry,
   InstancedMesh,
@@ -24,7 +22,6 @@ import {
   NormalBlending,
   Object3D,
   PlaneGeometry,
-  Points,
   RingGeometry,
   ShaderMaterial,
   SphereGeometry,
@@ -32,51 +29,9 @@ import {
 } from 'three';
 import { PALETTE } from './config.js';
 import { mulberry32 } from './noise.js';
+import { emitParticle, flushParticles, makeParticleSystem, swapRemove } from './particles.js';
 
 const BLOOM_LAYER = 1;
-
-const PARTICLE_VERT = /* glsl */ `
-  attribute float aSize;
-  attribute float aAlpha;
-  attribute float aRot;
-  attribute vec3 aColor;
-  uniform float uPixelScale;
-  varying float vAlpha;
-  varying float vRot;
-  varying vec3 vColor;
-  varying float vFog;
-  void main() {
-    vAlpha = aAlpha;
-    vRot = aRot;
-    vColor = aColor;
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    float dist = -mv.z;
-    vFog = 1.0 - exp(-pow(dist * 0.0065, 2.0));
-    gl_PointSize = aSize * uPixelScale / max(dist, 0.4);
-    gl_Position = projectionMatrix * mv;
-  }
-`;
-
-const PARTICLE_FRAG = /* glsl */ `
-  uniform sampler2D uMap;
-  uniform vec3 uFogColor;
-  uniform float uFogAmount;
-  varying float vAlpha;
-  varying float vRot;
-  varying vec3 vColor;
-  varying float vFog;
-  void main() {
-    vec2 uv = gl_PointCoord - 0.5;
-    float s = sin(vRot);
-    float c = cos(vRot);
-    uv = vec2(uv.x * c - uv.y * s, uv.x * s + uv.y * c) + 0.5;
-    vec4 tex = texture2D(uMap, uv);
-    float a = tex.a * vAlpha;
-    if (a < 0.004) discard;
-    vec3 col = mix(vColor, uFogColor, vFog * uFogAmount);
-    gl_FragColor = vec4(col, a);
-  }
-`;
 
 const SHOCK_VERT = /* glsl */ `
   varying vec3 vNormalW;
@@ -146,93 +101,6 @@ const RING_FRAG = /* glsl */ `
   }
 `;
 
-function makeParticleSystem({ scene, budget, texture, blending, depthWrite, renderOrder }) {
-  const pos = new Float32Array(budget * 3);
-  const size = new Float32Array(budget);
-  const alpha = new Float32Array(budget);
-  const rot = new Float32Array(budget);
-  const color = new Float32Array(budget * 3);
-
-  const geo = new BufferGeometry();
-  const posAttr = new Float32BufferAttribute(pos, 3).setUsage(DynamicDrawUsage);
-  const sizeAttr = new Float32BufferAttribute(size, 1).setUsage(DynamicDrawUsage);
-  const alphaAttr = new Float32BufferAttribute(alpha, 1).setUsage(DynamicDrawUsage);
-  const rotAttr = new Float32BufferAttribute(rot, 1).setUsage(DynamicDrawUsage);
-  const colorAttr = new Float32BufferAttribute(color, 3).setUsage(DynamicDrawUsage);
-  geo.setAttribute('position', posAttr);
-  geo.setAttribute('aSize', sizeAttr);
-  geo.setAttribute('aAlpha', alphaAttr);
-  geo.setAttribute('aRot', rotAttr);
-  geo.setAttribute('aColor', colorAttr);
-  geo.setDrawRange(0, 0);
-
-  const mat = new ShaderMaterial({
-    vertexShader: PARTICLE_VERT,
-    fragmentShader: PARTICLE_FRAG,
-    transparent: true,
-    depthWrite: !!depthWrite,
-    blending,
-    uniforms: {
-      uMap: { value: texture },
-      uPixelScale: { value: 520 },
-      uFogColor: { value: new Color(PALETTE.fog) },
-      uFogAmount: { value: blending === AdditiveBlending ? 0.2 : 1.0 },
-    },
-  });
-
-  const points = new Points(geo, mat);
-  points.frustumCulled = false;
-  points.renderOrder = renderOrder ?? 3;
-  scene.add(points);
-
-  return {
-    points,
-    geo,
-    mat,
-    budget,
-    count: 0,
-    // 每颗粒子的模拟数据留在 JS 侧，方便做阻力、重力与落地堆积
-    vel: new Float32Array(budget * 3),
-    life: new Float32Array(budget),
-    maxLife: new Float32Array(budget),
-    spin: new Float32Array(budget),
-    grow: new Float32Array(budget),
-    drag: new Float32Array(budget),
-    baseSize: new Float32Array(budget),
-    baseAlpha: new Float32Array(budget),
-    arrays: { pos, size, alpha, rot, color },
-    attrs: { posAttr, sizeAttr, alphaAttr, rotAttr, colorAttr },
-    dispose() {
-      scene.remove(points);
-      geo.dispose();
-      mat.dispose();
-    },
-  };
-}
-
-function swapRemove(ps, i) {
-  const last = ps.count - 1;
-  if (i !== last) {
-    const a = ps.arrays;
-    for (let k = 0; k < 3; k++) {
-      a.pos[i * 3 + k] = a.pos[last * 3 + k];
-      a.color[i * 3 + k] = a.color[last * 3 + k];
-      ps.vel[i * 3 + k] = ps.vel[last * 3 + k];
-    }
-    a.size[i] = a.size[last];
-    a.alpha[i] = a.alpha[last];
-    a.rot[i] = a.rot[last];
-    ps.life[i] = ps.life[last];
-    ps.maxLife[i] = ps.maxLife[last];
-    ps.spin[i] = ps.spin[last];
-    ps.grow[i] = ps.grow[last];
-    ps.drag[i] = ps.drag[last];
-    ps.baseSize[i] = ps.baseSize[last];
-    ps.baseAlpha[i] = ps.baseAlpha[last];
-  }
-  ps.count = last;
-}
-
 export function createVfx({ scene, quality, textures, seed = 4242 }) {
   const rand = mulberry32(seed);
   const group = new Group();
@@ -266,28 +134,7 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
   const tmpColor = new Color();
 
   function emit(ps, x, y, z, opts) {
-    if (ps.count >= ps.budget) return;
-    const i = ps.count++;
-    const a = ps.arrays;
-    a.pos[i * 3] = x;
-    a.pos[i * 3 + 1] = y;
-    a.pos[i * 3 + 2] = z;
-    ps.vel[i * 3] = opts.vx;
-    ps.vel[i * 3 + 1] = opts.vy;
-    ps.vel[i * 3 + 2] = opts.vz;
-    ps.life[i] = 0;
-    ps.maxLife[i] = opts.life;
-    ps.spin[i] = opts.spin;
-    ps.grow[i] = opts.grow;
-    ps.drag[i] = opts.drag;
-    ps.baseSize[i] = opts.size;
-    ps.baseAlpha[i] = opts.alpha;
-    a.size[i] = opts.size;
-    a.alpha[i] = opts.alpha;
-    a.rot[i] = rand() * Math.PI * 2;
-    a.color[i * 3] = opts.color.r;
-    a.color[i * 3 + 1] = opts.color.g;
-    a.color[i * 3 + 2] = opts.color.b;
+    emitParticle(ps, x, y, z, opts, rand);
   }
 
   function emitDust(x, y, z, count, spread, upward, scale = 1) {
@@ -618,15 +465,7 @@ export function createVfx({ scene, quality, textures, seed = 4242 }) {
             a.alpha[i] = ps.baseAlpha[i] * fadeIn * (1 - t) * (1 - t * 0.4);
           }
         }
-        ps.geo.setDrawRange(0, ps.count);
-        if (ps.count > 0) {
-          ps.attrs.posAttr.needsUpdate = true;
-          ps.attrs.sizeAttr.needsUpdate = true;
-          ps.attrs.alphaAttr.needsUpdate = true;
-          ps.attrs.rotAttr.needsUpdate = true;
-          ps.attrs.colorAttr.needsUpdate = true;
-        }
-        ps.points.visible = ps.count > 0;
+        flushParticles(ps);
       }
 
       // --- 激波壳 ---

@@ -15,6 +15,7 @@ import {
 import { GLOBAL_DPR_CAP, QUALITY, resolveTier } from './config.js';
 import { createCamera } from './camera.js';
 import { createCharacters } from './characters.js';
+import { createHubScene } from './hub.js';
 import { createIsland } from './island.js';
 import { createLighting } from './lighting.js';
 import { createPost } from './postfx.js';
@@ -108,17 +109,26 @@ export class YizhangRenderer {
       seed: this.seed,
     });
     this.characters = createCharacters({ scene: this.scene, quality: q, textures: this.textures });
+    // 安全区：phase === 'hub' 时才可见，裂岛那一套完全不受影响
+    this.hub = createHubScene({
+      scene: this.scene,
+      quality: q,
+      textures: this.textures,
+      seed: this.seed,
+    });
     this.vfx = createVfx({ scene: this.scene, quality: q, textures: this.textures, seed: this.seed });
     this.post = createPost({ renderer: this.renderer, scene: this.scene, quality: q });
     if (this.view) {
       this.island.syncTiles(this.view.tiles, this.view.arena);
       this.characters.reconcile(this.view.players, this.localId);
+      this.hub.sync(this.view.hub, 1 / 60, this.time);
     }
   }
 
   _teardownWorld() {
     this.post?.dispose();
     this.vfx?.dispose();
+    this.hub?.dispose();
     this.characters?.dispose();
     this.island?.dispose();
     this.lighting?.dispose();
@@ -126,6 +136,7 @@ export class YizhangRenderer {
     this.textures?.dispose();
     this.post = null;
     this.vfx = null;
+    this.hub = null;
     this.characters = null;
     this.island = null;
     this.lighting = null;
@@ -163,7 +174,9 @@ export class YizhangRenderer {
     this.post?.setSize(bw, bh);
     // 点精灵尺寸按后备缓冲高度换算，换分辨率时尘埃不会突然变大变小
     const fovRad = (this.camera.fov * Math.PI) / 180;
-    this.vfx?.setPixelScale(bh / (2 * Math.tan(fovRad / 2)));
+    const pixelScale = bh / (2 * Math.tan(fovRad / 2));
+    this.vfx?.setPixelScale(pixelScale);
+    this.hub?.setPixelScale(pixelScale);
     return { width: w, height: h, pixelRatio: ratio };
   }
 
@@ -371,6 +384,9 @@ export class YizhangRenderer {
 
     this.characters.reconcile(v.players, this.localId);
     this.island.syncTiles(v.tiles, v.arena);
+    // 安全区与裂岛在世界坐标里错开：hub 只在 phase === 'hub' 时长出来，
+    // 走道永远不会画进格斗岛，裂岛也一直摆在原处（在大厅里远远看得见）
+    this.hub.sync(v.hub, dt, this.time);
     this._consumeEvents(v, raw.events);
 
     this.characters.update(dt, this.time);
@@ -422,8 +438,11 @@ export class YizhangRenderer {
 
   getStats() {
     const info = this.renderer.info;
+    const hub = this.hub?.getStats() ?? null;
     return {
       tier: this.tier,
+      phase: this.view?.hub?.active ? 'hub' : 'arena',
+      hub,
       pixelRatio: this._ratio,
       size: [this._w, this._h],
       drawCalls: info.render.calls,

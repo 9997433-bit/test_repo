@@ -6,7 +6,7 @@
 //
 // 真实契约（games/yizhang/src/sim/view.js）里渲染实际依赖的字段：
 //
-//   view.tick / view.time
+//   view.tick / view.time / view.phase
 //   view.arena.{ radius, tileSize, cols, origin, floorY, brokenCount }
 //   view.arena.tiles[] : { i, x, z, zone, seam, hp, maxHp, alive, crack }
 //   view.players[]     : { id, kind, x, y, z, yaw, speed, alive, grounded,
@@ -14,6 +14,11 @@
 //                          gloveId, offhandId, activeSlot, activeGloveId, gloveColor,
 //                          attackPhase, combo }
 //   view.events[]      : { type, id, targetId, gloveId, skillId, x, y, z, power, hits, i }
+//   view.hub.{ origin, floorY, walkway, spawn, portal, portalReady, portalNear,
+//              interactRadius, pedestalRadius, pedestalHeight, focusGloveId,
+//              mainGloveId, offGloveId }
+//   view.hub.pedestals[] : { gloveId, x, y, z, yaw, row, index, unlocked,
+//                            selected, slot, focused, name, color }
 //
 // 其它字段（kills / statuses / match…）由 HUD 消费，渲染不读。
 
@@ -178,6 +183,130 @@ export function readPlayers(view) {
   return out;
 }
 
+// ------------------------------------------------------------------ 安全区
+
+/** 走道与传送门的兜底尺寸，只在 view 缺字段时用（真实值一律来自 sim 的布局表）。 */
+const HUB_FALLBACK = {
+  halfWidth: 7.5,
+  length: 39,
+  portalRadius: 2.4,
+  interactRadius: 2,
+  pedestalRadius: 0.6,
+  pedestalHeight: 0.95,
+};
+
+/**
+ * `view.phase`。sim 只发 'hub' / 'arena'，别的一律当成「没自报」。
+ * @returns {'hub'|'arena'|null}
+ */
+export function readPhase(view) {
+  const raw = typeof view?.phase === 'string' ? view.phase.trim().toLowerCase() : null;
+  return raw === 'hub' || raw === 'arena' ? raw : null;
+}
+
+function readPedestals(hub, opts) {
+  const raw = Array.isArray(hub?.pedestals) ? hub.pedestals : [];
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const ped = raw[i];
+    if (!ped || typeof ped !== 'object') continue;
+    const gloveId = typeof ped.gloveId === 'string' ? ped.gloveId : null;
+    if (!gloveId) continue;
+    const slot = ped.slot === 'main' || ped.slot === 'off' ? ped.slot : null;
+    // slot 是契约里更细的那一份；只给了布尔 selected 时按主/副掌 id 倒推
+    const resolvedSlot =
+      slot ?? (gloveId === opts.mainGloveId ? 'main' : gloveId === opts.offGloveId ? 'off' : null);
+    out.push({
+      gloveId,
+      x: num(ped.x),
+      y: num(ped.y, opts.floorY),
+      z: num(ped.z, opts.origin.z),
+      yaw: num(ped.yaw),
+      row: ped.row === 'right' ? 'right' : ped.row === 'left' ? 'left' : ped.x > opts.origin.x ? 'right' : 'left',
+      index: Number.isFinite(ped.index) ? ped.index : Math.floor(i / 2),
+      height: num(ped.height, opts.pedestalHeight),
+      // 未解锁的掌照样摆出来（GOAL：可见但选不中），渲染上按「未点亮」处理
+      unlocked: ped.unlocked !== false,
+      slot: resolvedSlot,
+      selected: ped.selected === true || resolvedSlot !== null,
+      focused: ped.focused === true || (opts.focusGloveId != null && gloveId === opts.focusGloveId),
+      name: typeof ped.name === 'string' ? ped.name : null,
+      tint: gloveTint(gloveId, ped.color ?? ped.tint),
+    });
+  }
+  return out;
+}
+
+/**
+ * 安全区快照。
+ *
+ * `active` 是「这一帧要不要画安全区」：`phase` 说了算；连 phase 都没有的 view
+ * （壳层自己拼的片段、老测试）就看它带没带 hub 数据。
+ */
+export function readHub(view) {
+  const hub = view?.hub && typeof view.hub === 'object' ? view.hub : null;
+  const phase = readPhase(view);
+  const hasData = !!hub && Array.isArray(hub.pedestals) && hub.pedestals.length > 0;
+  const active = phase === 'hub' ? true : phase === 'arena' ? false : hasData;
+
+  const origin = {
+    x: num(hub?.origin?.x, 0),
+    y: num(hub?.origin?.y, 0),
+    z: num(hub?.origin?.z, 0),
+  };
+  const floorY = num(hub?.floorY, origin.y);
+  const halfWidth = Math.max(1.5, num(hub?.walkway?.halfWidth, HUB_FALLBACK.halfWidth));
+  const minZ = num(hub?.walkway?.minZ, origin.z - HUB_FALLBACK.length / 2);
+  const maxZ = num(hub?.walkway?.maxZ, origin.z + HUB_FALLBACK.length / 2);
+  const pedestalHeight = Math.max(0.2, num(hub?.pedestalHeight, HUB_FALLBACK.pedestalHeight));
+
+  const mainGloveId = typeof hub?.mainGloveId === 'string' ? hub.mainGloveId : null;
+  const offGloveId = typeof hub?.offGloveId === 'string' ? hub.offGloveId : null;
+  const focusGloveId = typeof hub?.focusGloveId === 'string' ? hub.focusGloveId : null;
+
+  return {
+    active,
+    phase: phase ?? (hasData ? 'hub' : 'arena'),
+    layoutId: typeof hub?.layoutId === 'string' ? hub.layoutId : null,
+    origin,
+    floorY,
+    walkway: {
+      halfWidth,
+      minZ: Math.min(minZ, maxZ),
+      maxZ: Math.max(minZ, maxZ),
+    },
+    spawn: {
+      x: num(hub?.spawn?.x, origin.x),
+      y: num(hub?.spawn?.y, floorY),
+      z: num(hub?.spawn?.z, maxZ - 4),
+      yaw: num(hub?.spawn?.yaw, 0),
+    },
+    portal: {
+      x: num(hub?.portal?.x, origin.x),
+      y: num(hub?.portal?.y, floorY),
+      z: num(hub?.portal?.z, minZ + 4),
+      radius: Math.max(0.8, num(hub?.portal?.radius, HUB_FALLBACK.portalRadius)),
+      // 契约把 ready/near 同时放在 hub 顶层与 portal 里，两处都认
+      ready: hub?.portalReady === true || hub?.portal?.ready === true,
+      near: hub?.portalNear === true || hub?.portal?.near === true,
+    },
+    interactRadius: Math.max(0.5, num(hub?.interactRadius, HUB_FALLBACK.interactRadius)),
+    pedestalRadius: Math.max(0.2, num(hub?.pedestalRadius, HUB_FALLBACK.pedestalRadius)),
+    pedestalHeight,
+    focusGloveId,
+    mainGloveId,
+    offGloveId,
+    pedestals: readPedestals(hub, {
+      origin,
+      floorY,
+      pedestalHeight,
+      focusGloveId,
+      mainGloveId,
+      offGloveId,
+    }),
+  };
+}
+
 // sim（src/sim/step.js、floor.js）与 combat（src/combat/*）各有一套事件名，
 // 两边都会写进同一个 state.events，所以这里一起认。
 const EVENT_KIND = {
@@ -283,6 +412,8 @@ export function readView(raw, opts = {}) {
     alpha: num(view.alpha, 1),
     over: view.match?.over === true || view.over === true,
     localId: pickLocalId(view, opts),
+    phase: readPhase(view),
+    hub: readHub(view),
     arena,
     tiles: readTiles(view, arena),
     players: readPlayers(view),
