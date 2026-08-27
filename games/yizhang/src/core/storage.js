@@ -1,9 +1,10 @@
 // 本地存档。localStorage 在隐私模式/沙箱 iframe 里会抛异常，全部包 try。
 //
-// 版本号不动：skinId 是**向后兼容的新增字段**，v1 老档读出来照样能用，
-// 缺字段就落到默认皮肤（见 loadSave）。
+// 版本号不动：skinId 与 lookMode 都是**向后兼容的新增字段**，v1 老档读出来
+// 照样能用，缺字段就落到默认值（skinId → 默认皮肤，lookMode → locked，见 loadSave）。
 
 import { DEFAULT_SKIN_ID } from "./skins.js";
+import { DEFAULT_LOOK_MODE, normalizeLookMode } from "./look.js";
 
 export const SAVE_KEY = "yizhang-save-v1";
 
@@ -12,6 +13,7 @@ const DEFAULTS = {
   unlocked: ["cotton"],
   loadout: { main: "cotton", off: "cotton" },
   skinId: DEFAULT_SKIN_ID,
+  lookMode: DEFAULT_LOOK_MODE,
   quality: "auto",
   muted: false,
   lookSensitivity: 1,
@@ -46,6 +48,8 @@ export function loadSave() {
     if (typeof base.skinId !== "string" || !base.skinId.trim()) {
       base.skinId = DEFAULTS.skinId;
     }
+    // 视角轮新增：老档没有 lookMode（或被写坏）⇒ 落产品缺省 locked，不清档。
+    base.lookMode = normalizeLookMode(base.lookMode);
   }
   if (!base.unlocked.includes("cotton")) base.unlocked.unshift("cotton");
   cache = base;

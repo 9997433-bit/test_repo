@@ -25,7 +25,7 @@ import {
   simYawToCameraYaw,
   toRenderView,
 } from "./core/view.js";
-import { feedLook } from "./core/look.js";
+import { feedLook, resolveLookMode, snapLook } from "./core/look.js";
 import { ENTRY, resolveEntry } from "./core/entry.js";
 import { normalizeSkinId, resolveSkins } from "./core/skins.js";
 import { unlockedIdsFor } from "./core/hub-flow.js";
@@ -126,6 +126,13 @@ async function boot() {
   let save = loadSave();
   const audio = createAudio({ muted: save.muted });
 
+  // 视角模式开局取值链：URL `?look=locked|free`（冒烟/调试口）> 存档 > 缺省 locked。
+  // URL 覆盖只影响本次会话；之后 V 键 / 设置面板的切换照常落存档。
+  const initialLookMode = resolveLookMode({
+    url: new URLSearchParams(window.location.search).get("look"),
+    save,
+  });
+
   // ---------- 渲染器 ----------
 
   let canvas = document.getElementById("gl") || freshCanvas();
@@ -192,8 +199,17 @@ async function boot() {
     sensitivity: save.lookSensitivity,
     invertY: save.invertY,
     pointerLock: save.pointerLock !== false,
+    lookMode: initialLookMode,
     onFirstGesture: () => audio.unlock(),
     onPause: () => togglePause(),
+    // V 键切换：落存档 + HUD 极短提示 + 设置面板同步灯。渲染器不用单独通知，
+    // feedRendererLook 每帧的 payload.lookMode 下一帧就带到新模式。
+    // （V 只在 input enabled 时生效，而 enabled 要等 startMatch —— 彼时 shell 已装配好。）
+    onLookModeChange: (mode) => {
+      save = updateSave({ lookMode: mode });
+      shell.setLookMode(mode);
+      shell.toast(mode === "locked" ? "锁 定 视 角" : "自 由 视 角", 1200);
+    },
   });
   input.setEnabled(false);
   document.addEventListener("pointerdown", () => audio.unlock(), { once: true });
@@ -208,6 +224,8 @@ async function boot() {
     save,
     audio,
     input,
+    // 设置面板的「视角」灯按运行值亮（URL 覆盖过存档时不许亮旧灯）
+    lookMode: initialLookMode,
     matchConfig,
     isUnlocked,
     unlockTextOf: (glove) => unlockTextOf(glove, dataModule),
@@ -232,12 +250,15 @@ async function boot() {
   setSpectator(true);
 
   function applySettings(next) {
+    // 视角模式：input 是运行时权威，先收敛再落盘（面板给了认不出的值就保持原样）
+    input.setLookMode(next.lookMode);
     save = updateSave({
       quality: next.quality,
       muted: next.muted,
       lookSensitivity: next.sensitivity,
       pointerLock: next.pointerLock,
       touch: next.touch,
+      lookMode: input.getLookMode(),
     });
     audio.setMuted(next.muted);
     input.setSensitivity(next.sensitivity);
@@ -402,10 +423,17 @@ async function boot() {
     if (flash) shell.flashHit(flash);
   }
 
-  /** 相机重新架到角色身后。传送会改写 yaw，不同步的话过门后镜头在脸前。 */
+  /**
+   * 相机重新架到角色身后。传送会改写 yaw，不同步的话过门后镜头在脸前。
+   * pitch 缺省**保持玩家当前俯仰**（过门不再硬塞 0.3）；对齐完立即喂一帧，
+   * 并给渲染器发机位吸附信号（snap 口存在才调，不存在整只 no-op）——
+   * hub 与裂岛错开 ~120m，不吸附就会看一段弹簧跟随的镜头飞跃。
+   */
   function alignCameraToSelf(pitch) {
     const self = curView ? (curView.players || []).find((p) => p.id === SELF_ID) : null;
-    input.setLook(simYawToCameraYaw(self ? self.yaw : 0), pitch);
+    input.setLook(simYawToCameraYaw(self ? self.yaw : 0), typeof pitch === "number" ? pitch : undefined);
+    feedRendererLook();
+    snapLook(renderer);
   }
 
   /** 走道里挑的掌落盘，下次「直接进裂岛」和结算板的「再来一局」都用它。 */
@@ -423,7 +451,7 @@ async function boot() {
     rememberHubLoadout();
     syncPhase("arena");
     shell.warp(240);
-    alignCameraToSelf(0.3);
+    alignCameraToSelf();
     tracker.reset();
     resultShown = false;
     audio.play("matchStart");
@@ -433,7 +461,7 @@ async function boot() {
   function enterHubFx() {
     syncPhase("hub");
     shell.warp(200);
-    alignCameraToSelf(0.3);
+    alignCameraToSelf();
     shell.toast("安 全 区 · 走道两侧挑掌", 1800);
   }
 
@@ -548,7 +576,8 @@ async function boot() {
     shell.updateHub(curView);
     input.setEnabled(true);
     // 出生朝走道尽头（或台心）：把 sim 的初始 yaw 换算回相机方位角，开局镜头在人背后。
-    alignCameraToSelf(0.3);
+    // 俯仰保持输入层当前值（开局是缺省 0.32，回程/再来一局保留玩家自己的俯仰）。
+    alignCameraToSelf();
     loop.setPaused(false);
     audio.unlock();
     audio.play(skipHub ? "matchStart" : "uiSelect");
@@ -749,6 +778,10 @@ async function boot() {
     togglePause,
     /** 手测/探针用：读一帧视角，并看它喂到了渲染器的哪个 setter 上。 */
     feedLook: feedRendererLook,
+    /** 手测/探针用：当前视角模式（locked = 固定人物视角）。 */
+    get lookMode() {
+      return input.getLookMode();
+    },
     get phase() {
       return curView ? curView.phase : null;
     },
