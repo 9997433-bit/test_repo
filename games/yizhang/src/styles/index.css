@@ -17,3 +17,6 @@
 @import "./hud.css";
 @import "./touch.css";
 @import "./menus.css";
+/* 末位：安全区大厅 HUD（须晚于 touch.css——.yz-hub-confirm 盖 .yz-tbtn 基类；
+   同时后注入压制 O4 的 src/ui/hub.css 兜底件，见 ART_DIRECTION §14.4） */
+@import "./hub.css";
