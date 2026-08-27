@@ -132,14 +132,38 @@ export function createHud() {
       clear(statusRow);
       centerNote.hidden = true;
       hitFlash.classList.remove("is-on");
+      hitFlash.style.opacity = "";
+      hitFlash.style.backdropFilter = "";
+      hitFlash.style.webkitBackdropFilter = "";
       for (const pip of pips) pip.classList.remove("is-filled");
       killCount.textContent = `0 / ${KILL_PIPS}`;
     },
-    /** 受击一瞬去饱和（替代满屏红晕）。 */
-    flashHit(ms = 120) {
+    /**
+     * 受击一瞬去饱和 + 轻压暗（替代满屏红晕，滤镜里没有红色通道）。
+     * 强度由 core/juice.js 的 hitFlashFor 给：轻掌几乎只是抖一下色，重击才明显。
+     * @param {number|{strength?:number, ms?:number}} opts 旧调用给毫秒数也认
+     */
+    flashHit(opts = {}) {
+      const o = typeof opts === "number" ? { ms: opts } : opts || {};
+      const strength = Math.max(0.25, Math.min(1, o.strength ?? 0.55));
+      const ms = Math.max(60, Math.min(240, o.ms ?? 120));
+      // 内联覆盖：Fable-2 的 .yz-hit-flash 是定值滤镜，这里按分量给强弱。
+      const filter =
+        `saturate(${(1 - 0.62 * strength).toFixed(3)}) ` +
+        `brightness(${(1 - 0.14 * strength).toFixed(3)}) ` +
+        `contrast(${(1 - 0.05 * strength).toFixed(3)})`;
+      hitFlash.style.backdropFilter = filter;
+      hitFlash.style.webkitBackdropFilter = filter;
+      hitFlash.style.opacity = "1";
       hitFlash.classList.add("is-on");
       clearTimeout(flashTimer);
-      flashTimer = setTimeout(() => hitFlash.classList.remove("is-on"), ms);
+      flashTimer = setTimeout(() => {
+        hitFlash.classList.remove("is-on");
+        // 交还给样式表，出局时的常驻去饱和还要靠 #hud.is-dead
+        hitFlash.style.opacity = "";
+        hitFlash.style.backdropFilter = "";
+        hitFlash.style.webkitBackdropFilter = "";
+      }, ms);
     },
     setToast(text, ms = 1600, gold = false) {
       centerNote.textContent = text;

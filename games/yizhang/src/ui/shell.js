@@ -406,8 +406,9 @@ export function createShell(opts) {
     pushKill(entry) {
       feed.push(entry);
     },
-    flashHit() {
-      hud.flashHit();
+    /** @param {{strength?:number, ms?:number}} [opts] 见 core/juice.js hitFlashFor */
+    flashHit(opts) {
+      hud.flashHit(opts);
     },
     toast(text, ms, gold) {
       hud.setToast(text, ms, gold);

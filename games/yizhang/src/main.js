@@ -9,7 +9,7 @@ import {
   wiringStatus,
 } from "./core/modules.js";
 import { createLoop } from "./core/loop.js";
-import { hitStopForEvents } from "./core/juice.js";
+import { hitFlashForEvents, hitStopForEvents } from "./core/juice.js";
 import { lerpView } from "./core/interp.js";
 import { createQualityProbe } from "./core/quality.js";
 import { loadSave, updateSave, recordMatch, unlockGlove, SAVE_KEY } from "./core/storage.js";
@@ -296,7 +296,8 @@ async function boot() {
           break;
         case "hit":
           audio.play("hit", { power: e.power });
-          if (e.targetId === SELF_ID) shell.flashHit();
+          // 挨打的是自己：再补一记短促的贴脸闷响，听感上分得清打人和被打
+          if (e.targetId === SELF_ID) audio.play("hitTaken", { power: e.power });
           break;
         case "skill":
           audio.play("skill");
@@ -343,9 +344,11 @@ async function boot() {
     }
 
     // 手感：本人参与的扇击命中给一记极短定格。同帧多段只停一次，
-    // 连段之间还有冷却兜着；画面反馈仍是 HUD 那层去饱和，不加红晕。
+    // 连段之间还有冷却兜着；画面反馈仍是 HUD 那层去饱和 + 轻压暗，不加红晕。
     const stop = hitStopForEvents(view.events, SELF_ID);
     if (stop > 0) loop.hold(stop);
+    const flash = hitFlashForEvents(view.events, SELF_ID);
+    if (flash) shell.flashHit(flash);
   }
 
   function evaluateUnlocks(won) {

@@ -117,6 +117,12 @@ export function createAudio(opts = {}) {
       tone(t, { type: "sine", from: 190 * v, to: 62, peak: 0.32 * v, attack: 0.002, decay: 0.24 });
       tone(t + 0.012, { type: "square", from: 128, to: 74, peak: 0.05, attack: 0.002, decay: 0.09 });
     },
+    /** 本人挨的那一记：短、闷、贴脸。跟通用 hit 分开，才听得出「打的是我」。 */
+    hitTaken(t, o) {
+      const v = clamp(o.power ? o.power / 14 : 1, 0.6, 1.8);
+      tone(t, { type: "sine", from: 132, to: 46, peak: 0.34 * v, attack: 0.001, decay: 0.16 });
+      noise(t, { peak: 0.14 * v, attack: 0.001, decay: 0.05, filter: "lowpass", freq: 1500, sweepTo: 320 });
+    },
     heavy(t) {
       tone(t, { type: "sine", from: 120, to: 44, peak: 0.5, attack: 0.004, decay: 0.5 });
       noise(t, { peak: 0.24, attack: 0.002, decay: 0.3, filter: "lowpass", freq: 900, sweepTo: 180 });
@@ -193,7 +199,15 @@ export function createAudio(opts = {}) {
     },
   };
 
-  const THROTTLE = { slap: 0.05, hit: 0.03, crack: 0.05, land: 0.06, tick: 0.4, uiMove: 0.05 };
+  const THROTTLE = {
+    slap: 0.05,
+    hit: 0.03,
+    hitTaken: 0.06,
+    crack: 0.05,
+    land: 0.06,
+    tick: 0.4,
+    uiMove: 0.05,
+  };
 
   const api = {
     get context() {
