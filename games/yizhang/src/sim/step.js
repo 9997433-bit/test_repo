@@ -16,7 +16,15 @@ import {
 import { activeGlove, enterArena, getPlayer, pushEvent, respawnPlayer } from "./state.js";
 import { clamp, forwardX, forwardZ, len2, norm2 } from "./math.js";
 
-/** 缺省输入：不动、不出招；yaw = null 表示保持当前朝向 */
+/**
+ * 缺省输入：不动、不出招；yaw = null 表示保持当前朝向。
+ *
+ * `yaw` 是**唯一**的朝向入口，且只认 sim 空间（yaw=0 面向 -Z，见 math.js FACE）。
+ * sim 不感知 `lookMode`（ADR-38）：locked / free 的差别全发生在壳层怎么产出这个值。
+ *   · 有限数（locked 每 tick 送 `cameraYawToSimYaw(θ)`；free 有位移时送
+ *     `yawFromDir(moveX, moveZ)`）⇒ 直赋，1:1 无平滑。
+ *   · `null` / 缺省 / 任何非有限值（free 零移动）⇒ 不改朝向。
+ */
 export const ZERO_INPUT = Object.freeze({
   moveX: 0,
   moveZ: 0,
@@ -93,6 +101,12 @@ function handleActions(state, p, input, mods) {
   const prev = p.prev;
   const edge = (name) => !!input[name] && !prev[name];
 
+  /**
+   * 朝向：有限值直赋、非有限值（null / 缺省）保持（ADR-38，见 ZERO_INPUT 注释）。
+   * 不 wrap、不插值——locked 下 `p.yaw` 必须与喂进来的角逐位相等，人物面向才等于
+   * 相机水平前向；也别在这里按位移改写朝向，那会把 free 的产出权从壳层抢过来。
+   * 落在出招判定之前：本 tick 转的身，本 tick 的扇形就用得上（打得到人）。
+   */
   if (Number.isFinite(input.yaw)) p.yaw = input.yaw;
 
   const glove = activeGlove(p);
