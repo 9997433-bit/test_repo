@@ -11,7 +11,7 @@ Fable-3 出品。本文只做一件事：把 DESIGN_SEED 定下的核心循环�
 | 文件 | 导出 | 内容 |
 | --- | --- | --- |
 | `src/data/gloves.js` | `GLOVES` `GLOVE_BY_ID` `MATCH` `isGloveUnlocked` | 8 掌 + 契约对局常量 + 解锁判定 |
-| `src/data/tuning.js` | `MOVEMENT` `KNOCKBACK` `METER` `RULES` | 运动 / 击退 / 掌意 / 规则扩展 |
+| `src/data/tuning.js` | `MOVEMENT` `KNOCKBACK` `METER` `RULES` `CAMERA` | 运动 / 击退 / 掌意 / 规则扩展 / 机位对照登记（§15） |
 | `src/data/skills.js` | `SKILLS` `SKILL_IDS` `SKILL_COMBAT_ALIASES` | 7 个主动技参数 + data→combat id 完整映射（§6） |
 | `src/data/tiles.js` | `TILE` | 台面碎裂（方格拓扑，对齐 sim） |
 | `src/data/bots.js` | `BOT_PERSONAS` | 3 种 Bot 人格（含互异 `skinId`） |
@@ -46,6 +46,7 @@ Fable-3 出品。本文只做一件事：把 DESIGN_SEED 定下的核心循环�
 - 判定体：以攻击者为顶点的水平扇形，半径 `slapRange + playerRadius(0.7)`，全角 `slapAngleDeg`，朝向 = 当前 yaw。**无锁敌无自瞄**（种子红线）。
 - 时序：按下 → `windup`（前摇，可被打断）→ 命中窗 0.12s → `recovery`（后摇，**打空同样吃满**）。`slapCooldown` 自按下起算，且恒大于 `windup+0.12+recovery`，即冷却是唯一节奏约束。
 - 命中效果：对目标施加水平冲量 `slapPower`，方向取**攻击者中心 → 目标中心**（不是朝向，避免贴脸扇出反直觉角度）；附加竖直 `baseKnockUp 1.8`；目标进入 `hitstun 0.32s`。
+- **表现读向（LOOK-R1，对齐 ART §16.0 挥击轴）**：扇击动画与 VFX 的读向恒为攻击者本地系**左 → 右的水平横抽**——巴掌是「抽」的不是「砸」的，禁上撩 / 禁下劈 / 禁竖抡；主掌副掌同向，换手只换哪条胳膊在抽（`render/characters.test.js` 锁死「横抽不是上撩」：命中段位移几乎全在左右轴）。此条只管表现——判定仍是上面那只水平扇形，几何与 §5 数字不因读向改变；技能自带的纵向读向（`quake_slam` 砸地、`sky_fall` 天落）不在此列。
 - **不可无限连**：最快的掌（疾风 cd 0.5）命中后，受害者仍有 `0.5 − 0.32 = 0.18s` 行动权 + DI，追杀要走位跟上。
 - 换掌：Q 触发 `switchLock 0.4s`（期间不能扇/放技能）；**两只掌的冷却在收起时照常回转**，鼓励「重掌起手 → 切轻掌追击」的双掌节奏。
 
@@ -316,7 +317,7 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 
 **职责边界**：判定几何（`slapRange`/`slapAngleDeg`/技能半径）的唯一事实源仍是 `gloves.js`/combat，O2 按 gloveId 自取——本表**不复制战斗数字**，只带视觉参数（形状关键词、粒子数、寿命秒、高度米、贴花种类）；识别色 `ident` 直接引用 `GLOVE_BY_ID[id].color`，不产生第三份色源（HUD/样式仍走 tokens.css，ART §1.3 注）。
 
-### 14.1 八掌速览（完整参数见 `vfx.js`；关键词与 ART §16 逐掌对齐，通用纪律见 ART §7）
+### 14.1 八掌速览（完整参数见 `vfx.js`；关键词与 ART §16 逐掌对齐，通用纪律见 ART §7；扇击读向 = 左→右水平横抽，见 §3 与 ART §16.0 挥击轴）
 
 | 掌 | 扇击 burst（主形） | trail（过程痕） | residue（残留） | 技能（handler id → 形） |
 | --- | --- | --- | --- | --- |
@@ -359,5 +360,46 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 idle 与战斗逐掌**押韵不复制**（ART §16.0 快慢架 / §17.4 对齐表）：`fluff`↔`fanwake`、`grit`↔`slab`、`streak`↔`gust`、`mist`↔`rime`、`coil`↔`recoil`、`ghost`↔`phase`、`pull`↔`flux`、`ember`↔`cinder`。
 
 分层一句话：`vfx.js`（§14 本表）管**参数**、`COMBAT_VFX_KIND` / `IDLE_VFX_KIND` 管**分派**、ART §16 管**终稿**。分派词活在 render 域，数据红线不变（`src/data` 禁 import three / DOM / Math.random）：本表不登记 render 词为字段，render 也不复制本表数字。
+
+## 15. 固定人物视角与机位（`CAMERA`，LOOK-R1；契约 v4.3 ADR-37…39）
+
+### 15.1 视角模式 `lookMode`
+
+值域冻结为两词 `'locked' | 'free'`（第三值先登记契约再用）。**产品缺省 `lookMode = 'locked'` = 固定人物视角**：镜头钉在角色身后，**人物水平面向 ≡ 相机水平前向**——`Input.yaw = cameraYawToSimYaw(θ)` 由 sim 直赋、无平滑，等式逐 tick 精确成立（契约不变量 §14-30）；上下看（pitch）不受影响，照走 ADR-35 通路。
+
+`free` 为**可切换**的自由视角：镜头与面向解耦——移动矢量非零时面向 = 世界系移动方向（`atan2(−moveX, −moveZ)`），零移动保持当前朝向（§14-31）。两种模式下移动换算是同一条公式：W 永远朝镜头水平前方。运行时权威只住在 input（`getLook().lookMode`）；sim 与 renderer 都不感知 lookMode（ADR-38），渲染侧只有机位 yaw 来源差（locked 用角色 yaw / free 用喂入的 `simYaw`）。
+
+**切换四通道**（初值链左优先：URL > 存档 > 缺省 locked）：
+
+| 通道 | 行为 |
+| --- | --- |
+| 键 **V**（`KeyV`） | 上升沿 toggle；不占用既有键位、不置位任何动作；落盘存档 |
+| 设置面板「视角」 | 锁定 / 自由两段开关，与 V 同路（`onLookModeChange`）落盘 |
+| URL `?look=locked\|free` | 仅本次会话，不回写存档；非法值忽略、走存档链 |
+| 存档 `lookMode` | 老档缺字段 / 非法值一律补 `'locked'` |
+
+**文案**（契约 §13.2 归本文定，按实现登记）：切换 toast =「锁 定 视 角」/「自 由 视 角」（1.2s，隔字空格式同「掌 意 觉 醒」）；准星下回执小字（`.yz-look-flash`，F2 ART §18.1）=「视角锁定 / 自由视角」；键位表行 =「锁定视角 V」；设置面板段 =「锁定 / 自由」。改词先过 F2 视觉规范。
+
+### 15.2 机位距离 / 阻尼对照表（`CAMERA`）
+
+镜头实现是 O2 域（`render/camera.js`），但「跟多远、多黏」是手感数字——`CAMERA` 表把它们登记进数据层供本文与测试引用。表是**登记不是接管**（同 §8 TILE↔sim 的对照模式）：render 侧改名 / 改值时回修此表，`src/data/tuning.test.js` 逐项锁两边同数，禁止另造一套。
+
+| `CAMERA` 字段 | 值 | 实现对应（`render/camera.js` / 契约 §7.1） |
+| --- | --- | --- |
+| `dist` | 7.4 | 机位距离初值（camera `state.dist`，开机第一帧） |
+| `restDist` | 7.1 | 静止跟随距离 `REST_DIST`：目标距离基准，snap 落位直接用它 |
+| `distSpeedGain` / `distSpeedMax` / `distAirGain` | 0.11 / 1.6 / 0.12 | 目标距离 = restDist + min(1.6, 速度×0.11) + 滞空高度×0.12——地面全速 6.2 稳态 ≈ 7.8，冲刺顶到 8.7 |
+| `basePitch` | 0.22 | 静止俯角 `BASE_PITCH`（rad）；pitch 上限 ±π/2.6 与 input 同值 |
+| `yawDamping` | 7.5 | 方位角弹簧（走最短弧，跨 ±π 不兜整圈） |
+| `posDamping` / `posDampingY` | 6.2 / 5 | 机位弹簧（竖直略慢：转身画面才有重量） |
+| `lookDamping` / `lookDampingY` | 9 / 7 | 视点弹簧（恒快于机位：先看后到） |
+| `distDamping` | 3.2 | 距离弹簧 |
+| `pitchDamping` | 14 | 抬头量弹簧 |
+| `snapTeleport` | 60 | = 契约 `CAMERA_SNAP_TELEPORT`（§7.1） |
+| `snapMaxDist` | 20 | = 契约 `CAMERA_SNAP_MAX_DIST`（§7.1） |
+
+**过门机位 snap（ADR-39）**：hub（z ≈ −120）与裂岛（原点）错开 ~120m，过门 / 开局 / 换跟随目标一律 `snapCamera()` 吸附，时序冻结为 `input.setLook → feedLook → snapCamera`（契约 §13.2，顺序反了 = snap 到旧角度）。自动保险：跟随目标单帧位移 > `snapTeleport 60` 时渲染器自 snap，局内重生瞬移（≤ 2×arenaRadius = 40m）不得触发、弹簧甩镜手感保留；snap 后相机-目标距离 ≤ `snapMaxDist 20` 且机位在身后半平面（§14-32/33）。注：render 侧尚未导出同名契约常量，内部现以更敏感的 `TELEPORT_DIST 16` 判传送——按契约收敛归 O2/G1，本表只登记契约值、不复制内部判据。
+
+**调参指南**：想镜头更贴身 / 更远先动 `restDist`（`dist` 初值同步 ±，两值保持 0.3 内）；想更「跟手」升 `posDamping`/`lookDamping`，但保持 look > pos（先看后到的次序别倒，`tuning.test.js` 锁死）；snap 两阈值是契约面，改值先过 §7.1 再动表。任何一处改完跑 `src/data/tuning.test.js`——它对照 render 实现逐项断言，两边不同数先红。
 
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。
