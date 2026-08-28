@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -354,5 +354,131 @@ describe("生命周期", () => {
     disposeWorld(scene);
     scene.dispose();
     engine.dispose();
+  });
+});
+
+/** 引擎那侧 GlowLayer 的最小替身：世界层只用到这几个鸭子方法。 */
+function fakeGlowLayer(name = "sh-glow") {
+  return {
+    name,
+    disposed: false,
+    excluded: new Set(),
+    getEffectName: () => "GlowLayer",
+    addExcludedMesh(mesh) {
+      this.excluded.add(mesh);
+    },
+    removeExcludedMesh(mesh) {
+      this.excluded.delete(mesh);
+    },
+    dispose() {
+      this.disposed = true;
+    },
+  };
+}
+
+const excludedNames = (layer) => [...layer.excluded].map((mesh) => mesh.name).sort();
+
+describe("辉光层归引擎所有", () => {
+  let engine;
+  let scene;
+
+  beforeEach(() => {
+    engine = new NullEngine();
+    scene = new Scene(engine);
+  });
+
+  afterEach(() => {
+    disposeWorld(scene);
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("即便 glow 开着，世界层也不往场景里塞任何 effect layer", () => {
+    buildWorld(scene);
+    expect(scene.effectLayers).toHaveLength(0);
+    expect(getWorld(scene).glow).toBeNull();
+    // 世界照样是完整的：辉光缺席不影响网格。
+    expect(scene.getMeshByName("socket-0")).toBeTruthy();
+    expect(scene.getMeshByName("sky-dome")).toBeTruthy();
+  });
+
+  it("认领引擎已有的辉光层，把天穹与星点排除在外", () => {
+    const layer = fakeGlowLayer();
+    scene.effectLayers.push(layer);
+    scene.metadata = { shihe: { glow: layer } };
+
+    buildWorld(scene);
+
+    expect(getWorld(scene).glow).toBe(layer);
+    expect(excludedNames(layer)).toEqual(["sky-dome", "sky-stars"]);
+  });
+
+  it("没有 metadata 时也能从 scene.effectLayers 里认出辉光层", () => {
+    const layer = fakeGlowLayer("whatever-glow");
+    scene.effectLayers.push(layer);
+
+    buildWorld(scene);
+
+    expect(getWorld(scene).glow).toBe(layer);
+    expect(excludedNames(layer)).toEqual(["sky-dome", "sky-stars"]);
+  });
+
+  it("glow: false 时一根手指都不碰引擎的层", () => {
+    const layer = fakeGlowLayer();
+    scene.effectLayers.push(layer);
+    scene.metadata = { shihe: { glow: layer } };
+
+    buildWorld(scene, undefined, { glow: false });
+
+    expect(getWorld(scene).glow).toBeNull();
+    expect(layer.excluded.size).toBe(0);
+  });
+
+  it("引擎换档重建辉光层后，下一帧自动重新排除", () => {
+    const first = fakeGlowLayer();
+    scene.effectLayers.push(first);
+    scene.metadata = { shihe: { glow: first } };
+    buildWorld(scene);
+    expect(getWorld(scene).glow).toBe(first);
+
+    // 模拟 setQuality：旧层销毁摘除，新层入场。
+    scene.effectLayers.length = 0;
+    first.dispose();
+    const second = fakeGlowLayer();
+    scene.effectLayers.push(second);
+    scene.metadata.shihe.glow = second;
+
+    scene.render();
+
+    expect(getWorld(scene).glow).toBe(second);
+    expect(excludedNames(second)).toEqual(["sky-dome", "sky-stars"]);
+  });
+
+  it("降到 low 档（引擎销毁辉光层）时安静地松手", () => {
+    const layer = fakeGlowLayer();
+    scene.effectLayers.push(layer);
+    scene.metadata = { shihe: { glow: layer } };
+    buildWorld(scene);
+
+    scene.effectLayers.length = 0;
+    layer.dispose();
+    scene.metadata.shihe.glow = null;
+
+    expect(() => scene.render()).not.toThrow();
+    expect(getWorld(scene).glow).toBeNull();
+  });
+
+  it("disposeWorld 退回排除项但不销毁引擎的层", () => {
+    const layer = fakeGlowLayer();
+    scene.effectLayers.push(layer);
+    scene.metadata = { shihe: { glow: layer } };
+    buildWorld(scene);
+    expect(layer.excluded.size).toBe(2);
+
+    disposeWorld(scene);
+
+    expect(layer.disposed).toBe(false);
+    expect(layer.excluded.size).toBe(0);
+    expect(scene.effectLayers).toContain(layer);
   });
 });

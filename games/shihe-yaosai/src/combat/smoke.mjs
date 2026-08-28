@@ -8,8 +8,16 @@
 //               和 §3.6 的折射段全部逼进渲染层。靠打得好不好来碰运气凑弹道太脆。
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
-import { createMatch, step, getView } from "../sim/index.js";
-import { BOT_TOWERS, botInput, createBot, crowdSocket, freeSocketNear } from "../sim/bot.mjs";
+import {
+  BOT_TOWERS,
+  botInput,
+  createBot,
+  createMatch,
+  crowdSocket,
+  freeSocketNear,
+  getView,
+  step,
+} from "../sim/index.js";
 import { syncCombat, disposeCombat } from "./index.js";
 
 const DT = 1 / 60;
