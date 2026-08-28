@@ -27,7 +27,6 @@ import {
 } from '@babylonjs/core/Maths/math.vector.js';
 import { Mesh as BMesh } from '@babylonjs/core/Meshes/mesh.js';
 import { SubMesh } from '@babylonjs/core/Meshes/subMesh.js';
-import { BoundingInfo } from '@babylonjs/core/Culling/boundingInfo.js';
 import { Material as BMaterial } from '@babylonjs/core/Materials/material.js';
 import { DirectionalLight as BDirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
 import { HemisphericLight as BHemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
@@ -53,6 +52,8 @@ const _pos = new Vector3();
 const _scl = new Vector3();
 const _target = new Vector3();
 const _quat = new Quaternion();
+const _bmin = new BVector3();
+const _bmax = new BVector3();
 
 /** 相机：视图 / 投影矩阵由适配层算好后直接灌进来，引擎不再自己推。 */
 class GfxCamera extends BCamera {
@@ -390,16 +391,20 @@ export class WebGLRenderer {
     mesh.alwaysSelectAsActiveMesh = node.frustumCulled === false;
     mesh.renderingGroupId = renderingGroupOf(node.renderOrder ?? 0);
     mesh.alphaIndex = node.renderOrder ?? 0;
+    // 蒙皮网格自带一个手写的包围球（绑定姿势的顶点框不住摆动后的四肢），照搬过来当
+    // **局部**包围盒。世界包围盒仍旧交给引擎按世界矩阵刷 —— 冻住它等于把角色的包围盒
+    // 永远钉在原点，镜头一离开原点角色就整个被视锥剔掉。
     if (node.boundingSphere) {
       const r = node.boundingSphere.radius;
       const c = node.boundingSphere.center;
-      mesh.setBoundingInfo(
-        new BoundingInfo(
-          new BVector3(c.x - r, c.y - r, c.z - r),
-          new BVector3(c.x + r, c.y + r, c.z + r)
-        )
-      );
-      mesh.doNotSyncBoundingInfo = true;
+      const key = `${c.x},${c.y},${c.z},${r}`;
+      if (rec.boundsKey !== key) {
+        rec.boundsKey = key;
+        _bmin.set(c.x - r, c.y - r, c.z - r);
+        _bmax.set(c.x + r, c.y + r, c.z + r);
+        mesh.getBoundingInfo().reConstruct(_bmin, _bmax, mesh.getWorldMatrix());
+        mesh._updateBoundingInfo();
+      }
     }
     return mesh;
   }
