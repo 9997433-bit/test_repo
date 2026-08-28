@@ -47,6 +47,8 @@ const INPUT_YAW_MAX_ERROR_RADIANS = 1e-9;
 // getView() 的公开契约把 yaw round4；容差略高于最坏 0.00005rad 量化误差。
 const VIEW_YAW_MAX_ERROR_RADIANS = 0.0001;
 const LOCKED_CAMERA_MAX_BEHINDNESS = -3;
+// sim 约定 yaw=0 面向 -Z；贴脸扇脚本固定朝 +X，避免 AI/随机走位掩盖无敌帧回归。
+const FACE_PLUS_X_RADIANS = -Math.PI / 2;
 const DEFAULT_PROBE_SEEDS = Object.freeze([
   0x1a2b3c4d,
   0x5eed1234,
@@ -104,6 +106,12 @@ async function superviseProbe(seeds) {
     freeMoveMaxYawErrorDeg: maximumMetric(
       passedRuns,
       'freeMoveYawErrorDeg',
+    ),
+    respawnSlapHits: minimumMetric(passedRuns, 'respawnSlapHits'),
+    respawnSlapWhiffs: maximumMetric(passedRuns, 'respawnSlapWhiffs'),
+    portalInvulnExpiryMaxSeconds: maximumMetric(
+      passedRuns,
+      'portalInvulnExpirySeconds',
     ),
     p99StepMs: maximumMetric(passedRuns, 'p99StepMs'),
     ai:
@@ -207,6 +215,9 @@ function superviseProbeSeed(seed) {
             `behind ${result.lockedCameraBehindness.toFixed(3)}m, ` +
             `free hold Δ${result.freeStationaryYawDeltaDeg.toFixed(6)}°, ` +
             `free move error ${result.freeMoveYawErrorDeg.toFixed(6)}°, ` +
+            `respawn slap ${result.respawnSlapHits} hit(s)/` +
+            `${result.respawnSlapWhiffs} whiff(s), ` +
+            `portal invuln ${result.portalInvulnExpirySeconds.toFixed(3)}s, ` +
             `real combat ` +
             (result.wiredCombat === undefined
               ? 'status unavailable'
@@ -298,6 +309,10 @@ async function executeProbeWorker() {
       simulation,
       lookModules,
       lookInputModules,
+      seed,
+    );
+    const invulnerabilityBehavior = runInvulnerabilityBehaviorProbe(
+      simulation,
       seed,
     );
     let state = createFourPlayerMatch(simulation, {
@@ -495,6 +510,10 @@ async function executeProbeWorker() {
           (lookBehavior.freeStationaryYawDelta * 180) / Math.PI,
         freeMoveYawErrorDeg:
           (lookBehavior.freeMoveYawError * 180) / Math.PI,
+        respawnSlapHits: invulnerabilityBehavior.respawn.slapHits,
+        respawnSlapWhiffs: invulnerabilityBehavior.respawn.slapWhiffs,
+        portalInvulnExpirySeconds:
+          invulnerabilityBehavior.portal.expiredAfterSeconds,
         maxMovement: Math.sqrt(maximumMovementSquared),
         entityUpdateSteps: entityUpdates,
         p99StepMs: sortedDurations[p99Index],
@@ -525,6 +544,7 @@ async function executeProbeWorker() {
           checks: lookProbe.checks,
           modes: lookBehavior,
         },
+        invulnerabilityProbe: invulnerabilityBehavior,
         purityFilesScanned: purity.filesScanned,
       },
     });
@@ -534,6 +554,274 @@ async function executeProbeWorker() {
       message: errorMessage(error),
     });
   }
+}
+
+/**
+ * 用真实 sim + combat 跑两个确定性小剧本，不借随机 Bot 的命中率判断无敌帧：
+ * 1) 真摔落、真重组，等 invulnT 结束后贴脸扇必须命中，不能全是 slapWhiff；
+ * 2) 真 enterArena 落地，倒计时不能早于 invulnTime，也不能永久卡住。
+ */
+function runInvulnerabilityBehaviorProbe(simulation, seed) {
+  for (const exportName of ['getPlayer', 'activeGlove', 'enterArena']) {
+    if (typeof simulation[exportName] !== 'function') {
+      throw new Error(
+        `simulation module must export function ${exportName}() for invulnerability probe`,
+      );
+    }
+  }
+
+  const respawnState = simulation.createMatch({
+    seed: seed ^ 0x6e5a11ed,
+    gloveId: 'cotton',
+    offhandId: 'granite',
+    botCount: 1,
+    phase: 'arena',
+  });
+  const attacker = requiredStatePlayer(
+    simulation,
+    respawnState,
+    'p0',
+    'respawn attacker',
+  );
+  const target = requiredStatePlayer(
+    simulation,
+    respawnState,
+    'b0',
+    'respawn target',
+  );
+
+  // 先真摔死，避免直接调 respawnPlayer 把重组倒计时链漏测。
+  target.y = respawnState.config.fallY - 1;
+  target.grounded = false;
+  target.vx = 0;
+  target.vy = 0;
+  target.vz = 0;
+  simulation.step(respawnState, {}, DT);
+  if (target.alive !== false || !(target.respawnT > 0)) {
+    throw new Error('respawn probe failed to knock target out before respawn');
+  }
+
+  const respawnFrames = advanceUntil(
+    simulation,
+    respawnState,
+    () => target.alive === true,
+    Math.ceil((respawnState.config.respawnDelay + 4 * DT) / DT),
+    'target did not respawn after respawnDelay',
+  );
+  const respawnInvulnStart = target.invulnT;
+  if (
+    !(respawnInvulnStart > 0) ||
+    Math.abs(respawnInvulnStart - respawnState.config.invulnTime) > DT
+  ) {
+    throw new Error(
+      `respawn invulnerability started at ${String(respawnInvulnStart)}s; ` +
+        `expected ${respawnState.config.invulnTime}s`,
+    );
+  }
+
+  const respawnInvulnFrames = advanceUntil(
+    simulation,
+    respawnState,
+    () => target.invulnT === 0,
+    Math.ceil((respawnInvulnStart + 4 * DT) / DT),
+    'respawn invulnerability did not end after invulnTime',
+  );
+  if (target.invulnT !== 0) {
+    throw new Error(
+      `respawn target remained invulnerable (${String(target.invulnT)}s)`,
+    );
+  }
+
+  placeForProbe(attacker, 0, 0, FACE_PLUS_X_RADIANS);
+  placeForProbe(target, 2, 0, 0);
+  resetProbeAttacker(attacker);
+  const hitsBefore = target.hitsTaken;
+  const cotton = simulation.activeGlove(attacker);
+  if (!Number.isFinite(cotton?.windup) || cotton.windup <= 0) {
+    throw new Error(
+      `respawn probe received invalid cotton windup: ${String(cotton?.windup)}`,
+    );
+  }
+  const slapEvents = advanceProbeFrames(
+    simulation,
+    respawnState,
+    {
+      p0: {
+        moveX: 0,
+        moveZ: 0,
+        yaw: FACE_PLUS_X_RADIANS,
+        slap: true,
+        skill: false,
+        switchGlove: false,
+        dash: false,
+        jump: false,
+      },
+    },
+    Math.ceil((cotton.windup + 2 * DT) / DT),
+  );
+  const slapHits = target.hitsTaken - hitsBefore;
+  const slapWhiffs = slapEvents.filter(
+    (event) => event?.type === 'slapWhiff' && event.attackerId === attacker.id,
+  ).length;
+  const landedSlaps = slapEvents.filter(
+    (event) =>
+      event?.type === 'slap' &&
+      event.id === attacker.id &&
+      Number(event.hits) > 0,
+  ).length;
+  if (slapHits < 1 || landedSlaps < 1) {
+    throw new Error(
+      `respawn target was not hit after invulnTime ` +
+        `(hits=${slapHits}, landedSlaps=${landedSlaps}, ` +
+        `slapWhiffs=${slapWhiffs})`,
+    );
+  }
+  if (slapWhiffs !== 0) {
+    throw new Error(
+      `respawn face-off emitted ${slapWhiffs} slapWhiff event(s) after invulnTime`,
+    );
+  }
+
+  const portalState = simulation.createMatch({
+    seed: seed ^ 0xa11d00f,
+    gloveId: 'cotton',
+    offhandId: 'granite',
+    botCount: 0,
+    phase: 'hub',
+  });
+  const portalPlayer = requiredStatePlayer(
+    simulation,
+    portalState,
+    'p0',
+    'portal player',
+  );
+  simulation.enterArena(portalState, portalPlayer);
+  const portalInvulnStart = portalPlayer.invulnT;
+  if (
+    portalState.phase !== 'arena' ||
+    Math.abs(portalInvulnStart - portalState.config.invulnTime) > 1e-9
+  ) {
+    throw new Error(
+      `portal landing invulnerability started at ${String(portalInvulnStart)}s; ` +
+        `expected ${portalState.config.invulnTime}s`,
+    );
+  }
+
+  // 到期前一帧必须仍无敌；随后只容许一个 60Hz 量化帧归零。
+  const portalFramesBeforeExpiry = Math.max(
+    0,
+    Math.ceil(portalInvulnStart / DT) - 1,
+  );
+  advanceProbeFrames(
+    simulation,
+    portalState,
+    {},
+    portalFramesBeforeExpiry,
+  );
+  const portalInvulnBeforeExpiry = portalPlayer.invulnT;
+  if (!(portalInvulnBeforeExpiry > 0)) {
+    throw new Error(
+      `portal landing invulnerability ended early, before invulnTime ` +
+        `(${portalFramesBeforeExpiry * DT}s)`,
+    );
+  }
+  const portalExpiryFrames = advanceUntil(
+    simulation,
+    portalState,
+    () => portalPlayer.invulnT === 0,
+    2,
+    'portal landing invulnerability did not end after invulnTime',
+  );
+  const portalInvulnExpirySeconds =
+    (portalFramesBeforeExpiry + portalExpiryFrames) * DT;
+  if (
+    portalInvulnExpirySeconds + 1e-9 < portalInvulnStart ||
+    portalInvulnExpirySeconds > portalInvulnStart + DT + 1e-9
+  ) {
+    throw new Error(
+      `portal landing invulnerability expired after ` +
+        `${portalInvulnExpirySeconds}s; expected ${portalInvulnStart}s`,
+    );
+  }
+
+  return {
+    respawn: {
+      respawnedAfterSeconds: respawnFrames * DT,
+      invulnStartSeconds: respawnInvulnStart,
+      invulnExpiredAfterSeconds: respawnInvulnFrames * DT,
+      slapHits,
+      landedSlaps,
+      slapWhiffs,
+    },
+    portal: {
+      invulnStartSeconds: portalInvulnStart,
+      beforeExpirySeconds: portalFramesBeforeExpiry * DT,
+      beforeExpiryRemainingSeconds: portalInvulnBeforeExpiry,
+      expiredAfterSeconds: portalInvulnExpirySeconds,
+    },
+    checks: {
+      respawnedWithInvulnerability: 1,
+      respawnInvulnerabilityExpired: 1,
+      respawnFaceOffHit: 1,
+      portalInvulnerabilityHeldUntilDeadline: 1,
+      portalInvulnerabilityExpired: 1,
+    },
+  };
+}
+
+function requiredStatePlayer(simulation, state, id, label) {
+  const player = simulation.getPlayer(state, id);
+  if (!player) {
+    throw new Error(`${label}: simulation state has no player ${id}`);
+  }
+  return player;
+}
+
+function placeForProbe(player, x, z, yaw) {
+  player.x = x;
+  player.y = 0;
+  player.z = z;
+  player.yaw = yaw;
+  player.vx = 0;
+  player.vy = 0;
+  player.vz = 0;
+  player.grounded = true;
+}
+
+function resetProbeAttacker(attacker) {
+  attacker.invulnT = 0;
+  attacker.invulnerable = false;
+  attacker.slapCd = 0;
+  attacker.switchLockT = 0;
+  attacker.busyUntil = 0;
+  attacker.rootUntil = 0;
+  attacker.kbT = 0;
+  attacker.knockbackT = 0;
+  attacker.attack.phase = 'idle';
+  attacker.attack.t = 0;
+  attacker.attack.struck = false;
+  attacker.prev.slap = false;
+  if (attacker.cd) attacker.cd.slapAt = 0;
+  if (Array.isArray(attacker.statuses)) attacker.statuses.length = 0;
+}
+
+function advanceUntil(simulation, state, predicate, maximumFrames, message) {
+  for (let frame = 0; frame <= maximumFrames; frame += 1) {
+    if (predicate()) return frame;
+    if (frame < maximumFrames) simulation.step(state, {}, DT);
+  }
+  throw new Error(message);
+}
+
+function advanceProbeFrames(simulation, state, inputs, frames) {
+  const events = [];
+  for (let frame = 0; frame < frames; frame += 1) {
+    simulation.step(state, inputs, DT);
+    if (Array.isArray(state.events)) {
+      events.push(...state.events);
+    }
+  }
+  return events;
 }
 
 /**
