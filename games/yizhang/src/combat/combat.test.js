@@ -46,9 +46,9 @@ beforeEach(() => {
 });
 
 describe("模块纪律", () => {
-  it("combat 与 ai 不 import three / 不碰 DOM", () => {
+  it("combat 与 ai 不 import three / Babylon / 不碰 DOM", () => {
     const roots = [HERE, join(HERE, "..", "ai")];
-    const banned = /(from\s+["']three|require\(["']three|\bdocument\.|\bwindow\.|localStorage)/;
+    const banned = /(from\s+["']three|require\(["']three|@babylonjs|\bdocument\.|\bwindow\.|localStorage)/;
     let checked = 0;
     for (const root of roots) {
       for (const f of readdirSync(root)) {

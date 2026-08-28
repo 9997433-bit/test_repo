@@ -4,7 +4,7 @@
 
 ## 0. 一句话架构
 
-**纯数据模拟核**（`sim` / `combat` / `data` / `ai`，零 DOM、零 three、可 `structuredClone`）＋ **单向视图流**（`getView` 纯 JSON 快照）＋ **可整体替换的外壳**（`render` / `input` / `audio` / `ui`），由 `main.js` + `core/loop` 以固定 60Hz 步进驱动、渲染插值；HUD 走 DOM，与 WebGL 画布完全分层，互不感知。本轮起，一局是**双区**的：同一个 `MatchState` 先承载**安全区大厅**（走道选掌，无战斗），穿过传送门后进入**裂岛格斗区**（既有规则原样），区别只在 `state.phase`——没有第二套状态机、没有第二个 `createMatch`。
+**纯数据模拟核**（`sim` / `combat` / `data` / `ai`，零 DOM、零 3D 引擎、可 `structuredClone`）＋ **单向视图流**（`getView` 纯 JSON 快照）＋ **可整体替换的外壳**（`render` / `input` / `audio` / `ui`），由 `main.js` + `core/loop` 以固定 60Hz 步进驱动、渲染插值；HUD 走 DOM，与 WebGL 画布完全分层，互不感知。GPU 后端为 **Babylon.js 8**（`@babylonjs/core` 8.x），仅经 `src/render/gfx` 出现；场景图对外仍是历史 three 风格 API，sim/combat 不 import Babylon 类型。本轮起，一局是**双区**的：同一个 `MatchState` 先承载**安全区大厅**（走道选掌，无战斗），穿过传送门后进入**裂岛格斗区**（既有规则原样），区别只在 `state.phase`——没有第二套状态机、没有第二个 `createMatch`。
 
 ## 1. 模块图
 
@@ -12,7 +12,7 @@
 ┌─ 外壳层（DOM / WebGL / WebAudio；禁止反向 import 编排层）───────────────────────┐
 │                                                                                │
 │  src/ui/shell.js     src/input/       src/audio/        src/render/            │
-│  主菜单·HUD·结算·     键鼠+触屏归一     WebAudio 合成      three.js 仅此目录       │
+│  主菜单·HUD·结算·     键鼠+触屏归一     WebAudio 合成      Babylon.js 8 仅此目录    │
 │  触控钮 DOM           摇杆·视角·脉冲     事件名→音色        场景·相机·插值·画质档   │
 │        ▲                  ▲                ▲                  ▲                 │
 │   view │ 快照         Input│            事件│→音名         view │（已插值）       │
@@ -23,7 +23,7 @@
 │             modules 兄弟模块探测·fallback/** 降级件）                             │
 └────────▲────────────────────────────────────────────────────────────────────────┘
          │ createMatch / step / getView / isMatchOver          think(view,botId,rng)
-┌─ 纯数据层（禁 import three、禁 DOM/window；state 可 structuredClone）─────────────┐
+┌─ 纯数据层（禁 import 3D 引擎、禁 DOM/window；state 可 structuredClone）─────────────┐
 │                                                                                 │
 │  src/sim/ ─每 tick 经 combat-bridge─► src/combat/（扇击·技能·状态·觉醒数值覆盖）     │
 │     │        （静态 import；别名/朝向/命中/事件翻译）│                                │
@@ -37,13 +37,13 @@
 | 模块 | 允许 import | 明确禁止 |
 | --- | --- | --- |
 | `src/data` | 无（纯常量表） | 一切 |
-| `src/combat` | `data` | three、DOM、`sim`（防环） |
-| `src/sim` | `data`（`gloves.js`）、`combat`（**只经 `sim/combat-bridge.js` 静态 import**，见 ADR-19/23） | three、DOM、`ai`、`render` |
-| `src/ai` | `data` | three、DOM、`sim` 内部（只吃 `getView` 快照） |
-| `src/render` | `three`、`data`（识别色等只读表） | `sim` 内部、业务层 |
-| `src/input` | 无业务依赖（DOM API 本体） | three、`sim` |
-| `src/audio` | 无业务依赖（WebAudio 本体） | three、`sim` |
-| `src/ui` | `data`（名字/识别色/解锁表） | three、`sim` 内部 |
+| `src/combat` | `data` | 3D 引擎、DOM、`sim`（防环） |
+| `src/sim` | `data`（`gloves.js`）、`combat`（**只经 `sim/combat-bridge.js` 静态 import**，见 ADR-19/23） | 3D 引擎、DOM、`ai`、`render` |
+| `src/ai` | `data` | 3D 引擎、DOM、`sim` 内部（只吃 `getView` 快照） |
+| `src/render` | `@babylonjs/core`（经 `./gfx`）、`data`（识别色等只读表） | `sim` 内部、业务层 |
+| `src/input` | 无业务依赖（DOM API 本体） | 3D 引擎、`sim` |
+| `src/audio` | 无业务依赖（WebAudio 本体） | 3D 引擎、`sim` |
+| `src/ui` | `data`（名字/识别色/解锁表） | 3D 引擎、`sim` 内部 |
 | `src/core` | `sim`/`ai`/`data` 经 `modules.js` 动态探测；`render/input/ui/audio` 由 `main.js` 注入 | — |
 | `src/main.js` | 一切公共 API | — |
 
@@ -190,7 +190,7 @@ createMatch() 缺省 phase='hub'（O1 已落地）     skipHub / phase:'arena' �
 
 ### 5.1 输入所有权与坐标系（ADR-16 / ADR-17）
 
-**朝向约定（全项目唯一，冻结）**：`yaw = 0` 面向 **-Z**，与 three 的 `mesh.rotation.y` 同向——渲染端直接 `mesh.rotation.y = player.yaw`。
+**朝向约定（全项目唯一，冻结）**：`yaw = 0` 面向 **-Z**，与 gfx `mesh.rotation.y` 同向——渲染端直接 `mesh.rotation.y = player.yaw`。`RENDER_YAW_OFFSET = 0`。不改 sim 朝向去迁就 Babylon 默认 +Z。
 
 ```
 forward(yaw) = ( -sin(yaw), -cos(yaw) )     // xz 平面

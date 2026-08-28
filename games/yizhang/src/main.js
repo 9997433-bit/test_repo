@@ -798,7 +798,7 @@ async function boot() {
       }
       const view = info.paused ? curView : lerpView(prevView, curView, alpha);
       try {
-        // 朝向桥接只对 three 渲染器成立；Canvas2D 调试视图用的是屏幕系角度。
+        // 朝向桥接只对 3D 渲染器成立；Canvas2D 调试视图用的是屏幕系角度。
         if (renderer.sync) renderer.sync(rendererIsFallback ? view : toRenderView(view));
         if (renderer.render) renderer.render(view, alpha);
       } catch (err) {
@@ -864,7 +864,7 @@ async function boot() {
         ...wiringStatus(sim, wired),
         unlockSource: isUnlocked.source,
         styleCount,
-        renderer: rendererIsFallback ? "fallback" : "three",
+        renderer: rendererIsFallback ? "fallback" : "babylon",
       };
     },
     get progress() {

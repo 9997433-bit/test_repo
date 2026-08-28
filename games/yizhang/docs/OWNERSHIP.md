@@ -23,7 +23,7 @@
 ## 2. 共享只读（需改时只追加、先在简报声明）
 
 `package.json`、`vite.config.js`、`README.md`（追加说明可在简报声明后由 O4 改一句）、`.gitignore`。
-端口 **4181**、`base: "./"`、vitest 配置已就位。原则上除 `three` 外不加运行时依赖。
+端口 **4181**、`base: "./"`、vitest 配置已就位。原则上除 `@babylonjs/core`（8.x）外不加运行时依赖。
 `src/sim/README.md` 归 O1，内容与 API_CONTRACT 冲突时以后者为准。
 
 ## 3. 交接握手（视角轮 Round 1）
