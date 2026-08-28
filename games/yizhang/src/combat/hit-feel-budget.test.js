@@ -231,7 +231,7 @@ describe("重击门槛已对齐：combat / tuning / juice 同认 12", () => {
     );
     expect(gray.map(tagOf)).toEqual([]);
 
-    // 对齐前落在灰区的那几记（磐石贴脸 16.63、陨掌背身 13.28 一类）现在都进了重击档
+    // 对齐前落在灰区的那 18 记（磐石常态贴脸 14.46、陨掌常态背身 13.28 一类）现在都进了重击档
     const freeze = (power) => hitStopFor({ type: "hit", playerId: SELF, source: "slap", power }, SELF);
     for (const power of [12, 13.28, 14.46, 15.99]) {
       expect(freeze(power), `power=${power}`).toBe(HIT_STOP.dealt + HIT_STOP.heavyBonus);
