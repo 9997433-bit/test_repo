@@ -828,9 +828,21 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 - **O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）**：merge `ba84fe6`（`f28364a` 四掌 VFX 形名占位 / `6debd89` `slapStart` 起手、命中与判定结束不再二次 `playSlap` / `8813c54` 「自己打中」档相机冲击上调）。steerSlap / 前摇 / 冲击上调已进；`PENDING_VFX_KIND` 对齐 F1（`cocoon` / `raven` / `victor` / `tumbler`），`COMBAT_VFX_KIND` 仍 8 键，生涯四掌专形未接线——WARNING 降为「占位未并表」，不再是未合入。
 - **GDD §4.1 / §17 表盘 HUD：F2 已接线**：`.yz-knock` 刻度读 `view.players[].knockScale`（`hud.js` + `hud-impact.test.js`）。
-- **`HIT_STOP.heavyPower` 16→12 对齐结转**（§12.8 已登记）：combat 侧「这掌算不算重」已按 `HIT.heavyPowerThreshold 12` 判**一次**随命中记录 / 事件出门（`impact.js` `heavy` 字段，与 `KNOCKBACK.heavyPowerThreshold`、碎地同一条线）；juice 的重击定格档暂按 16 判，灰区 12..16 由 `hit-feel-budget.test.js` 锁死且已证明收拢后不越 0.12 顶。对齐动作归 O 席后续轮。
+- **`HIT_STOP.heavyPower` 16→12 对齐结转**（§12.8 已登记）：combat 侧「这掌算不算重」已按 `HIT.heavyPowerThreshold 12` 判**一次**随命中记录 / 事件出门（`impact.js` `heavy` 字段，与 `KNOCKBACK.heavyPowerThreshold`、碎地同一条线）；juice 的重击定格档暂按 16 判，灰区 12..16 由 `hit-feel-budget.test.js` 锁死且已证明收拢后不越 0.12 顶。对齐动作归 O 席后续轮。**P3 已销号**——见 §13.2。
 - **桌面实机手测未做**（无交互桌面）：本轮表现面新增全部有 jsdom 锁测（HUD 刻度 / 脉冲 / 字条 / 结算 storyText），以 966 测 + 三 seed probe 硬门替代并如实标注，不假装手测；**真机触屏 DEFER** 照旧结转（§12.8）。
 
 **判定：内容轮 P2 = PASS-WITH-WARNINGS**（判定表与命令原文见 ACCEPTANCE §14.1；十席均已合入、复盘五项 5/5 销号、三件套全绿、冻结面零回退、红线零命中；WARNING 余 O2 生涯四掌 VFX 占位未进 `COMBAT_VFX_KIND`、`HIT_STOP.heavyPower` 对齐结转与环境性延后；表盘 HUD **F2 已接线**）。
 
 **编排层补记（F4 合入后复跑，2026-08-28）**：merge `origin/cursor/yizhang-p2-f4-db8d` @ `8cfac59` 进 `cursor/yizhang-feel-db8d`（O2 已在父分支 `ba84fe6`）。过期 WARNING「O2 未合」改为「O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）」；GDD 表盘滞后改为「F2 已接线」。零 src、`HIT_STOP.max` 原数未动。复跑 `npm test` **983/983（67 文件）** 退出码 0；`npm run probe` **PASS 3/3**（arenaKills 20/18/16，respawn slap 1/0 whiff，portal invuln 1.000s）。
+
+### 13.2 P3 O3 重击门槛收口（`HIT_STOP.heavyPower` 16→12）
+
+结转 WARNING（§13.1 / §12.8 登记）销号。分支 `cursor/yizhang-p3-heavy-db8d`（自 main `20c391f` 拉出，打向 main）。
+
+- **改的是哪一个数**：`core/juice.js` 的 `HIT_STOP.heavyPower` **16 → 12**，与 `data/tuning.js` 的 `KNOCKBACK.heavyPowerThreshold` / `combat/constants.js` 的 `HIT.heavyPowerThreshold` 同源。全工程「重击」自此只有一条线：碎地、命中记录与事件的 `heavy`、hit-stop 的重击档共用 12。
+- **max 一格没动**：`HIT_STOP.max = 0.12` 原数。收门槛只改「谁进重击档」，**不改档位本身**——最重一记仍是 `dealt 0.08 + heavyBonus 0.035 = 0.115s`（挨打档 `0.065 + 0.035 = 0.1s`），单次定格恒 ≤ 0.12。`dealt / taken / heavyBonus / max / cooldown` 五个数全部原数，冻结表锁测（`hit-feel-budget.test.js`「六个数一个不动」）照抄回修后仍在。
+- **灰区清空**：对齐前 12..16 那一段（磐石常态贴脸 14.46、陨掌常态背身 13.28、铁茧常态贴脸 12.51 一类）碎地算重击、定格却在基础档。八掌 × 觉醒 × 背身 × 连段 × 贴脸/边缘共 96 记全排列里，**18 记**从基础档 0.08s 进入重击档 0.115s；`{ s.hit.heavy && 定格 === HIT_STOP.dealt }` 现为**空集**（新锁测「灰区已清空」）。重击档样本 33 / 96，轻档 63 / 96，两档都有样本。
+- **未动面**：stun 时长（`HIT.hitstun 0.32` / `KNOCKBACK.hitstun`）、扇锥几何（`slapAngleDeg` / `slapRange` / `HIT.reachHeight`）、camera clamp（`render/camera.js` shake / fovKick 上限）逐一未改。
+- **锁测**：`core/juice.test.js` +4 例（重击门槛与击退表同源、门槛收到 12 也没动天花板、门槛边界 11.999/12/15.999/16、任何 power 只有轻/重四个取值且恒 ≤ 0.12）；`combat/hit-feel-budget.test.js`「重击门槛应对齐」节改判「**已对齐**」（combat / tuning / juice 同源、对齐安全性改由真 `hitStopFor` 而非影子实现验证、灰区为空）。
+- **三件套**：`npm test` **987/987（67 文件）** 退出码 0（基线 983 → 987，零红零减量，新增全部为行内扩充、零新增文件）。
+- **冻结面读数更新（后续轮照此复验）**：`HIT_STOP` 全表 = dealt 0.08 / taken 0.065 / heavyBonus 0.035 / **heavyPower 12**（本轮对齐，§13.1 及更早各轮记录的 16 为对齐前读数）/ **max 0.12 不动** / cooldown 0.22。

@@ -724,7 +724,23 @@ npm run build   # LG-03：退出码 0
 **验证方式限定（诚实口径）**：本轮仍无交互桌面与真机——桌面实机手测**未做**，不假装；本轮表现面新增（HUD 刻度 / 准星脉冲 / 掌语字条 / 结算 storyText / 里程碑进度缀）全部有 jsdom 锁测在场，判定以 966 条单测 + 三 seed probe 硬门（重生对扇必中、过门无敌到点归零——复盘 P0 的两条判决读数已入探针常驻）替代并如实标注。
 
 - WARNING 清单：**O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）**（merge `ba84fe6`：`slapStart` 起手 + 去二次 `playSlap` / clamp 内相机冲击上调已进；`PENDING_VFX_KIND` 占位对齐 F1，`COMBAT_VFX_KIND` 仍 8 键）；**GDD §4.1 / §17 表盘 HUD：F2 已接线**；**`HIT_STOP.heavyPower` 16→12 对齐结转**（combat 侧 12 已单点判定随事件出门，juice 灰区 12..16 有锁）；**桌面实机手测未做 + 真机触屏 DEFER** 结转（环境性）。
-- 修复指派：生涯四掌 VFX 专形并进 `COMBAT_VFX_KIND` 归后续轮；heavyPower 对齐归 O 席后续轮（动前先复算灰区收拢不越 0.12 顶——测试已备）。
+- 修复指派：生涯四掌 VFX 专形并进 `COMBAT_VFX_KIND` 归后续轮；heavyPower 对齐归 O 席后续轮（动前先复算灰区收拢不越 0.12 顶——测试已备）。**heavyPower 对齐已于 P3 销号，见 §14.2。**
 - 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（无交互桌面，如实标注；HUD 表现面证据 = F2 四个新测试文件 jsdom 锁测 27 例在场：`hud-impact` 11 / `lore` 9 / `hub-progress` 4 / `hud-feel-css` 3）。
 
 **编排层补记（F4 合入后复跑，2026-08-28）**：`npm test` **983/983（67 文件）** 退出码 0；`npm run probe` **PASS 3/3**（`0x1a2b3c4d` arenaKills 20 / `0x5eed1234` 18 / `0xc0ffee42` 16；三 seed 均 respawn slap 1 hit / 0 whiff、portal invuln 1.000s）。判定仍 **PASS-WITH-WARNINGS**。十席均已合入，保持 draft，不推 main。
+
+### 14.2 P3 O3 重击门槛收口验收（`HIT_STOP.heavyPower` 16→12）
+
+- 被验分支：**`cursor/yizhang-p3-heavy-db8d`**（自 main `20c391f` 拉出，打向 main，draft）。改动面 `core/juice.js` + `core/juice.test.js` + `combat/hit-feel-budget.test.js` + `combat/impact.js`（注释）+ 本文件 / `SOTA_CHECKLIST.md` / `GDD.md`。
+- 结论：**PASS**。§14.1 结转 WARNING「`HIT_STOP.heavyPower` 16→12 对齐」销号。
+
+| 组 | 通过/总数 | FAIL 项 |
+|---|---|---|
+| 对齐（本轮主表） | 4/4 | 无（三处同源认 12 / 单次定格恒 ≤ 0.12 / 12..16 灰区为空 / 冻结表其余五数原数） |
+| 回归门 | 全绿 | 无（`npm test` 987 ≥ 983 零减量，零红） |
+| 冻结面（DISPATCH 红线） | 全绿 | 无（**`HIT_STOP.max = 0.12` 原数未动**；stun 时长 / 扇锥几何 / camera clamp 三处逐一未改） |
+| 红线否决 | 零命中 | 无 |
+
+- `npm test`：**Test Files 67 passed (67) / Tests 987 passed (987)**，退出码 0（基线 983 → 987，+4 例全在 `core/juice.test.js` 行内，零新增文件）。
+- 关键读数：对齐后**最重一记 hit-stop = `dealt 0.08 + heavyBonus 0.035` = 0.115s**（power 31.887 的木棉觉醒第 3 下背身贴脸；挨打档 0.1s），封顶 `max 0.12` 未触；96 记全排列中重击档 33 / 轻档 63，其中 **18 记**因对齐从 0.08s 进入 0.115s，`heavy && 定格 === dealt` 的灰区为空集。
+- 验证方式限定（诚实口径）：纯数值 / 锁测面改动，无视觉产出；本环境无交互桌面，未做实机手测，以 987 条单测替代并如实标注。
