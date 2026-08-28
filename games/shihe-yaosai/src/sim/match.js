@@ -15,6 +15,7 @@ import {
   resolveConfig,
   resolveCounters,
   resolveEnemies,
+  resolveTowerLevels,
   resolveTowers,
   resolveWaves,
 } from "./config.js";
@@ -49,6 +50,7 @@ function makeSocket(i, cfg) {
     aim: null,
     beam: null,
     beam2: null,
+    invested: 0,
     fieldId: 0,
     kills: 0,
     damage: 0,
@@ -70,6 +72,7 @@ export function createMatch(seed = 1, options = {}) {
     rng: createRng(seed),
     cfg,
     towers: resolveTowers(),
+    towerLevels: resolveTowerLevels(),
     counters: resolveCounters(),
     enemyTypes: resolveEnemies(),
     waves,
@@ -98,8 +101,26 @@ export function createMatch(seed = 1, options = {}) {
     nextEnemyId: 1,
     nextShotId: 1,
     nextFieldId: 1,
-    stats: { kills: 0, leaks: 0, placed: 0, denied: 0, damage: 0, spawned: 0, wavesCleared: 0 },
+    stats: { kills: 0, leaks: 0, placed: 0, upgraded: 0, sold: 0, denied: 0, damage: 0, spawned: 0, wavesCleared: 0 },
   };
+}
+
+// ---------------------------------------------------------------- 塔与等级
+
+/** 插座当前等级的完整数值（data 的 levels[k] 是整套数值，不做字段合并）。 */
+function specOf(match, socket) {
+  if (!socket.towerId) return null;
+  const levels = match.towerLevels[socket.towerId];
+  if (!levels) return null;
+  return levels[Math.min(levels.length, Math.max(1, socket.level)) - 1] || null;
+}
+
+/** 下一级数值；已满级返回 null。 */
+function nextLevelOf(match, socket) {
+  if (!socket.towerId) return null;
+  const levels = match.towerLevels[socket.towerId];
+  if (!levels || socket.level >= levels.length) return null;
+  return levels[socket.level];
 }
 
 // ---------------------------------------------------------------- 输入处理
@@ -132,9 +153,68 @@ function tryPlace(match, place, events) {
   socket.cooldown = spec.kind === "aura" ? 0 : spec.cd * 0.35;
   socket.overclockT = 0;
   socket.overheatT = 0;
+  socket.invested = spec.cost;
   if (spec.kind === "aura" && socket.fieldId === 0) socket.fieldId = match.nextFieldId++;
   match.stats.placed += 1;
   events.push({ type: "place", socket: idx, towerId: spec.id, cost: spec.cost, t: round4(match.time) });
+}
+
+/**
+ * 升级：契约 §2 的 upgradeSocket。data 的 levels[k] 是整套数值，
+ * 升级即整体换成下一级（cost = levels[k].cost），不改朝向、不重置过载。
+ */
+function tryUpgrade(match, socketIndex, events) {
+  const idx = Math.round(Number(socketIndex));
+  if (match.over) return deny(match, events, "over", { socket: idx });
+  if (!Number.isInteger(idx) || idx < 0 || idx >= match.sockets.length) {
+    return deny(match, events, "badSocket", { socket: socketIndex });
+  }
+  const socket = match.sockets[idx];
+  if (!socket.towerId) return deny(match, events, "empty", { socket: idx });
+  const next = nextLevelOf(match, socket);
+  if (!next) return deny(match, events, "maxLevel", { socket: idx, towerId: socket.towerId });
+  if (match.scrap < next.cost) {
+    return deny(match, events, "scrap", { socket: idx, towerId: socket.towerId, cost: next.cost });
+  }
+
+  match.scrap -= next.cost;
+  socket.level = next.level;
+  socket.invested += next.cost;
+  match.stats.upgraded += 1;
+  events.push({
+    type: "upgrade",
+    socket: idx,
+    towerId: socket.towerId,
+    level: socket.level,
+    cost: next.cost,
+    t: round4(match.time),
+  });
+}
+
+/** 出售：按已投入总额 × CONFIG.sellRefund 向下取整返还（契约 §2 的 sellSocket）。 */
+function trySell(match, socketIndex, events) {
+  const idx = Math.round(Number(socketIndex));
+  if (match.over) return deny(match, events, "over", { socket: idx });
+  if (!Number.isInteger(idx) || idx < 0 || idx >= match.sockets.length) {
+    return deny(match, events, "badSocket", { socket: socketIndex });
+  }
+  const socket = match.sockets[idx];
+  if (!socket.towerId) return deny(match, events, "empty", { socket: idx });
+
+  const towerId = socket.towerId;
+  const refund = Math.floor(socket.invested * match.cfg.sellRefund);
+  releaseBeam(match, socket);
+  socket.towerId = null;
+  socket.level = 1;
+  socket.invested = 0;
+  socket.hp = 0;
+  socket.cooldown = 0;
+  socket.overclockT = 0;
+  socket.overheatT = 0;
+  socket.aim = null;
+  match.scrap += refund;
+  match.stats.sold += 1;
+  events.push({ type: "sell", socket: idx, towerId, refund, t: round4(match.time) });
 }
 
 function tryOverclock(match, socketIndex, events) {
@@ -602,7 +682,7 @@ function applySlow(match) {
   for (const e of match.enemies) e.slow = 1;
   for (const socket of match.sockets) {
     if (!socket.towerId || socket.overheatT > 0) continue;
-    const spec = match.towers[socket.towerId];
+    const spec = specOf(match, socket);
     if (!spec || spec.kind !== "aura" || spec.slowMul >= 1) continue;
     for (const e of match.enemies) {
       if (!inLane(spec, e)) continue;
@@ -633,7 +713,7 @@ function updateTowers(match, dt) {
       releaseBeam(match, socket);
       continue;
     }
-    const spec = match.towers[socket.towerId];
+    const spec = specOf(match, socket);
     if (!spec) continue;
     if (socket.overheatT > 0) {
       releaseBeam(match, socket);
@@ -660,7 +740,7 @@ function updateFields(match) {
   match.fields.length = 0;
   for (const socket of match.sockets) {
     if (!socket.towerId) continue;
-    const spec = match.towers[socket.towerId];
+    const spec = specOf(match, socket);
     if (!spec || spec.kind !== "aura") continue;
     match.fields.push({
       id: socket.fieldId,
@@ -786,6 +866,8 @@ export function step(match, input = {}, dtSec = FIXED_DT) {
     match.selectedSocket = cmd.selectedSocket;
   }
   if (cmd.place) tryPlace(match, cmd.place, events);
+  if (Number.isFinite(cmd.upgradeSocket)) tryUpgrade(match, cmd.upgradeSocket, events);
+  if (Number.isFinite(cmd.sellSocket)) trySell(match, cmd.sellSocket, events);
   if (Number.isFinite(cmd.overclockSocket)) tryOverclock(match, cmd.overclockSocket, events);
 
   match.paused = !!cmd.pause;
@@ -845,7 +927,7 @@ const EMPTY_VIEW = {
   shots: [],
   fields: [],
   events: [],
-  stats: { kills: 0, leaks: 0, placed: 0, denied: 0, spawned: 0, wavesCleared: 0, damage: 0 },
+  stats: { kills: 0, leaks: 0, placed: 0, upgraded: 0, sold: 0, denied: 0, spawned: 0, wavesCleared: 0, damage: 0 },
 };
 
 /**
@@ -881,11 +963,15 @@ export function getView(match) {
     laneY: cfg.laneY.map(round4),
     selectedSocket: Number.isInteger(match.selectedSocket) ? match.selectedSocket : null,
     sockets: match.sockets.map((s) => {
-      const spec = s.towerId ? match.towers[s.towerId] : null;
+      const spec = specOf(match, s);
+      const next = nextLevelOf(match, s);
       return {
         i: num0(s.i),
         towerId: s.towerId === undefined ? null : s.towerId,
-        level: num0(s.level),
+        level: num0(s.towerId ? s.level : 1),
+        maxLevel: num0(s.towerId && match.towerLevels[s.towerId] ? match.towerLevels[s.towerId].length : 1),
+        upgradeCost: next ? num0(next.cost) : 0,
+        refund: s.towerId ? num0(Math.floor(s.invested * cfg.sellRefund)) : 0,
         overclockT: round4(Math.max(0, s.overclockT)),
         overheatT: round4(Math.max(0, s.overheatT)),
         overclocked: s.overclockT > 0,
@@ -955,6 +1041,8 @@ export function getView(match) {
       kills: num0(match.stats.kills),
       leaks: num0(match.stats.leaks),
       placed: num0(match.stats.placed),
+      upgraded: num0(match.stats.upgraded),
+      sold: num0(match.stats.sold),
       denied: num0(match.stats.denied),
       spawned: num0(match.stats.spawned),
       wavesCleared: num0(match.stats.wavesCleared),

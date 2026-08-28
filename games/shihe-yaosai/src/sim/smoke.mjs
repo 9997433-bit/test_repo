@@ -167,6 +167,36 @@ function overclockCheck(seed) {
   };
 }
 
+/**
+ * 过载倍率探针：同种子同输入，只差一次过载，比第一发的伤害。
+ * 两局在开火前状态完全一致，所以比值应当正好是 CONFIG.overclock.multiplier。
+ */
+function overclockDamageProbe(seed) {
+  const firstHit = (overclock) => {
+    const match = createMatch(seed, { waveCount: 5 });
+    const found = waitForCluster(match, 3, 40);
+    if (!found) return null;
+    step(match, { place: { socket: found.socket, towerId: "rail" } }, DT);
+    if (overclock) step(match, { overclockSocket: found.socket }, DT);
+    const before = getView(match).stats.damage;
+    for (let i = 0; i < 60 * 5; i += 1) {
+      step(match, {}, DT);
+      const now = getView(match).stats.damage;
+      if (now > before) return now - before;
+    }
+    return null;
+  };
+  const plain = firstHit(false);
+  const hot = firstHit(true);
+  const ratio = plain && hot ? hot / plain : null;
+  return {
+    ok: ratio !== null && Math.abs(ratio - 2.2) < 1e-6,
+    plain: plain === null ? null : Math.round(plain * 1000) / 1000,
+    overclocked: hot === null ? null : Math.round(hot * 1000) / 1000,
+    ratio: ratio === null ? null : Math.round(ratio * 1000) / 1000,
+  };
+}
+
 /** 等到场上有敌人，再把塔放到敌群所在的角度上，避免探针靠运气。 */
 function waitForCluster(match, minCount, maxSec) {
   for (let i = 0; i < maxSec * 60; i += 1) {
@@ -302,6 +332,7 @@ function main() {
   const firstWave = firstWaveCheck(opts.seed);
   const pause = pauseCheck(opts.seed);
   const overclock = overclockCheck(opts.seed);
+  const overclockDamage = overclockDamageProbe(opts.seed);
   const deterministic = determinismCheck(opts);
   const lose = loseCheck(opts.seed);
   const prism = prismBendProbe(opts.seed);
@@ -320,6 +351,7 @@ function main() {
   if (run.seen.overheat <= 0) failures.push("overheat never triggered");
   if (!firstWave.ok) failures.push(`first wave too late: ${JSON.stringify(firstWave)}`);
   if (!overclock.ok) failures.push(`overclock window wrong: ${JSON.stringify(overclock)}`);
+  if (!overclockDamage.ok) failures.push(`overclock multiplier wrong: ${JSON.stringify(overclockDamage)}`);
   if (!prism.ok) failures.push(`prism bend probe failed: ${JSON.stringify(prism)}`);
   if (!well.ok) failures.push(`well probe failed: ${JSON.stringify(well)}`);
   if (purity.length > 0) failures.push(`view not JSON-pure: ${purity.slice(0, 3).join(", ")}`);
@@ -347,6 +379,7 @@ function main() {
     deterministic,
     firstWave,
     overclock,
+    overclockDamage,
     towerProbes,
     prismBendProbe: prism,
     wellProbe: well,
@@ -369,6 +402,7 @@ function main() {
     log(`[smoke] towers=${report.towers.join(",")} shots=${report.shotKinds.join(",")} peakEnemies=${report.peakEnemies} peakShots=${report.peakShots}`);
     log(`[smoke] events kill=${run.seen.kill} leak=${run.seen.leak} place=${run.seen.place} deny=${run.seen.deny} overclock=${run.seen.overclock} overheat=${run.seen.overheat}`);
     log(`[smoke] firstSpawn=${firstWave.firstSpawnT}s enemiesAt8s=${firstWave.enemiesAt8s} overheatAt=${overclock.overheatAt}s overheatSpan=${overclock.overheatSpan}s`);
+    log(`[smoke] overclock damage ${overclockDamage.plain} -> ${overclockDamage.overclocked} (×${overclockDamage.ratio}) ok=${overclockDamage.ok}`);
     log(`[smoke] bentBeamTicks=${run.bentBeams} auraFieldTicks=${run.fieldTicks} slowTicks=${run.slowTicks} deterministic=${deterministic} pauseFreeze=${pause.ok} jsonPure=${purity.length === 0}`);
     for (const p of towerProbes) {
       log(`[smoke] probe ${p.towerId.padEnd(7)}: shot=${p.shotKind} damage=${p.damage} kills=${p.kills} ok=${p.ok}`);

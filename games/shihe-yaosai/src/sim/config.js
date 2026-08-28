@@ -118,6 +118,22 @@ export function resolveTowers() {
   return out;
 }
 
+/**
+ * 每塔的全部等级（levels[k] 是该级完整数值，不做字段合并）。
+ * levels[0].cost = 建造价；levels[k>0].cost = 升到该级的价钱。
+ */
+export function resolveTowerLevels() {
+  const out = {};
+  for (const id of TOWER_IDS) {
+    const def = isObj(TOWERS[id]) ? TOWERS[id] : {};
+    const count = Array.isArray(def.levels) ? Math.max(1, def.levels.length) : 1;
+    const levels = [];
+    for (let k = 0; k < count; k += 1) levels.push(resolveLevel(id, def, k));
+    out[id] = levels;
+  }
+  return out;
+}
+
 /** 克制表由 armorMultiplier() 展开成 5×3 的纯数字表，热路径不再调函数。 */
 export function resolveCounters() {
   const out = {};

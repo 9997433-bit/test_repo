@@ -9,6 +9,7 @@ export {
   TOWER_IDS,
   resolveConfig,
   resolveTowers,
+  resolveTowerLevels,
   resolveCounters,
   resolveEnemies,
   resolveWaves,

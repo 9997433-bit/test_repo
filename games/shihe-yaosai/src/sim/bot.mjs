@@ -6,12 +6,13 @@
 //   2) 整环威胁图的预期伤害——出怪弧每波随机，所以先验假设 N 段弧 × 3 轨道都可能来人，
 //      再按实际观测加权。没有这一项，bot 会拿霰星把第一段弧堆成刺猬，其余方向门户大开。
 // 它因此会自己学会：先用长射程把环铺开，蜂群补霰星，力场补棱镜，甲壳补轨炮。
-import { resolveCounters, resolveTowers } from "./config.js";
+import { resolveCounters, resolveTowerLevels, resolveTowers } from "./config.js";
 import { createRng, nextInt } from "./rng.js";
 
 export const BOT_DT = 1 / 60;
 
 const TOWERS = resolveTowers();
+const TOWER_LEVELS = resolveTowerLevels();
 const TOWER_IDS = Object.keys(TOWERS);
 const COUNTERS = resolveCounters();
 
@@ -111,12 +112,27 @@ export function exposureSeconds(socket, spec, target, view) {
 function coverageAt(view, target, armor) {
   let total = 0;
   for (const socket of view.sockets) {
-    if (!socket.towerId) continue;
-    const spec = TOWERS[socket.towerId];
+    const spec = specAt(socket);
     if (!spec) continue;
     total += dpsAgainst(spec, armor) * exposureSeconds(socket, spec, target, view);
   }
   return total;
+}
+
+/** 插座当前等级的数值；空座返回 null。 */
+function specAt(socket) {
+  if (!socket.towerId) return null;
+  const levels = TOWER_LEVELS[socket.towerId];
+  if (!levels) return null;
+  return levels[Math.min(levels.length, Math.max(1, socket.level || 1)) - 1] || null;
+}
+
+function nextSpecAt(socket) {
+  if (!socket.towerId) return null;
+  const levels = TOWER_LEVELS[socket.towerId];
+  const level = Math.max(1, socket.level || 1);
+  if (!levels || level >= levels.length) return null;
+  return levels[level];
 }
 
 /** 一座塔同时能压制几个目标。 */
@@ -162,44 +178,60 @@ export function bestPlacement(bot, view, limit) {
   }
   if (ringTotal <= 0) return null;
 
+  // 「这座塔摆在这个插座上，预计能打出多少伤害」——量纲统一，建塔与升级可以直接比。
+  const scoreOf = (spec, socket) => {
+    let throughput = 0;
+    let available = 0;
+    let covered = 0;
+    for (const e of live) {
+      const exposure = exposureSeconds(socket, spec, e, view);
+      if (exposure <= 0) continue;
+      covered += 1;
+      const weight = threat(e, view.spawnRadius) * e.slack;
+      throughput += dpsAgainst(spec, e.armor) * exposure * weight;
+      available += e.hp * weight;
+    }
+    // 单体塔一次只能打一个，霰星一发打 maxTargets 个，坠井全覆盖：按并发数折算；
+    // 再怎么高的 DPS 也打不出超过对面血条的伤害，所以拿血量总量封顶。
+    const liveScore = covered > 0 ? Math.min((throughput * concurrency(spec, covered)) / covered, available) : 0;
+
+    // 整环项：权重归一到 1，量纲同样是「预期伤害」，可以直接跟眼前项相加。
+    let ringScore = 0;
+    for (const cell of bot.heat) {
+      const exposure = exposureSeconds(socket, spec, cell, view);
+      if (exposure <= 0) continue;
+      for (const armor of ARMORS) {
+        ringScore += dpsAgainst(spec, armor) * exposure * cell.armor[armor] * cell.slack[armor];
+      }
+    }
+    return liveScore + (ringScore / ringTotal) * RING_BIAS;
+  };
+
   let best = null;
+  const consider = (value, pick) => {
+    if (value > 0 && (best === null || value > best.value)) best = { value, ...pick };
+  };
+
   for (const towerId of allowTowers) {
     const spec = TOWERS[towerId];
     if (!spec || spec.cost > budget) continue;
     for (const socket of view.sockets) {
       if (socket.towerId) continue;
       if (allowSocket && !allowSocket(socket.i)) continue;
+      consider(scoreOf(spec, socket) / spec.cost, { socket: socket.i, towerId, upgrade: false });
+    }
+  }
 
-      let throughput = 0;
-      let available = 0;
-      let covered = 0;
-      for (const e of live) {
-        const exposure = exposureSeconds(socket, spec, e, view);
-        if (exposure <= 0) continue;
-        covered += 1;
-        const weight = threat(e, view.spawnRadius) * e.slack;
-        throughput += dpsAgainst(spec, e.armor) * exposure * weight;
-        available += e.hp * weight;
-      }
-      // 单体塔一次只能打一个，霰星一发打 maxTargets 个，坠井全覆盖：按并发数折算；
-      // 再怎么高的 DPS 也打不出超过对面血条的伤害，所以拿血量总量封顶。
-      const liveScore = covered > 0 ? Math.min((throughput * concurrency(spec, covered)) / covered, available) : 0;
-
-      // 整环项：权重归一到 1，量纲同样是「预期伤害」，可以直接跟眼前项相加。
-      let ringScore = 0;
-      for (const cell of bot.heat) {
-        const exposure = exposureSeconds(socket, spec, cell, view);
-        if (exposure <= 0) continue;
-        for (const armor of ARMORS) {
-          ringScore += dpsAgainst(spec, armor) * exposure * cell.armor[armor] * cell.slack[armor];
-        }
-      }
-      ringScore = (ringScore / ringTotal) * RING_BIAS;
-
-      const score = liveScore + ringScore;
-      if (score <= 0) continue;
-      const value = score / spec.cost;
-      if (best === null || value > best.value) best = { value, socket: socket.i, towerId };
+  // 环插满之后钱就只能往已有的塔上砸：升级按「多打出来的伤害 / 升级价」计分，
+  // 跟建新塔用同一把尺，所以同一个 VALUE_FLOOR 就能管住两种花法。
+  if (!limit || limit.upgrades !== false) {
+    for (const socket of view.sockets) {
+      const spec = specAt(socket);
+      const next = nextSpecAt(socket);
+      if (!spec || !next || next.cost > budget) continue;
+      if (allowSocket && !allowSocket(socket.i)) continue;
+      const gain = scoreOf(next, socket) - scoreOf(spec, socket);
+      consider(gain / next.cost, { socket: socket.i, towerId: socket.towerId, upgrade: true });
     }
   }
   return best;
@@ -252,7 +284,8 @@ export function botInput(bot, view, options) {
       floor = VALUE_FLOOR;
     }
     if (pick && pick.value >= floor) {
-      input.place = { socket: pick.socket, towerId: pick.towerId };
+      if (pick.upgrade) input.upgradeSocket = pick.socket;
+      else input.place = { socket: pick.socket, towerId: pick.towerId };
       bot.nextPlaceT = view.time + PLACE_GAP_SEC;
     } else {
       bot.nextPlaceT = view.time + RETHINK_SEC;
