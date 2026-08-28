@@ -1,23 +1,39 @@
-/* HUD tokens — Fable-2 将替换为本作视觉规范 */
-:root {
-  --sh-bg: #05060d;
-  --sh-cyan: #3cf0ff;
-  --sh-magenta: #ff3d9a;
-  --sh-paper: #e8f4ff;
+/* 蚀核要塞 · 样式入口 — Fable-2。规范见 docs/ART_DIRECTION.md。
+   HUD class 冻结：.sh-hud .sh-core .sh-scrap .sh-wave .sh-dock .sh-toast .sh-backend .sh-overclock */
+@import "./tokens.css";
+@import "./hud.css";
+
+/* ===== 全屏基座（html/body/canvas 必须保持满屏，勿删） ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
-html, body {
+
+html,
+body {
   margin: 0;
+  padding: 0;
+  width: 100%;
   height: 100%;
-  background: var(--sh-bg);
-  color: var(--sh-paper);
-  font-family: "Segoe UI", "Noto Sans SC", sans-serif;
   overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 8%, #0a1224 0%, var(--sh-bg) 52%, var(--sh-bg-deep) 100%);
+  color: var(--sh-paper);
+  font-family: var(--sh-font);
 }
+
 #sh-canvas {
+  position: fixed;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
   touch-action: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.sh-hud { pointer-events: none; }
-.sh-dock, .sh-overclock { pointer-events: auto; }
+
+::selection {
+  background: rgba(60, 240, 255, 0.3);
+  color: #fff;
+}

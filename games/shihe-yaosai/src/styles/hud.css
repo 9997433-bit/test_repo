@@ -1,0 +1,472 @@
+/* 蚀核要塞 · HUD — 冻结 class：
+   .sh-hud .sh-core .sh-scrap .sh-wave .sh-dock .sh-toast .sh-backend .sh-overclock
+   状态钩子（与 src/ui/hud.js 对齐，见 docs/ART_DIRECTION.md §6.3）：
+   .sh-hud[data-paused][data-result="win|lose"]  style: --sh-core-frac(0..1)
+   .sh-core.is-danger | .sh-backend.is-webgpu/.is-webgl2 | .sh-toast.is-error(:empty 自动隐藏)
+   .sh-dock button.is-selected / [aria-pressed="true"] / :disabled / [data-tower=…] / [data-count]
+   .sh-dock 子级：.sh-dock-name .sh-dock-cost .sh-dock-key .sh-pause .sh-quality
+   .sh-overclock.is-active / .is-cooldown / :disabled */
+
+/* ===== 根覆盖层：全屏 Grid，整体点穿，仅坞站与过载可交互 ===== */
+.sh-hud {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--sh-gap);
+  padding:
+    calc(var(--sh-hud-pad) + env(safe-area-inset-top, 0px))
+    calc(var(--sh-hud-pad) + env(safe-area-inset-right, 0px))
+    calc(var(--sh-hud-pad) + env(safe-area-inset-bottom, 0px))
+    calc(var(--sh-hud-pad) + env(safe-area-inset-left, 0px));
+  font-family: var(--sh-font);
+  color: var(--sh-paper);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 顶部极淡压暗渐变：只为芯片可读性，不是体积光 */
+.sh-hud::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  grid-area: 1 / 1 / -1 / -1;
+  background:
+    linear-gradient(180deg, rgba(2, 3, 10, 0.5), rgba(2, 3, 10, 0) 18%),
+    linear-gradient(0deg, rgba(2, 3, 10, 0.45), rgba(2, 3, 10, 0) 16%);
+  pointer-events: none;
+  transition: background 0.3s ease;
+}
+/* 暂停 / 终局：整屏压暗或染边（data-* 由 hud.js 写入） */
+.sh-hud[data-paused]::before {
+  background: rgba(2, 3, 10, 0.55);
+}
+.sh-hud[data-result="win"]::before {
+  background:
+    radial-gradient(120% 100% at 50% 50%, rgba(2, 3, 10, 0) 42%, rgba(60, 240, 255, 0.16) 100%),
+    rgba(2, 3, 10, 0.3);
+}
+.sh-hud[data-result="lose"]::before {
+  background:
+    radial-gradient(120% 100% at 50% 50%, rgba(2, 3, 10, 0) 42%, rgba(255, 77, 94, 0.2) 100%),
+    rgba(2, 3, 10, 0.4);
+}
+
+.sh-hud :focus-visible {
+  outline: 2px solid var(--sh-cyan);
+  outline-offset: 2px;
+}
+
+/* ===== 顶部状态芯片：星核 / 屑晶 / 波次 ===== */
+.sh-core,
+.sh-scrap,
+.sh-wave {
+  grid-row: 1;
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: var(--sh-radius);
+  border: 1px solid var(--sh-line);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 38%),
+    linear-gradient(180deg, var(--sh-panel-hi), var(--sh-panel));
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 4px 18px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(232, 244, 255, 0.1);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 8px var(--sh-cyan-glow);
+  white-space: nowrap;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.sh-core  { grid-column: 1; position: relative; }
+.sh-scrap { grid-column: 2; }
+.sh-wave  { grid-column: 3; }
+
+/* 核心 HP 条：读 hud.js 写在 .sh-hud 上的 --sh-core-frac(0..1) */
+.sh-core::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--sh-cyan) calc(var(--sh-core-frac, 1) * 100%),
+    rgba(60, 240, 255, 0.14) 0
+  );
+}
+.sh-core.is-danger::after {
+  background: linear-gradient(
+    90deg,
+    var(--sh-danger) calc(var(--sh-core-frac, 1) * 100%),
+    rgba(255, 77, 94, 0.18) 0
+  );
+}
+
+.sh-core::before,
+.sh-scrap::before,
+.sh-wave::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.sh-core::before {
+  background: radial-gradient(circle at 35% 35%, var(--sh-ice), var(--sh-cyan) 55%, rgba(60, 240, 255, 0) 80%);
+  box-shadow: 0 0 10px var(--sh-cyan), 0 0 2px #fff;
+  animation: sh-core-breathe 2s ease-in-out infinite;
+}
+.sh-scrap::before {
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.85);
+  background: linear-gradient(135deg, var(--sh-ice), var(--sh-cyan) 70%);
+  box-shadow: 0 0 8px var(--sh-cyan-glow);
+}
+.sh-wave::before {
+  background: radial-gradient(circle at 35% 35%, #ffd9ec, var(--sh-magenta) 55%, rgba(255, 61, 154, 0) 80%);
+  box-shadow: 0 0 10px var(--sh-magenta-glow);
+}
+@keyframes sh-core-breathe {
+  0%, 100% { box-shadow: 0 0 6px var(--sh-cyan), 0 0 2px #fff; }
+  50%      { box-shadow: 0 0 14px var(--sh-cyan), 0 0 3px #fff; }
+}
+
+/* 核心低血：危险红脉冲 */
+.sh-core.is-danger {
+  border-color: rgba(255, 77, 94, 0.7);
+  color: #ffe3e6;
+  text-shadow: 0 0 10px rgba(255, 77, 94, 0.6);
+  animation: sh-danger-pulse 1s ease-in-out infinite;
+}
+.sh-core.is-danger::before {
+  background: radial-gradient(circle at 35% 35%, #ffe3e6, var(--sh-danger) 55%, rgba(255, 77, 94, 0) 80%);
+  box-shadow: 0 0 10px var(--sh-danger);
+  animation: none;
+}
+@keyframes sh-danger-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 4px 18px rgba(0, 0, 0, 0.45),
+      0 0 12px rgba(255, 77, 94, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 4px 18px rgba(0, 0, 0, 0.45),
+      0 0 26px rgba(255, 77, 94, 0.6);
+  }
+}
+
+/* ===== 渲染后端标签 ===== */
+.sh-backend {
+  grid-column: 5;
+  grid-row: 1;
+  justify-self: end;
+  align-self: start;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--sh-line-dim);
+  background: rgba(5, 8, 16, 0.6);
+  font-family: var(--sh-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sh-muted);
+}
+.sh-backend.is-webgpu {
+  color: var(--sh-cyan);
+  border-color: var(--sh-line);
+  text-shadow: 0 0 8px var(--sh-cyan-glow);
+}
+.sh-backend.is-webgl2 { color: #b9d2ff; }
+
+/* ===== Toast：顶部居中浮现，空内容自动隐藏 ===== */
+.sh-toast {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  place-self: start center;
+  margin-top: 6vh;
+  max-width: min(80vw, 520px);
+  padding: 10px 20px;
+  border-radius: 999px;
+  border: 1px solid var(--sh-line);
+  background: linear-gradient(180deg, rgba(16, 26, 44, 0.92), rgba(8, 13, 24, 0.92));
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 18px var(--sh-cyan-glow);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-shadow: 0 0 8px var(--sh-cyan-glow);
+  animation: sh-toast-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.sh-toast:empty { display: none; }
+.sh-toast.is-error {
+  border-color: rgba(255, 61, 154, 0.6);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 18px var(--sh-magenta-glow);
+  text-shadow: 0 0 8px var(--sh-magenta-glow);
+}
+@keyframes sh-toast-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ===== 铸塔坞站 ===== */
+.sh-dock {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  justify-self: center;
+  align-self: end;
+  pointer-events: auto;
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--sh-line-dim);
+  background: linear-gradient(180deg, rgba(16, 25, 42, 0.8), rgba(6, 10, 20, 0.86));
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(232, 244, 255, 0.08);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.sh-dock:empty { display: none; }
+
+.sh-dock button {
+  position: relative;
+  min-width: 64px;
+  min-height: 56px; /* 触控 ≥44px 硬指标之上留余量 */
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 9px;
+  border: 1px solid var(--sh-line-dim);
+  background: linear-gradient(165deg, rgba(46, 60, 86, 0.9), rgba(18, 26, 42, 0.95));
+  color: var(--sh-paper);
+  font: 600 13px/1.25 var(--sh-font);
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+/* 塔型识别条（配色见 ART_DIRECTION §3；仅塔按钮有，暂停/画质等无） */
+.sh-dock button[data-tower]::before {
+  content: "";
+  width: 26px;
+  height: 3px;
+  margin-bottom: 2px;
+  border-radius: 2px;
+  background: var(--sh-cyan-soft);
+  box-shadow: 0 0 6px var(--sh-cyan-glow);
+}
+.sh-dock button[data-tower="rail"]::before    { background: var(--sh-cyan); }
+.sh-dock button[data-tower="prism"]::before   { background: var(--sh-ice); box-shadow: 0 0 6px rgba(234, 254, 255, 0.5); }
+.sh-dock button[data-tower="scatter"]::before {
+  background: repeating-linear-gradient(90deg, var(--sh-cyan) 0 4px, transparent 4px 8px);
+}
+.sh-dock button[data-tower="well"]::before    { background: var(--sh-violet); box-shadow: 0 0 6px rgba(138, 92, 255, 0.5); }
+.sh-dock button[data-tower="star"]::before    { background: linear-gradient(90deg, var(--sh-cyan), var(--sh-ice)); }
+
+.sh-dock button:hover {
+  border-color: var(--sh-cyan-soft);
+  box-shadow: 0 0 14px var(--sh-cyan-glow), inset 0 1px 0 rgba(232, 244, 255, 0.12);
+  transform: translateY(-1px);
+}
+.sh-dock button:active { transform: translateY(0) scale(0.97); }
+.sh-dock button.is-selected,
+.sh-dock button[aria-pressed="true"] {
+  border-color: var(--sh-cyan);
+  background: linear-gradient(165deg, rgba(28, 74, 88, 0.95), rgba(10, 32, 44, 0.95));
+  box-shadow: 0 0 16px var(--sh-cyan-glow), inset 0 0 12px rgba(60, 240, 255, 0.18);
+  color: #fff;
+  text-shadow: 0 0 8px var(--sh-cyan-glow);
+}
+.sh-dock button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: saturate(0.4);
+  transform: none;
+  box-shadow: none;
+}
+
+/* 塔按钮内部结构（hud.js 骨架：名称 / 造价 / 快捷键） */
+.sh-dock-name {
+  font: 600 13px/1.2 var(--sh-font);
+}
+.sh-dock-cost {
+  font: 600 11px/1.2 var(--sh-font);
+  font-variant-numeric: tabular-nums;
+  color: var(--sh-cyan);
+  text-shadow: 0 0 6px var(--sh-cyan-glow);
+}
+.sh-dock-cost:empty { display: none; }
+.sh-dock-key {
+  margin-top: 1px;
+  padding: 2px 5px;
+  border: 1px solid rgba(232, 244, 255, 0.18);
+  border-radius: 3px;
+  font: 500 9px/1 var(--sh-mono);
+  color: var(--sh-muted);
+}
+.sh-dock-key:empty { display: none; }
+
+/* 已放置数量角标（hud.js 写 data-count） */
+.sh-dock button[data-count]:not([data-count="0"])::after {
+  content: attr(data-count);
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  min-width: 15px;
+  padding: 1px 3px;
+  border-radius: 8px;
+  border: 1px solid var(--sh-line);
+  background: rgba(5, 10, 20, 0.85);
+  color: var(--sh-cyan);
+  font: 600 9px/1.3 var(--sh-mono);
+  text-align: center;
+}
+
+/* 坞站里的次级功能键（暂停 / 画质）：降一级视觉层级 */
+.sh-dock .sh-pause,
+.sh-dock .sh-quality {
+  min-width: 56px;
+  border-color: rgba(232, 244, 255, 0.12);
+  background: linear-gradient(165deg, rgba(30, 38, 54, 0.9), rgba(14, 18, 30, 0.95));
+  color: var(--sh-muted);
+  font-size: 11px;
+}
+.sh-dock .sh-pause { margin-left: 6px; }
+.sh-dock .sh-pause:hover,
+.sh-dock .sh-quality:hover {
+  color: var(--sh-paper);
+  border-color: rgba(232, 244, 255, 0.3);
+  box-shadow: none;
+  transform: none;
+}
+
+/* ===== 过载按钮 ===== */
+.sh-overclock {
+  grid-column: 5;
+  grid-row: 3;
+  justify-self: end;
+  align-self: end;
+  pointer-events: auto;
+  min-width: 96px;
+  min-height: 52px; /* ≥44px */
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--sh-cyan-soft);
+  background: linear-gradient(165deg, rgba(20, 52, 66, 0.92), rgba(8, 18, 30, 0.95));
+  color: var(--sh-cyan);
+  font: 700 15px/1 var(--sh-font);
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-shadow: 0 0 10px var(--sh-cyan-glow);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5), 0 0 14px var(--sh-cyan-glow),
+    inset 0 1px 0 rgba(232, 244, 255, 0.1);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.sh-overclock:hover {
+  border-color: var(--sh-cyan);
+  color: var(--sh-ice);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5), 0 0 24px var(--sh-cyan-glow),
+    inset 0 1px 0 rgba(232, 244, 255, 0.14);
+  transform: translateY(-1px);
+}
+.sh-overclock:active { transform: translateY(0) scale(0.97); }
+/* 过载激发：借用敌方 hue 的越界能量（ART_DIRECTION §4） */
+.sh-overclock.is-active {
+  border-color: var(--sh-magenta);
+  color: #ffdff0;
+  background: linear-gradient(165deg, rgba(84, 18, 52, 0.95), rgba(40, 8, 26, 0.95));
+  text-shadow: 0 0 10px var(--sh-magenta-glow);
+  animation: sh-oc-pulse 0.8s ease-in-out infinite;
+}
+.sh-overclock.is-cooldown,
+.sh-overclock:disabled {
+  opacity: 0.5;
+  filter: saturate(0.4);
+  cursor: not-allowed;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  animation: none;
+  transform: none;
+}
+@keyframes sh-oc-pulse {
+  0%, 100% { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5), 0 0 12px var(--sh-magenta-glow); }
+  50%      { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 61, 154, 0.65); }
+}
+
+/* ===== 断点：≤640px（覆盖 390 宽）压缩并让过载上移避让坞站 ===== */
+@media (max-width: 640px) {
+  :root {
+    --sh-hud-pad: 10px;
+    --sh-gap: 8px;
+  }
+  .sh-core, .sh-scrap, .sh-wave {
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+  .sh-backend { padding: 5px 8px; font-size: 10px; }
+  .sh-toast { font-size: 13px; padding: 8px 16px; }
+  .sh-overclock {
+    grid-row: 2;
+    align-self: end;
+    margin-bottom: 4px;
+    min-width: 84px;
+    font-size: 14px;
+  }
+  .sh-dock {
+    gap: 6px;
+    padding: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .sh-dock::-webkit-scrollbar { display: none; }
+  .sh-dock button { min-width: 56px; min-height: 52px; font-size: 12px; }
+  .sh-dock-key { display: none; } /* 触屏无键盘，省高度 */
+  .sh-dock .sh-pause,
+  .sh-dock .sh-quality { min-width: 48px; font-size: 10px; }
+}
+
+@media (max-width: 400px) {
+  .sh-core, .sh-scrap, .sh-wave {
+    gap: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .sh-dock button { min-width: 52px; padding: 4px 6px; }
+}
+
+/* ===== 动效可关 ===== */
+@media (prefers-reduced-motion: reduce) {
+  .sh-hud,
+  .sh-hud *,
+  .sh-hud *::before,
+  .sh-hud *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -2,21 +2,53 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060d" />
+    <meta name="description" content="蚀核要塞 · 立体环轨塔防。中央星核，外环 24 插座，三条轨道，20 波 + Boss 蚀主。" />
     <title>蚀核要塞</title>
     <link rel="stylesheet" href="./src/styles/index.css" />
   </head>
   <body>
-    <canvas id="sh-canvas"></canvas>
+    <canvas id="sh-canvas" aria-label="蚀核要塞 战场" tabindex="0"></canvas>
+
+    <!--
+      HUD 骨架。冻结 class 由 Fable-2(CSS) 与 Opus-4(JS) 共用，请勿改名：
+      .sh-hud .sh-core .sh-scrap .sh-wave .sh-dock .sh-toast .sh-backend .sh-overclock
+      样式全部在 src/styles，这里不写任何内联样式。
+      mountHud() 会接管下面这些节点，缺失时自行补齐，所以静态标记同时也是无 JS 时的兜底。
+    -->
     <div class="sh-hud" id="sh-hud">
-      <div class="sh-backend" id="sh-backend">boot</div>
       <div class="sh-core" id="sh-core">星核 —</div>
       <div class="sh-scrap" id="sh-scrap">屑晶 —</div>
       <div class="sh-wave" id="sh-wave">波次 —</div>
-      <div class="sh-dock" id="sh-dock"></div>
-      <div class="sh-toast" id="sh-toast"></div>
-      <button type="button" class="sh-overclock" id="sh-overclock">过载 F</button>
+      <div class="sh-backend" id="sh-backend" title="渲染后端">boot</div>
+      <div class="sh-toast" id="sh-toast" role="status" aria-live="polite"></div>
+
+      <div class="sh-dock" id="sh-dock" role="group" aria-label="建造栏">
+        <button type="button" data-tower="rail" aria-pressed="true" aria-label="轨炮（快捷键 1）">
+          <span class="sh-dock-name">轨炮</span><span class="sh-dock-cost"></span><span class="sh-dock-key">1</span>
+        </button>
+        <button type="button" data-tower="prism" aria-pressed="false" aria-label="棱镜（快捷键 2）">
+          <span class="sh-dock-name">棱镜</span><span class="sh-dock-cost"></span><span class="sh-dock-key">2</span>
+        </button>
+        <button type="button" data-tower="scatter" aria-pressed="false" aria-label="霰星（快捷键 3）">
+          <span class="sh-dock-name">霰星</span><span class="sh-dock-cost"></span><span class="sh-dock-key">3</span>
+        </button>
+        <button type="button" data-tower="well" aria-pressed="false" aria-label="坠井（快捷键 4）">
+          <span class="sh-dock-name">坠井</span><span class="sh-dock-cost"></span><span class="sh-dock-key">4</span>
+        </button>
+        <button type="button" data-tower="star" aria-pressed="false" aria-label="星弩（快捷键 5）">
+          <span class="sh-dock-name">星弩</span><span class="sh-dock-cost"></span><span class="sh-dock-key">5</span>
+        </button>
+        <button type="button" class="sh-pause" data-sh-action="pause" aria-pressed="false">暂停 Space</button>
+        <button type="button" class="sh-quality" data-sh-action="quality">画质 高</button>
+      </div>
+
+      <button type="button" class="sh-overclock" id="sh-overclock" data-sh-action="overclock">过载 F</button>
     </div>
+
+    <noscript><p>蚀核要塞需要启用 JavaScript 才能运行。</p></noscript>
+
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>
