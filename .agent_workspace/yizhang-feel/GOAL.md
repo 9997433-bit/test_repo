@@ -2,6 +2,17 @@
 
 工作目录已隔离：`games/yizhang/`（端口 **4181**）。**禁止再复制一份游戏目录。** 禁止改 `games/` 下其他游戏。
 
+## 本轮（内容轮，父分支从 `main@7ba11f1` 重建）
+
+R1–3 键鼠/皮肤/VFX 已在 main。本轮兑现打击感读数、5 拍故事、4 只 career 里程碑掌。派发：`.agent_workspace/yizhang-look/round5/`。
+
+1. **P0 打得中**：`invulnT` 单点递减；重生/过门后 `invulnTime+ε` 可被打中。
+2. **打击感**：击退累积可视、准星命中脉冲、stun 0.32 真下发、`slapStart` 起手、禁止 hit+slap 双 `playSlap`。无血条。
+3. **故事 5 拍**：挂 hub→门→岛→结算；`skipHub` 不挡岛上/结算拍。不进 sim/combat/render 运镜。
+4. **手套 +4**：铁茧/渡鸦/常胜/不倒，`scope:"career"`；走道仍 8 座，新掌 2D 配掌台。
+
+冻结：`RENDER_YAW_OFFSET=0`；`HIT_STOP.max`；再来一局≠回安全区；8 座不扩；`lookMode` 缺省 locked。
+
 ## 用户原话（必须兑现）
 
 1. 电脑玩 **上下反了、左右也反了**（键鼠方向整轴反转）
