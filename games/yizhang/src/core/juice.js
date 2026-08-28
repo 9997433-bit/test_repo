@@ -10,12 +10,19 @@
 /**
  * 定格时长表（秒）。数值取「一掌下去手上有东西」的量，同时守住 ≤120ms。
  * 原来的 50ms 在 60fps 下只有三帧，掌掌都像扇在空气上，所以整体上调。
+ *
+ * `heavyPower` 是「这一掌算不算重」的门槛，与 `data/tuning.js` 的
+ * `KNOCKBACK.heavyPowerThreshold` / `combat/constants.js` 的 `HIT.heavyPowerThreshold`
+ * 同为 12：碎地、命中记录的 `heavy` 标记、这里的重击定格档共用一条线，
+ * 不再出现「碎地算重击、定格却还在基础档」的 12..16 灰区。改它要三处一起改。
+ * `max = 0.12` 是验收线上限，不随门槛动——收门槛只改「谁进重击档」，不改档位本身
+ * （最重一档仍是 0.08 + 0.035 = 0.115）。
  */
 export const HIT_STOP = {
   dealt: 0.08,
   taken: 0.065,
   heavyBonus: 0.035,
-  heavyPower: 16,
+  heavyPower: 12,
   max: 0.12,
   cooldown: 0.22,
 };

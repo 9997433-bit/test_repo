@@ -2,7 +2,8 @@
 //
 //   1. 时间维度是封顶的。单次命中定格 ≤ `HIT_STOP.max = 0.12s`（验收线上限），两次定格
 //      之间还有 `cooldown = 0.22s` 节流。而且它是**两级台阶**不是连续函数：过没过
-//      `heavyPower = 16` 决定 0.08 还是 0.115，combat 把倍率堆到天上去也就是那一档。
+//      `heavyPower = 12`（与 combat/tuning 的重击门槛同源）决定 0.08 还是 0.115，
+//      combat 把倍率堆到天上去也就是那一档。
 //      0.12 是留着的天花板，不是可以花掉的预算——「这一掌不够爽」不是把定格拉长的理由，
 //      60fps 下 0.115s 已经是七帧，再长只会把连段剁成幻灯片。
 //   2. 分量维度是放行的。这一记有多重，combat 如实写进命中记录与事件的 `power` / `impulse`
@@ -76,15 +77,15 @@ function powerSpread() {
 }
 
 describe("hit-stop 数值表冻结", () => {
-  // 这张表是 O 席（`core/juice.js`）的域。改它要连着下面「重击门槛应对齐」那一节一起看：
-  // heavyPower 从 16 收到 12 是**允许**的对齐动作（那一节已经证明不会越 0.12），
-  // 对齐时把这里的 16 一并回修即可；把 max 抬过 0.12 才是回归。
+  // 这张表是 O 席（`core/juice.js`）的域。`heavyPower` 已从 16 收到 12，与
+  // `HIT.heavyPowerThreshold` / `KNOCKBACK.heavyPowerThreshold` 同源（见下面「重击门槛已对齐」
+  // 一节：收拢后单次定格恒 ≤ 0.12，档位本身没动）。其余五个数照旧冻结；把 max 抬过 0.12 才是回归。
   it("六个数一个不动，0.12s 就是单次定格的天花板", () => {
     expect(HIT_STOP).toEqual({
       dealt: 0.08,
       taken: 0.065,
       heavyBonus: 0.035,
-      heavyPower: 16,
+      heavyPower: 12,
       max: 0.12,
       cooldown: 0.22,
     });
@@ -164,23 +165,24 @@ describe("combat 再怎么堆倍率也顶不动那 0.12s", () => {
   });
 });
 
-// 「重击」这个词在工程里现在有两条线：
+// 「重击」这个词在工程里曾经有两条线：
 //   * combat / data 侧：`HIT.heavyPowerThreshold` = `KNOCKBACK.heavyPowerThreshold` = 12。
 //     有效击退过了它就算重击——碎地按它结算（`data/tiles.js`），命中记录与事件的 `heavy` 也按它写。
-//   * 手感侧：`core/juice.js` 的 `HIT_STOP.heavyPower` = 16，过了它定格多加 35ms。
-// 两条线本该是同一条。眼下差 4，于是落在 12..16 的那一段（磐石贴脸、陨掌背身这类）
-// 碎地算重击、定格却还在基础档。收口动作要改 `core/juice.js`，那是 O 席的域，
-// combat 这一席改不到——所以本节只做三件本席做得到的事：
-//   1. 把 combat 侧的门槛与 tuning 锁成同源，别让 combat 自己再长出第三条线；
-//   2. 证明「对齐到 12」是安全的：真按 12 判，单次定格恒 ≤ 0.12，不用动 `HIT_STOP.max`；
-//   3. 钉住对齐的方向（juice 的门槛只会更高、不会更低）。O 席把 16 收成 12 之后，本节照样全绿。
-describe("重击门槛应对齐：combat/tuning 认 12，juice 认 16（收口在 O 席）", () => {
+//   * 手感侧：`core/juice.js` 的 `HIT_STOP.heavyPower` 曾是 16，过了它定格才多加 35ms。
+// 差着的那 4 造出一段灰区（12..16：磐石贴脸、陨掌背身这类）——碎地算重击、定格却还在基础档。
+// 本轮 O 席把 16 收成 12，三处同源，灰区清空。本节钉住对齐后的四件事：
+//   1. combat 侧的门槛与 tuning 同源，不许再长出第三条线；
+//   2. juice 的门槛与 combat/tuning 逐字相同，「重击」全工程只有一种判读；
+//   3. 对齐是安全的：按 12 判，单次定格恒 ≤ 0.12，`HIT_STOP.max` 一格没动；
+//   4. 灰区为空——不存在「combat 判重、juice 还按基础档」的命中。
+describe("重击门槛已对齐：combat / tuning / juice 同认 12", () => {
   const tagOf = (s) =>
     `${s.gloveId} ${s.awakened ? "觉醒" : "常态"}${s.behind ? " 背身" : ""} @ ${s.dist.toFixed(2)}m`;
 
-  it("combat 侧与 tuning 同源：12 只有一份", () => {
+  it("combat / tuning / juice 同源：12 只有一份", () => {
     expect(HIT.heavyPowerThreshold).toBe(KNOCKBACK.heavyPowerThreshold);
     expect(HIT.heavyPowerThreshold).toBe(12);
+    expect(HIT_STOP.heavyPower).toBe(HIT.heavyPowerThreshold);
   });
 
   it("命中记录与事件都带着 heavy 出门，判读与门槛逐条一致", () => {
@@ -200,40 +202,42 @@ describe("重击门槛应对齐：combat/tuning 认 12，juice 认 16（收口�
     expect(ev.power).toBe(hits[0].power);
   });
 
-  it("对齐是安全的：真按 12 判重击，单次定格恒 ≤ 0.12，不用动 max", () => {
-    // 逐字照抄 `core/juice.js` 的 hitStopFor，只把门槛换成 combat/tuning 的 12
-    const aligned = (power, dealt = true) => {
-      const base = dealt ? HIT_STOP.dealt : HIT_STOP.taken;
-      const seconds = power >= HIT.heavyPowerThreshold ? base + HIT_STOP.heavyBonus : base;
-      return Math.min(HIT_STOP.max, seconds);
-    };
-
+  it("对齐是安全的：按 12 判重击，单次定格恒 ≤ 0.12，max 一格没动", () => {
     // 对齐后最长的一档还是 0.115，仍在天花板以下：收门槛只改「谁进重击档」，不改档位本身
-    expect(aligned(Number.MAX_SAFE_INTEGER)).toBe(HIT_STOP.dealt + HIT_STOP.heavyBonus);
-    expect(aligned(Number.MAX_SAFE_INTEGER)).toBeLessThan(HIT_STOP.max);
+    expect(HIT_STOP.max).toBe(0.12);
+    const heaviest = hitStopFor(
+      { type: "hit", playerId: SELF, source: "slap", power: Number.MAX_SAFE_INTEGER },
+      SELF,
+    );
+    expect(heaviest).toBe(HIT_STOP.dealt + HIT_STOP.heavyBonus);
+    expect(heaviest).toBeLessThan(HIT_STOP.max);
 
     for (const s of powerSpread()) {
-      expect(aligned(s.hit.power), tagOf(s)).toBeLessThanOrEqual(HIT_STOP.max);
-      expect(aligned(s.hit.power, false), tagOf(s)).toBeLessThanOrEqual(HIT_STOP.max);
-      // 对齐后的档位就是 combat 自己写下的 heavy，两边不再各判一次
-      expect(aligned(s.hit.power) === HIT_STOP.dealt + HIT_STOP.heavyBonus, tagOf(s)).toBe(s.hit.heavy);
+      const ev = viewHitEvent(s.hit);
+      const dealt = hitStopFor(ev, SELF);
+      const taken = hitStopFor({ ...ev, playerId: "B", targetId: SELF }, SELF);
+      expect(dealt, tagOf(s)).toBeLessThanOrEqual(HIT_STOP.max);
+      expect(taken, tagOf(s)).toBeLessThanOrEqual(HIT_STOP.max);
+      // 定格的档位就是 combat 自己写下的 heavy，两边不再各判一次
+      expect(dealt === HIT_STOP.dealt + HIT_STOP.heavyBonus, tagOf(s)).toBe(s.hit.heavy);
+      expect(taken === HIT_STOP.taken + HIT_STOP.heavyBonus, tagOf(s)).toBe(s.hit.heavy);
     }
   });
 
-  it("对齐只会把门槛往下收：juice 的 heavyPower ≥ combat 的 12", () => {
-    expect(HIT_STOP.heavyPower).toBeGreaterThanOrEqual(HIT.heavyPowerThreshold);
-
-    // 灰区 = combat 判重击、juice 还按基础档定格的那一段（眼下 12..16）。
-    // 只钉它的**性质**不钉它的大小：O 席把 16 收成 12 之后灰区为空，本条依然成立。
+  it("灰区已清空：不存在 combat 判重、juice 还按基础档的命中", () => {
+    // 灰区 = combat 判重击、juice 还按基础档定格的那一段（对齐前是 12..16）
     const gray = powerSpread().filter(
       (s) => s.hit.heavy && hitStopFor(viewHitEvent(s.hit), SELF) === HIT_STOP.dealt,
     );
-    for (const s of gray) {
-      expect(s.hit.power, tagOf(s)).toBeGreaterThanOrEqual(HIT.heavyPowerThreshold);
-      expect(s.hit.power, tagOf(s)).toBeLessThan(HIT_STOP.heavyPower);
-      // 灰区里的这几记收进重击档之后也只是 0.115，照样不越线
-      expect(HIT_STOP.dealt + HIT_STOP.heavyBonus).toBeLessThanOrEqual(HIT_STOP.max);
+    expect(gray.map(tagOf)).toEqual([]);
+
+    // 对齐前落在灰区的那几记（磐石贴脸 16.63、陨掌背身 13.28 一类）现在都进了重击档
+    const freeze = (power) => hitStopFor({ type: "hit", playerId: SELF, source: "slap", power }, SELF);
+    for (const power of [12, 13.28, 14.46, 15.99]) {
+      expect(freeze(power), `power=${power}`).toBe(HIT_STOP.dealt + HIT_STOP.heavyBonus);
     }
+    // 门槛下面那一段照旧是基础档：收门槛没有把轻掌也拖进来
+    expect(freeze(HIT.heavyPowerThreshold - 1e-9)).toBe(HIT_STOP.dealt);
   });
 });
 

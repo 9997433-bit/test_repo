@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { KNOCKBACK } from "../data/tuning.js";
 import {
   HIT_FLASH,
   HIT_STOP,
@@ -24,6 +25,19 @@ describe("HIT_STOP 参数", () => {
 
   it("冷却保证最坏情况下画面不到一半时间是冻的", () => {
     expect(HIT_STOP.max / HIT_STOP.cooldown).toBeLessThan(0.6);
+  });
+
+  it("重击门槛与击退表同源：全工程只有 12 这一条线", () => {
+    expect(HIT_STOP.heavyPower).toBe(KNOCKBACK.heavyPowerThreshold);
+    expect(HIT_STOP.heavyPower).toBe(12);
+  });
+
+  it("门槛收到 12 也没动天花板：最重一记仍是 0.115s ≤ 0.12s", () => {
+    // 收门槛只改「谁进重击档」，档位本身不动 —— max 一格没让
+    expect(HIT_STOP.max).toBe(0.12);
+    expect(HIT_STOP.dealt + HIT_STOP.heavyBonus).toBe(0.115);
+    expect(HIT_STOP.taken + HIT_STOP.heavyBonus).toBe(0.1);
+    expect(HIT_STOP.dealt + HIT_STOP.heavyBonus).toBeLessThan(HIT_STOP.max);
   });
 });
 
@@ -53,6 +67,41 @@ describe("hitStopFor", () => {
     );
     expect(seconds).toBeGreaterThan(HIT_STOP.dealt);
     expect(seconds).toBeLessThanOrEqual(HIT_STOP.max);
+  });
+
+  it("重击档的门槛就是 12：踩线算重、差一点就不算", () => {
+    const at = (power) =>
+      hitStopFor({ type: "hit", playerId: SELF, targetId: "p2", source: "slap", power }, SELF);
+    const heavy = HIT_STOP.dealt + HIT_STOP.heavyBonus;
+    // 12 是 combat 判 `heavy` 的同一条线：碎地算重击的那一记，定格也进重击档
+    expect(at(11.999)).toBe(HIT_STOP.dealt);
+    expect(at(12)).toBe(heavy);
+    expect(at(13)).toBe(heavy);
+    // 旧门槛 16 上下已经在同一档，12..16 的灰区没了
+    expect(at(15.999)).toBe(heavy);
+    expect(at(16)).toBe(heavy);
+  });
+
+  it("任何 power 都顶不动 0.12s：只有轻/重两档", () => {
+    const powers = [0, 1, 11.9, 12, 16, 40, 1e6, Number.MAX_SAFE_INTEGER, Infinity, NaN];
+    const steps = new Set();
+    for (const power of powers) {
+      for (const [playerId, targetId] of [
+        [SELF, "p2"],
+        ["p2", SELF],
+      ]) {
+        const seconds = hitStopFor({ type: "hit", playerId, targetId, source: "slap", power }, SELF);
+        expect(seconds, `power=${power}`).toBeLessThanOrEqual(HIT_STOP.max);
+        steps.add(seconds);
+      }
+    }
+    // 打人 / 挨打各两档，一共四个取值，没有第五种
+    expect([...steps].sort((a, b) => a - b)).toEqual([
+      HIT_STOP.taken,
+      HIT_STOP.dealt,
+      HIT_STOP.taken + HIT_STOP.heavyBonus,
+      HIT_STOP.dealt + HIT_STOP.heavyBonus,
+    ]);
   });
 
   it("与本人无关的互扇不冻我的画面", () => {
