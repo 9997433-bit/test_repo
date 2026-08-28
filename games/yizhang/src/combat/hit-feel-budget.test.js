@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import { HIT_STOP, createHitStop, hitStopFor, hitStopForEvents } from "../core/juice.js";
 import { normalizeEvent } from "../core/view.js";
 import { createCamera } from "../render/camera.js";
+import { KNOCKBACK } from "../data/tuning.js";
 import { GLOVE_BY_ID, resolveSlap } from "./index.js";
 import { ARENA, AWAKEN, HIT, SKILLS } from "./constants.js";
 import { makePlayer, makeState } from "./testkit.js";
@@ -75,6 +76,9 @@ function powerSpread() {
 }
 
 describe("hit-stop 数值表冻结", () => {
+  // 这张表是 O 席（`core/juice.js`）的域。改它要连着下面「重击门槛应对齐」那一节一起看：
+  // heavyPower 从 16 收到 12 是**允许**的对齐动作（那一节已经证明不会越 0.12），
+  // 对齐时把这里的 16 一并回修即可；把 max 抬过 0.12 才是回归。
   it("六个数一个不动，0.12s 就是单次定格的天花板", () => {
     expect(HIT_STOP).toEqual({
       dealt: 0.08,
@@ -157,6 +161,79 @@ describe("combat 再怎么堆倍率也顶不动那 0.12s", () => {
     // 冷却里的第二记不再定格：连段靠 VFX 顶，不靠再冻一次
     expect(gate.request(10, HIT_STOP.cooldown - 1e-6)).toBe(false);
     expect(gate.request(10, HIT_STOP.cooldown)).toBe(true);
+  });
+});
+
+// 「重击」这个词在工程里现在有两条线：
+//   * combat / data 侧：`HIT.heavyPowerThreshold` = `KNOCKBACK.heavyPowerThreshold` = 12。
+//     有效击退过了它就算重击——碎地按它结算（`data/tiles.js`），命中记录与事件的 `heavy` 也按它写。
+//   * 手感侧：`core/juice.js` 的 `HIT_STOP.heavyPower` = 16，过了它定格多加 35ms。
+// 两条线本该是同一条。眼下差 4，于是落在 12..16 的那一段（磐石贴脸、陨掌背身这类）
+// 碎地算重击、定格却还在基础档。收口动作要改 `core/juice.js`，那是 O 席的域，
+// combat 这一席改不到——所以本节只做三件本席做得到的事：
+//   1. 把 combat 侧的门槛与 tuning 锁成同源，别让 combat 自己再长出第三条线；
+//   2. 证明「对齐到 12」是安全的：真按 12 判，单次定格恒 ≤ 0.12，不用动 `HIT_STOP.max`；
+//   3. 钉住对齐的方向（juice 的门槛只会更高、不会更低）。O 席把 16 收成 12 之后，本节照样全绿。
+describe("重击门槛应对齐：combat/tuning 认 12，juice 认 16（收口在 O 席）", () => {
+  const tagOf = (s) =>
+    `${s.gloveId} ${s.awakened ? "觉醒" : "常态"}${s.behind ? " 背身" : ""} @ ${s.dist.toFixed(2)}m`;
+
+  it("combat 侧与 tuning 同源：12 只有一份", () => {
+    expect(HIT.heavyPowerThreshold).toBe(KNOCKBACK.heavyPowerThreshold);
+    expect(HIT.heavyPowerThreshold).toBe(12);
+  });
+
+  it("命中记录与事件都带着 heavy 出门，判读与门槛逐条一致", () => {
+    const spread = powerSpread();
+    let heavies = 0;
+    for (const s of spread) {
+      expect(s.hit.heavy, tagOf(s)).toBe(s.hit.power >= HIT.heavyPowerThreshold);
+      if (s.hit.heavy) heavies += 1;
+    }
+    // 轻重两档都得有样本，这条比对才不是空转
+    expect(heavies).toBeGreaterThan(0);
+    expect(heavies).toBeLessThan(spread.length);
+
+    const { hits, state } = slapOnce({ gloveId: "granite", dist: 0.3 });
+    const ev = state.events.find((e) => e.type === "slap");
+    expect(ev.heavy).toBe(hits[0].heavy);
+    expect(ev.power).toBe(hits[0].power);
+  });
+
+  it("对齐是安全的：真按 12 判重击，单次定格恒 ≤ 0.12，不用动 max", () => {
+    // 逐字照抄 `core/juice.js` 的 hitStopFor，只把门槛换成 combat/tuning 的 12
+    const aligned = (power, dealt = true) => {
+      const base = dealt ? HIT_STOP.dealt : HIT_STOP.taken;
+      const seconds = power >= HIT.heavyPowerThreshold ? base + HIT_STOP.heavyBonus : base;
+      return Math.min(HIT_STOP.max, seconds);
+    };
+
+    // 对齐后最长的一档还是 0.115，仍在天花板以下：收门槛只改「谁进重击档」，不改档位本身
+    expect(aligned(Number.MAX_SAFE_INTEGER)).toBe(HIT_STOP.dealt + HIT_STOP.heavyBonus);
+    expect(aligned(Number.MAX_SAFE_INTEGER)).toBeLessThan(HIT_STOP.max);
+
+    for (const s of powerSpread()) {
+      expect(aligned(s.hit.power), tagOf(s)).toBeLessThanOrEqual(HIT_STOP.max);
+      expect(aligned(s.hit.power, false), tagOf(s)).toBeLessThanOrEqual(HIT_STOP.max);
+      // 对齐后的档位就是 combat 自己写下的 heavy，两边不再各判一次
+      expect(aligned(s.hit.power) === HIT_STOP.dealt + HIT_STOP.heavyBonus, tagOf(s)).toBe(s.hit.heavy);
+    }
+  });
+
+  it("对齐只会把门槛往下收：juice 的 heavyPower ≥ combat 的 12", () => {
+    expect(HIT_STOP.heavyPower).toBeGreaterThanOrEqual(HIT.heavyPowerThreshold);
+
+    // 灰区 = combat 判重击、juice 还按基础档定格的那一段（眼下 12..16）。
+    // 只钉它的**性质**不钉它的大小：O 席把 16 收成 12 之后灰区为空，本条依然成立。
+    const gray = powerSpread().filter(
+      (s) => s.hit.heavy && hitStopFor(viewHitEvent(s.hit), SELF) === HIT_STOP.dealt,
+    );
+    for (const s of gray) {
+      expect(s.hit.power, tagOf(s)).toBeGreaterThanOrEqual(HIT.heavyPowerThreshold);
+      expect(s.hit.power, tagOf(s)).toBeLessThan(HIT_STOP.heavyPower);
+      // 灰区里的这几记收进重击档之后也只是 0.115，照样不越线
+      expect(HIT_STOP.dealt + HIT_STOP.heavyBonus).toBeLessThanOrEqual(HIT_STOP.max);
+    }
   });
 });
 
