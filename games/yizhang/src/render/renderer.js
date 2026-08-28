@@ -551,13 +551,19 @@ export class YizhangRenderer {
 
     switch (e.kind) {
       case 'swing': {
-        // 前摇就起手，出掌的加速段才对得上判定生效的那一刻
+        // 前摇就起手（sim 的 slapStart），出掌的加速段才对得上判定生效的那一刻。
+        // 这是一记掌唯一的起手处：hit / slap 到的时候动画已经在飞了，它们只改朝向与分量
         if (actor) this.characters.playSlap(e.actorId, power);
         break;
       }
 
       case 'slap': {
-        if (actor) this.characters.playSlap(e.actorId, power);
+        // 判定结束的这条不许再起手：slapT 归零会把整段前摇重放一遍，
+        // 还会顺手冲掉同一 tick 里 hit 刚算出来的击退侧（sim 把 hit 排在 slap 前面）。
+        // 没有前摇事件的路子（combat 的 slapWhiff / ghostSlap）才在这里补一次起手
+        if (actor && !this.characters.steerSlap(e.actorId, { power })) {
+          this.characters.playSlap(e.actorId, power);
+        }
         // hits 是 sim 数出来的命中数：一掌扇空只有掌风，不该有冲击。
         // 但「哪只掌扇空的」还是要看得出来，所以走的是这只掌自己的形，只是没有残留。
         if (e.hits === 0 && actor) {
@@ -574,9 +580,13 @@ export class YizhangRenderer {
         if (at) this.vfx.slap(at, dir, power);
         if (at) this._strike(e, actor, at, dir, power);
         if (actor) {
-          // 挥的是哪只手：把击退方向转回角色自身坐标系看左右
+          // 挥的是哪只手：把击退方向转回角色自身坐标系看左右。
+          // 前摇起手时还不知道这个方向，所以这一侧要能盖过起手用的槽位默认值
           const local = this._tmp3.copy(dir).applyAxisAngle(UP, -actor.yaw);
-          this.characters.playSlap(e.actorId, power, local.x >= 0 ? 1 : -1);
+          const side = local.x >= 0 ? 1 : -1;
+          if (!this.characters.steerSlap(e.actorId, { side, power })) {
+            this.characters.playSlap(e.actorId, power, side);
+          }
         }
         if (target) this.characters.playHit(e.targetId, dir, power);
         // 命中反馈：自己挨打最震，自己打中次之，别人互殴只有一点点

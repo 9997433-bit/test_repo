@@ -366,6 +366,11 @@ function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/** 出掌分量：只用来缩放曲线时长（`SLAP_PHASE.duration / power`），太小会把一掌拖成慢动作。 */
+function slapPowerOf(power) {
+  return Math.max(0.35, Math.min(2, Number.isFinite(power) ? power : 1));
+}
+
 /** 非本地角色降饱和：全画面只保留一个饱和度峰值（手册 §5.11）。 */
 function identColor(tint, isLocal) {
   const c = new Color(Number.isFinite(tint) ? tint : FALLBACK_TINT);
@@ -1203,14 +1208,38 @@ export function createCharacters({ scene, quality, textures, skins = null, seed 
       }
     },
 
-    /** 掌击动画：前摇把身体拧回去，出掌时躯干跟着转，收掌有余势。 */
+    /**
+     * 掌击动画：前摇把身体拧回去，出掌时躯干跟着转，收掌有余势。
+     *
+     * 这是**起手**：`slapT` 归零，整条曲线从头放一遍。一记掌只该起手一次
+     * （sim 的 `slapStart`），命中与判定结束那两条后续事件要改朝向 / 分量的话走
+     * `steerSlap`，别再调这里 —— 重置 slapT 会把已经放到一半的前摇抹掉。
+     */
     playSlap(id, power = 1, side = null) {
       const c = chars.get(id);
-      if (!c) return;
+      if (!c) return false;
       c.slapT = 0;
-      c.slapPower = Math.max(0.35, Math.min(2, power));
+      c.slapPower = slapPowerOf(power);
       // 出的是哪只手由激活槽决定；事件带了方向时再按方向修正
       c.slapSide = side ?? (c.activeSlot === 0 ? MAIN_SIDE : -MAIN_SIDE);
+      return true;
+    },
+
+    /**
+     * 修正一记**在飞**的掌，不重启动画。
+     *
+     * 前摇起手时渲染层还不知道这一掌会打中谁、有多重（`slapStart` 只带 gloveId），
+     * 命中事件才知道。所以命中那下只把「出的是哪只手」与分量补上去：
+     * 朝向按击退方向取，分量只涨不落（后到的空挥事件不该把命中的力度压回 1）。
+     *
+     * @returns {boolean} 有没有一记掌可修 —— false 表示这一记还没起手，调用方自己决定要不要 playSlap
+     */
+    steerSlap(id, { side = null, power = null } = {}) {
+      const c = chars.get(id);
+      if (!c || c.slapT < 0) return false;
+      if (side === 1 || side === -1) c.slapSide = side;
+      if (Number.isFinite(power)) c.slapPower = Math.max(c.slapPower, slapPowerOf(power));
+      return true;
     },
 
     /** 被击中：一帧压扁 + 顺冲击方向的形变，卖出接触感。 */
