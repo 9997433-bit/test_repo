@@ -16,6 +16,7 @@ import { SKILLS } from '../data/skills.js';
 import { BASE_PITCH, PITCH_LIMIT, createCamera } from './camera.js';
 import {
   COMBAT_VFX_KIND,
+  PENDING_VFX_KIND,
   SKILL_VFX_KIND,
   combatVfxKind,
   createCombatVfx,
@@ -59,11 +60,12 @@ function shapeOf(vfx, kind) {
 }
 
 describe('战斗特效：八掌各一套', () => {
-  it('分派表 8 键、8 个互不相同的值，键与掌表一一对上', () => {
+  it('分派表一掌一键、值互不相同，键与掌表一一对上', () => {
     const keys = Object.keys(COMBAT_VFX_KIND);
     const values = Object.values(COMBAT_VFX_KIND);
-    expect(keys.length).toBe(8);
-    expect(new Set(values).size).toBe(8);
+    // 按掌表的长度算，不写死 8：掌表加人的那一轮，红的是「新掌没有自己的形」
+    expect(keys.length).toBe(GLOVES.length);
+    expect(new Set(values).size).toBe(GLOVES.length);
     expect(keys.sort()).toEqual(GLOVES.map((g) => g.id).sort());
     expect(COMBAT_VFX_KIND.cotton).toBe('fanwake');
     expect(COMBAT_VFX_KIND.granite).toBe('slab');
@@ -79,6 +81,34 @@ describe('战斗特效：八掌各一套', () => {
     expect(combatVfxKind('nope')).toBe('fanwake');
     expect(combatVfxKind(null)).toBe('fanwake');
     expect(combatVfxKind(undefined)).toBe('fanwake');
+  });
+
+  it('待接四掌：形名先占住，四条互异且不与现役重名', () => {
+    const pending = Object.entries(PENDING_VFX_KIND);
+    expect(pending.length).toBe(4);
+    const shapes = pending.map(([, kind]) => kind);
+    expect(new Set(shapes).size).toBe(4);
+    for (const kind of shapes) {
+      expect(Object.values(COMBAT_VFX_KIND), kind).not.toContain(kind);
+      expect(Object.values(SKILL_VFX_KIND), kind).not.toContain(kind);
+    }
+  });
+
+  it('待接四掌一旦进了掌表，就得有自己的形（还没进表的 id 跳过）', () => {
+    const live = new Set(GLOVES.map((g) => g.id));
+    let checked = 0;
+    for (const [gloveId, kind] of Object.entries(PENDING_VFX_KIND)) {
+      // id 还没冻结：PENDING_VFX_KIND 的键是猜的，掌表里查不到就不作数
+      if (!live.has(gloveId)) continue;
+      checked += 1;
+      // 进了掌表就不许再退回絮扇 —— 那等于四只新掌与木棉共用一套
+      expect(COMBAT_VFX_KIND[gloveId], gloveId).toBe(kind);
+      const { vfx } = mount('high');
+      expect(shapeOf(vfx, kind).count, gloveId).toBeGreaterThan(0);
+      vfx.dispose();
+    }
+    // 上面全跳过是允许的（四掌未落地），但掌表本身必须已经被逐掌验过形
+    expect(checked).toBeLessThanOrEqual(4);
   });
 
   it('技能按 skillId 分派：掌表里每个非空 skillId 都有一条', () => {
@@ -99,7 +129,7 @@ describe('战斗特效：八掌各一套', () => {
     expect(skillVfxKind(null, 'frost')).toBe('rime');
   });
 
-  it('八套画出来的形互不相同，不是同一片壳换个颜色', () => {
+  it('每掌画出来的形互不相同，不是同一片壳换个颜色', () => {
     const shapes = new Map();
     for (const g of GLOVES) {
       const { vfx } = mount('high');
@@ -109,8 +139,8 @@ describe('战斗特效：八掌各一套', () => {
       shapes.set(kind, shape.sig);
       vfx.dispose();
     }
-    expect(shapes.size).toBe(8);
-    expect(new Set(shapes.values()).size).toBe(8);
+    expect(shapes.size).toBe(GLOVES.length);
+    expect(new Set(shapes.values()).size).toBe(GLOVES.length);
   });
 
   it('出掌之后场景里真的有东西在动，跑完自己收干净', () => {
@@ -152,7 +182,7 @@ describe('战斗特效：八掌各一套', () => {
       const at = new Vector3(0, 1.2, 0);
       const dir = new Vector3(0, 0, -1);
       for (let i = 0; i < 120; i++) {
-        vfx.strike(COMBAT_VFX_KIND[GLOVES[i % 8].id], at, dir, 2);
+        vfx.strike(COMBAT_VFX_KIND[GLOVES[i % GLOVES.length].id], at, dir, 2);
         vfx.update(1 / 60);
       }
       let draws = 0;

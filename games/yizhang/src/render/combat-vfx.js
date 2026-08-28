@@ -62,6 +62,29 @@ export const COMBAT_VFX_KIND = Object.freeze({
 });
 
 /**
+ * 待接的四掌（铁茧 / 渡鸦 / 常胜 / 不倒）。**占位，尚未接线。**
+ *
+ * 掌表眼下还是八只，这四只的 id 由数据侧冻结后才落地 —— 下面的键是按名字猜的，
+ * 不保证与最终 id 一致，所以它没有并进 `COMBAT_VFX_KIND`：并进去的话，
+ * 猜错的键会让 `combatVfxKind` 对真 id 静默退回絮扇，比认不出来更难查。
+ *
+ * 值是**预留的形名**，四条互异且不与现役八套重名。id 冻结后要做三件事：
+ * 把键换成真 id、把这四条挪进 `COMBAT_VFX_KIND`、在 `SPEC` 里各补一套形
+ * （只加键不加形的话 `strike` 会退回絮扇，等于四只掌共用一套）。
+ *
+ *   铁茧 husk   —— 一层层崩开的壳片
+ *   渡鸦 plume  —— 炸散的羽列
+ *   常胜 banner —— 展开又收拢的旗面
+ *   不倒 wobble —— 压下去弹回来的摇环
+ */
+export const PENDING_VFX_KIND = Object.freeze({
+  cocoon: 'husk',
+  raven: 'plume',
+  triumph: 'banner',
+  tumbler: 'wobble',
+});
+
+/**
  * 主动技 id → 战斗特效种类（`src/data/skills.js` 的键）。
  * 技能与扇击同源不同量：同一套形，放大、加长、多一层。木棉没有主动技，所以只有七条。
  */
