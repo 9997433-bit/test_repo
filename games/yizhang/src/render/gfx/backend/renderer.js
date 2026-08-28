@@ -42,11 +42,16 @@ import { resolveMaterial } from './materials.js';
 import { resolveRenderTarget, resolveTexture } from './textures.js';
 
 /**
- * three 的光强按「除以 π 的辐照度」定义，Babylon 的按直觉强度定义；同一组数值要
- * 看起来一样，方向光 / 半球光需要这个系数。点光的平方衰减两边一致，另给一档。
+ * 两个引擎的漫反射项差一个 1/π，但只差在半球光上。
+ *
+ * 方向光 / 点光 / 聚光走的都是 computeDiffuseLighting，里面带着 1/π，与 three 的
+ * BRDF_Lambert 同款，所以强度原样照搬即可。半球光走 computeHemisphericDiffuseLighting，
+ * 那条路径没有 1/π，而 three 那边半球光的辐照度照样要过 BRDF_Lambert —— 差的这一下
+ * 得在这里补回来。环境光按半球光实现，同理。
  */
-const DIRECTIONAL_INTENSITY = 1 / Math.PI;
-const POINT_INTENSITY = 1 / (4 * Math.PI);
+const DIRECTIONAL_INTENSITY = 1;
+const POINT_INTENSITY = 1;
+const HEMISPHERE_INTENSITY = 1 / Math.PI;
 
 const _pos = new Vector3();
 const _scl = new Vector3();
@@ -548,7 +553,7 @@ export class WebGLRenderer {
     if (bl.position) bl.position.set(wp.x, wp.y, wp.z);
 
     if (node.isHemisphereLight) {
-      bl.intensity = node.intensity * DIRECTIONAL_INTENSITY;
+      bl.intensity = node.intensity * HEMISPHERE_INTENSITY;
       const g = node.groundColor;
       bl.groundColor.set(g.r, g.g, g.b);
       bl.direction.set(0, 1, 0);
@@ -570,7 +575,8 @@ export class WebGLRenderer {
       bl.intensity = node.intensity * POINT_INTENSITY;
       bl.range = node.distance > 0 ? node.distance : 0;
     } else {
-      bl.intensity = node.intensity * DIRECTIONAL_INTENSITY;
+      // 环境光落在半球光上
+      bl.intensity = node.intensity * HEMISPHERE_INTENSITY;
     }
 
     bl.shadowEnabled = !!node.castShadow && this.shadowMap.enabled;
