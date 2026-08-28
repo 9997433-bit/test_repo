@@ -449,6 +449,88 @@ describe("掉落 / 击杀 / 重组", () => {
   });
 });
 
+/**
+ * 无敌帧只在 `step.tickTimers` 里递减，combat 的 simDrivenPlayer 分支不再重复扣。
+ * 少扣一处就是「重组之后永久无敌」——所有人都被 `isTargetable` 踢出命中列表，
+ * 满场只剩 slapWhiff；多扣一处则无敌帧缩水一半。这两条都用「掌真的打中了没」来锁。
+ */
+describe("无敌帧倒计时", () => {
+  const COTTON = REAL_GLOVE_BY_ID.cotton;
+  const SLAP = { p0: { ...ZERO_INPUT, slap: true, yaw: FACE_PLUS_X } };
+
+  /** 摆成必中的对扇位。只动位置与攻击者的无敌，挨扇的一方 invulnT 原样保留。 */
+  function faceOff(a, b) {
+    place(a, 0, 0, 0, FACE_PLUS_X);
+    place(b, 2, 0, 0);
+    a.invulnT = 0;
+    a.attack.phase = "idle";
+    a.attack.t = 0;
+    a.slapCd = 0;
+  }
+
+  it("重组的无敌帧会自己走完：等满 invulnTime 之后同一记掌必须打中", () => {
+    const s = createMatch({ seed: 8, botCount: 1 });
+    const a = getPlayer(s, "p0");
+    const b = getPlayer(s, "b0");
+
+    // 自己摔下去 -> respawnDelay 之后带满额无敌重组
+    place(b, 0, -7.9, 0);
+    run(s, {}, s.config.respawnDelay + 0.2);
+    expect(b.alive).toBe(true);
+    expect(b.invulnT).toBeGreaterThan(0);
+
+    // 同一记掌第一次落在无敌帧里：只挥空
+    faceOff(a, b);
+    run(s, SLAP, COTTON.windup + 0.02);
+    expect(b.hitsTaken).toBe(0);
+    expect(b.invulnT).toBeGreaterThan(0);
+
+    // 等过 invulnTime + ε，无敌必须真的归零（没人减 = 永久无敌）
+    run(s, {}, s.config.invulnTime + 4 * DT);
+    expect(b.invulnT).toBe(0);
+
+    // 同一记掌第二次必须打中
+    faceOff(a, b);
+    run(s, SLAP, COTTON.windup + 0.02);
+    expect(b.hitsTaken).toBe(1);
+    expect(b.vx).toBeGreaterThan(3);
+  });
+
+  it("无敌帧按真实时长走完，不多扣也不少扣", () => {
+    const s = createMatch({ seed: 8, botCount: 0, phase: "arena" });
+    const p = getPlayer(s, "p0");
+    place(p, 0, 0, 0);
+    p.invulnT = s.config.invulnTime;
+
+    // 差一帧还在，满一帧就归零
+    run(s, {}, s.config.invulnTime - 2 * DT);
+    expect(p.invulnT).toBeGreaterThan(0);
+    expect(p.invulnT).toBeCloseTo(2 * DT, 5);
+    run(s, {}, 3 * DT);
+    expect(p.invulnT).toBe(0);
+  });
+
+  it("过门落地的无敌同样会结束", () => {
+    const s = createMatch({ seed: 8, botCount: 1, phase: "hub" });
+    const p = getPlayer(s, "p0");
+    const bot = getPlayer(s, "b0");
+
+    enterArena(s, p);
+    expect(s.phase).toBe("arena");
+    expect(p.invulnT).toBeCloseTo(s.config.invulnTime, 5);
+
+    run(s, {}, s.config.invulnTime + 4 * DT);
+    expect(p.invulnT).toBe(0);
+
+    // 归零之后真的能被扇到：bot 站台上照着人扇一记
+    place(bot, 0, 0, 0, FACE_PLUS_X);
+    place(p, 2, 0, 0);
+    bot.invulnT = 0;
+    run(s, { b0: { ...ZERO_INPUT, slap: true, yaw: FACE_PLUS_X } }, COTTON.windup + 0.02);
+    expect(p.hitsTaken).toBe(1);
+  });
+});
+
 describe("碎地", () => {
   it("台块 HP 可被削，归零消失，脚下变空", () => {
     const s = createMatch({ seed: 6, botCount: 0 });

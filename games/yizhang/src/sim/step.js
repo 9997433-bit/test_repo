@@ -56,8 +56,11 @@ function gainMeter(p, amount) {
   p.meter = clamp(p.meter + amount, 0, 1);
 }
 
-// invulnT / awakenedT / statuses / knockbackT / impact 由 combat.tickStatuses 倒计时，
-// 这里只管 sim 自己的计时器，避免同一个字段被扣两次。
+// awakenedT / statuses / knockbackT / impact 由 combat.tickStatuses 倒计时。
+// `invulnT` 是例外，活人的那份只在这里减（死人那份在 subStep 的重组分支里，两条互斥）：
+// respawnPlayer / enterArena 是 sim 直接写字段，不挂 combat 状态，combat 的
+// simDrivenPlayer 分支便只把自己发的无敌帧抬上来、不做倒计时。两边都不减 = 重组后永久
+// 无敌（人被 isTargetable 踢出命中列表，满场 slapWhiff），两边都减 = 无敌帧缩水一半。
 function tickTimers(state, p, dt) {
   const dec = (v) => (v > 0 ? Math.max(0, v - dt) : 0);
 
@@ -65,6 +68,7 @@ function tickTimers(state, p, dt) {
   p.slapCd = dec(p.slapCd);
   p.skillCd = dec(p.skillCd);
   p.switchLockT = dec(p.switchLockT);
+  p.invulnT = dec(p.invulnT);
   p.kbT = dec(p.kbT);
 
   if (p.comboT > 0) {
