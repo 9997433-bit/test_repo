@@ -11,6 +11,9 @@ import { createRng, nextInt } from "./rng.js";
 
 export const BOT_DT = 1 / 60;
 
+// 这个模块只给冒烟/探针用，但它躺在 src/sim 里，别假设一定跑在 node 上。
+const ENV = typeof process !== "undefined" && process.env ? process.env : {};
+
 const TOWERS = resolveTowers();
 const TOWER_LEVELS = resolveTowerLevels();
 const TOWER_IDS = Object.keys(TOWERS);
@@ -19,12 +22,12 @@ const COUNTERS = resolveCounters();
 const INTERCEPT_RADIUS = 34; // 威胁图里虚拟敌人的拦截半径
 const HEAT_HALFLIFE_SEC = 20;
 const HEAT_PRIOR = 0.4; // 每个 (轨道, 弧段, 护甲) 的先验威胁
-const RING_BIAS = Number(process.env.SH_RING_BIAS || 0.5); // 整环威胁相对眼前敌人的权重
+const RING_BIAS = Number(ENV.SH_RING_BIAS || 0.5); // 整环威胁相对眼前敌人的权重
 const ARMORS = ["shell", "shield", "swarm"];
 const TYPICAL_SPEED = 2.6;
 
-const MARGINAL_REF = Number(process.env.SH_MARGINAL_REF || 40); // 覆盖到这个量级后同一处再加塔收益减半
-const VALUE_FLOOR = Number(process.env.SH_VALUE_FLOOR || 1.3); // 每点屑晶至少换回这么多预期伤害才下手，否则攒钱
+const MARGINAL_REF = Number(ENV.SH_MARGINAL_REF || 40); // 覆盖到这个量级后同一处再加塔收益减半
+const VALUE_FLOOR = Number(ENV.SH_VALUE_FLOOR || 1.3); // 每点屑晶至少换回这么多预期伤害才下手，否则攒钱
 const PLACE_GAP_SEC = 1; // 落塔后的观察间隔：先看效果再补第二座
 const RETHINK_SEC = 0.25; // 没下手时的重算间隔，省得每 tick 扫 72 格威胁图
 
