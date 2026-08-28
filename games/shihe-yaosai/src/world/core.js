@@ -3,13 +3,12 @@
 
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder.js";
-import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder.js";
 import { PointLight } from "@babylonjs/core/Lights/pointLight.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
 import { CORE_RADIUS, NAMES, PALETTE } from "./constants.js";
-import { createEmissive, createMetal, mixRgb, setColor } from "./materials.js";
-import { decor, place, weld } from "./geometry.js";
+import { createAdditive, createEmissive, createMetal, mixRgb, setColor } from "./materials.js";
+import { createRing, decor, place, weld } from "./geometry.js";
 
 const INNER_RADIUS = CORE_RADIUS * 0.78;
 const CAGE_RADIUS = CORE_RADIUS * 1.22;
@@ -18,7 +17,7 @@ export function buildCore(scene, parent) {
   const root = new TransformNode(NAMES.core, scene);
   root.parent = parent;
 
-  const innerMat = createEmissive(scene, "mat-core-inner", PALETTE.coreHot, 2.6, {
+  const innerMat = createEmissive(scene, "mat-core-inner", PALETTE.coreHot, 1.6, {
     albedo: [0.05, 0.03, 0.02],
     roughness: 0.75,
     metallic: 0,
@@ -28,17 +27,25 @@ export function buildCore(scene, parent) {
   inner.parent = root;
   decor(inner);
 
-  const shellMat = createEmissive(scene, "mat-core-shell", PALETTE.coreShellHot, 1.5, {
+  const shellMat = createEmissive(scene, "mat-core-shell", PALETTE.coreShellHot, 0.85, {
     albedo: [0.02, 0.03, 0.05],
     roughness: 0.35,
     metallic: 0,
-    alpha: 0.32,
+    alpha: 0.3,
     backFaceCulling: false,
   });
-  const shell = CreateIcoSphere(NAMES.coreShell, { radius: CORE_RADIUS, subdivisions: 5, flat: false }, scene);
+  const shell = CreateIcoSphere(NAMES.coreShell, { radius: CORE_RADIUS, subdivisions: 4, flat: false }, scene);
   shell.material = shellMat;
   shell.parent = root;
   decor(shell);
+
+  // 加色光晕，让炉心真的「烧」起来而不是一颗哑光球；bloom 主要吃的就是这一层。
+  const haloMat = createAdditive(scene, "mat-core-halo", PALETTE.coreShellHot, { alpha: 0.3 });
+  const halo = CreateIcoSphere("core-halo", { radius: CORE_RADIUS * 1.45, subdivisions: 3, flat: false }, scene);
+  halo.material = haloMat;
+  halo.parent = root;
+  halo.applyFog = false;
+  decor(halo);
 
   const cageMat = createMetal(scene, "mat-core-cage", PALETTE.metalTrim, {
     metallic: 0.95,
@@ -47,13 +54,9 @@ export function buildCore(scene, parent) {
     emissiveIntensity: 0.35,
   });
   const cageParts = [
-    place(CreateTorus("cage-a", { diameter: CAGE_RADIUS * 2, thickness: 0.38, tessellation: 48 }, scene), {}),
-    place(CreateTorus("cage-b", { diameter: CAGE_RADIUS * 2 * 0.94, thickness: 0.3, tessellation: 48 }, scene), {
-      rot: [Math.PI / 2, 0, 0],
-    }),
-    place(CreateTorus("cage-c", { diameter: CAGE_RADIUS * 2 * 0.88, thickness: 0.26, tessellation: 48 }, scene), {
-      rot: [0, 0, Math.PI / 2],
-    }),
+    place(createRing(scene, "cage-a", CAGE_RADIUS, 0.4, 48, 5), {}),
+    place(createRing(scene, "cage-b", CAGE_RADIUS * 0.94, 0.32, 48, 5), { rot: [Math.PI / 2, 0, 0] }),
+    place(createRing(scene, "cage-c", CAGE_RADIUS * 0.88, 0.26, 48, 5), { rot: [0, 0, Math.PI / 2] }),
   ];
   const cage = weld(cageParts, NAMES.coreCage, cageMat, { flat: false });
   const cageNode = new TransformNode(`${NAMES.coreCage}-pivot`, scene);
@@ -74,11 +77,12 @@ export function buildCore(scene, parent) {
     root,
     inner,
     shell,
+    halo,
     cage: cageNode,
     light,
     innerMat,
     shellMat,
-    _hot: [...PALETTE.coreHot],
+    haloMat,
   };
 }
 
@@ -99,11 +103,16 @@ export function syncCore(core, ratio, clock) {
   const shellRgb = mixRgb(PALETTE.coreShellCold, PALETTE.coreShellHot, t);
 
   setColor(core.innerMat.emissiveColor, innerRgb);
-  core.innerMat.emissiveIntensity = 0.45 + t * 2.35 + beat * 0.12 * t;
+  core.innerMat.emissiveIntensity = 0.3 + t * 0.95 + beat * 0.07 * t;
 
   setColor(core.shellMat.emissiveColor, shellRgb);
-  core.shellMat.emissiveIntensity = 0.35 + t * 1.35;
-  core.shellMat.alpha = 0.14 + t * 0.24;
+  core.shellMat.emissiveIntensity = 0.18 + t * 0.6;
+  core.shellMat.alpha = 0.1 + t * 0.18;
+
+  const haloLevel = 0.16 + t * 0.62;
+  setColor(core.haloMat.emissiveColor, [shellRgb[0] * haloLevel, shellRgb[1] * haloLevel, shellRgb[2] * haloLevel]);
+  core.haloMat.alpha = 0.16 + t * 0.3;
+  core.halo.scaling.setAll(1 + (breath - 1) * 1.6);
 
   core.inner.scaling.setAll(breath);
   core.shell.scaling.setAll(1 + (breath - 1) * 0.45);
@@ -113,5 +122,5 @@ export function syncCore(core, ratio, clock) {
 
   setColor(core.light.diffuse, shellRgb);
   setColor(core.light.specular, shellRgb);
-  core.light.intensity = 700 + t * 2600;
+  core.light.intensity = 900 + t * 3400;
 }

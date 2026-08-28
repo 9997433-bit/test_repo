@@ -69,9 +69,9 @@ export function createProceduralEnvironment(scene, size = 32) {
         const nz = dir[2] / len;
 
         const up = clamp01(ny * 0.5 + 0.5);
-        const sky = 0.06 + 0.3 * up * up;
-        const horizon = Math.pow(1 - Math.abs(ny), 5) * 0.16;
-        const sun = Math.pow(clamp01(nx * sunDir[0] + ny * sunDir[1] + nz * sunDir[2]), 12) * 0.85;
+        const sky = 0.14 + 0.62 * up * up;
+        const horizon = Math.pow(1 - Math.abs(ny), 5) * 0.3;
+        const sun = Math.pow(clamp01(nx * sunDir[0] + ny * sunDir[1] + nz * sunDir[2]), 10) * 1.0;
 
         const r = clamp01(sky * 0.55 + horizon * 1.1 + sun * 1.0);
         const g = clamp01(sky * 0.78 + horizon * 0.95 + sun * 0.78);
@@ -116,7 +116,11 @@ export function createMetal(scene, name, rgb, opts = {}) {
   return mat;
 }
 
-/** 自发光 PBR：星核与炮塔的发光件。 */
+/**
+ * 自发光 PBR：星核与炮塔的发光件。
+ * 默认关掉受光与环境反射——发光件一旦再吃一层高光就会整块泛白，
+ * 认不出是哪一种塔；关掉之后屏幕上的颜色就是 emissiveColor 本身。
+ */
 export function createEmissive(scene, name, rgb, intensity = 1.4, opts = {}) {
   const mat = new PBRMaterial(name, scene);
   mat.albedoColor = color3(opts.albedo ?? [0.02, 0.02, 0.03]);
@@ -124,8 +128,8 @@ export function createEmissive(scene, name, rgb, intensity = 1.4, opts = {}) {
   mat.roughness = opts.roughness ?? 0.6;
   mat.emissiveColor = color3(rgb);
   mat.emissiveIntensity = intensity;
-  mat.environmentIntensity = opts.environmentIntensity ?? 0.4;
-  mat.disableLighting = opts.disableLighting ?? false;
+  mat.environmentIntensity = opts.environmentIntensity ?? 0;
+  mat.disableLighting = opts.disableLighting ?? true;
   if (opts.alpha !== undefined && opts.alpha < 1) {
     mat.alpha = opts.alpha;
     mat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;

@@ -2,6 +2,21 @@
 
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { CreateLathe } from "@babylonjs/core/Meshes/Builders/latheBuilder.js";
+
+/**
+ * 环状体。Babylon 的 CreateTorus 用同一个 tessellation 同时控制环向与管壁，
+ * 一个半径 52 的光滑圆环要几万顶点。这里改用 lathe 分别控制：
+ * segments 管环向精度，sides 管管壁精度，顺带能直接旋出六边形轮廓。
+ */
+export function createRing(scene, name, radius, thickness, segments = 96, sides = 6) {
+  const shape = [];
+  for (let i = 0; i <= sides; i += 1) {
+    const a = (i / sides) * Math.PI * 2;
+    shape.push(new Vector3(radius + Math.cos(a) * thickness, Math.sin(a) * thickness, 0));
+  }
+  return CreateLathe(name, { shape, tessellation: segments, closed: true, sideOrientation: Mesh.DOUBLESIDE }, scene);
+}
 
 /** 摆放一个零件：局部位移 / 欧拉旋转 / 缩放。 */
 export function place(mesh, { pos, rot, scale } = {}) {

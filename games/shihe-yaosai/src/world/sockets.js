@@ -3,16 +3,17 @@
 
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.js";
-import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 
 import { NAMES, PALETTE, SOCKET_COUNT, SOCKET_HEIGHT } from "./constants.js";
 import { createEmissive, createMetal, setColor } from "./materials.js";
-import { decor, place, weld } from "./geometry.js";
+import { createRing, decor, place, weld } from "./geometry.js";
 import { socketWorldPos, socketYaw } from "./polar.js";
 import { buildTurret, createTurretBodyMaterials, syncTurret } from "./turrets.js";
 
 const RIM_LOCAL_Y = SOCKET_HEIGHT * 0.5;
+/** 炮塔按插座尺度整体放大，远景下剪影才读得出来。 */
+const TURRET_SCALE = 1.8;
 
 export function buildSockets(scene, parent) {
   const root = new TransformNode("sockets-root", scene);
@@ -30,7 +31,7 @@ export function buildSockets(scene, parent) {
 
     const mesh = CreateCylinder(
       NAMES.socket(i),
-      { diameterTop: 3.3, diameterBottom: 4.1, height: SOCKET_HEIGHT, tessellation: 6 },
+      { diameterTop: 4.6, diameterBottom: 5.8, height: SOCKET_HEIGHT, tessellation: 6 },
       scene
     );
     mesh.position.set(pos.x, pos.y, pos.z);
@@ -46,12 +47,10 @@ export function buildSockets(scene, parent) {
       roughness: 0.4,
     });
     const rimParts = [
-      place(CreateTorus(`rim-${i}`, { diameter: 3.45, thickness: 0.12, tessellation: 24 }, scene), {
-        pos: [0, RIM_LOCAL_Y, 0],
-      }),
+      place(createRing(scene, `rim-${i}`, 2.35, 0.16, 24, 5), { pos: [0, RIM_LOCAL_Y, 0] }),
       // 朝外的一小段指示条，插座朝向一眼可读。
-      place(CreateBox(`rim-mark-${i}`, { width: 0.7, height: 0.1, depth: 0.5 }, scene), {
-        pos: [0, RIM_LOCAL_Y + 0.02, 1.45],
+      place(CreateBox(`rim-mark-${i}`, { width: 0.9, height: 0.12, depth: 0.7 }, scene), {
+        pos: [0, RIM_LOCAL_Y + 0.02, 2.0],
       }),
     ];
     const rim = weld(rimParts, NAMES.socketRim(i), rimMat, { flat: false });
@@ -98,8 +97,8 @@ export function syncSockets(scene, sockets, view, clock) {
     if (entry.turret) {
       syncTurret(entry.turret, socketView, clock);
       // 塔阶越高，基座抬得越稳：用极小的缩放差表达等级。
-      const lift = 1 + Math.min(3, socketView.tier - 1) * 0.06;
-      entry.turret.root.scaling.setAll(lift);
+      const lift = 1 + Math.min(3, socketView.tier - 1) * 0.07;
+      entry.turret.root.scaling.setAll(TURRET_SCALE * lift);
     }
 
     const hovered = view.hoverSocket === i;

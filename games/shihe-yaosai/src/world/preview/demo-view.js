@@ -24,7 +24,7 @@ const LAYOUT = [
   { socket: 22, towerId: "prism", tier: 2 },
 ];
 
-const ENEMY_COUNT = 54;
+const ENEMY_COUNT = 33;
 
 export function demoView(time, opts = {}) {
   const t = Number.isFinite(time) ? time : 0;

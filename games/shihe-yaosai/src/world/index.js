@@ -83,8 +83,8 @@ function attachGlow(scene, opts, world) {
   if (!opts.glow) return null;
   // NullEngine 之类没有后处理能力的后端会在这里抛，视觉层可以缺席但世界不能塌。
   try {
-    const glow = new GlowLayer(NAMES.glow, scene, { mainTextureFixedSize: 512, blurKernelSize: 48 });
-    glow.intensity = 0.72;
+    const glow = new GlowLayer(NAMES.glow, scene, { mainTextureFixedSize: 512, blurKernelSize: 56 });
+    glow.intensity = 0.85;
     if (world.sky?.dome) glow.addExcludedMesh(world.sky.dome);
     if (world.sky?.stars) glow.addExcludedMesh(world.sky.stars);
     return glow;
@@ -124,7 +124,7 @@ export function buildWorld(scene, getView, options) {
     try {
       world.env = createProceduralEnvironment(scene);
       scene.environmentTexture = world.env;
-      scene.environmentIntensity = 0.85;
+      scene.environmentIntensity = 0.5;
     } catch {
       world.env = null;
     }
@@ -241,6 +241,7 @@ export function disposeWorld(scene) {
   if (world.lights) {
     world.lights.hemi.dispose();
     world.lights.sun.dispose();
+    world.lights.fill.dispose();
   }
   if (world.env) {
     if (scene.environmentTexture === world.env) scene.environmentTexture = null;

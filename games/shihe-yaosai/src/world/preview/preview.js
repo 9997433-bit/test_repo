@@ -5,7 +5,7 @@ import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
-import { buildWorld, syncWorld, pickSocket, getWorld, WORLD_METRICS } from "../index.js";
+import { buildWorld, syncWorld, pickSocket, getWorld, socketWorldPos, WORLD_METRICS } from "../index.js";
 import { demoView } from "./demo-view.js";
 
 const params = new URLSearchParams(location.search);
@@ -17,13 +17,18 @@ const numberParam = (key, fallback) => {
 };
 
 const CAMERAS = {
-  // alpha, beta, radius, targetY
-  iso: [-Math.PI / 2.35, 1.02, 132, 3],
-  wide: [-Math.PI / 2.35, 1.24, 178, 2],
-  low: [-Math.PI / 2.9, 1.44, 96, 3.5],
-  top: [-Math.PI / 2, 0.28, 150, 0],
-  socket: [-Math.PI / 2.6, 1.32, 46, 2.5],
-  core: [-Math.PI / 2.2, 1.16, 58, 2],
+  // alpha, beta, radius, target
+  iso: [-Math.PI / 2.35, 0.98, 108, [0, 2, 0]],
+  wide: [-Math.PI / 2.35, 1.22, 150, [0, 2, 0]],
+  low: [-Math.PI / 2.9, 1.42, 92, [0, 4, 0]],
+  top: [-Math.PI / 2, 0.24, 130, [0, 0, 0]],
+  core: [-Math.PI / 2.15, 1.05, 62, [0, 1, 0]],
+};
+
+const flagParam = (key, fallback = true) => {
+  const raw = params.get(key);
+  if (raw === null) return fallback;
+  return raw !== "0" && raw !== "false";
 };
 
 const canvas = document.getElementById("preview-canvas");
@@ -38,21 +43,32 @@ const selectedSocket = params.get("selected") === null ? null : numberParam("sel
 let wallClock = 0;
 const viewTime = () => (frozenTime === null ? wallClock : frozenTime);
 
-const world = buildWorld(scene, () =>
-  demoView(viewTime(), { hp: hpOverride, hover: hoverSocket, selected: selectedSocket })
+const world = buildWorld(
+  scene,
+  () => demoView(viewTime(), { hp: hpOverride, hover: hoverSocket, selected: selectedSocket }),
+  { glow: flagParam("glow"), sky: flagParam("sky"), environment: flagParam("env") }
 );
 
-const preset = CAMERAS[params.get("cam") ?? "iso"] ?? CAMERAS.iso;
+const camName = params.get("cam") ?? "iso";
 const camera = scene.activeCamera;
-camera.alpha = preset[0];
-camera.beta = preset[1];
-camera.radius = numberParam("r", preset[2]);
-camera.setTarget(new Vector3(0, preset[3], 0));
-if (params.get("cam") === "socket") {
-  const focus = WORLD_METRICS.socketCount;
-  camera.alpha = Math.PI / 2 - (numberParam("focus", 4) / focus) * WORLD_METRICS.tau + Math.PI;
-  const pos = { x: Math.cos((numberParam("focus", 4) / focus) * WORLD_METRICS.tau) * 40, z: Math.sin((numberParam("focus", 4) / focus) * WORLD_METRICS.tau) * 40 };
-  camera.setTarget(new Vector3(pos.x * 0.82, 3, pos.z * 0.82));
+camera.lowerRadiusLimit = 8;
+
+if (camName === "socket") {
+  // 贴脸看某一座塔：把目标点放到插座上，相机从外侧略高处压下来。
+  const index = numberParam("focus", 4);
+  const theta = (index / WORLD_METRICS.socketCount) * WORLD_METRICS.tau;
+  const pos = socketWorldPos(index);
+  camera.setTarget(new Vector3(pos.x, pos.y + 2.6, pos.z));
+  camera.alpha = theta + 0.55;
+  camera.beta = 1.22;
+  camera.radius = numberParam("r", 22);
+} else {
+  // ArcRotateCamera.setTarget 会按当前位置反算 alpha/beta/radius，必须先定目标再定角度。
+  const preset = CAMERAS[camName] ?? CAMERAS.iso;
+  camera.setTarget(new Vector3(...preset[3]));
+  camera.alpha = preset[0];
+  camera.beta = preset[1];
+  camera.radius = numberParam("r", preset[2]);
 }
 
 const hud = document.getElementById("preview-hud");

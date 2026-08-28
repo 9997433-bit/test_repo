@@ -16,9 +16,9 @@ export function buildShots(scene, parent) {
   const root = new TransformNode("shots-root", scene);
   root.parent = parent;
 
-  const mat = createAdditive(scene, "mat-shot", PALETTE.shot, { alpha: 1 });
+  const mat = createAdditive(scene, "mat-shot", PALETTE.shot, { alpha: 0.85 });
   // 基础体是一根沿 +Z、起点在原点的细棒，缩放 z 即可拉成任意长度。
-  const bar = place(CreateBox("shot-bar", { width: 0.16, height: 0.16, depth: 1 }, scene), { pos: [0, 0, 0.5] });
+  const bar = place(CreateBox("shot-bar", { width: 0.14, height: 0.14, depth: 1 }, scene), { pos: [0, 0, 0.5] });
   const mesh = weld([bar], NAMES.shots, mat, { flat: false });
   mesh.parent = root;
   mesh.isPickable = false;

@@ -43,7 +43,7 @@ const SHAPE_BUILDERS = {
   },
 };
 
-const SHAPE_SCALE = { drone: 1, hulk: 1.15, wisp: 0.95 };
+const SHAPE_SCALE = { drone: 1.3, hulk: 1.45, wisp: 1.25 };
 
 function poolKey(shape, lane) {
   return `${shape}:${lane}`;
@@ -58,10 +58,11 @@ export function buildEnemies(scene, parent) {
     for (let lane = 0; lane < LANE_Y.length; lane += 1) {
       const rim = PALETTE.enemyRim[lane];
       const mat = createMetal(scene, `mat-enemy-${shape}-${lane}`, PALETTE.enemyBody, {
-        metallic: 0.5,
-        roughness: 0.45,
-        emissive: [rim[0] * 0.35, rim[1] * 0.35, rim[2] * 0.35],
-        emissiveIntensity: 1.1,
+        metallic: 0.18,
+        roughness: 0.72,
+        environmentIntensity: 0.22,
+        emissive: [rim[0] * 0.22, rim[1] * 0.22, rim[2] * 0.22],
+        emissiveIntensity: 0.95,
       });
 
       const mesh = weld(SHAPE_BUILDERS[shape](scene), NAMES.enemy(shape, lane), mat);

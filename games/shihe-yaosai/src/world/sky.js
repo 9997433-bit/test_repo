@@ -8,6 +8,7 @@ import { Color3, Color4 } from "@babylonjs/core/Maths/math.color.js";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
 import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder.js";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration.js";
 
 import { NAMES, PALETTE, SKY_RADIUS } from "./constants.js";
 import { color3, createUnlitVertexColor } from "./materials.js";
@@ -25,15 +26,33 @@ export function buildLighting(scene) {
 
   const sun = new DirectionalLight(NAMES.sun, new Vector3(0.52, -0.72, 0.44), scene);
   sun.position = new Vector3(-90, 120, -76);
-  sun.intensity = 1.6;
+  sun.intensity = 2.1;
   sun.diffuse = new Color3(0.82, 0.87, 1.0);
   sun.specular = new Color3(1.0, 0.95, 0.86);
 
+  // 背光补一层冷色轮廓，避免甲板背面塌成纯黑。
+  const fill = new DirectionalLight("world-fill", new Vector3(-0.62, -0.35, -0.7), scene);
+  fill.intensity = 0.55;
+  fill.diffuse = new Color3(0.3, 0.48, 0.85);
+  fill.specular = new Color3(0.2, 0.32, 0.6);
+
   scene.fogMode = Scene.FOGMODE_EXP2;
   scene.fogColor = color3(PALETTE.fog);
-  scene.fogDensity = 0.0062;
+  scene.fogDensity = 0.0058;
 
-  return { hemi, sun };
+  // 星核是个高动态范围的光源，没有 tonemapping 就会糊成一坨纯白。
+  const ip = scene.imageProcessingConfiguration;
+  if (ip) {
+    ip.toneMappingEnabled = true;
+    ip.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+    ip.exposure = 1.05;
+    ip.contrast = 1.35;
+    ip.vignetteEnabled = true;
+    ip.vignetteWeight = 2.4;
+    ip.vignetteStretch = 0.4;
+  }
+
+  return { hemi, sun, fill };
 }
 
 /** 星尘天穹：一颗朝内渲染的巨大二十面体，顶点色现算出渐变与暗星云。 */
