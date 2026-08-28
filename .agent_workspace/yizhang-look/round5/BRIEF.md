@@ -2,8 +2,9 @@
 
 MODEL_SLUG: claude-fable-5-thinking-xhigh
 判定：**PASS-WITH-WARNINGS**
-被验：`cursor/yizhang-feel-db8d` @ `eac8e29`（2026-08-28 实跑）
+被验：`cursor/yizhang-feel-db8d` @ `eac8e29`（2026-08-28 F4 签字实跑）
 工作分支：`cursor/yizhang-p2-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md` §13、`docs/ACCEPTANCE.md` §14、本文件；零 src）
+编排层：十席均已合入；O2 merge `ba84fe6`。合入后复跑 `npm test` **983/983（67 文件）**；`npm run probe` **PASS 3/3**。
 
 ## 三件套
 
@@ -23,13 +24,14 @@ MODEL_SLUG: claude-fable-5-thinking-xhigh
 
 冻结面 8/8 零回退；隔离面干净（仅 `games/yizhang/**` + `.agent_workspace/**`）。
 
-## 残留 WARNING（4 条）
+## 残留 WARNING（3 条）
 
-1. **O2 render 未合入**（`cursor/yizhang-p2-o2-db8d` @ `8813c54`，三提交）：前摇起手 + 去二次 `playSlap`（现 swing/slap/hit 三分支都在挥）、4 掌专属 VFX（`vfx.js` 四新掌零键兜底木棉）、相机冲击上调。表现面缺口不回退既有行为——**下轮第一收口项**。
-2. **GDD §4.1 / §17「表盘 HUD 尚未接线」滞后**：F2 刻度实际已合入接线。保守向失真，归 F3 一行改正（F4 不越权代改）。
-3. **`HIT_STOP.heavyPower` 16→12 对齐结转**：combat 侧 heavy 已按 12 单点判定随事件出门，juice 灰区 12..16 有 `hit-feel-budget.test.js` 锁。
-4. **桌面实机手测未做 + 真机触屏 DEFER**（环境性，如实标注不装绿）。
+1. **O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）**：merge `ba84fe6`。steerSlap / 前摇 / 冲击上调已进；`PENDING_VFX_KIND` 占位对齐 F1，`COMBAT_VFX_KIND` 仍 8 键。
+2. **`HIT_STOP.heavyPower` 16→12 对齐结转**：combat 侧 heavy 已按 12 单点判定随事件出门，juice 灰区 12..16 有 `hit-feel-budget.test.js` 锁。
+3. **桌面实机手测未做 + 真机触屏 DEFER**（环境性，如实标注不装绿）。
+
+表盘 HUD：**F2 已接线**（销号，不再记 WARNING）。
 
 ## 给下轮的一句话
 
-先收 O2（合入后复跑 `combat-vfx.test.js` + probe 销 WARNING-1），F3 顺手改 GDD 两句销 WARNING-2；heavyPower 对齐动前先复算灰区收拢不越 0.12 顶（测试已备好）。
+生涯四掌 VFX 专形并进 `COMBAT_VFX_KIND`；heavyPower 对齐动前先复算灰区收拢不越 0.12 顶（测试已备好）。

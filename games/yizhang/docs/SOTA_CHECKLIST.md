@@ -804,7 +804,7 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 ### 13.1 P2 实测记分（内容轮 F4 终验席 @ 父分支 `eac8e29`，2026-08-28，全套命令实跑）
 
-**执行口径**：P2 内容轮的终验。父分支 **`cursor/yizhang-feel-db8d`**（自 main `7ba11f1` 拉出，打向 main），本轮由四席复盘驱动：一 P0（打不中——`invulnT` 无人递减，重生 / 过门后永久无敌，命中率 1.9%）+ 两 P1（受击 stun 从未下发 FJ-04 / 无血条下「打在人身上」零读数）+ 两 P2（零对白 → 五拍掌语 / 4 只跨局里程碑掌）。工作分支 `cursor/yizhang-p2-f4-db8d`（仅动本文件、`ACCEPTANCE.md` 与 round5 BRIEF，零 src）。九席中**八席已合入父分支**（O1 sim / O3 combat / F1 数据 / F2 HUD / F3 GDD / O4 壳 / G1 锁测 / G2 probe）；**O2 render 未合入**（分支 `cursor/yizhang-p2-o2-db8d` @ `8813c54` 待收，见 WARNING）。本环境仍无交互桌面与真机——桌面实机手测**未做**、如实标注不装绿，以 966 条单测 + 三 seed probe 硬门替代。命令原文见 ACCEPTANCE §14.1。
+**执行口径**：P2 内容轮的终验。父分支 **`cursor/yizhang-feel-db8d`**（自 main `7ba11f1` 拉出，打向 main），本轮由四席复盘驱动：一 P0（打不中——`invulnT` 无人递减，重生 / 过门后永久无敌，命中率 1.9%）+ 两 P1（受击 stun 从未下发 FJ-04 / 无血条下「打在人身上」零读数）+ 两 P2（零对白 → 五拍掌语 / 4 只跨局里程碑掌）。工作分支 `cursor/yizhang-p2-f4-db8d`（仅动本文件、`ACCEPTANCE.md` 与 round5 BRIEF，零 src）。**十席均已合入父分支**（O1 sim / O3 combat / F1 数据 / F2 HUD / F3 GDD / O4 壳 / G1 锁测 / G2 probe / O2 render / F4 终验）。**O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）**（merge `ba84fe6`，见 WARNING）。本环境仍无交互桌面与真机——桌面实机手测**未做**、如实标注不装绿；F4 签字当时以 966 条单测替代，合入后复跑见编排层补记。命令原文见 ACCEPTANCE §14.1。
 
 **三件套实测**（勾选依据）：
 
@@ -826,9 +826,11 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 
 **WARNING 清单（记录不否决）**：
 
-- **O2 render 未合入**（分支 `cursor/yizhang-p2-o2-db8d` @ `8813c54`，三提交待收）：其一，前摇画面与二次挥掌——现 `render/renderer.js` 的 `swing` / `slap` / `hit` 三个事件分支**都在 `playSlap`**，一记命中的掌观感上挥了两次（O2 的 `6debd89` 修的就是这条）；其二，4 生涯掌无专属战斗 VFX——`data/vfx.js` 零命中 `cocoon/raven/victor/tumbler`，`resolveGloveVfx` 兜底木棉形（`gloves.js` 头注已登记「战斗 VFX 条目留给 O2」，属登记过的缺口不属回归）；其三，相机冲击「自己打中」档上调未进。三条全是表现面增强，未合不回退任何既有行为（三件套全绿即证），故记 WARNING 不否决；**下轮第一动作应为收 O2**。
-- **GDD §4.1 / §17「表盘 HUD 尚未接线 / 还没上」已过时**：F2 的 `.yz-knock` 刻度已合入且正读 `view.players[].knockScale`（`hud.js` + `hud-impact.test.js` 在场）。失真方向是文档**少报已交付**（保守向，玩家照读不误导），归 F3 域下轮一行改正；F4 只动验收面、不越权代改 GDD。
+- **O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）**：merge `ba84fe6`（`f28364a` 四掌 VFX 形名占位 / `6debd89` `slapStart` 起手、命中与判定结束不再二次 `playSlap` / `8813c54` 「自己打中」档相机冲击上调）。steerSlap / 前摇 / 冲击上调已进；`PENDING_VFX_KIND` 对齐 F1（`cocoon` / `raven` / `victor` / `tumbler`），`COMBAT_VFX_KIND` 仍 8 键，生涯四掌专形未接线——WARNING 降为「占位未并表」，不再是未合入。
+- **GDD §4.1 / §17 表盘 HUD：F2 已接线**：`.yz-knock` 刻度读 `view.players[].knockScale`（`hud.js` + `hud-impact.test.js`）。
 - **`HIT_STOP.heavyPower` 16→12 对齐结转**（§12.8 已登记）：combat 侧「这掌算不算重」已按 `HIT.heavyPowerThreshold 12` 判**一次**随命中记录 / 事件出门（`impact.js` `heavy` 字段，与 `KNOCKBACK.heavyPowerThreshold`、碎地同一条线）；juice 的重击定格档暂按 16 判，灰区 12..16 由 `hit-feel-budget.test.js` 锁死且已证明收拢后不越 0.12 顶。对齐动作归 O 席后续轮。
 - **桌面实机手测未做**（无交互桌面）：本轮表现面新增全部有 jsdom 锁测（HUD 刻度 / 脉冲 / 字条 / 结算 storyText），以 966 测 + 三 seed probe 硬门替代并如实标注，不假装手测；**真机触屏 DEFER** 照旧结转（§12.8）。
 
-**判定：内容轮 P2 = PASS-WITH-WARNINGS**（判定表与命令原文见 ACCEPTANCE §14.1；复盘五项 5/5 销号、三件套全绿、冻结面零回退、红线零命中；WARNING 中唯一的实现缺口是 O2 表现面三条——未合入不回退既有行为，已点名为下轮第一收口项，其余为文档滞后、登记过的对齐结转与环境性延后）。
+**判定：内容轮 P2 = PASS-WITH-WARNINGS**（判定表与命令原文见 ACCEPTANCE §14.1；十席均已合入、复盘五项 5/5 销号、三件套全绿、冻结面零回退、红线零命中；WARNING 余 O2 生涯四掌 VFX 占位未进 `COMBAT_VFX_KIND`、`HIT_STOP.heavyPower` 对齐结转与环境性延后；表盘 HUD **F2 已接线**）。
+
+**编排层补记（F4 合入后复跑，2026-08-28）**：merge `origin/cursor/yizhang-p2-f4-db8d` @ `8cfac59` 进 `cursor/yizhang-feel-db8d`（O2 已在父分支 `ba84fe6`）。过期 WARNING「O2 未合」改为「O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）」；GDD 表盘滞后改为「F2 已接线」。零 src、`HIT_STOP.max` 原数未动。复跑 `npm test` **983/983（67 文件）** 退出码 0；`npm run probe` **PASS 3/3**（arenaKills 20/18/16，respawn slap 1/0 whiff，portal invuln 1.000s）。

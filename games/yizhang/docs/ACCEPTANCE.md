@@ -703,14 +703,14 @@ npm run build   # LG-03：退出码 0
 
 ### 14.1 异掌内容轮 P2 验收判定（F4 终验席）
 
-- 被验分支/commit：**`cursor/yizhang-feel-db8d` @ `eac8e29`**（九席中八席合入后：O1 invuln 单点递减 / O3 stun 下发 + heavy 标记 / F1 生涯四掌 + `story.js` + stats 扩档（merge `5efd4c7`）/ F2 HUD 刻度 · 脉冲 · 字条 · 里程碑进度（merge `a900961`）/ F3 GDD 玩家表述（merge `3132863`）/ O4 掌语五拍分派 + 生涯累计解锁 `e7ec9e9`（merge `4c0eab7`）/ G1 P2 跨模块锁测（merge `36d86ed`，story skipHub 锁测 `eac8e29` 打开）/ G2 probe 无敌过期断言 `5ea09e7`（merge `446c397`）；**O2 render 未合入** @ `8813c54`）。工作分支 `cursor/yizhang-p2-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md`、本文件与 round5 BRIEF，零 src）。
-- 验收人/日期：Fable-5 终验席 / 2026-08-28（全套命令实跑：`npm ci` → `npm test` → `npm run probe` → `npm run build` → 静态检查与九席合入状态演算）。
-- 结论：**PASS-WITH-WARNINGS**（复盘五项 5/5 销号；WARNING 中唯一实现缺口是 O2 表现面三条（前摇二次挥掌 / 4 掌专属 VFX / 相机冲击上调）——未合入不回退既有行为，点名为下轮第一收口项；其余为 GDD 滞后一句、登记过的 heavyPower 对齐结转与环境性延后；无红线命中）。
+- 被验分支/commit：**`cursor/yizhang-feel-db8d` @ `eac8e29`**（F4 签字基线）。**编排层收口：十席均已合入**——O1 invuln 单点递减 / O3 stun 下发 + heavy 标记 / F1 生涯四掌 + `story.js` + stats 扩档（merge `5efd4c7`）/ F2 HUD 刻度 · 脉冲 · 字条 · 里程碑进度（merge `a900961`）/ F3 GDD 玩家表述（merge `3132863`）/ O4 掌语五拍分派 + 生涯累计解锁 `e7ec9e9`（merge `4c0eab7`）/ G1 P2 跨模块锁测（merge `36d86ed`，story skipHub 锁测 `eac8e29` 打开）/ G2 probe 无敌过期断言 `5ea09e7`（merge `446c397`）/ **O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）**（merge `ba84fe6`）/ F4 终验签字。工作分支 `cursor/yizhang-p2-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md`、本文件与 round5 BRIEF，零 src）。
+- 验收人/日期：Fable-5 终验席 / 2026-08-28（全套命令实跑：`npm ci` → `npm test` → `npm run probe` → `npm run build` → 静态检查）。编排层补记合入后复跑见下。
+- 结论：**PASS-WITH-WARNINGS**（十席均已合入；复盘五项 5/5 销号；WARNING 余 O2 生涯四掌 VFX 占位未进 `COMBAT_VFX_KIND`、`HIT_STOP.heavyPower` 对齐结转与环境性延后；表盘 HUD **F2 已接线**；无红线命中）。
 
 | 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
 |---|---|---|
 | 复盘销号（本轮主表） | 5/5 | 无（P0 invuln 递减 / P1 stun 下发 / P1 打击读数 / P2 五拍掌语 / P2 生涯四掌——逐项证据见 SOTA §13.1 销号表） |
-| 回归门（沿用 LG/HG） | 全绿 | 无（966≥842 零减量；三 seed probe 视角硬门全数复跑无回退；build 退出码 0 且主包零增重；隔离面仅 `games/yizhang/**` + `.agent_workspace/**`） |
+| 回归门（沿用 LG/HG） | 全绿 | 无（合入后复跑 983≥842 零减量；三 seed probe 视角硬门全数复跑无回退；build 未重跑（F4 零 src，R4 主包同数）；隔离面仅 `games/yizhang/**` + `.agent_workspace/**`） |
 | 冻结面（DISPATCH 红线） | 8/8 | 无（yaw 偏移 0 / `HIT_STOP.max` 0.12 原数 / 再来一局 ≠ 回安全区 / 走道 8 座未扩 / `lookMode` 缺省 locked / 缺省 `phase:'hub'` / low bloom false / 无血条——打击读数走击退累积不上 HP 条） |
 | 红线否决（R/FR/HR/LR 及本轮商标 / 方块人） | 零命中 | 无 |
 
@@ -723,6 +723,8 @@ npm run build   # LG-03：退出码 0
 
 **验证方式限定（诚实口径）**：本轮仍无交互桌面与真机——桌面实机手测**未做**，不假装；本轮表现面新增（HUD 刻度 / 准星脉冲 / 掌语字条 / 结算 storyText / 里程碑进度缀）全部有 jsdom 锁测在场，判定以 966 条单测 + 三 seed probe 硬门（重生对扇必中、过门无敌到点归零——复盘 P0 的两条判决读数已入探针常驻）替代并如实标注。
 
-- WARNING 清单：**O2 render 未合入**（`8813c54`：前摇 `slapStart` 起手 + 去二次 `playSlap` / 4 掌专属 VFX / clamp 内相机冲击上调——现状 `renderer.js` 的 swing / slap / hit 三分支都在 `playSlap`、`vfx.js` 四新掌零键兜底木棉；表现面缺口，未合不回退，**下轮第一收口项**）；**GDD §4.1 / §17「表盘 HUD 尚未接线」滞后**（F2 刻度已合入读 `view.knockScale`，保守向失真，归 F3 一行改正）；**`HIT_STOP.heavyPower` 16→12 对齐结转**（combat 侧 12 已单点判定随事件出门，juice 灰区 12..16 有锁）；**桌面实机手测未做 + 真机触屏 DEFER** 结转（环境性）。
-- 修复指派：O2 三提交待收（合入后按 `combat-vfx.test.js` / probe 复跑销号）；F3 下轮顺手改 GDD §4.1 / §17 两句；heavyPower 对齐归 O 席后续轮（动前先复算灰区收拢不越 0.12 顶——测试已备）。
+- WARNING 清单：**O2 已合入（steerSlap / 前摇 / 冲击上调；生涯四掌 VFX 仍占位未进 COMBAT_VFX_KIND）**（merge `ba84fe6`：`slapStart` 起手 + 去二次 `playSlap` / clamp 内相机冲击上调已进；`PENDING_VFX_KIND` 占位对齐 F1，`COMBAT_VFX_KIND` 仍 8 键）；**GDD §4.1 / §17 表盘 HUD：F2 已接线**；**`HIT_STOP.heavyPower` 16→12 对齐结转**（combat 侧 12 已单点判定随事件出门，juice 灰区 12..16 有锁）；**桌面实机手测未做 + 真机触屏 DEFER** 结转（环境性）。
+- 修复指派：生涯四掌 VFX 专形并进 `COMBAT_VFX_KIND` 归后续轮；heavyPower 对齐归 O 席后续轮（动前先复算灰区收拢不越 0.12 顶——测试已备）。
 - 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（无交互桌面，如实标注；HUD 表现面证据 = F2 四个新测试文件 jsdom 锁测 27 例在场：`hud-impact` 11 / `lore` 9 / `hub-progress` 4 / `hud-feel-css` 3）。
+
+**编排层补记（F4 合入后复跑，2026-08-28）**：`npm test` **983/983（67 文件）** 退出码 0；`npm run probe` **PASS 3/3**（`0x1a2b3c4d` arenaKills 20 / `0x5eed1234` 18 / `0xc0ffee42` 16；三 seed 均 respawn slap 1 hit / 0 whiff、portal invuln 1.000s）。判定仍 **PASS-WITH-WARNINGS**。十席均已合入，保持 draft，不推 main。
