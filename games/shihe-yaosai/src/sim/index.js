@@ -16,3 +16,20 @@ export {
 } from "./config.js";
 export { createRng, nextFloat, nextInt, hashSeed } from "./rng.js";
 export { polar, socketAngle, dist3, distPointSegment, round4, num0, wrapAngle, TAU } from "./geom.js";
+// 确定性自动指挥官。跨模块 import 一律走本入口（契约 §2 冻结入口），
+// 冒烟 / 探针 / 基准都从这里拿 bot，不要深引 ./bot.mjs。
+export {
+  BOT_DT,
+  BOT_TOWERS,
+  BOT_TOWER_IDS,
+  VALUE_FLOOR,
+  bestPlacement,
+  botInput,
+  createBot,
+  crowdSocket,
+  dpsAgainst,
+  exposureSeconds,
+  freeSocketNear,
+  leakWeightOf,
+  observeThreat,
+} from "./bot.mjs";
