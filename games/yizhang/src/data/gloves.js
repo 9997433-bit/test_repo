@@ -296,7 +296,7 @@ export const GLOVES = [
     desc: "赢惯了的掌，不许对手站在够不着的地方。",
     color: "#d3719f",
     slapRange: 2.7,
-    slapAngleDeg: 85,
+    slapAngleDeg: 80,
     slapPower: 10.5,
     slapCooldown: 0.8,
     windup: 0.24,

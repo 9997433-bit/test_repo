@@ -303,7 +303,7 @@ const REACH_FREEZE = {
   // P2 内容轮表尾追加的生涯 4 掌（GDD §5.1）：数字落在首发包络内，一并冻结。
   cocoon: { slapRange: 2.8, slapAngleDeg: 80 },
   raven: { slapRange: 2.4, slapAngleDeg: 90 },
-  victor: { slapRange: 2.7, slapAngleDeg: 85 },
+  victor: { slapRange: 2.7, slapAngleDeg: 80 },
   tumbler: { slapRange: 2.7, slapAngleDeg: 90 },
 };
 
