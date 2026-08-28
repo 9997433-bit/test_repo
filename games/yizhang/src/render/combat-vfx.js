@@ -62,6 +62,28 @@ export const COMBAT_VFX_KIND = Object.freeze({
 });
 
 /**
+ * 待接的四掌（铁茧 / 渡鸦 / 常胜 / 不倒）。**占位，尚未接线。**
+ *
+ * F1 已冻结 id 为 cocoon / raven / victor / tumbler（O2 曾猜常胜 = triumph，
+ * 合入时把键对齐 `victor`）。四条没有并进 `COMBAT_VFX_KIND`：并进去但不补
+ * `SPEC` 的话 `strike` 会退回絮扇，等于四只新掌与木棉共用一套。
+ *
+ * 值是**预留的形名**，四条互异且不与现役八套重名。接线时要做两件事：
+ * 把这四条挪进 `COMBAT_VFX_KIND`、在 `SPEC` 里各补一套形。
+ *
+ *   铁茧 husk   —— 一层层崩开的壳片
+ *   渡鸦 plume  —— 炸散的羽列
+ *   常胜 banner —— 展开又收拢的旗面
+ *   不倒 wobble —— 压下去弹回来的摇环
+ */
+export const PENDING_VFX_KIND = Object.freeze({
+  cocoon: 'husk',
+  raven: 'plume',
+  victor: 'banner',
+  tumbler: 'wobble',
+});
+
+/**
  * 主动技 id → 战斗特效种类（`src/data/skills.js` 的键）。
  * 技能与扇击同源不同量：同一套形，放大、加长、多一层。木棉没有主动技，所以只有七条。
  */
