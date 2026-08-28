@@ -16,7 +16,11 @@ import { hubHudModel } from "../core/hub-flow.js";
 
 const WARP_HOLD_MS = 220;
 
-export function createHubUi({ gloveById = {}, unlockTextOf = null } = {}) {
+// 里程碑进度钩子（P2-F2 留口）：进度数（如「237/300」）握在 main 的 tracker /
+// 存档手里，挑战推导又在 core/hub-flow —— 两边都不归 UI 管。所以这里只收一个
+// 可缺席的 `unlockProgressOf(glove, view)`：给了且返回非空串，就把它缀在锁定
+// 提示后面（「单局内命中 15 次扇击 · 237/300」）；不给则一切照旧。
+export function createHubUi({ gloveById = {}, unlockTextOf = null, unlockProgressOf = null } = {}) {
   // ---- 区名带 ----
   const title = h("div", { class: "yz-plate yz-hub-title" }, [
     h("span", { text: "安 全 区" }),
@@ -91,7 +95,17 @@ export function createHubUi({ gloveById = {}, unlockTextOf = null } = {}) {
         descNode.textContent = focus.desc || "";
         ctaKey.textContent = touch ? "选" : "E";
         ctaKey.hidden = !focus.unlocked;
-        ctaText.textContent = focus.unlocked ? focus.intent.text : focus.hint;
+        let hint = focus.unlocked ? focus.intent.text : focus.hint;
+        if (!focus.unlocked && typeof unlockProgressOf === "function") {
+          let progress = "";
+          try {
+            progress = unlockProgressOf(gloveById[focus.gloveId] || { id: focus.gloveId }, view) || "";
+          } catch {
+            progress = "";
+          }
+          if (progress) hint = `${hint} · ${progress}`;
+        }
+        ctaText.textContent = hint;
         slotTag.textContent =
           focus.slot === "main" ? "· 当前主掌" : focus.slot === "off" ? "· 当前副掌" : "";
         inspect.classList.toggle("is-locked", !focus.unlocked);

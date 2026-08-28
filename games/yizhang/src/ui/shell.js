@@ -11,6 +11,7 @@ import { createMenu } from "./menu.js";
 import { createHud } from "./hud.js";
 import { createHubUi } from "./hub.js";
 import { createKillFeed } from "./killfeed.js";
+import { createLoreStrip } from "./lore.js";
 import { createTouchLayer } from "./touch.js";
 
 const KEYMAP = [
@@ -62,6 +63,9 @@ export function createShell(opts) {
     matchConfig = {},
     isUnlocked,
     unlockTextOf,
+    // 里程碑进度钩子（可缺席）：(glove, view) => "237/300" 这类短进度文案。
+    // 进度数在 main 的 tracker / 存档里，壳层不自己算，只负责有人给就贴。
+    unlockProgressOf,
     callbacks = {},
   } = opts;
 
@@ -90,8 +94,11 @@ export function createShell(opts) {
   hud.setLookMode(settings.lookMode);
   const feed = createKillFeed();
   hud.mountFeed(feed.el);
+  // 掌语字条：底部字幕位的常驻节点，与 centerNote / toast 各占各的牌
+  const lore = createLoreStrip();
+  hud.mountLore(lore.el);
   // 大厅 HUD 与战斗 HUD 同住 #hud，靠 #hud[data-phase] 互斥显示（见 ui/hub.css）
-  const hubUi = createHubUi({ gloveById, unlockTextOf });
+  const hubUi = createHubUi({ gloveById, unlockTextOf, unlockProgressOf });
   hud.el.appendChild(hubUi.el);
   hud.pauseButton.addEventListener("click", () => {
     audio.play("uiBack");
@@ -602,6 +609,7 @@ export function createShell(opts) {
       setScreen("menu");
       hud.reset();
       feed.clear();
+      lore.clear();
       touch.reset();
       menu.render();
     },
@@ -609,6 +617,7 @@ export function createShell(opts) {
       setScreen("match");
       hud.reset();
       feed.clear();
+      lore.clear();
       closeSheet();
     },
     showPause() {
@@ -633,6 +642,19 @@ export function createShell(opts) {
     },
     pushKill(entry) {
       feed.push(entry);
+    },
+    lore,
+    /**
+     * 掌语字条（story 表是 F1 的，这里先把口开好）：低干扰排队展示一句世界观短文。
+     * @param {string} text
+     * @param {number} [ms]
+     * @returns {boolean} 队列塞满（≥3 条）时拒收并返回 false
+     */
+    showLore(text, ms) {
+      return lore.show(text, ms);
+    },
+    clearLore() {
+      lore.clear();
     },
     /** @param {{strength?:number, ms?:number}} [opts] 见 core/juice.js hitFlashFor */
     flashHit(opts) {
