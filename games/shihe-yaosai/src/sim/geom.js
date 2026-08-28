@@ -58,7 +58,18 @@ export function wrapAngle(theta) {
   return a;
 }
 
+/**
+ * view 里所有浮点都走这里：四舍五入到 1e-4，并把 -0 / NaN / Infinity 归一成 0。
+ * `JSON.stringify(-0)` 会写成 `0`，不归一就过不了 JSON 往返相等的契约测试。
+ */
 export function round4(n) {
   if (!Number.isFinite(n)) return 0;
-  return Math.round(n * 10000) / 10000;
+  const r = Math.round(n * 10000) / 10000;
+  return r === 0 ? 0 : r;
+}
+
+/** 整数 / 已经算好的量走这里：只做 -0 与非有限值的归一，不动精度。 */
+export function num0(n) {
+  if (!Number.isFinite(n)) return 0;
+  return n === 0 ? 0 : n;
 }

@@ -1,312 +1,236 @@
-// 数值来源：优先 src/data（F3 拥有），缺失字段用本地兜底常量补齐。
-// 兜底常量与 round1/BRIEF.md 冻结值一致；data 一旦导出同名表就自动接管。
-import * as DATA from "../data/index.js";
+// 数值来源：只读 src/data 的正式出口（Round 2 冻结）。
+//   CONFIG / TOWERS / ENEMIES / WAVES / BOSS / armorMultiplier
+// 不再猜 SIM_CONFIG / TOWER_TABLE / ARMOR_TABLE 之类别名——data 是唯一真源，
+// 这里只做「schema → 运行时形状」的翻译与有限性兜底（保证 view 里永远不出 NaN）。
+import { BOSS, CONFIG, ENEMIES, TOWERS, WAVES, armorMultiplier } from "../data/index.js";
 
-export const FALLBACK_CONFIG = {
-  socketCount: 24,
-  ringRadius: 40,
-  coreHp: 20,
-  startScrap: 180,
-  lanes: [0, 1, 2],
-  laneY: [0, 4, 9],
-  spawnRadius: 52,
-  coreRadius: 8,
-  waveCount: 20,
-  firstPrepSec: 8,
-  prepSec: 5,
-  overclockSec: 4,
-  overclockMul: 2.2,
-  overheatSec: 3,
-  prismBendRadius: 18,
-  prismMaxSegments: 2,
-  prismRelayFactor: 0.7,
+export const TOWER_IDS = ["rail", "prism", "scatter", "well", "star"];
+export const ARMOR_TYPES = ["shell", "shield", "swarm"];
+
+// data 未定义、纯属模拟层自持的口径。
+export const MUZZLE_Y = 2.4; // 炮口相对插座环平面的高度
+export const SOCKET_HP = 100; // R1 敌人不打塔，塔血恒满
+export const FIRST_WAVE_SEC = 1.5; // 首波备战：契约要求 ≤2s 必出怪
+export const THETA_SPREAD = Math.PI / 6; // 同组出生角散布（契约 §3.8 缺省值）
+export const MAX_SHOTS = 128; // 弹道视图上限（纯视觉）
+
+// data 的 TOWERS[].kind → 契约 ShotKind
+const SHOT_KIND = {
+  hitscan: "tracer",
+  beam: "beam",
+  burst: "pellet",
+  aura: "pulse",
+  missile: "arc",
 };
 
-export const FALLBACK_TOWERS = {
-  // dmg = 单发基础伤害，cd = 冷却秒，range = 从插座起算的三维射程
-  rail: {
-    id: "rail",
-    name: "轨炮",
-    cost: 60,
-    dmg: 34,
-    cd: 1.35,
-    range: 46,
-    projSpeed: 90,
-    targeting: "first",
-    splash: 0,
-    shotKind: "rail",
-  },
-  prism: {
-    id: "prism",
-    name: "棱镜",
-    cost: 80,
-    dmg: 19,
-    cd: 0.75,
-    range: 40,
-    projSpeed: 300,
-    targeting: "nearest",
-    splash: 0,
-    shotKind: "prism",
-  },
-  scatter: {
-    id: "scatter",
-    name: "霰星",
-    cost: 55,
-    dmg: 11,
-    cd: 0.9,
-    range: 32,
-    projSpeed: 46,
-    targeting: "cluster",
-    splash: 7,
-    shotKind: "scatter",
-  },
-  well: {
-    id: "well",
-    name: "坠井",
-    cost: 70,
-    dmg: 5,
-    cd: 1.6,
-    range: 30,
-    projSpeed: 34,
-    targeting: "fastest",
-    splash: 9,
-    shotKind: "well",
-    fieldRadius: 11,
-    fieldSec: 2.8,
-    slowMul: 0.55,
-    pullRate: 0.9,
-    pullMax: 1.6,
-  },
-  star: {
-    id: "star",
-    name: "星弩",
-    cost: 95,
-    dmg: 52,
-    cd: 2,
-    range: 60,
-    projSpeed: 58,
-    targeting: "strongest",
-    splash: 0,
-    shotKind: "star",
-    homing: true,
-  },
-};
-
-// 克制表：塔 -> 护甲乘子。data 提供时整体覆盖。
-export const FALLBACK_COUNTERS = {
-  rail: { shell: 1.6, shield: 0.85, swarm: 0.7 },
-  prism: { shell: 0.7, shield: 1.7, swarm: 0.95 },
-  scatter: { shell: 0.6, shield: 0.8, swarm: 1.8 },
-  well: { shell: 1, shield: 1, swarm: 1 },
-  star: { shell: 1, shield: 1.35, swarm: 0.8 },
-};
-
-export const FALLBACK_ENEMIES = {
-  small: { kind: "small", armor: "swarm", hp: 26, speed: 3.4, scrap: 6, leak: 1, size: 1 },
-  mid: { kind: "mid", armor: "shell", hp: 72, speed: 2.4, scrap: 12, leak: 3, size: 1.5 },
-  elite: { kind: "elite", armor: "shield", hp: 190, speed: 1.7, scrap: 26, leak: 8, size: 2.2 },
-  "etch-lord": { kind: "etch-lord", armor: "shell", hp: 2600, speed: 1, scrap: 260, leak: 20, size: 4 },
-};
-
-const TOWER_ORDER = ["rail", "prism", "scatter", "well", "star"];
+// data 的 ENEMIES[].size → 渲染层要的体型系数
+const SIZE_SCALE = { small: 1, mid: 1.6, elite: 2.4, boss: 4.2 };
 
 function isObj(v) {
   return v !== null && typeof v === "object";
 }
 
-function num(value, fallback) {
+/** 有限数兜底：任何非有限值都换成 fallback，从源头掐死 NaN / Infinity。 */
+function fin(value, fallback) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-/** 从若干别名里取第一个可用数值，方便对齐 data 层可能的命名。 */
-function pickNum(source, keys, fallback) {
-  if (!isObj(source)) return fallback;
-  for (const key of keys) {
-    if (typeof source[key] === "number" && Number.isFinite(source[key])) return source[key];
-  }
-  return fallback;
+function atLeast(value, fallback, min) {
+  const n = fin(value, fallback);
+  return n < min ? min : n;
 }
 
-function pickStr(source, keys, fallback) {
-  if (!isObj(source)) return fallback;
-  for (const key of keys) {
-    if (typeof source[key] === "string" && source[key]) return source[key];
-  }
-  return fallback;
+function intAtLeast(value, fallback, min) {
+  return Math.max(min, Math.round(fin(value, fallback)));
 }
 
-function firstObj(...candidates) {
-  for (const c of candidates) if (isObj(c)) return c;
-  return null;
-}
-
-/** data 里塔表可能是对象映射，也可能是数组。 */
-function asMap(source, keyName = "id") {
-  if (!isObj(source)) return null;
-  if (Array.isArray(source)) {
-    const map = {};
-    for (const entry of source) {
-      if (isObj(entry) && typeof entry[keyName] === "string") map[entry[keyName]] = entry;
-    }
-    return Object.keys(map).length ? map : null;
-  }
-  return source;
+function str(value, fallback) {
+  return typeof value === "string" && value !== "" ? value : fallback;
 }
 
 export function resolveConfig() {
-  const raw = firstObj(DATA.CONFIG, DATA.SIM_CONFIG, DATA.BALANCE) || {};
-  const cfg = { ...FALLBACK_CONFIG };
-  cfg.socketCount = Math.max(3, Math.round(pickNum(raw, ["socketCount", "sockets"], cfg.socketCount)));
-  cfg.ringRadius = pickNum(raw, ["ringRadius", "ringR", "radius"], cfg.ringRadius);
-  cfg.coreHp = pickNum(raw, ["coreHp", "coreHP", "core"], cfg.coreHp);
-  cfg.startScrap = pickNum(raw, ["startScrap", "scrap", "startingScrap"], cfg.startScrap);
-  cfg.spawnRadius = pickNum(raw, ["spawnRadius", "spawnR"], cfg.spawnRadius);
-  cfg.coreRadius = pickNum(raw, ["coreRadius", "coreR", "leakRadius"], cfg.coreRadius);
-  cfg.overclockSec = pickNum(raw, ["overclockSec", "overclockTime", "overclockDuration"], cfg.overclockSec);
-  cfg.overclockMul = pickNum(raw, ["overclockMul", "overclockDamage", "overclockMultiplier"], cfg.overclockMul);
-  cfg.overheatSec = pickNum(raw, ["overheatSec", "overheatTime", "cooldownSec"], cfg.overheatSec);
-  cfg.prismBendRadius = pickNum(raw, ["prismBendRadius", "prismBend", "bendRadius"], cfg.prismBendRadius);
-  if (Array.isArray(raw.laneY) && raw.laneY.length >= 1 && raw.laneY.every((v) => typeof v === "number")) {
-    cfg.laneY = raw.laneY.slice();
-  }
-  cfg.lanes = cfg.laneY.map((_, i) => i);
-  return cfg;
-}
+  const oc = isObj(CONFIG.overclock) ? CONFIG.overclock : {};
+  const laneY =
+    Array.isArray(CONFIG.laneY) && CONFIG.laneY.length > 0 && CONFIG.laneY.every((v) => Number.isFinite(v))
+      ? CONFIG.laneY.slice()
+      : [0, 4, 9];
 
-export function resolveTowers() {
-  const raw = asMap(firstObj(DATA.TOWERS, DATA.TOWER_TYPES, DATA.TOWER_TABLE, DATA.towers));
-  const out = {};
-  for (const id of TOWER_ORDER) {
-    const base = FALLBACK_TOWERS[id];
-    const src = raw ? raw[id] : null;
-    out[id] = {
-      ...base,
-      cost: Math.max(0, Math.round(pickNum(src, ["cost", "price", "scrap"], base.cost))),
-      dmg: pickNum(src, ["dmg", "damage", "dmgBase", "power"], base.dmg),
-      cd: Math.max(0.05, pickNum(src, ["cd", "cooldown", "fireInterval", "interval", "rate"], base.cd)),
-      range: pickNum(src, ["range", "radius", "reach"], base.range),
-      projSpeed: pickNum(src, ["projSpeed", "projectileSpeed", "bulletSpeed", "speed"], base.projSpeed),
-      splash: pickNum(src, ["splash", "aoe", "splashRadius"], base.splash),
-      targeting: pickStr(src, ["targeting", "target", "mode"], base.targeting),
-      name: pickStr(src, ["name", "label", "title"], base.name),
-    };
-    if (id === "well") {
-      out[id].fieldRadius = pickNum(src, ["fieldRadius", "wellRadius"], base.fieldRadius);
-      out[id].fieldSec = pickNum(src, ["fieldSec", "fieldTime", "duration"], base.fieldSec);
-      out[id].slowMul = pickNum(src, ["slowMul", "slow"], base.slowMul);
-      out[id].pullRate = pickNum(src, ["pullRate", "pull"], base.pullRate);
-      out[id].pullMax = pickNum(src, ["pullMax"], base.pullMax);
-    }
-  }
-  return out;
-}
-
-export function resolveCounters() {
-  const raw = firstObj(DATA.COUNTERS, DATA.COUNTER_TABLE, DATA.ARMOR_TABLE, DATA.ARMOR, DATA.counters);
-  const out = {};
-  for (const id of TOWER_ORDER) {
-    const base = FALLBACK_COUNTERS[id];
-    const src = isObj(raw) ? raw[id] : null;
-    out[id] = {
-      shell: num(isObj(src) ? src.shell : undefined, base.shell),
-      shield: num(isObj(src) ? src.shield : undefined, base.shield),
-      swarm: num(isObj(src) ? src.swarm : undefined, base.swarm),
-    };
-  }
-  return out;
-}
-
-export function resolveEnemies() {
-  const raw = asMap(firstObj(DATA.ENEMIES, DATA.ENEMY_TYPES, DATA.MOBS, DATA.enemies), "kind");
-  const out = {};
-  for (const kind of Object.keys(FALLBACK_ENEMIES)) {
-    const base = FALLBACK_ENEMIES[kind];
-    const src = raw ? raw[kind] : null;
-    out[kind] = {
-      ...base,
-      hp: Math.max(1, pickNum(src, ["hp", "health", "maxHp"], base.hp)),
-      speed: Math.max(0.05, pickNum(src, ["speed", "moveSpeed", "vel"], base.speed)),
-      scrap: Math.max(0, pickNum(src, ["scrap", "bounty", "reward"], base.scrap)),
-      leak: Math.max(0, pickNum(src, ["leak", "leakDamage", "coreDamage", "damage"], base.leak)),
-      armor: pickStr(src, ["armor", "armour", "armorType"], base.armor),
-      size: pickNum(src, ["size", "scale"], base.size),
-    };
-  }
-  return out;
-}
-
-/** 兜底波表：20 波 + 第 20 波 Boss。与 seed 无关，保证同一波次强度稳定。 */
-export function buildFallbackWaves(waveCount) {
-  const waves = [];
-  for (let n = 1; n <= waveCount; n += 1) {
-    const spawns = [];
-    const isBoss = n === waveCount && waveCount >= 10;
-    const small = 6 + Math.floor(n * 1.9);
-    const mid = n >= 3 ? Math.floor((n - 1) * 1.1) : 0;
-    const elite = n >= 6 ? Math.floor((n - 4) * 0.7) : 0;
-    if (small > 0) spawns.push({ kind: "small", count: small });
-    if (mid > 0) spawns.push({ kind: "mid", count: mid });
-    if (elite > 0) spawns.push({ kind: "elite", count: elite });
-    if (isBoss) spawns.push({ kind: "etch-lord", count: 1 });
-    waves.push({
-      index: n,
-      spawns,
-      interval: Math.max(0.3, 0.85 - n * 0.02),
-      hpScale: 1 + (n - 1) * 0.12,
-      speedScale: 1 + (n - 1) * 0.015,
-      bonus: 20 + n * 4,
-      boss: isBoss,
-    });
-  }
-  return waves;
-}
-
-function normalizeWave(entry, index) {
-  if (!isObj(entry)) return null;
-  let spawns = [];
-  const rawSpawns = Array.isArray(entry.spawns) ? entry.spawns : Array.isArray(entry.groups) ? entry.groups : null;
-  if (rawSpawns) {
-    for (const s of rawSpawns) {
-      if (!isObj(s)) continue;
-      const kind = pickStr(s, ["kind", "type", "enemy", "id"], "");
-      const count = Math.round(pickNum(s, ["count", "n", "amount"], 0));
-      if (kind && count > 0) spawns.push({ kind, count });
-    }
-  } else {
-    for (const kind of ["small", "mid", "elite", "etch-lord"]) {
-      const count = Math.round(num(entry[kind], 0));
-      if (count > 0) spawns.push({ kind, count });
-    }
-  }
-  if (spawns.length === 0) return null;
   return {
-    index,
-    spawns,
-    interval: Math.max(0.1, pickNum(entry, ["interval", "gap", "spawnInterval"], 0.8)),
-    hpScale: pickNum(entry, ["hpScale", "hpMul"], 1),
-    speedScale: pickNum(entry, ["speedScale", "speedMul"], 1),
-    bonus: pickNum(entry, ["bonus", "reward", "clearScrap"], 20 + index * 4),
-    boss: spawns.some((s) => s.kind === "etch-lord"),
+    socketCount: intAtLeast(CONFIG.socketCount, 24, 3),
+    ringRadius: atLeast(CONFIG.ringRadius, 40, 1),
+    coreHp: atLeast(CONFIG.coreHp, 20, 1),
+    startScrap: atLeast(CONFIG.startScrap, 180, 0),
+    spawnRadius: atLeast(CONFIG.spawnRadius, 52, 2),
+    coreRadius: atLeast(CONFIG.coreRadius, 8, 0),
+    laneY,
+    lanes: laneY.map((_, i) => i),
+    waveCount: intAtLeast(CONFIG.waveCount, 20, 1),
+    firstWaveSec: FIRST_WAVE_SEC,
+    interWaveSec: atLeast(CONFIG.interWaveDelaySec, 5, 0),
+    overclockSec: atLeast(oc.durationSec, 4, 0.1),
+    overclockMul: atLeast(oc.multiplier, 2.2, 1),
+    overheatSec: atLeast(oc.overheatSec, 3, 0),
+    sellRefund: Math.min(1, atLeast(CONFIG.sellRefund, 0.7, 0)),
+    muzzleY: MUZZLE_Y,
+    socketHp: SOCKET_HP,
   };
 }
 
-export function resolveWaves(waveCount) {
-  const raw = firstObj(DATA.WAVES, DATA.WAVE_TABLE, DATA.waves);
-  if (Array.isArray(raw) && raw.length > 0) {
-    const normalized = [];
-    for (let i = 0; i < raw.length; i += 1) {
-      const wave = normalizeWave(raw[i], i + 1);
-      if (!wave) {
-        normalized.length = 0;
-        break;
-      }
-      normalized.push(wave);
-    }
-    if (normalized.length > 0) {
-      return waveCount && waveCount < normalized.length ? normalized.slice(0, waveCount) : normalized;
-    }
-  }
-  return buildFallbackWaves(waveCount || FALLBACK_CONFIG.waveCount);
+/**
+ * TOWERS[id].levels[k] 是该级的「完整」数值。R1 只用 1 级（levels[0]）。
+ * hitscan / burst / missile 用 damage + rate；beam / aura 用 dps。
+ */
+function resolveLevel(id, def, level) {
+  const lv = isObj(def.levels) || Array.isArray(def.levels) ? def.levels[level] : null;
+  const src = isObj(lv) ? lv : {};
+  const kind = str(def.kind, "hitscan");
+  const rate = atLeast(src.rate, 0, 0);
+  return {
+    id,
+    level: level + 1,
+    name: str(def.name, id),
+    kind,
+    shotKind: SHOT_KIND[kind] || "tracer",
+    targeting: str(def.targeting, "first"),
+    lanes: Array.isArray(def.lanes) ? def.lanes.slice() : null,
+    cost: Math.max(0, Math.round(fin(src.cost, 0))),
+    range: atLeast(src.range, 1, 0),
+    damage: atLeast(src.damage, 0, 0),
+    rate,
+    cd: rate > 0 ? 1 / rate : 0,
+    dps: atLeast(src.dps, 0, 0),
+    aoeRadius: atLeast(src.aoeRadius, 0, 0),
+    maxTargets: intAtLeast(src.maxTargets, 1, 1),
+    pierce: intAtLeast(src.pierce, 1, 1),
+    refractRange: atLeast(src.refractRange, 0, 0),
+    refractFalloff: Math.min(1, atLeast(src.refractFalloff, 0, 0)),
+    slowMul: Math.min(1, Math.max(0.05, 1 - atLeast(src.slowPct, 0, 0))),
+    projectileSpeed: atLeast(src.projectileSpeed, 0, 0),
+  };
 }
 
-export const TOWER_IDS = TOWER_ORDER.slice();
+export function resolveTowers() {
+  const out = {};
+  for (const id of TOWER_IDS) {
+    const def = isObj(TOWERS[id]) ? TOWERS[id] : {};
+    out[id] = resolveLevel(id, def, 0);
+  }
+  return out;
+}
+
+/** 克制表由 armorMultiplier() 展开成 5×3 的纯数字表，热路径不再调函数。 */
+export function resolveCounters() {
+  const out = {};
+  for (const towerId of TOWER_IDS) {
+    const row = {};
+    for (const armor of ARMOR_TYPES) {
+      let value = 1;
+      try {
+        value = armorMultiplier(towerId, armor);
+      } catch {
+        value = 1;
+      }
+      row[armor] = atLeast(value, 1, 0);
+    }
+    out[towerId] = row;
+  }
+  return out;
+}
+
+function normalizeEnemy(def, key, boss) {
+  const src = isObj(def) ? def : {};
+  const phases = boss && Array.isArray(src.phases) ? src.phases.filter(isObj) : null;
+  const sizeClass = str(src.size, boss ? "boss" : "small");
+  return {
+    kind: str(src.id, key),
+    name: str(src.name, key),
+    sizeClass,
+    scale: fin(SIZE_SCALE[sizeClass], 1),
+    armor: str(src.armor, phases && phases.length > 0 ? str(phases[0].armor, "shell") : "shell"),
+    hp: atLeast(src.hp, 1, 1),
+    speed: atLeast(src.speed, 1, 0.05),
+    bounty: Math.max(0, Math.round(fin(src.bounty, 0))),
+    leak: Math.max(0, Math.round(fin(src.leak, 1))),
+    boss: !!boss,
+    lane: Number.isInteger(src.lane) ? src.lane : null,
+    phases: phases
+      ? phases.map((p) => ({
+          hpPct: Math.min(1, Math.max(0, fin(p.hpPct, 1))),
+          armor: str(p.armor, "shell"),
+          speedMul: atLeast(p.speedMul, 1, 0.05),
+          summon: isObj(p.summon)
+            ? {
+                kind: str(p.summon.enemy, ""),
+                count: intAtLeast(p.summon.count, 0, 0),
+                lane: Number.isInteger(p.summon.lane) ? p.summon.lane : 0,
+                interval: atLeast(p.summon.interval, 0.5, 0),
+              }
+            : null,
+        }))
+      : null,
+  };
+}
+
+export function resolveEnemies() {
+  const out = {};
+  for (const key of Object.keys(ENEMIES)) out[key] = normalizeEnemy(ENEMIES[key], key, false);
+  if (isObj(BOSS)) {
+    const key = str(BOSS.id, "etch-lord");
+    out[key] = normalizeEnemy(BOSS, key, true);
+  }
+  return out;
+}
+
+function normalizeWave(entry, index) {
+  const src = isObj(entry) ? entry : {};
+  const groups = [];
+  const raw = Array.isArray(src.groups) ? src.groups : [];
+  for (const g of raw) {
+    if (!isObj(g)) continue;
+    const kind = str(g.enemy, "");
+    const count = intAtLeast(g.count, 0, 0);
+    if (!kind || count <= 0) continue;
+    groups.push({
+      kind,
+      count,
+      lane: intAtLeast(g.lane, 0, 0),
+      delay: atLeast(g.delay, 0, 0),
+      interval: atLeast(g.interval, 0, 0),
+    });
+  }
+  return {
+    index,
+    groups,
+    hpMul: atLeast(src.hpMul, 1, 0.01),
+    bonus: Math.max(0, Math.round(fin(src.bonus, 0))),
+    boss: false,
+  };
+}
+
+/** 蚀主单独成一波：data 注明「第 20 波清完、interWaveDelaySec 后单独登场」。 */
+function bossWave(index) {
+  const kind = str(BOSS.id, "etch-lord");
+  return {
+    index,
+    groups: [{ kind, count: 1, lane: Number.isInteger(BOSS.lane) ? BOSS.lane : 1, delay: 0, interval: 0 }],
+    hpMul: 1,
+    bonus: Math.max(0, Math.round(fin(BOSS.bounty, 0))),
+    boss: true,
+  };
+}
+
+/**
+ * @param {number} [waveCount] 只跑前 N 波（冒烟用）。缺省 = 全表 + 蚀主。
+ */
+export function resolveWaves(waveCount) {
+  const base = [];
+  for (let i = 0; i < WAVES.length; i += 1) {
+    const wave = normalizeWave(WAVES[i], base.length + 1);
+    if (wave.groups.length > 0) base.push(wave);
+  }
+  const all = isObj(BOSS) ? base.concat(bossWave(base.length + 1)) : base;
+  if (all.length === 0) return [];
+  if (!Number.isFinite(waveCount)) return all;
+  const n = Math.min(all.length, Math.max(1, Math.round(waveCount)));
+  return all.slice(0, n);
+}
