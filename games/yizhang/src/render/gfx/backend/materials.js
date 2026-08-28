@@ -216,6 +216,10 @@ function uniformValueOf(value) {
   return value;
 }
 
+// 分派不出去的 uniform 曾经是静悄悄丢掉的，着色器那边就读到一片 0 —— 表现是「颜色全黑」
+// 之类离原因很远的症状，很难追。认不出来就喊一声，每个名字只喊一次。
+const warnedUniforms = new Set();
+
 function applyUniform(bm, name, value, scene) {
   if (value == null) return;
   if (value.isTexture) {
@@ -231,6 +235,12 @@ function applyUniform(bm, name, value, scene) {
   if (value.isVector4) return bm.setVector4(name, uniformValueOf(value));
   if (value.isMatrix4) return bm.setMatrix(name, uniformValueOf(value));
   if (Array.isArray(value) && typeof value[0] === 'number') return bm.setFloats(name, value);
+
+  const key = `${bm.name}.${name}`;
+  if (!warnedUniforms.has(key)) {
+    warnedUniforms.add(key);
+    console.warn(`[gfx] uniform "${name}" 的取值分派不出去，着色器会读到 0：`, value);
+  }
 }
 
 function buildShaderMaterial(src, scene, ctx) {

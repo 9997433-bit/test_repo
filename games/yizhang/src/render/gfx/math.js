@@ -29,6 +29,7 @@ export function linearToSrgb(c) {
 
 export class Vector2 {
   constructor(x = 0, y = 0) {
+    this.isVector2 = true;
     this.x = x;
     this.y = y;
   }
@@ -108,6 +109,7 @@ export class Vector2 {
 
 export class Vector3 {
   constructor(x = 0, y = 0, z = 0) {
+    this.isVector3 = true;
     this.x = x;
     this.y = y;
     this.z = z;
@@ -375,6 +377,7 @@ export class Vector3 {
 
 export class Quaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) {
+    this.isQuaternion = true;
     this.x = x;
     this.y = y;
     this.z = z;
@@ -603,6 +606,7 @@ export class Quaternion {
 
 export class Euler {
   constructor(x = 0, y = 0, z = 0, order = 'XYZ') {
+    this.isEuler = true;
     this.x = x;
     this.y = y;
     this.z = z;
@@ -675,6 +679,7 @@ export class Euler {
 
 export class Matrix4 {
   constructor() {
+    this.isMatrix4 = true;
     // 列主序，与调用方的既有约定一致（也与后端 Matrix 的内存布局逐元素相同）
     this.elements = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   }
