@@ -300,10 +300,15 @@ const REACH_FREEZE = {
   afterimage: { slapRange: 2.5, slapAngleDeg: 100 },
   magnet: { slapRange: 2.7, slapAngleDeg: 85 },
   meteor: { slapRange: 2.8, slapAngleDeg: 80 },
+  // P2 内容轮表尾追加的生涯 4 掌（GDD §5.1）：数字落在首发包络内，一并冻结。
+  cocoon: { slapRange: 2.8, slapAngleDeg: 80 },
+  raven: { slapRange: 2.4, slapAngleDeg: 90 },
+  victor: { slapRange: 2.7, slapAngleDeg: 85 },
+  tumbler: { slapRange: 2.7, slapAngleDeg: 90 },
 };
 
 describe("reach 数字冻结", () => {
-  it("八只掌的 slapRange / slapAngleDeg 与高度闸都没动过", () => {
+  it("十二只掌的 slapRange / slapAngleDeg 与高度闸都没动过", () => {
     expect(Object.keys(GLOVE_BY_ID).sort()).toEqual(Object.keys(REACH_FREEZE).sort());
     for (const [id, want] of Object.entries(REACH_FREEZE)) {
       expect({ slapRange: GLOVE_BY_ID[id].slapRange, slapAngleDeg: GLOVE_BY_ID[id].slapAngleDeg }, id).toEqual(want);

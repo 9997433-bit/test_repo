@@ -232,6 +232,111 @@ export const GLOVES = [
       params: { craterTileDamage: 130, craterRadiusMul: 1.2 }, // ≥ 满血上限 130，必直碎
     },
   },
+
+  // ---- P2 内容轮追加：生涯四掌（表尾 append，前 8 只顺序与数值不动）----
+  // 纪律（tests/glove-data.test.js 锁死）：
+  //   · skillId / awakenModifiers.special 只复用首发 8 掌词表，不造新战斗语义——
+  //     combat / render 零改动即可进局（技能 handler、VFX 分派都按词表兜底）。
+  //   · 全部数值落在首发 8 掌包络内（range 2.4–2.9、power 7.5–15 …），不越级。
+  //   · 识别色与全表互异；解锁走 unlocks.js 的 scope:"career"（读存档 stats）。
+  //   · 本轮不上走道 3D 台座（hub.js 仍 8 座），战斗 VFX 条目留给 O2
+  //     （resolveGloveVfx 兜底木棉），登记见 GDD §5.1 / §12 / §14。
+  {
+    id: "cocoon",
+    name: "铁茧",
+    role: "重守·反制",
+    desc: "铁丝缠茧，慢掌沉腕，谁先动手谁先飞。",
+    color: "#8a9a5b",
+    slapRange: 2.8,
+    slapAngleDeg: 80,
+    slapPower: 13,
+    slapCooldown: 1.0,
+    windup: 0.34,
+    recovery: 0.34,
+    moveSpeedMul: 0.9,
+    skillId: "coil_counter",
+    skillCooldown: 10,
+    unlock: "unlock_cocoon",
+    awakenModifiers: {
+      slapPowerMul: 1.15,
+      slapRangeMul: 1.1,
+      slapCooldownMul: 1.0,
+      special: "counter_launch", // 反弹附带小跳（同弹簧觉醒词条）
+      params: { counterKnockUp: 4.5 },
+    },
+  },
+  {
+    id: "raven",
+    name: "渡鸦",
+    role: "游猎·切入",
+    desc: "掠着台缘飞进飞出，啄一掌就走。",
+    color: "#4e5166",
+    slapRange: 2.4,
+    slapAngleDeg: 90,
+    slapPower: 8,
+    slapCooldown: 0.55,
+    windup: 0.14,
+    recovery: 0.21,
+    moveSpeedMul: 1.06,
+    skillId: "wind_rush",
+    skillCooldown: 7,
+    unlock: "unlock_raven",
+    awakenModifiers: {
+      slapPowerMul: 1.1,
+      slapRangeMul: 1.1,
+      slapCooldownMul: 0.9,
+      special: "rush_steer", // 疾冲途中可转向一次（同疾风觉醒词条）
+      params: { steerMaxDeg: 90 },
+    },
+  },
+  {
+    id: "victor",
+    name: "常胜",
+    role: "压制·强制接近",
+    desc: "赢惯了的掌，不许对手站在够不着的地方。",
+    color: "#d3719f",
+    slapRange: 2.7,
+    slapAngleDeg: 85,
+    slapPower: 10.5,
+    slapCooldown: 0.8,
+    windup: 0.24,
+    recovery: 0.28,
+    moveSpeedMul: 0.98,
+    skillId: "iron_pull",
+    skillCooldown: 9,
+    unlock: "unlock_victor",
+    awakenModifiers: {
+      slapPowerMul: 1.1,
+      slapRangeMul: 1.1,
+      slapCooldownMul: 1.0,
+      special: "dual_pull", // 可拉 2 人并短暂黏住（同磁掌觉醒词条）
+      params: { pullTargets: 2, stickySeconds: 0.6 },
+    },
+  },
+  {
+    id: "tumbler",
+    name: "不倒",
+    role: "站桩·连击",
+    desc: "不倒翁的脾气：被推就晃回来，越挨越会打。",
+    color: "#7a4e63",
+    slapRange: 2.7,
+    slapAngleDeg: 90,
+    slapPower: 11,
+    slapCooldown: 0.85,
+    windup: 0.26,
+    recovery: 0.3,
+    moveSpeedMul: 0.95,
+    skillId: "quake_slam",
+    skillCooldown: 8,
+    unlock: "unlock_tumbler",
+    awakenModifiers: {
+      slapPowerMul: 1.15,
+      slapRangeMul: 1.1,
+      slapCooldownMul: 0.95,
+      special: "combo3", // 连续命中的第 3 掌强击退（同木棉觉醒词条）
+      params: { comboPowerMul: 1.8, comboResetSeconds: 2.5 },
+    },
+  },
 ];
 
 export const GLOVE_BY_ID = Object.fromEntries(GLOVES.map((g) => [g.id, g]));
@@ -244,6 +349,8 @@ export const GLOVE_BY_ID = Object.fromEntries(GLOVES.map((g) => [g.id, g]));
  *   - `{ unlocked: ["cotton", "granite", ...] }`  存档的已解锁手套 id 列表
  *   - `{ unlock_granite: true }` / `{ granite: true }`  扁平旗标（挑战 id 或手套 id）
  *   - `{ challenges: { unlock_granite: 15 } }`  挑战计数，达到 UNLOCKS.count 即解锁
+ *   - `{ stats: { totalSlapHits: 300, ... } }`  生涯累计（scope:"career" 的规格
+ *     按 spec.stat 直接读存档 stats，字段见 src/core/storage.js DEFAULTS.stats）
  * @returns {boolean} 木棉（unlock:"default"）恒 true；未知 id 恒 false
  */
 export function isGloveUnlocked(id, progress = {}) {
@@ -256,8 +363,17 @@ export function isGloveUnlocked(id, progress = {}) {
   if (progress[glove.unlock] === true || progress[id] === true) return true;
 
   const spec = UNLOCK_BY_ID[glove.unlock];
+  if (!spec) return false;
+
+  // 生涯累计解锁（P2）：不走局内事件，直接对照存档 stats 的累计计数。
+  if (spec.scope === "career") {
+    const stats = progress.stats;
+    const value = stats && typeof stats === "object" ? stats[spec.stat] : undefined;
+    if (typeof value === "number" && value >= spec.count) return true;
+  }
+
   const count = progress.challenges ? progress.challenges[glove.unlock] : undefined;
-  return !!(spec && typeof count === "number" && count >= spec.count);
+  return !!(typeof count === "number" && count >= spec.count);
 }
 
 // 对局常量：与 CONTRACT.md 一字不差，勿改字段名

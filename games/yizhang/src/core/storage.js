@@ -18,7 +18,17 @@ const DEFAULTS = {
   muted: false,
   lookSensitivity: 1,
   invertY: false,
-  stats: { matches: 0, kills: 0, deaths: 0, wins: 0, bestKills: 0 },
+  // totalSlapHits / portalCrossings 是 P2 生涯解锁（unlocks.js scope:"career"）
+  // 的累计计数——同样是向后兼容的新增字段：老档缺字段由下面的 stats spread 补 0。
+  stats: {
+    matches: 0,
+    kills: 0,
+    deaths: 0,
+    wins: 0,
+    bestKills: 0,
+    totalSlapHits: 0,
+    portalCrossings: 0,
+  },
 };
 
 function clone(value) {
@@ -81,15 +91,30 @@ export function unlockGlove(id) {
   });
 }
 
-export function recordMatch({ kills = 0, deaths = 0, won = false }) {
+export function recordMatch({ kills = 0, deaths = 0, won = false, slapHits = 0 }) {
   return updateSave((cur) => ({
     ...cur,
     stats: {
+      // 先 spread 再覆写：不认识的/后加的累计字段（portalCrossings 等）原样保留，
+      // 结算一场不清生涯计数。
+      ...cur.stats,
       matches: cur.stats.matches + 1,
       kills: cur.stats.kills + kills,
       deaths: cur.stats.deaths + deaths,
       wins: cur.stats.wins + (won ? 1 : 0),
       bestKills: Math.max(cur.stats.bestKills, kills),
+      totalSlapHits: (cur.stats.totalSlapHits || 0) + slapHits,
+    },
+  }));
+}
+
+/** 穿过传送门一次（hub → 裂岛）。生涯解锁 unlock_raven 读这个计数。 */
+export function recordPortalCrossing() {
+  return updateSave((cur) => ({
+    ...cur,
+    stats: {
+      ...cur.stats,
+      portalCrossings: (cur.stats.portalCrossings || 0) + 1,
     },
   }));
 }

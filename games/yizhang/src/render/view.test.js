@@ -31,11 +31,15 @@ function freshMatch(opts = {}) {
 }
 
 describe('手套识别色', () => {
-  it('镜像表与 src/data/gloves.js 一字不差', () => {
-    for (const g of GLOVES) {
+  it('镜像表与 src/data/gloves.js 一字不差（覆盖首发 8 掌）', () => {
+    // P2 内容轮在掌表尾追加了生涯 4 掌（cocoon/raven/victor/tumbler），本轮不进
+    // 渲染镜像（真实 view 自带 gloveColor，镜像只是兜底）：镜像仍只覆盖首发 8 掌，
+    // 新掌缺席时走 FALLBACK_TINT。O2 接手新掌视觉时把镜像补齐、改回全表对照。
+    const mirrored = GLOVES.slice(0, Object.keys(GLOVE_TINT).length);
+    for (const g of mirrored) {
       expect(GLOVE_TINT[g.id], g.id).toBe(parseColor(g.color));
     }
-    expect(Object.keys(GLOVE_TINT).sort()).toEqual(GLOVES.map((g) => g.id).sort());
+    expect(Object.keys(GLOVE_TINT).sort()).toEqual(mirrored.map((g) => g.id).sort());
   });
 
   it('view 自带的 gloveColor 优先于镜像表', () => {
@@ -270,7 +274,8 @@ describe('真实 getView → 渲染视图', () => {
     const inHub = readView(sim.getView(state));
     expect(inHub.phase).toBe('hub');
     expect(inHub.hub.active).toBe(true);
-    expect(inHub.hub.pedestals.length).toBe(GLOVES.length);
+    // 走道仍 8 座（GDD §12）：P2 表尾追加的生涯 4 掌不上 3D 台座
+    expect(inHub.hub.pedestals.length).toBe(8);
     // 台座的识别色跟手套表一致（渲染层的漆色不是自己编的）
     for (const ped of inHub.hub.pedestals) {
       expect(ped.tint, ped.gloveId).toBe(GLOVE_TINT[ped.gloveId]);
