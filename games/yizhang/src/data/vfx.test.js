@@ -1,5 +1,5 @@
 // 每掌战斗 VFX 参数表契约测试（Round 2 遗留 3；纪律来自手册 §10 与
-// ART_DIRECTION §7/§9）。粒子数与秒数归 F3 可调；这里锁的是「八掌各不相同、
+// ART_DIRECTION §7/§9）。粒子数与秒数归 F3 可调；这里锁的是「十二掌各不相同、
 // 有残留、识别色不漂移、加法混合只给真高温」这些不变量。
 import { describe, expect, it } from "vitest";
 import {
@@ -25,22 +25,19 @@ function collectBlends(node, gloveId, path, out) {
 }
 
 describe("GLOVE_VFX 战斗特效表", () => {
-  it("覆盖首发 8 掌，数组顺序 = GLOVES 图鉴前缀，BY_ID 同一对象", () => {
-    // P2 表尾追加的生涯 4 掌暂无专属条目（归 O2，GDD §14）：出场走
-    // resolveGloveVfx 兜底木棉，见下面的专项断言。
-    expect(GLOVE_VFX).toHaveLength(8);
-    expect(GLOVE_VFX.map((v) => v.gloveId)).toEqual(
-      GLOVES.slice(0, GLOVE_VFX.length).map((g) => g.id),
-    );
+  it("覆盖全表 12 掌，数组顺序 = GLOVES 图鉴顺序，BY_ID 同一对象", () => {
+    expect(GLOVE_VFX).toHaveLength(12);
+    expect(GLOVE_VFX.map((v) => v.gloveId)).toEqual(GLOVES.map((g) => g.id));
     for (const v of GLOVE_VFX) expect(GLOVE_VFX_BY_ID[v.gloveId]).toBe(v);
   });
 
-  it("P2 追加掌暂缺专属条目：resolve 必须兜底木棉，不许返回 undefined", () => {
-    const appended = GLOVES.slice(GLOVE_VFX.length);
-    expect(appended.length).toBeGreaterThan(0);
-    for (const g of appended) {
-      expect(GLOVE_VFX_BY_ID[g.id], g.id).toBeUndefined();
-      expect(resolveGloveVfx(g.id), g.id).toBe(GLOVE_VFX_BY_ID.cotton);
+  it("生涯四掌有了自己的条目：不再经 resolveGloveVfx 退回木棉", () => {
+    const career = GLOVES.slice(8).map((g) => g.id);
+    expect(career).toEqual(["cocoon", "raven", "victor", "tumbler"]);
+    for (const id of career) {
+      expect(GLOVE_VFX_BY_ID[id], id).toBeTruthy();
+      expect(resolveGloveVfx(id), id).toBe(GLOVE_VFX_BY_ID[id]);
+      expect(resolveGloveVfx(id), id).not.toBe(GLOVE_VFX_BY_ID.cotton);
     }
   });
 
@@ -78,8 +75,7 @@ describe("GLOVE_VFX 战斗特效表", () => {
   });
 
   it("技能分派：skill.skillId = §3.1 右列 handler id；木棉无主动技留空", () => {
-    // 只对照有专属条目的首发 8 掌；追加掌复用同一批 skillId，命中同一条 BY_SKILL。
-    for (const g of GLOVES.filter((glove) => GLOVE_VFX_BY_ID[glove.id])) {
+    for (const g of GLOVES.slice(0, 8)) {
       const v = GLOVE_VFX_BY_ID[g.id];
       if (g.id === "cotton") {
         expect(v.skill).toBeNull();
@@ -94,7 +90,21 @@ describe("GLOVE_VFX 战斗特效表", () => {
       expect(v.skill.residue.kind, g.id).toBeTruthy();
       expect(GLOVE_VFX_BY_SKILL[handlerId]).toBe(v);
     }
-    expect(Object.keys(GLOVE_VFX_BY_SKILL)).toHaveLength(GLOVE_VFX.length - 1);
+    expect(Object.keys(GLOVE_VFX_BY_SKILL)).toHaveLength(7); // 词表 7 技
+  });
+
+  it("生涯四掌 skill 留空是设计：技能形归词表原主掌，BY_SKILL 不许被顶掉", () => {
+    // 四掌复用首发 skillId（铁茧 parry、渡鸦 dashSlap、常胜 magnetPull、
+    // 不倒 groundPound）。本表若也登记同名 skillId，BY_SKILL 会指向后进表的
+    // 那只掌，原主掌的技能形就凭空换了人——所以扇击各自成形、技能同源共用。
+    const owner = { cocoon: "spring", raven: "gale", victor: "magnet", tumbler: "granite" };
+    for (const [id, ownerId] of Object.entries(owner)) {
+      const g = GLOVE_BY_ID[id];
+      expect(GLOVE_VFX_BY_ID[id].skill, id).toBeNull();
+      expect(g.skillId, id).toBe(GLOVE_BY_ID[ownerId].skillId);
+      const handlerId = SKILL_COMBAT_ALIASES[g.skillId];
+      expect(GLOVE_VFX_BY_SKILL[handlerId], id).toBe(GLOVE_VFX_BY_ID[ownerId]);
+    }
   });
 
   it("分身必须描述残影：保留姿态、边缘先散、去饱和、有寿命（禁蓝色光柱）", () => {

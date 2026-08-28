@@ -81,7 +81,7 @@ describe("Round 3 product and render contracts", () => {
     expect(simulation.forwardZ(0)).toBe(-1);
   });
 
-  it("maps all eight gloves to eight distinct combat VFX kinds", () => {
+  it("maps all twelve gloves to twelve distinct combat VFX kinds", () => {
     const entries = Object.entries(COMBAT_VFX_KIND);
 
     expect(entries.map(([gloveId]) => gloveId)).toEqual([
@@ -93,6 +93,10 @@ describe("Round 3 product and render contracts", () => {
       "afterimage",
       "magnet",
       "meteor",
+      "cocoon",
+      "raven",
+      "victor",
+      "tumbler",
     ]);
     expect(entries.map(([, kind]) => kind)).toEqual([
       "fanwake",
@@ -103,8 +107,12 @@ describe("Round 3 product and render contracts", () => {
       "phase",
       "flux",
       "cinder",
+      "husk",
+      "plume",
+      "banner",
+      "wobble",
     ]);
-    expect(new Set(entries.map(([, kind]) => kind)).size).toBe(8);
+    expect(new Set(entries.map(([, kind]) => kind)).size).toBe(12);
     expect(COMBAT_VFX_KIND.afterimage).not.toBe("mirror");
   });
 

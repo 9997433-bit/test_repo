@@ -47,7 +47,7 @@ export const PALETTE = {
 };
 
 /**
- * 8 只手套的识别色，键是 src/data/gloves.js 的 GLOVES[].id，值与那里的 color 一字不差。
+ * 12 只手套的识别色，键是 src/data/gloves.js 的 GLOVES[].id，值与那里的 color 一字不差。
  *
  * 渲染层不 import src/data（避免反向依赖），所以这张表是那份数值表的镜像：
  * 真实 view 里带 gloveColor 时以 view 为准，这张表只在 view 没给颜色时兜底。
@@ -62,6 +62,11 @@ export const GLOVE_TINT = {
   afterimage: 0xb48ade,
   magnet: 0xc94f43,
   meteor: 0xe07840,
+  // P2 生涯四掌：不上走道台座，但战斗特效要认得出是谁，兜底色不能退灰
+  cocoon: 0x8a9a5b,
+  raven: 0x4e5166,
+  victor: 0xd3719f,
+  tumbler: 0x7a4e63,
 };
 
 export const FALLBACK_TINT = 0x9aa2ad;

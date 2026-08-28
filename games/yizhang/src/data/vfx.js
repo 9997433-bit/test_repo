@@ -15,7 +15,7 @@
 // 直接引用 `GLOVE_BY_ID[id].color`（同一对象字段，永不漂移出第三份色源）。
 //
 // 纪律（手册 §10 + ART_DIRECTION §7/§9，测试锁死）：
-//   1. 禁纯色光球：八掌 burst.shape / trail.kind / residue.kind 三列各自互异，
+//   1. 禁纯色光球：十二掌 burst.shape / trail.kind / residue.kind 三列各自互异，
 //      不允许「同一团换个 hue」。
 //   2. 识别色只做点缀：着色粒子占比 ≤ identMaxShare（0.2），整团染色拒收。
 //   3. 加法混合只给真高温：全表 blend:"additive" 仅陨掌余烬，其余 Normal。
@@ -207,6 +207,61 @@ export const GLOVE_VFX = deepFreeze([
       decal: { kind: "scorchRing", lifeSeconds: 8 },
     },
   },
+
+  // ---- P3 收口：生涯四掌的专属条目（§14.1 P2 批注留的坑，O2 补齐）----
+  // 三列继续互异：burst.shape / trail.kind / residue.kind 各自 12 词两两不同。
+  // `skill: null` 是**设计如此**，不是缺项：四掌复用首发的七个 skillId（铁茧走
+  // parry、渡鸦走 dashSlap…），技能表演沿用词表原主掌的形（GDD §14.1），本表
+  // 若再登记一条同名 skillId，`GLOVE_VFX_BY_SKILL` 会把原主掌顶掉。要给某只
+  // 生涯掌单独的技能形，先在 §3.1 给它一个自己的 skillId，再回来补 skill。
+  {
+    gloveId: "cocoon",
+    ident: GLOVE_BY_ID.cocoon.color,
+    identMaxShare: IDENT_MAX_SHARE,
+    slap: {
+      // 铁丝缠出的茧壳一层层崩开：掉的是有厚度的铁鳞，不是火星
+      burst: { shape: "huskCrack", plateCount: 6, height: 0.7, lifeSeconds: 0.45 },
+      trail: { kind: "wireCurl", turns: 2, lifeSeconds: 0.45 },
+      residue: { kind: "shellFlake", count: 7, bounce: 1, lifeSeconds: 2.4 },
+    },
+    skill: null,
+  },
+  {
+    gloveId: "raven",
+    ident: GLOVE_BY_ID.raven.color,
+    identMaxShare: IDENT_MAX_SHARE,
+    slap: {
+      // 羽列炸散：三片各飘各的，落下来的绒比棉絮小、比棉絮暗
+      burst: { shape: "plumeSplay", featherCount: 3, lifeSeconds: 0.4 },
+      trail: { kind: "quillWake", groundHug: false, lifeSeconds: 0.5 },
+      residue: { kind: "featherDown", count: 8, fall: "flutter", lifeSeconds: 1.8 },
+    },
+    skill: null,
+  },
+  {
+    gloveId: "victor",
+    ident: GLOVE_BY_ID.victor.color,
+    identMaxShare: IDENT_MAX_SHARE,
+    slap: {
+      // 旗展开又收拢：波沿着幅面横着走，收的时候撕下几缕碎绸
+      burst: { shape: "bannerSweep", furlSeconds: 0.22, lifeSeconds: 0.5 },
+      trail: { kind: "silkRipple", waves: 2, lifeSeconds: 0.55 },
+      residue: { kind: "ribbonScrap", count: 6, fall: "flutter", lifeSeconds: 2.0 },
+    },
+    skill: null,
+  },
+  {
+    gloveId: "tumbler",
+    ident: GLOVE_BY_ID.tumbler.color,
+    identMaxShare: IDENT_MAX_SHARE,
+    slap: {
+      // 压下去弹回来：摇幅一次比一次小，底下的配重沙贴地洒出去一圈
+      burst: { shape: "rockerRing", rockCount: 3, lifeSeconds: 0.45 },
+      trail: { kind: "swayArc", lifeSeconds: 0.5 },
+      residue: { kind: "ballastSand", count: 9, settle: "lowSpread", lifeSeconds: 1.6 },
+    },
+    skill: null,
+  },
 ]);
 
 export const GLOVE_VFX_BY_ID = Object.freeze(
@@ -215,7 +270,8 @@ export const GLOVE_VFX_BY_ID = Object.freeze(
 
 /**
  * 按技能 handler id（§3.1 右列，skill 事件线上的 skillId）索引——O2 消化
- * skill 事件时直查，不用先反查 gloveId。木棉无主动技，不在此表。
+ * skill 事件时直查，不用先反查 gloveId。七条：木棉无主动技不在此表，生涯
+ * 四掌复用首发词表的 skillId、`skill: null` 不占位，查到的仍是原主掌的形。
  */
 export const GLOVE_VFX_BY_SKILL = Object.freeze(
   Object.fromEntries(

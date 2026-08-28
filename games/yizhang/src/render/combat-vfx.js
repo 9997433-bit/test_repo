@@ -1,7 +1,7 @@
-// 战斗特效 · 八掌各一套。
+// 战斗特效 · 十二掌各一套。
 //
 // 大厅里每座台座已经有一种认得出的 idle 特效（./hub-vfx.js）。打起来的时候不能又退回
-// 「一套通用激波」—— 那等于告诉玩家八只掌其实是同一只。所以这里给每只掌一套**押韵但
+// 「一套通用激波」—— 那等于告诉玩家十二只掌其实是同一只。所以这里给每只掌一套**押韵但
 // 不复制**的战斗特效：台座上是「这只掌平时在干什么」，打出去是「这只掌打人时发生什么」。
 //
 //   木棉 cotton    fanwake 絮扇  —— 一整片被掌风推开的软扇面，走后飘着绒絮（台座是缓升的棉絮）
@@ -12,6 +12,13 @@
 //   分身 afterimage phase  错位  —— 两片错开滑走的薄剪影，几乎无声（台座是慢残影）
 //   磁掌 magnet    flux    磁弧  —— 向掌心收束的弧线，铁屑被拽进去（台座是铁屑场纹）
 //   陨掌 meteor    cinder  陨坑  —— 从上砸下来的一根柱，余烬上升灰下落（台座是碎岩伴星）
+//
+// P2 生涯四掌（走道仍 8 座，这四只没有台座，只有战斗形）：
+//
+//   铁茧 cocoon    husk    壳崩  —— 六棱的茧壳一层层往前崩开，掉铁鳞
+//   渡鸦 raven     plume   羽炸  —— 三片羽错角炸散，各飘各的，落一地绒
+//   常胜 victor    banner  旗展  —— 一整幅旗展开又收拢，波沿着幅面走，碎绸落地
+//   不倒 tumbler   wobble  摇环  —— 被压扁的矮环一次比一次小地摇回正，底沙洒出去
 //
 // 纪律（手册 §10 / ART §13.4 同源）：
 //   · 没有一套是「一个纯色球」：形体全部靠噪声撕开，掠射角才显形，中间是空的
@@ -33,6 +40,7 @@ import {
   MeshStandardMaterial,
   NormalBlending,
   Object3D,
+  PlaneGeometry,
   RingGeometry,
   ShaderMaterial,
   TorusGeometry,
@@ -46,9 +54,16 @@ const BLOOM_LAYER = 1;
 const TAU = Math.PI * 2;
 const HALF_PI = Math.PI / 2;
 
+/** 羽列的三片按池位取偏角：中间那片先出，低档只剩它，两侧各偏一档。 */
+const PLUME_SIDE = [0, -1, 1];
+
 /**
- * 掌 id → 战斗特效种类。八只掌各一种，不许共用。
- * 键与 `src/data/gloves.js` 的 GLOVES[].id 一一对应。
+ * 掌 id → 战斗特效种类。十二只掌各一种，不许共用。
+ * 键与 `src/data/gloves.js` 的 GLOVES[].id 一一对应，值与 `SPEC` 的键一一对应。
+ *
+ * 表尾四条是 P2 生涯掌（铁茧 / 渡鸦 / 常胜 / 不倒），P3 正式并入：形名沿用
+ * 当初占位时冻结的 husk / plume / banner / wobble，`SPEC` 里各有一套形，
+ * 不再经 `combatVfxKind` 退回木棉的絮扇。
  */
 export const COMBAT_VFX_KIND = Object.freeze({
   cotton: 'fanwake',
@@ -59,24 +74,6 @@ export const COMBAT_VFX_KIND = Object.freeze({
   afterimage: 'phase',
   magnet: 'flux',
   meteor: 'cinder',
-});
-
-/**
- * 待接的四掌（铁茧 / 渡鸦 / 常胜 / 不倒）。**占位，尚未接线。**
- *
- * F1 已冻结 id 为 cocoon / raven / victor / tumbler（O2 曾猜常胜 = triumph，
- * 合入时把键对齐 `victor`）。四条没有并进 `COMBAT_VFX_KIND`：并进去但不补
- * `SPEC` 的话 `strike` 会退回絮扇，等于四只新掌与木棉共用一套。
- *
- * 值是**预留的形名**，四条互异且不与现役八套重名。接线时要做两件事：
- * 把这四条挪进 `COMBAT_VFX_KIND`、在 `SPEC` 里各补一套形。
- *
- *   铁茧 husk   —— 一层层崩开的壳片
- *   渡鸦 plume  —— 炸散的羽列
- *   常胜 banner —— 展开又收拢的旗面
- *   不倒 wobble —— 压下去弹回来的摇环
- */
-export const PENDING_VFX_KIND = Object.freeze({
   cocoon: 'husk',
   raven: 'plume',
   victor: 'banner',
@@ -86,6 +83,9 @@ export const PENDING_VFX_KIND = Object.freeze({
 /**
  * 主动技 id → 战斗特效种类（`src/data/skills.js` 的键）。
  * 技能与扇击同源不同量：同一套形，放大、加长、多一层。木棉没有主动技，所以只有七条。
+ *
+ * 生涯四掌复用首发的七个 skillId（渡鸦也走 wind_rush…），所以这张表仍是七条：
+ * 它们的**扇击**有自己的形，**技能**沿用词表原主掌的形（渡鸦疾冲 = 疾风的风刃）。
  */
 export const SKILL_VFX_KIND = Object.freeze({
   quake_slam: 'slab',
@@ -97,7 +97,7 @@ export const SKILL_VFX_KIND = Object.freeze({
   sky_fall: 'cinder',
 });
 
-/** 认不出的掌（替身掌表 / 以后新增的掌）退回絮扇：至少还是「一片被推开的空气」。 */
+/** 认不出的掌（替身掌表 / 以后再新增的掌）退回絮扇：至少还是「一片被推开的空气」。 */
 export function combatVfxKind(gloveId) {
   return COMBAT_VFX_KIND[gloveId] ?? 'fanwake';
 }
@@ -388,6 +388,8 @@ export function createCombatVfx({ scene, quality, textures, seed = 90210 }) {
     gust: new RingGeometry(0.34, 1, 30, 1, -1, 2),
     rime: new RingGeometry(0.4, 1, 30, 1, -1.65, 3.3),
     phase: new RingGeometry(0.55, 1, 18, 1, -0.85, 1.7),
+    // 羽：全表最窄的一条楔（32°），三片错角摆开才是「一列羽」而不是一把扇
+    plume: new RingGeometry(0.12, 1, 10, 1, -0.28, 0.56),
   };
   const bandGeo = {
     // 楔：钝头朝前（+Y 那端半径大），砸出去像一块方料而不是一根钉子
@@ -395,6 +397,12 @@ export function createCombatVfx({ scene, quality, textures, seed = 90210 }) {
     recoil: new TorusGeometry(0.72, 0.055, 4, 26),
     flux: new TorusGeometry(0.92, 0.04, 3, 30, Math.PI * 1.45),
     cinder: new ConeGeometry(0.6, 1.6, 10, 1, true),
+    // 茧壳：六棱的开口鼓，前口比后口张，崩开的时候读得出「壳」的棱
+    husk: new CylinderGeometry(0.86, 0.44, 0.9, 6, 1, true),
+    // 旗面：全表唯一一块真平面。旗不是环，波是沿着幅面横着走的（uSweep = 1）
+    banner: new PlaneGeometry(1.7, 0.95, 1, 1),
+    // 摇环：又矮又粗的环，管壁厚到能被压扁 —— 与簧环 / 磁弧的细管两回事
+    wobble: new TorusGeometry(0.52, 0.15, 5, 18),
   };
   const allGeo = [...Object.values(sheetGeo), ...Object.values(bandGeo)];
 
@@ -469,7 +477,7 @@ export function createCombatVfx({ scene, quality, textures, seed = 90210 }) {
   }
 
   /**
-   * 八套配方。每一条只描述三件事：形体怎么摆、怎么动、身边掉什么。
+   * 十二套配方。每一条只描述三件事：形体怎么摆、怎么动、身边掉什么。
    *
    * ctx = { at:Vector3, dir:Vector3(水平单位), tint:Color, power:number, skill:boolean }
    */
@@ -934,9 +942,249 @@ export function createCombatVfx({ scene, quality, textures, seed = 90210 }) {
         }
       },
     },
+
+    /** 铁茧：六棱的茧壳一层层往前崩开，掉铁鳞。 */
+    husk: {
+      family: 'band',
+      geo: 'husk',
+      dur: 0.5,
+      shells: 2,
+      // 撕口开得比谁都大：壳是「崩」的，不是「化」的，缺口要看得见
+      uniforms: { uTear: 0.36, uFlow: 0.4, uSweep: 1, uOpacity: 0.54 },
+      color: (tint) => ({
+        lit: accentOf(new Color(PALETTE.metal), tint, 0.32),
+        dark: accentOf(new Color(PALETTE.rockDeep), tint, 0.12),
+      }),
+      pose(rec) {
+        // 放平让局部 +Y 对上出掌方向；每层再滚半棱，棱线错开才数得出「层」
+        rec.orient.rotation.set(-HALF_PI, 0, Math.PI / 6 + rec.phase * 0.52);
+      },
+      animate(rec, t, p) {
+        // 外层慢半拍、崩得更远更薄：一层层剥，不是一起炸
+        const lag = rec.phase * 0.24;
+        const s = clamp((t - lag) / (1 - lag), 0, 1);
+        const e = 1 - Math.pow(1 - s, 2.4);
+        rec.mesh.position.y = (0.2 + e * (0.8 + rec.phase * 0.55)) * p;
+        const w = (0.5 + e * (0.8 + rec.phase * 0.4)) * p;
+        rec.mesh.scale.set(w, (0.85 - e * 0.34) * p, w);
+        rec.mesh.rotation.y = e * (rec.phase === 0 ? 0.55 : -0.75);
+      },
+      burst(ctx) {
+        // 铁鳞：宽而薄的片，翻着掉，落地还要弹一下
+        for (let i = 0; i < budget(5, ctx.power); i++) {
+          const a = rand() * TAU;
+          const sp = (1.8 + rand() * 2.6) * ctx.power;
+          spawnBit({
+            x: ctx.at.x + ctx.dir.x * 0.45,
+            y: Math.max(0.2, ctx.at.y - 0.15),
+            z: ctx.at.z + ctx.dir.z * 0.45,
+            vx: Math.cos(a) * sp * 0.7 + ctx.dir.x * sp * 0.6,
+            vy: 1.6 + rand() * 2.4,
+            vz: Math.sin(a) * sp * 0.7 + ctx.dir.z * sp * 0.6,
+            sx: 1.1 + rand() * 0.7,
+            sy: 0.22 + rand() * 0.18,
+            life: 1.2 + rand() * 0.9,
+            color: scratch.copy(rockColor).lerp(ctx.tint, 0.34),
+          });
+        }
+        for (let i = 0; i < budget(5, ctx.power); i++) {
+          const a = rand() * TAU;
+          emitSoft(ctx.at.x + Math.cos(a) * 0.45, 0.14 + rand() * 0.5, ctx.at.z + Math.sin(a) * 0.45, {
+            vx: Math.cos(a) * 1.9 * ctx.power,
+            vy: 0.35 + rand() * 0.5,
+            vz: Math.sin(a) * 1.9 * ctx.power,
+            life: 1 + rand() * 0.9,
+            spin: (rand() - 0.5) * 1.8,
+            grow: 1.4 + rand() * 0.9,
+            drag: 2.6,
+            size: 0.18 + rand() * 0.24,
+            alpha: 0.22 + rand() * 0.16,
+            gravity: -1,
+            color: softColor(ctx.tint, 0.05),
+          });
+        }
+      },
+    },
+
+    /** 渡鸦：三片羽错角炸散，各飘各的，落一地绒。 */
+    plume: {
+      family: 'sheet',
+      geo: 'plume',
+      dur: 0.46,
+      shells: 3,
+      uniforms: { uTear: 0.2, uFlow: 0.6, uInner: 0.18, uOpacity: 0.5 },
+      color: (tint) => ({
+        lit: accentOf(new Color(0xb9bfd2), tint, 0.4),
+        dark: accentOf(new Color(0x1e2130), tint, 0.18),
+      }),
+      pose(rec) {
+        // 三片羽立着摊开一列：中间那片正对出掌方向，两侧各偏一档
+        rec.orient.rotation.set(-HALF_PI + 0.58, HALF_PI, (PLUME_SIDE[rec.phase] ?? 0) * 0.62);
+      },
+      animate(rec, t, p) {
+        const side = PLUME_SIDE[rec.phase] ?? 0;
+        const e = 1 - Math.pow(1 - t, 2.6);
+        const k = (0.55 + e * 1.05) * p;
+        rec.mesh.scale.set(k, k, k);
+        // 炸散：各自往外飘一段，先抬后沉 —— 羽是被打散的，不是被推走的
+        rec.holder.position.x = rec.baseX + (rec.dirX * 0.85 - rec.dirZ * side * 1.2) * e * p;
+        rec.holder.position.z = rec.baseZ + (rec.dirZ * 0.85 + rec.dirX * side * 1.2) * e * p;
+        rec.holder.position.y = rec.baseY + e * 0.42 - e * e * 0.3;
+        rec.orient.rotation.z = side * 0.62 + e * (side || 0.6) * 0.7;
+      },
+      burst(ctx) {
+        // 绒：小、暗、慢，飘得比棉絮低 —— 掉的是羽不是云
+        for (let i = 0; i < budget(8, ctx.power); i++) {
+          const a = (rand() - 0.5) * 2.4;
+          const s = Math.sin(a);
+          const c = Math.cos(a);
+          const dx = ctx.dir.x * c - ctx.dir.z * s;
+          const dz = ctx.dir.x * s + ctx.dir.z * c;
+          emitSoft(ctx.at.x + dx * 0.4, ctx.at.y + (rand() - 0.5) * 0.7, ctx.at.z + dz * 0.4, {
+            vx: dx * (1.4 + rand() * 1.6),
+            vy: 0.4 + rand() * 0.5,
+            vz: dz * (1.4 + rand() * 1.6),
+            life: 1.3 + rand() * 1.1,
+            spin: (rand() - 0.5) * 2.6,
+            grow: 0.35 + rand() * 0.4,
+            drag: 2,
+            size: 0.11 + rand() * 0.13,
+            alpha: 0.2 + rand() * 0.14,
+            gravity: -0.55,
+            color: i % 6 === 0 ? scratch.copy(ctx.tint) : scratch.set(0x2b2f3f).lerp(ctx.tint, 0.22),
+          });
+        }
+      },
+    },
+
+    /** 常胜：一整幅旗展开又收拢，波沿着幅面走，碎绸落地。 */
+    banner: {
+      family: 'band',
+      geo: 'banner',
+      dur: 0.54,
+      shells: 1,
+      uniforms: { uTear: 0.2, uFlow: 0.75, uSweep: 1, uOpacity: 0.48 },
+      color: (tint) => ({
+        lit: accentOf(new Color(0xf2e2e6), tint, 0.4),
+        dark: accentOf(new Color(PALETTE.clothDim), tint, 0.16),
+      }),
+      pose(rec) {
+        // 幅面横在出掌方向前头、略微倾着：正着挂就成了一块招牌，斜一点才是布
+        rec.orient.rotation.set(0, 0, -0.14);
+      },
+      animate(rec, t, p) {
+        // 展开又收拢：六成时间拉满，剩下四成收回去 —— 常胜是「亮完就收」
+        const open = t < 0.6 ? 1 - Math.pow(1 - t / 0.6, 2.2) : 1 - Math.pow((t - 0.6) / 0.4, 1.7);
+        rec.mesh.scale.set((0.35 + open * 1.35) * p, (0.75 + open * 0.5) * p, 1);
+        rec.mesh.position.y = (0.16 + open * 0.34) * p;
+        rec.orient.rotation.z = -0.14 + open * 0.3;
+        rec.holder.position.x = rec.baseX + rec.dirX * open * 0.45 * p;
+        rec.holder.position.z = rec.baseZ + rec.dirZ * open * 0.45 * p;
+      },
+      burst(ctx) {
+        // 碎绸：窄长的片，翻着飘下去；数量少，落点集中在幅面底下
+        for (let i = 0; i < budget(3, ctx.power); i++) {
+          const a = (rand() - 0.5) * 2;
+          const s = Math.sin(a);
+          const c = Math.cos(a);
+          spawnBit({
+            x: ctx.at.x + (ctx.dir.x * c - ctx.dir.z * s) * 0.7,
+            y: Math.max(0.3, ctx.at.y + 0.1),
+            z: ctx.at.z + (ctx.dir.x * s + ctx.dir.z * c) * 0.7,
+            vx: (rand() - 0.5) * 1.6,
+            vy: 0.8 + rand() * 1.2,
+            vz: (rand() - 0.5) * 1.6,
+            sx: 0.9 + rand() * 0.5,
+            sy: 0.18 + rand() * 0.14,
+            life: 1.3 + rand() * 0.9,
+            color: scratch.set(PALETTE.cloth).lerp(ctx.tint, 0.45),
+          });
+        }
+        for (let i = 0; i < budget(6, ctx.power); i++) {
+          const a = rand() * TAU;
+          emitSoft(ctx.at.x + Math.cos(a) * 0.5, ctx.at.y + (rand() - 0.6) * 0.7, ctx.at.z + Math.sin(a) * 0.5, {
+            vx: Math.cos(a) * (1.2 + rand()),
+            vy: 0.2 + rand() * 0.4,
+            vz: Math.sin(a) * (1.2 + rand()),
+            life: 1.2 + rand() * 1,
+            spin: (rand() - 0.5) * 3.2,
+            grow: 0.7 + rand() * 0.6,
+            drag: 2.2,
+            size: 0.13 + rand() * 0.16,
+            alpha: 0.2 + rand() * 0.14,
+            gravity: -0.7,
+            color: i % 5 === 0 ? scratch.copy(ctx.tint) : softColor(ctx.tint, 0.08),
+          });
+        }
+      },
+    },
+
+    /** 不倒：被压扁的矮环一次比一次小地摇回正，底沙洒出去。 */
+    wobble: {
+      family: 'band',
+      geo: 'wobble',
+      dur: 0.58,
+      shells: 2,
+      uniforms: { uTear: 0.26, uFlow: 0.32, uSweep: 0, uOpacity: 0.46 },
+      color: (tint) => ({
+        lit: accentOf(new Color(PALETTE.leatherWorn), tint, 0.36),
+        dark: accentOf(new Color(PALETTE.grime), tint, 0.14),
+      }),
+      pose(rec) {
+        rec.orient.rotation.set(-HALF_PI, 0, 0);
+      },
+      animate(rec, t, p) {
+        // 一次比一次小地摇回正：两层反相，读出来就是「怎么按都站回去」
+        const lead = rec.phase === 0 ? 1 : -1;
+        const press = t < 0.3 ? Math.pow(t / 0.3, 0.6) : 1;
+        const damp = Math.exp(-3.2 * t);
+        const rock = Math.sin(t * 12.5) * damp * 0.44 * lead;
+        rec.orient.rotation.x = -HALF_PI + rock;
+        rec.orient.rotation.z = rock * 0.55;
+        const k = (0.62 + press * 0.9 + damp * 0.22) * (rec.phase === 0 ? 1 : 0.72) * p;
+        // 局部 Z 是环的法线，放平之后就是竖直方向：压下去的那一下压的是它
+        rec.mesh.scale.set(k, k, (1.3 - press * 0.62 + damp * 0.26) * p);
+        rec.holder.position.y = rec.baseY - press * 0.2 + damp * 0.16;
+      },
+      burst(ctx) {
+        // 底沙：贴着地往外洒一圈，飞不高、落得快 —— 配重掉出来的那点分量
+        for (let i = 0; i < budget(8, ctx.power); i++) {
+          const a = rand() * TAU;
+          emitSoft(ctx.at.x + Math.cos(a) * 0.4, 0.06 + rand() * 0.18, ctx.at.z + Math.sin(a) * 0.4, {
+            vx: Math.cos(a) * (2.4 + rand() * 1.8),
+            vy: 0.25 + rand() * 0.35,
+            vz: Math.sin(a) * (2.4 + rand() * 1.8),
+            life: 0.9 + rand() * 0.7,
+            spin: (rand() - 0.5) * 1.2,
+            grow: 0.9 + rand() * 0.7,
+            drag: 3.2,
+            size: 0.12 + rand() * 0.14,
+            alpha: 0.24 + rand() * 0.16,
+            gravity: -2,
+            color: softColor(ctx.tint, 0.06),
+          });
+        }
+        for (let i = 0; i < budget(3, ctx.power); i++) {
+          const a = rand() * TAU;
+          const sp = (1.2 + rand() * 1.8) * ctx.power;
+          spawnBit({
+            x: ctx.at.x + Math.cos(a) * 0.3,
+            y: Math.max(0.12, ctx.at.y - 0.5),
+            z: ctx.at.z + Math.sin(a) * 0.3,
+            vx: Math.cos(a) * sp,
+            vy: 1 + rand() * 1.2,
+            vz: Math.sin(a) * sp,
+            sx: 0.4 + rand() * 0.3,
+            sy: 0.4 + rand() * 0.3,
+            life: 1 + rand() * 0.7,
+            color: scratch.copy(rockColor).lerp(ctx.tint, 0.28),
+          });
+        }
+      },
+    },
   };
 
-  /** 分派表就是配方表的键集合：八只掌 → 八套配方，任何时候都对得上。 */
+  /** 分派表就是配方表的键集合：十二只掌 → 十二套配方，任何时候都对得上。 */
   const KINDS = Object.freeze(Object.keys(SPEC));
 
   // ---------------------------------------------------------------- 播放
