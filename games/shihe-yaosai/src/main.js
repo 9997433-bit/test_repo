@@ -1,19 +1,36 @@
 // 蚀核要塞 · 启动入口（Opus-1）
-// 职责：拉起渲染器 → 防御式装配 sim / world / input / ui / combat → 驱动主循环。
-// 任何兄弟模块尚未落地或抛错时，画面必须仍然是一个活的 Babylon 场景。
+// 职责：拉起渲染器 → 按 docs/API_CONTRACT.md 的冻结签名装配 sim / world / input / ui / combat → 驱动主循环。
+//
+// Round 1 那套「按几种签名轮流试着调」的适配器已经删干净：兄弟模块全部落地，这里只认一种调用形式。
+//   createRenderer(canvas, { quality })
+//   createMatch(seed) / step(match, input, dt) / getView(match)
+//   buildWorld(scene) / syncWorld(scene, view) / pickSocket(scene, pickInfo)
+//   createInput({ canvas, scene, pickSocket })
+//   mountHud(root) / syncHud(view, { backend, quality, events })
+//   syncCombat(scene, view)
+//
+// 本文件不画任何东西：没有网格、没有弹道、没有 HUD 结构，只做装配与每帧调度。
 
 import { createRenderer } from "./engine/index.js";
+import { createMatch, getView, step } from "./sim/index.js";
+import { buildWorld, pickSocket, syncWorld } from "./world/index.js";
+import { syncCombat } from "./combat/index.js";
+import { createInput } from "./input/index.js";
+import { mountHud, syncHud } from "./ui/index.js";
 
 const TAG = "[shihe-yaosai]";
+/** 掉帧时把模拟时间也拖长毫无好处，夹到 50ms 让 sim 少补几个子步。 */
 const MAX_DT = 1 / 20;
 const BACKEND_LABEL = { webgpu: "WebGPU", webgl2: "WebGL2" };
+/** 同一环连错这么多帧就摘掉它，别让控制台被刷爆。 */
+const FAIL_LIMIT = 8;
 
 const canvas = document.getElementById("sh-canvas");
 const backendEl = document.getElementById("sh-backend");
 
 /**
  * #sh-backend 是 HUD 冻结 class 之一；这里只写文本，不碰结构。
- * ui/hud.js 约定：占位文本被改写后 HUD 就把这块让给 main.js。
+ * HUD 约定：占位文本被改写后就把这块让给 main.js（见 ui/hud.js 的 syncBackend）。
  */
 let backendText = "boot";
 let hudToast = null;
@@ -26,83 +43,45 @@ function paintBackend() {
 }
 
 function reportBroken(scope, err) {
-  if (!brokenModules.has(scope)) {
-    console.error(`${TAG} ${scope} 未就绪：`, err);
-    brokenModules.add(scope);
-    paintBackend();
-    hudToast?.(`${scope} 模块未就绪，已降级运行`, "warn", 6000);
-  }
+  console.error(`${TAG} ${scope} 出错：`, err);
+  if (brokenModules.has(scope)) return;
+  brokenModules.add(scope);
+  paintBackend();
+  hudToast?.(`${scope} 模块异常，已降级运行`, "warn", 6000);
 }
 
 /**
- * 兄弟模块由其它代理并行开发，签名可能与简报略有出入。
- * 按最可能的调用形式依次尝试，命中后锁定；连续失败则停用该模块。
+ * 表现层某一环抛错不能带崩整帧。首错与摘除时各报一次，中间静默。
+ * 这不是签名适配器：调用形式只有一种，只是把异常挡在渲染循环外。
  */
-function makeAdapter(scope, fn, variants, accept) {
-  if (typeof fn !== "function") return null;
-  let locked = -1;
+function protect(scope, fn) {
   let failures = 0;
-  let disabled = false;
-
-  return function call(ctx) {
-    if (disabled) return undefined;
-
-    if (locked >= 0) {
-      try {
-        return fn(...variants[locked](ctx));
-      } catch (err) {
-        failures += 1;
-        if (failures === 1 || failures >= 8) reportBroken(scope, err);
-        if (failures >= 8) disabled = true;
-        return undefined;
-      }
+  return (...args) => {
+    if (failures >= FAIL_LIMIT) return undefined;
+    try {
+      return fn(...args);
+    } catch (err) {
+      failures += 1;
+      if (failures === 1) reportBroken(scope, err);
+      else if (failures === FAIL_LIMIT) console.error(`${TAG} ${scope} 连续 ${FAIL_LIMIT} 帧出错，已停用`, err);
+      return undefined;
     }
-
-    let lastErr = null;
-    for (let i = 0; i < variants.length; i++) {
-      try {
-        const result = fn(...variants[i](ctx));
-        if (accept && !accept(result)) {
-          lastErr = new Error(`${scope}: 返回值不符合契约`);
-          continue;
-        }
-        locked = i;
-        failures = 0;
-        return result;
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-    disabled = true;
-    reportBroken(scope, lastErr);
-    return undefined;
   };
 }
 
-async function loadModule(scope, specifier) {
-  try {
-    return await specifier();
-  } catch (err) {
-    reportBroken(scope, err);
-    return {};
-  }
+/** 启动就崩时也不能白屏：契约 §9.6 要求把原因写进 .sh-toast。 */
+function paintFatal(message) {
+  backendText = "启动失败";
+  paintBackend();
+  const toastEl = document.getElementById("sh-toast");
+  if (!toastEl) return;
+  toastEl.textContent = message;
+  toastEl.setAttribute("data-kind", "bad");
+  toastEl.setAttribute("data-show", "1");
+  toastEl.classList.add("is-error");
 }
 
-function emptyView(backend) {
-  return {
-    backend,
-    wave: 0,
-    scrap: 0,
-    coreHp: 0,
-    coreMax: 0,
-    sockets: [],
-    enemies: [],
-    shots: [],
-    events: [],
-  };
-}
-
-/** world 未就绪时的占位：一个会转的发光信标，证明渲染循环是活的。 */
+/** world 没搭起来时的占位：一个会转的发光信标，证明渲染循环是活的。 */
 async function buildFallbackBeacon(scene) {
   const [{ MeshBuilder }, { StandardMaterial }, { Color3 }] = await Promise.all([
     import("@babylonjs/core/Meshes/meshBuilder.js"),
@@ -130,30 +109,46 @@ async function buildFallbackBeacon(scene) {
   };
 }
 
+function readParams() {
+  const params = new URLSearchParams(window.location.search);
+  const quality = params.get("quality") || params.get("q");
+  const rawSeed = Number.parseInt(params.get("seed") ?? "", 10);
+  return {
+    quality: quality || null,
+    seed: Number.isFinite(rawSeed) ? rawSeed >>> 0 : Date.now() % 2 ** 31,
+  };
+}
+
 async function boot() {
   if (!canvas) {
     console.error(`${TAG} 找不到 #sh-canvas`);
+    paintFatal("找不到画布 #sh-canvas");
     return;
   }
 
-  const renderer = await createRenderer(canvas);
-  const { engine, scene, backend, setQuality } = renderer;
-  const pinnedQuality = new URLSearchParams(window.location.search).has("q");
+  const { quality: qualityOverride, seed } = readParams();
+  const renderer = await createRenderer(canvas, qualityOverride ? { quality: qualityOverride } : {});
+  const { engine, scene, backend } = renderer;
 
   backendText = `${BACKEND_LABEL[backend] || backend} · ${renderer.quality}`;
   paintBackend();
-  console.info(`${TAG} 后端 ${backend}，质量档 ${renderer.quality}`, renderer.notes);
+  console.info(`${TAG} 后端 ${backend}，质量档 ${renderer.quality}，种子 ${seed}`, renderer.notes);
+
+  // ?quality= 钉死档位；HUD 的画质按钮一旦被按过，自动降级也不再插手。
+  let qualityPinned = !!qualityOverride;
+
+  function applyTier(tier) {
+    const applied = renderer.setQuality(tier);
+    state.quality = applied;
+    backendText = `${BACKEND_LABEL[backend] || backend} · ${applied}`;
+    paintBackend();
+    return applied;
+  }
 
   const state = {
     backend,
-    setQuality(tier) {
-      const applied = setQuality(tier);
-      backendText = `${BACKEND_LABEL[backend] || backend} · ${applied}`;
-      paintBackend();
-      state.quality = applied;
-      return applied;
-    },
     quality: renderer.quality,
+    seed,
     engine,
     scene,
     renderer,
@@ -162,190 +157,77 @@ async function boot() {
     fps: 0,
     view: null,
     modules: { sim: false, world: false, input: false, ui: false, combat: false },
+    /** HUD 的画质按钮直接打到这里（ui/hud.js 约定读 window.__SHIHE__.setQuality）。 */
+    setQuality(tier) {
+      qualityPinned = true;
+      return applyTier(tier);
+    },
   };
   window.__SHIHE__ = state;
 
-  const [simMod, worldMod, inputMod, uiMod, combatMod] = await Promise.all([
-    loadModule("sim", () => import("./sim/index.js")),
-    loadModule("world", () => import("./world/index.js")),
-    loadModule("input", () => import("./input/index.js")),
-    loadModule("ui", () => import("./ui/index.js")),
-    loadModule("combat", () => import("./combat/index.js")),
-  ]);
-
   // ---- 模拟层 ----
-  let match = null;
-  const seed = Number(new URLSearchParams(window.location.search).get("seed")) || 20260828;
-  if (typeof simMod.createMatch === "function") {
-    try {
-      match = simMod.createMatch(seed) ?? null;
-    } catch (err) {
-      reportBroken("sim", err);
-    }
-  } else {
-    reportBroken("sim", new Error("createMatch 缺失"));
-  }
-
-  let latestView = emptyView(backend);
-
-  function readView() {
-    if (match && typeof simMod.getView === "function") {
-      try {
-        const view = simMod.getView(match);
-        if (view && typeof view === "object") {
-          if (view.backend !== backend) {
-            try {
-              view.backend = backend;
-            } catch {
-              /* sim 若把视图冻结了就按原样用 */
-            }
-          }
-          return view;
-        }
-      } catch (err) {
-        reportBroken("sim", err);
-        match = null;
-      }
-    }
-    return emptyView(backend);
-  }
-
-  // buildWorld(scene, getView)：同时兼容 getView() 与 getView(match) 两种取法。
-  function getView(maybeMatch) {
-    if (maybeMatch && maybeMatch !== match && typeof simMod.getView === "function") {
-      try {
-        return simMod.getView(maybeMatch);
-      } catch {
-        /* 落回最近一帧 */
-      }
-    }
-    return latestView;
-  }
-
-  latestView = readView();
-  state.view = latestView;
+  const match = createMatch(seed);
 
   // ---- 世界层 ----
-  let worldReady = false;
+  // buildWorld(scene) 不传 getView：世界层的 autoSync 因此不启用，
+  // 每帧只由本文件调一次 syncWorld，同一帧不会被画两遍。
+  let world = null;
   let animateFallback = null;
-  if (typeof worldMod.buildWorld === "function") {
-    try {
-      worldMod.buildWorld(scene, getView);
-      worldReady = true;
-    } catch (err) {
-      reportBroken("world", err);
-    }
-  } else {
-    reportBroken("world", new Error("buildWorld 缺失"));
-  }
-
-  if (!worldReady) {
+  try {
+    world = buildWorld(scene);
+  } catch (err) {
+    reportBroken("world", err);
     try {
       animateFallback = await buildFallbackBeacon(scene);
-    } catch (err) {
-      console.warn(`${TAG} 占位信标也没建起来，只剩空场景`, err);
+    } catch (beaconErr) {
+      console.warn(`${TAG} 占位信标也没建起来，只剩空场景`, beaconErr);
     }
   }
 
-  // world 若自带相机，让它接管并释放引擎兜底相机（后处理会随 activeCamera 变更重建）。
-  const worldCamera = scene.cameras.find((cam) => cam !== renderer.camera);
-  if (worldCamera) {
-    scene.activeCamera = worldCamera;
-    try {
-      renderer.camera.dispose();
-      if (scene.metadata?.shihe) scene.metadata.shihe.fallbackCamera = null;
-    } catch {
-      /* ignore */
-    }
-  }
-  state.setQuality(renderer.quality);
+  // world 若自带相机就让它接管：引擎释放兜底相机，并把后处理重挂到新相机上。
+  const worldCamera = world?.camera ?? scene.cameras.find((cam) => cam !== renderer.camera) ?? null;
+  if (worldCamera) renderer.useCamera(worldCamera);
 
   // ---- 输入层 ----
-  const inputCtx = {
-    canvas,
-    scene,
-    engine,
-    getView,
-    pickSocket: typeof worldMod.pickSocket === "function" ? worldMod.pickSocket : null,
-    setQuality: state.setQuality,
-  };
-  const createInput = makeAdapter(
-    "input",
-    inputMod.createInput,
-    [
-      () => [canvas, scene, inputCtx],
-      () => [scene, canvas, inputCtx],
-      () => [inputCtx],
-      () => [],
-    ],
-    (result) => !!result && typeof result.read === "function"
-  );
-  const input = (createInput && createInput(inputCtx)) || { read: () => ({}) };
-  if (typeof inputMod.createInput !== "function") reportBroken("input", new Error("createInput 缺失"));
+  const input = createInput({ canvas, scene, pickSocket });
 
   // ---- HUD ----
-  // 画质按钮的回调走 mountHud 的 options；暂停 / 过载 / 选塔由 HUD 派发 'sh-ui'，
-  // input 已经在听，这里再挂钩子就会双触发。
-  const hudRoot = document.getElementById("sh-hud") || document.body;
-  const hudCtx = {
-    root: hudRoot,
-    scene,
-    canvas,
-    backend,
-    getView,
-    quality: state.quality,
-    setQuality: state.setQuality,
-    onQuality: state.setQuality,
-  };
-  const mountHud = makeAdapter("ui", uiMod.mountHud, [
-    () => [hudRoot, hudCtx],
-    () => [hudCtx],
-    () => [document, hudCtx],
-    () => [],
-  ]);
-  const hud = mountHud ? mountHud(hudCtx) : null;
-  if (typeof uiMod.mountHud !== "function") reportBroken("ui", new Error("mountHud 缺失"));
+  // 选塔 / 过载 / 暂停由 HUD 派发 'sh-ui'，input 自己在听；画质按钮走
+  // window.__SHIHE__.setQuality（上面已经挂好）。main 这里不再接任何回调，否则双触发。
+  const hud = mountHud(document.getElementById("sh-hud") ?? document.body);
   if (typeof hud?.toast === "function") hudToast = (text, kind, ttl) => hud.toast(text, kind, ttl);
-  else if (typeof uiMod.toast === "function") hudToast = uiMod.toast;
-  for (const scope of brokenModules) hudToast?.(`${scope} 模块未就绪，已降级运行`, "warn", 6000);
+  for (const scope of brokenModules) hudToast?.(`${scope} 模块异常，已降级运行`, "warn", 6000);
 
-  // ---- 每帧同步 ----
-  const syncWorld = worldReady
-    ? makeAdapter("world", worldMod.syncWorld, [
-        (c) => [c.scene, c.view, c.dt],
-        (c) => [c.view, c.scene, c.dt],
-        (c) => [c.view],
-      ])
-    : null;
-  const syncCombat = makeAdapter("combat", combatMod.syncCombat, [
-    (c) => [c.scene, c.view, c.dt],
-    (c) => [c.view, c.scene, c.dt],
-    (c) => [c.view],
-  ]);
-  // ui/hud.js 的 syncHud(view, extras)：extras 补上模拟层看不见的表现层状态。
-  const syncHud = makeAdapter("ui", uiMod.syncHud, [
-    (c) => [c.view, c.hudExtras],
-    (c) => [c.hud, c.view],
-    (c) => [c.view],
-  ]);
+  // ---- 每帧调度 ----
+  const readInput = protect("input", () => input.read());
+  const stepSim = protect("sim", (command, dt) => step(match, command, dt));
+  const readView = protect("sim", () => getView(match));
+  const drawWorld = protect("world", (view) => syncWorld(scene, view));
+  const drawCombat = protect("combat", (view) => syncCombat(scene, view));
+  const drawHud = protect("ui", (view, extras) => syncHud(view, extras));
 
-  const hudExtras = { backend, quality: state.quality, paused: false };
-  const frameCtx = { scene, engine, view: latestView, dt: 0, hud, hudExtras, backend };
+  /** sim 停摆时还得给表现层一份形状正确的空视图。 */
+  const idleView = {
+    backend,
+    wave: 0,
+    waveTotal: 0,
+    scrap: 0,
+    coreHp: 0,
+    coreMax: 0,
+    paused: false,
+    sockets: [],
+    enemies: [],
+    shots: [],
+    fields: [],
+    events: [],
+  };
 
-  function refreshHudExtras() {
-    hudExtras.quality = state.quality;
-    if (typeof input.peek !== "function") return;
-    try {
-      const peek = input.peek();
-      hudExtras.towerId = peek.towerId;
-      hudExtras.selectedSocket = peek.selectedSocket;
-      hudExtras.paused = peek.paused;
-    } catch {
-      /* peek 是可选钩子，坏了不影响主循环 */
-    }
-  }
+  // 本帧 step() 产出的全部事件。sim 内部按 1/60 补子步，一次调用就把子步事件收齐了；
+  // 这个数组每帧原地清空复用，HUD 靠事件对象本身去重（WeakSet），不认数组身份。
+  const frameEvents = [];
+  const hudExtras = { backend, quality: state.quality, events: frameEvents };
 
-  // 帧率兜底：没有 ?q= 显式钉档时，跑不动就自动降级。
+  // 帧率兜底：档位没被钉住时，跑不动就自动降级。
   // 用墙钟而不是循环里那个被夹到 MAX_DT 的 dt，否则越卡越采不到样。
   const clock = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   let sampleStart = clock();
@@ -359,55 +241,60 @@ async function boot() {
     state.fps = Math.round(sampleFrames / span);
     sampleStart = clock();
     sampleFrames = 0;
-    if (pinnedQuality) return;
+    if (qualityPinned) return;
     if (degradeCooldown > 0) {
       degradeCooldown -= 1;
       return;
     }
     if (state.quality === "high" && state.fps < 38) {
       console.info(`${TAG} ${state.fps}fps → 降到 mid`);
-      state.setQuality("mid");
+      applyTier("mid");
       degradeCooldown = 3;
     } else if (state.quality === "mid" && state.fps < 26) {
       console.info(`${TAG} ${state.fps}fps → 降到 low`);
-      state.setQuality("low");
+      applyTier("low");
       degradeCooldown = 3;
     }
   }
+
+  // 调试句柄：控制台里能直接摸到每一层。
+  state.match = match;
+  state.world = world;
+  state.input = input;
+  state.hud = hud;
+  state.modules = { sim: true, world: !!world, input: !!input, ui: !!hud, combat: true };
 
   let elapsed = 0;
   engine.runRenderLoop(() => {
     const dt = Math.min(engine.getDeltaTime() / 1000, MAX_DT);
     elapsed += dt;
 
-    let command = {};
-    try {
-      command = input.read(dt) || {};
-    } catch (err) {
-      reportBroken("input", err);
-      input.read = () => ({});
+    // 1) 输入。read() 已经按契约 §2.1 把 pause / selectedSocket 作为绝对量每帧给出，
+    //    main 不做任何加工。
+    const command = readInput() ?? {};
+
+    // 2) 模拟。
+    frameEvents.length = 0;
+    const stepped = stepSim(command, dt);
+    if (stepped && Array.isArray(stepped.events)) {
+      for (const event of stepped.events) frameEvents.push(event);
     }
 
-    if (match && typeof simMod.step === "function") {
-      try {
-        simMod.step(match, command, dt);
-      } catch (err) {
-        reportBroken("sim", err);
-        match = null;
-      }
-    }
+    // 3) 取视图。backend 覆写是全项目唯一允许改写 view 的位置（契约 §9.3）。
+    //    events 一并换成本帧聚合值：getView 只镜像最后一次 step，而且给的是副本，
+    //    与 extras.events 同时递给 HUD 会让同一条事件弹两遍。
+    const view = readView() ?? idleView;
+    view.backend = backend;
+    view.events = frameEvents;
+    state.view = view;
 
-    latestView = readView();
-    state.view = latestView;
-    frameCtx.view = latestView;
-    frameCtx.dt = dt;
+    // 4) 表现层。弹道由 combat 独占，本文件与 engine 都不画。
+    drawWorld(view);
+    drawCombat(view);
 
-    if (syncWorld) syncWorld(frameCtx);
-    if (syncCombat) syncCombat(frameCtx);
-    if (syncHud) {
-      refreshHudExtras();
-      syncHud(frameCtx);
-    }
+    hudExtras.quality = state.quality;
+    drawHud(view, hudExtras);
+
     if (animateFallback) animateFallback(elapsed);
 
     scene.render();
@@ -415,21 +302,31 @@ async function boot() {
     autoDegrade();
   });
 
-  state.modules = {
-    sim: !!match,
-    world: worldReady,
-    input: typeof input.read === "function" && !!inputMod.createInput,
-    ui: !!hud,
-    combat: !!syncCombat,
-  };
   state.ready = true;
-  window.addEventListener("beforeunload", () => renderer.dispose(), { once: true });
+
+  window.addEventListener(
+    "beforeunload",
+    () => {
+      try {
+        input.dispose();
+      } catch {
+        /* ignore */
+      }
+      renderer.dispose();
+    },
+    { once: true },
+  );
   console.info(`${TAG} 启动完成`, state.modules);
 }
 
 boot().catch((err) => {
   console.error(`${TAG} 启动失败`, err);
-  backendText = "启动失败";
-  paintBackend();
-  window.__SHIHE__ = window.__SHIHE__ || { backend: "none", setQuality: () => "none", error: String(err) };
+  paintFatal(`启动失败：${err && err.message ? err.message : err}`);
+  window.__SHIHE__ = window.__SHIHE__ || {
+    backend: "none",
+    quality: "none",
+    ready: false,
+    setQuality: () => "none",
+    error: String(err),
+  };
 });

@@ -114,4 +114,17 @@ ID 前缀：`GL` 隔离红线 · `YQ` 引擎 · `HM` 画面 · `WF` 玩法 · `C
 
 每轮结束追加一节，格式：轮次 / 判定（PASS 或 REJECT）/ 被验提交 / 三条命令实跑输出摘要 / 未过条目 ID 与现象一句话。证据（截图、录屏、JSON 输出）随判定一并归档。
 
-_（暂无记录：Round 1 尚未验收。）_
+### Round 1 · 判定：REJECT（L1 门未过；缺陷已列入 Round 2 攻坚，回写于 2026-08-28）
+
+- **被验对象**：分支 `cursor/shihe-yaosai-f69e` Round 1 合入态（父 PR #50）。实测数据来源：`.agent_workspace/shihe-yaosai/round1/CONCLUSION.md` 记录的本机实跑基线。本轮验收为**无头环境**，未做任何浏览器 / GPU 实测。
+- **三条命令实跑摘要**：
+  - `npm test`：**30 通过 / 2 失败 / 共 32** → 不满足「退出码 0 且全绿」，**CS-1 FAIL**。
+  - `npm run probe`：退出码 0，5580 步（模拟 93 秒）打到第 5 波，输出含全部要求字段：`35 kills / 8 leaks / coreHp 12 / p99StepMs 0.015`，未胜未败 → **CS-2 PASS**；**WF-8 模拟档 PASS**（波次正常推进到 5；8 漏未破核，本条对漏敌数不设限；HUD 波次计数属浏览器侧，本轮未测）。
+  - `npm run build`：退出码 0（主 chunk ≈1484 kB / gzip ≈359 kB，>500 kB 警告已记包体预算）→ **CS-3 退出码档 PASS**；`dist/` 外链 `rg` 复查本轮未留存记录，Round 2 复测补做（配合 GL-4）。
+- **附加实测**：`npm run bench` 786k steps/sec；**XN-1（L2，骨架期只记录）**：p99StepMs 0.015 ≪ 8；**CS-4 PASS**（test / probe / bench 全部纯 Node 跑通，无浏览器 / GPU / DOM 依赖）。
+- **未过条目（含现象）**：
+  - **CS-1**：两条红测。① `getView` 插座坐标含 `-0`，`JSON.stringify(-0)` 得 `0`，往返 `JSON.parse` 后不等值，破坏 JSON 纯净契约；② 同种子按 80×0.1s 步进后敌人数仍为 0，首波入场延迟超出契约预期（Round 2 对齐：首波 ≤2s 必刷或改测等待首怪）。
+  - **风险记录（未单列 FAIL，但威胁 WF-4 / YQ 装配）**：data 出口别名未对齐 —— F3 导出 `CONFIG/TOWERS/ENEMIES/...`，`sim/config.js` 仍引用 `SIM_CONFIG/BALANCE/TOWER_TABLE/...`，构建期出现多条 “is not exported” 警告，运行时存在 undefined 风险；另有主循环双签名、`view.shots` 弹道双画两项集成风险（详见 CONCLUSION 遗留缺陷 3/5/6）。
+- **本轮未测条目（不判 PASS / FAIL，Round 2 全量复测）**：所有依赖浏览器 / GPU 的 L1 项 —— YQ-3 / YQ-4 / YQ-5 / YQ-6（low 档实效）/ HM-1 / HM-2 / HM-3 / HM-6（过载变色），以及 GL-2 的 `:4182` 实访、WF-3 / WF-4 / WF-5 / WF-7 的浏览器侧半边。渲染侧当前仅有代码审查与模块自测证据（world.test 24 绿），按本清单画面诚实原则，**不以未实跑的画面记分**。
+- **GL 红线**：本轮未做全量 `rg` 复扫；CONCLUSION 合入记录未报越界路径 / CDN / 跨游戏引用，GL-1…GL-7 暂记「无违例报告、待 Round 2 复扫确认」，不记 PASS。GL-8：10/10 子代理回执均声明模型 slug（见 CONCLUSION 分工表），记 PASS。
+- **判定依据**：§7 Round 1 过门要求所列 L1 项全绿；CS-1 两红即门未过，另有多项 L1 因无 GPU 环境未测。判 REJECT，缺陷与复测项全部带入 Round 2（对应 CONCLUSION「Round 2 攻坚重点」：消灭 `-0`、首波 ≤2s、data 正式导出名、删双签名、shots 只 combat 画、`npm test` 全绿、probe 5 波 leaks≤2）。

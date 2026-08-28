@@ -259,7 +259,8 @@ function createProceduralEnvironment(scene) {
  * @param {HTMLCanvasElement} canvas 画布，index.html 中 id="sh-canvas"
  * @param {{ quality?: 'high'|'mid'|'low', backend?: 'webgpu'|'webgl2' }} [options]
  * @returns {Promise<{ engine: any, scene: any, backend: 'webgpu'|'webgl2', quality: string,
- *   camera: any, setQuality: (tier: string) => string, registerShadowCaster: (mesh: any) => void,
+ *   camera: any, activeCamera: any, setQuality: (tier: string) => string,
+ *   useCamera: (camera: any) => any, registerShadowCaster: (mesh: any) => void,
  *   resize: () => void, dispose: () => void }>}
  */
 export async function createRenderer(canvas, options = {}) {
@@ -291,7 +292,7 @@ export async function createRenderer(canvas, options = {}) {
     console.warn("[shihe-yaosai/engine] 程序化环境贴图创建失败，退回纯灯光", err);
   }
 
-  // 兜底相机：world 代理若自带相机，main.js 会把这台释放掉。
+  // 兜底相机：world 若自带相机，main.js 调 useCamera() 把这台释放掉。
   const camera = new ArcRotateCamera("sh-fallback-camera", -Math.PI / 2, 1.02, 118, new Vector3(0, 4, 0), scene);
   camera.lowerRadiusLimit = 42;
   camera.upperRadiusLimit = 205;
@@ -330,12 +331,14 @@ export async function createRenderer(canvas, options = {}) {
   let pipeline = null;
   let glow = null;
   let shadowGenerator = null;
-  let quality = normalizeTier(options.quality || readOverride("q") || "high");
+  let quality = normalizeTier(options.quality || readOverride("q") || readOverride("quality") || "high");
   let disposed = false;
   let ready = false;
   let inFrame = false;
   let pendingTier = null;
   let flushHandle = null;
+  let fallbackCamera = camera;
+  let adopting = false;
 
   const shadowCasters = new Set();
 
@@ -526,6 +529,45 @@ export async function createRenderer(canvas, options = {}) {
     }
   }
 
+  /**
+   * 把画面交给另一台相机（world 自带的那台），并释放引擎的兜底相机。
+   * 后处理管线是挂在具体相机上的，所以换相机后必须整条重挂，否则 bloom / FXAA
+   * 会留在一台已经销毁的相机上，表现为「换了视角就没有辉光」甚至 WebGPU 报废纹理。
+   * @param {any} next 目标相机；null / 兜底相机本身 = 不做任何事
+   * @returns {any} 生效后的 activeCamera
+   */
+  function useCamera(next) {
+    if (disposed || !next || next === fallbackCamera) return scene.activeCamera;
+
+    // 期间屏蔽 onActiveCameraChanged，避免「换相机」与「销毁旧相机」各触发一次重建。
+    adopting = true;
+    try {
+      scene.activeCamera = next;
+    } finally {
+      adopting = false;
+    }
+
+    const stale = fallbackCamera;
+    fallbackCamera = null;
+    if (scene.metadata?.shihe) scene.metadata.shihe.fallbackCamera = null;
+    if (stale) {
+      try {
+        stale.detachControl();
+      } catch {
+        /* ignore */
+      }
+      try {
+        stale.dispose();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // 旧相机连同它身上的 post process 都没了，这里才重建管线。
+    setQuality(quality);
+    return scene.activeCamera;
+  }
+
   scene.metadata = scene.metadata || {};
   scene.metadata.shihe = {
     backend,
@@ -541,7 +583,10 @@ export async function createRenderer(canvas, options = {}) {
     environmentTexture,
     registerShadowCaster,
     setQuality,
+    useCamera,
   };
+  // docs/API_CONTRACT.md §8 给引擎句柄定的名字。同一个对象两个入口，谁按哪本文档找都能找到。
+  scene.metadata.shEngine = scene.metadata.shihe;
 
   applyQuality(quality);
   ready = true;
@@ -553,9 +598,9 @@ export async function createRenderer(canvas, options = {}) {
     inFrame = false;
   });
 
-  // world 代理换相机后必须重建管线，否则后处理挂在已废弃的相机上。
+  // 别人（world / 调试面板）直接改 activeCamera 时也要重建管线；useCamera 走自己的路径。
   const cameraObserver = scene.onActiveCameraChanged?.add(() => {
-    if (!ready || disposed) return;
+    if (!ready || disposed || adopting) return;
     setQuality(quality);
   });
 
@@ -625,8 +670,12 @@ export async function createRenderer(canvas, options = {}) {
       return quality;
     },
     camera,
+    get activeCamera() {
+      return scene.activeCamera;
+    },
     notes,
     setQuality,
+    useCamera,
     registerShadowCaster,
     resize,
     dispose,

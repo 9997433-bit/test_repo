@@ -1,14 +1,19 @@
 /**
- * 蚀核要塞 HUD。
+ * 蚀核要塞 HUD —— 唯一签名（Round 2 收敛，不再有第二种调用形态）。
  *
- *   mountHud(root, options?) -> hud
- *   syncHud(view, extras = { backend, toast })
+ *   mountHud(el) -> hud
+ *   syncHud(view, extras = { backend, toast, quality }) -> hud | null
  *
- * 冻结 class（与 Fable-2 的 `src/styles` 共用，不要改名）：
+ * `el` 是 HUD 的宿主（一般是 index.html 的 `#sh-hud`）；缺省挂到 `document.body`。
+ * 已有节点直接接管，缺的补齐，所以脱离 index.html 也能挂载。
+ * `extras` 三个键都可省：backend 只影响 `.sh-backend` 的样式钩子，toast 是主循环想插播的一句话，
+ * quality 是渲染器实际生效的画质档。其余状态（血量 / 屑晶 / 波次 / 暂停 / 选中 / 终局）全部读 view，
+ * 武装中的塔读 `src/input` 派发的 'sh-input'，HUD 自己不猜。
+ *
+ * 冻结 class（与 `src/styles` 共用，不要改名）：
  *   .sh-hud .sh-core .sh-scrap .sh-wave .sh-dock .sh-toast .sh-backend .sh-overclock
  *
- * 状态钩子（HUD 只写文本 / class / 属性 / CSS 变量，不写内联样式）。
- * 与 Fable-2 的 `src/styles/hud.css` 对齐，class 与 data-* 两套并存：
+ * 状态钩子（HUD 只写文本 / class / 属性 / CSS 变量，不写内联样式）：
  *   .sh-core.is-danger              [data-low]
  *   .sh-backend.is-webgpu/.is-webgl2 [data-backend]
  *   .sh-toast.is-error              [data-show][data-kind="info|warn|bad|good"]
@@ -18,9 +23,10 @@
  *          style: --sh-core-frac --sh-scrap --sh-wave
  *
  * 事件通道（HUD → 其它模块，冒泡到 document）：
- *   'sh-ui'  detail: { action: 'tower'|'overclock'|'pause'|'quality', towerId?, quality? }
- * HUD 反过来监听 'sh-input'（由 `src/input` 派发）来同步选中高亮与提示，
+ *   'sh-ui'  detail: { action: 'tower'|'overclock'|'pause'|'quality', towerId?, socket?, quality? }
+ * HUD 反过来监听 'sh-input'（由 `src/input` 派发）来同步武装高亮与提示，
  * 因此 main.js 只要 mountHud + createInput，两边就自动对上。
+ * 画质按钮直接落到 `window.__SHIHE__.setQuality`（`src/main.js` 挂的那个句柄）。
  */
 import { TOWER_ORDER, getMeta, getTowerCatalog } from "./catalog.js";
 
@@ -29,7 +35,7 @@ export const INPUT_EVENT = "sh-input";
 export const QUALITY_TIERS = Object.freeze(["high", "mid", "low"]);
 
 const QUALITY_LABEL = { high: "高", mid: "中", low: "低" };
-const BACKEND_LABEL = { webgpu: "WebGPU", webgl2: "WebGL2", webgl: "WebGL", cpu: "CPU" };
+const BACKEND_LABEL = { webgpu: "WebGPU", webgl2: "WebGL2", webgl: "WebGL", cpu: "CPU", sim: "SIM" };
 
 const TOAST_TTL = 2200;
 const TOAST_DEDUPE_MS = 1600;
@@ -37,13 +43,38 @@ const TOAST_DEDUPE_MS = 1600;
 /** `.sh-backend` 的初始占位。文本不在这个集合里，说明 main.js 想自己写后端标签，HUD 就让位。 */
 const BACKEND_PLACEHOLDERS = new Set(["", "boot", "—", "-"]);
 
-/** 事件类型 → 提示条。leak / win / lose 是简报要求的，其余是顺手的反馈。 */
+/** 建造 / 过载被拒的理由码 → 文案。sim 与 docs/API_CONTRACT.md 两套写法都收。 */
+const DENY_TEXT = {
+  scrap: "屑晶不足",
+  noScrap: "屑晶不足",
+  cost: "屑晶不足",
+  occupied: "插座已被占用",
+  empty: "空插座 · 先造一座塔",
+  noTower: "空插座 · 先造一座塔",
+  overheat: "停火冷却中",
+  busy: "已经在过载了",
+  cooling: "过载冷却中",
+  badSocket: "插座号无效",
+  unknownTower: "没有这种塔",
+  badTower: "没有这种塔",
+  over: "对局已结束",
+  ended: "对局已结束",
+};
+
+/** 事件类型 → 提示条。deny / leak / win / lose 是必须出的，其余是顺手的反馈。 */
 const EVENT_TOASTS = {
+  deny: (e) => ({ text: DENY_TEXT[e?.reason] ?? "无法执行", kind: "warn", ttl: 1800 }),
   leak: (e) => ({ text: leakText(e), kind: "bad", ttl: 2000 }),
-  win: () => ({ text: "要塞守住了 · 蚀主伏诛", kind: "good", ttl: 0 }),
-  lose: () => ({ text: "星核崩解 · 要塞失守", kind: "bad", ttl: 0 }),
-  deny: (e) => ({ text: denyText(e), kind: "warn", ttl: 1400 }),
-  overheat: () => ({ text: "过载过热 · 停火冷却", kind: "warn", ttl: 1400 }),
+  win: (e) => ({ text: winText(e), kind: "good", ttl: 0 }),
+  lose: (e) => ({ text: loseText(e), kind: "bad", ttl: 0 }),
+  overheat: (e) => ({ text: `插座 ${e?.socket ?? "—"} 过热 · 停火冷却`, kind: "warn", ttl: 1400 }),
+  wave: (e) => waveToast(e),
+  waveStart: (e) => waveToast(e),
+  waveClear: (e) => ({
+    text: isNum(e?.bonus) && e.bonus > 0 ? `第 ${e.wave} 波已清 · +${e.bonus} 屑晶` : `第 ${e?.wave ?? "—"} 波已清`,
+    kind: "good",
+    ttl: 1800,
+  }),
 };
 
 const EMPTY_VIEW = Object.freeze({});
@@ -82,16 +113,22 @@ function setClass(el, className, on) {
 }
 
 function leakText(event) {
-  const dmg = event?.dmg ?? event?.damage ?? event?.amount;
+  const dmg = event?.damage ?? event?.dmg ?? event?.amount;
   return isNum(dmg) ? `漏敌 · 星核 -${dmg}` : "漏敌 · 星核受损";
 }
 
-function denyText(event) {
-  const reason = event?.reason ?? event?.why;
-  if (reason === "scrap" || reason === "cost") return "屑晶不足";
-  if (reason === "occupied") return "插座已被占用";
-  if (reason === "cooldown") return "还在冷却";
-  return "无法建造";
+function winText(event) {
+  return isNum(event?.coreHp) ? `要塞守住了 · 蚀主伏诛 · 星核 ${event.coreHp}` : "要塞守住了 · 蚀主伏诛";
+}
+
+function loseText(event) {
+  return isNum(event?.wave) ? `星核崩解 · 第 ${event.wave} 波失守` : "星核崩解 · 要塞失守";
+}
+
+function waveToast(event) {
+  const wave = event?.wave;
+  if (event?.boss) return { text: `第 ${wave} 波 · 蚀主降临`, kind: "warn", ttl: 2400 };
+  return { text: isNum(wave) ? `第 ${wave} 波来袭` : "新一波来袭", kind: "info", ttl: 1600 };
 }
 
 function backendLabel(backend) {
@@ -117,11 +154,14 @@ function ensure(parent, selector, make) {
   return node;
 }
 
-/** index.html 里已有的节点直接接管；缺什么补什么，所以脱离 index.html 也能挂载。 */
-function ensureSkeleton(root) {
-  const raw = root ?? document.body;
-  // 允许把整个 document 传进来（docs/API_CONTRACT.md 的 mountHud(doc) 写法）。
-  const host = raw?.nodeType === 9 ? (raw.body ?? raw.documentElement) : raw;
+/** 传进来的宿主可能是元素，也可能是整个 document；统一取到一个能塞节点的元素。 */
+function hostOf(target) {
+  if (!target) return typeof document === "undefined" ? null : document.body;
+  if (target.nodeType === 9) return target.body ?? target.documentElement;
+  return target;
+}
+
+function ensureSkeleton(host) {
   const hud = host.classList?.contains("sh-hud")
     ? host
     : ensure(host, ".sh-hud", () => el("div", "sh-hud", { id: "sh-hud" }));
@@ -171,15 +211,16 @@ function ensureSkeleton(root) {
 
 /* ------------------------------------------------------------------ HUD */
 
-function createHud(root, options) {
-  const refs = ensureSkeleton(root);
+function createHud(host) {
+  const refs = ensureSkeleton(host);
   const catalog = getTowerCatalog();
   const meta = getMeta();
   const doc = refs.hud.ownerDocument ?? document;
+  const win = doc.defaultView ?? (typeof window !== "undefined" ? window : null);
 
   const state = {
-    towerId: options.towerId ?? TOWER_ORDER[0],
-    quality: QUALITY_TIERS.includes(options.quality) ? options.quality : "high",
+    towerId: TOWER_ORDER[0],
+    quality: "high",
     paused: false,
     result: null,
     selectedSocket: null,
@@ -187,14 +228,13 @@ function createHud(root, options) {
     explicitToastKey: null,
     seenEvents: new WeakSet(),
     toast: null,
+    // main.js 在 mountHud 之前就会往 .sh-backend 写「后端 · 画质」，那之后 HUD 只管样式钩子。
     backendOwned: BACKEND_PLACEHOLDERS.has((refs.backend.textContent ?? "").trim()),
-    backendText: null,
     compact: false,
   };
 
   // 窄屏上四个顶栏芯片会把 HUD 的 grid 撑出视口，所以窄屏时省掉波次后面的「剩 n」。
   // 数值仍旧挂在 .sh-wave[data-alive] 上，样式层想显示随时能取。
-  const win = doc.defaultView ?? (typeof window !== "undefined" ? window : null);
   let compactMq = null;
   try {
     compactMq = win?.matchMedia?.("(max-width: 640px)") ?? null;
@@ -237,6 +277,7 @@ function createHud(root, options) {
       setText(refs.toast, "");
       setAttr(refs.toast, "data-show", null);
       setAttr(refs.toast, "data-kind", null);
+      setClass(refs.toast, "is-error", false);
       return;
     }
     const { text, kind, count } = state.toast;
@@ -262,34 +303,37 @@ function createHud(root, options) {
       setAttr(parts.btn, "aria-pressed", id === next ? "true" : "false");
       setClass(parts.btn, "is-selected", id === next);
     }
-    if (!notify) return;
-    if (changed) emit({ action: "tower", towerId: next });
-    const hook = options.onTower ?? options.onTowerSelect;
-    if (typeof hook === "function") hook(next);
+    if (notify && changed) emit({ action: "tower", towerId: next });
   }
 
-  function setQuality(tier, notify) {
-    if (!QUALITY_TIERS.includes(tier)) return;
+  function paintQuality(tier) {
     state.quality = tier;
     setAttr(refs.hud, "data-quality", tier);
     setText(refs.quality, `画质 ${QUALITY_LABEL[tier]}`);
     setAttr(refs.quality, "title", "循环切换画质：高 / 中 / 低");
-    if (!notify) return;
+  }
+
+  /**
+   * 画质是渲染器的事，HUD 只负责派发意图并把实际生效的档位画出来。
+   * `window.__SHIHE__` 由 `src/main.js` 挂载；没有它（预览页 / 测试）就只发事件。
+   */
+  function requestQuality(tier) {
+    if (!QUALITY_TIERS.includes(tier) || tier === state.quality) return;
+    paintQuality(tier);
     emit({ action: "quality", quality: tier });
-    // main.js 通过 mountHud 的第二个参数把渲染器的 setQuality 递进来，这里直接落地。
-    const hook = typeof options.onQuality === "function" ? options.onQuality : options.setQuality;
-    if (typeof hook !== "function") return;
+    let applied = tier;
     try {
-      const applied = hook(tier);
-      if (typeof applied === "string" && QUALITY_TIERS.includes(applied) && applied !== tier) setQuality(applied, false);
+      const result = win?.__SHIHE__?.setQuality?.(tier);
+      if (typeof result === "string" && QUALITY_TIERS.includes(result)) applied = result;
     } catch (err) {
       console.warn("[shihe-yaosai] setQuality 失败", err);
     }
+    if (applied !== tier) paintQuality(applied);
+    pushToast(`画质 ${QUALITY_LABEL[applied]}`, "info", 1200);
   }
 
   function cycleQuality() {
-    const next = QUALITY_TIERS[(QUALITY_TIERS.indexOf(state.quality) + 1) % QUALITY_TIERS.length];
-    setQuality(next, true);
+    requestQuality(QUALITY_TIERS[(QUALITY_TIERS.indexOf(state.quality) + 1) % QUALITY_TIERS.length]);
   }
 
   function setPaused(paused) {
@@ -297,6 +341,13 @@ function createHud(root, options) {
     setAttr(refs.hud, "data-paused", state.paused ? "1" : null);
     setText(refs.pause, state.paused ? "继续 Space" : "暂停 Space");
     setAttr(refs.pause, "aria-pressed", state.paused ? "true" : "false");
+  }
+
+  function setResult(result) {
+    const next = result === "win" || result === "lose" ? result : null;
+    if (state.result === next) return;
+    state.result = next;
+    setAttr(refs.hud, "data-result", next);
   }
 
   /* -- 交互 -------------------------------------------------------------- */
@@ -314,11 +365,9 @@ function createHud(root, options) {
     switch (button.getAttribute("data-sh-action")) {
       case "overclock":
         emit({ action: "overclock", socket: state.selectedSocket });
-        if (typeof options.onOverclock === "function") options.onOverclock(state.selectedSocket);
         break;
       case "pause":
         emit({ action: "pause" });
-        if (typeof options.onPause === "function") options.onPause();
         break;
       case "quality":
         cycleQuality();
@@ -334,9 +383,7 @@ function createHud(root, options) {
     if (!detail || typeof detail !== "object") return;
     if (typeof detail.towerId === "string" || detail.towerId === null) setSelectedTower(detail.towerId, false);
     if (typeof detail.paused === "boolean") setPaused(detail.paused);
-    if (detail.selectedSocket === null || isNum(detail.selectedSocket)) {
-      state.selectedSocket = detail.selectedSocket;
-    }
+    if (detail.selectedSocket === null || isNum(detail.selectedSocket)) state.selectedSocket = detail.selectedSocket;
     const notice = detail.notice;
     if (notice) pushToast(notice.text ?? String(notice), notice.kind ?? "warn", notice.ttl ?? 1400);
   }
@@ -351,18 +398,15 @@ function createHud(root, options) {
     for (const event of events) {
       if (!event || typeof event !== "object" || state.seenEvents.has(event)) continue;
       state.seenEvents.add(event);
-      if (event.type === "win" || event.type === "lose") {
-        state.result = event.type;
-        setAttr(refs.hud, "data-result", event.type);
-      }
+      if (event.type === "win" || event.type === "lose") setResult(event.type);
       const make = EVENT_TOASTS[event.type];
-      if (make) {
-        const toast = make(event);
-        pushToast(toast.text, toast.kind, toast.ttl);
-      }
+      if (!make) continue;
+      const toast = make(event);
+      if (toast) pushToast(toast.text, toast.kind, toast.ttl);
     }
   }
 
+  /** `extras.toast`：主循环插播的一句话。同一条只弹一次，置 null / '' 收起。 */
   function applyExplicitToast(toast) {
     const usable =
       toast === null || toast === undefined || typeof toast === "string" || (typeof toast === "object" && "text" in toast);
@@ -415,31 +459,20 @@ function createHud(root, options) {
     }
   }
 
-  /**
-   * `.sh-backend` 可能被 main.js 抢着写（它会把画质档也拼进去）。
-   * 规则：谁先写非占位文本谁拥有；发现文本被别人改过就永久让位，只留 data-backend 供样式用。
-   */
   function syncBackend(backend) {
     const id = typeof backend === "string" && backend ? backend.toLowerCase() : null;
     setAttr(refs.backend, "data-backend", id);
     setClass(refs.backend, "is-webgpu", id === "webgpu");
     setClass(refs.backend, "is-webgl2", id === "webgl2" || id === "webgl");
-    if (!state.backendOwned) return;
-    if (state.backendText !== null && refs.backend.textContent !== state.backendText) {
-      state.backendOwned = false;
-      return;
-    }
-    if (typeof backend !== "string" || backend === "") return;
-    const label = backendLabel(backend);
-    setText(refs.backend, label);
+    if (!state.backendOwned || !id) return;
+    setText(refs.backend, backendLabel(backend));
     setAttr(refs.backend, "title", "渲染后端");
-    state.backendText = label;
   }
 
   function syncOverclock(view) {
     const sockets = Array.isArray(view.sockets) ? view.sockets : null;
     const index = state.selectedSocket;
-    const socket = sockets && isNum(index) ? sockets.find((s) => s?.i === index) ?? sockets[index] : null;
+    const socket = sockets && isNum(index) ? (sockets.find((s) => s?.i === index) ?? sockets[index]) : null;
     const active = isNum(socket?.overclockT) && socket.overclockT > 0;
     const cooling = isNum(socket?.overheatT) && socket.overheatT > 0;
     const ready = !!socket?.towerId && !active && !cooling;
@@ -460,29 +493,27 @@ function createHud(root, options) {
     setAttr(refs.overclock, "data-state", mode);
     setClass(refs.overclock, "is-active", active);
     setClass(refs.overclock, "is-cooldown", cooling);
-    setAttr(refs.overclock, "title", "选中一座塔后按 F 过载：伤害 ×2.2 持续 4s，随后停火 3s");
+    setAttr(refs.overclock, "title", "选中一座塔后按 F 过载：伤害翻倍数秒，随后停火冷却");
     setDisabled(refs.overclock, !!sockets && !ready && !active);
   }
 
-  /** main.js 可能把 HUD 句柄本身当第二个参数传回来，那不是 extras。 */
-  function readExtras(extras) {
-    if (!extras || typeof extras !== "object" || extras.isShHud === true) return EMPTY_VIEW;
-    return extras;
-  }
-
+  /**
+   * @param {object|null} view  `sim.getView()` 的快照
+   * @param {{backend?: string, toast?: string|object|null, quality?: string, events?: object[]}} [extras]
+   */
   function sync(view, extras) {
     const v = view && typeof view === "object" ? view : EMPTY_VIEW;
-    const ex = readExtras(extras);
+    const ex = extras && typeof extras === "object" ? extras : EMPTY_VIEW;
 
-    if (isNum(ex.selectedSocket) || ex.selectedSocket === null) state.selectedSocket = ex.selectedSocket;
-    else if (isNum(v.selectedSocket)) state.selectedSocket = v.selectedSocket;
-    if (typeof ex.towerId === "string" || ex.towerId === null) setSelectedTower(ex.towerId, false);
-    if (typeof ex.quality === "string") setQuality(ex.quality, false);
-    const paused = ex.paused ?? v.paused;
-    if (typeof paused === "boolean") setPaused(paused);
+    if (typeof ex.quality === "string" && QUALITY_TIERS.includes(ex.quality) && ex.quality !== state.quality) {
+      paintQuality(ex.quality);
+    }
+    syncBackend(ex.backend ?? v.backend);
 
-    const backend = ex.backend ?? v.backend;
-    syncBackend(backend);
+    // 选中插座与暂停以 sim 的 view 为准，view 没给（引导期 / sim 掉线）才留用 'sh-input' 的值。
+    if (isNum(v.selectedSocket) || v.selectedSocket === null) state.selectedSocket = v.selectedSocket;
+    if (typeof v.paused === "boolean") setPaused(v.paused);
+    if (typeof v.result === "string") setResult(v.result);
 
     const coreMax = isNum(v.coreMax) && v.coreMax > 0 ? v.coreMax : meta.coreMax;
     const coreHp = isNum(v.coreHp) ? Math.max(0, v.coreHp) : null;
@@ -502,7 +533,9 @@ function createHud(root, options) {
     state.scrap = scrap;
 
     const wave = isNum(v.wave) ? v.wave : null;
-    const waveTotal = isNum(v.waveTotal) ? v.waveTotal : meta.waveTotal;
+    // main.js 的空视图里 waveTotal 是 0，那种时候宁可用数据表的总波数，别写出「波次 0/0」。
+    const waveTotal =
+      isNum(v.waveTotal) && v.waveTotal > 0 ? v.waveTotal : isNum(v.waveCount) && v.waveCount > 0 ? v.waveCount : meta.waveTotal;
     const alive = Array.isArray(v.enemies) ? v.enemies.length : null;
     let waveText = wave === null ? "波次 —" : `波次 ${wave}/${waveTotal}`;
     if (wave !== null && alive && !state.compact) waveText += ` · 剩 ${alive}`;
@@ -521,29 +554,21 @@ function createHud(root, options) {
   /* -- 初始状态 ---------------------------------------------------------- */
 
   setSelectedTower(state.towerId, false);
-  setQuality(state.quality, false);
+  paintQuality(state.quality);
   setPaused(false);
   setAttr(refs.hud, "data-mounted", "1");
   sync(null, null);
 
   const hud = {
-    isShHud: true,
     el: refs.hud,
     refs,
     towers: catalog,
     sync,
-    syncHud: sync,
     toast: pushToast,
     clearToast,
-    setSelectedTower: (id) => setSelectedTower(id, false),
     getSelectedTower: () => state.towerId,
-    setSelectedSocket: (i) => {
-      state.selectedSocket = isNum(i) ? i : null;
-    },
     getSelectedSocket: () => state.selectedSocket,
-    setQuality: (tier) => setQuality(tier, false),
     getQuality: () => state.quality,
-    setPaused,
     isPaused: () => state.paused,
     getResult: () => state.result,
     destroy() {
@@ -564,40 +589,28 @@ function createHud(root, options) {
 
 /**
  * 挂载 HUD。会接管 index.html 里已有的节点，也能在空容器里自建整套骨架。
- * @param {HTMLElement} [root] 默认 document.body
- * @param {{towerId?:string, quality?:string, onTower?:Function, onQuality?:Function,
- *          onPause?:Function, onOverclock?:Function}} [options]
+ * 同一个宿主重复调用返回同一个句柄。
+ * @param {HTMLElement|Document|null} [el] 宿主，缺省 `document.body`
+ * @returns {object|null} HUD 句柄（对 main.js 不透明）
  */
-export function mountHud(root, options = {}) {
+export function mountHud(el) {
   if (typeof document === "undefined") return null;
-  const raw = root ?? document.body;
-  const host = raw?.nodeType === 9 ? (raw.body ?? raw.documentElement) : raw;
-  const existing = host?.__shHud ?? host?.querySelector?.(".sh-hud")?.__shHud;
-  if (existing) {
-    activeHud = existing;
-    return existing;
-  }
-  activeHud = createHud(host, options ?? {});
+  const host = hostOf(el);
+  if (!host) return null;
+  const existing = host.__shHud ?? host.querySelector?.(".sh-hud")?.__shHud;
+  activeHud = existing ?? createHud(host);
   return activeHud;
 }
 
 /**
- * 每帧刷新 HUD。
- *
- * 主签名：`syncHud(view, extras)`，
- * extras = `{ backend, toast, paused, quality, towerId, selectedSocket, events }`。
- *
- * 同时认 `docs/API_CONTRACT.md` 的写法：`syncHud(hud, view, events[])`，
- * 以及 `syncHud(view, events[])`——事件数组会被当成 `{ events }`。
+ * 每帧刷新 HUD。唯一签名：`syncHud(view, extras)`。
+ * @param {object|null} view `sim.getView()` 的快照
+ * @param {{backend?: string, toast?: string|object|null, quality?: string, events?: object[]}} [extras]
+ * @returns {object|null} 当前 HUD 句柄；没挂载过返回 null
  */
-export function syncHud(first, second, third) {
-  const asExtras = (value) => (Array.isArray(value) ? { events: value } : value);
-  if (first && typeof first === "object" && first.isShHud === true) {
-    first.sync(second, asExtras(third));
-    return first;
-  }
+export function syncHud(view, extras = {}) {
   if (!activeHud) return null;
-  activeHud.sync(first, asExtras(second));
+  activeHud.sync(view, extras);
   return activeHud;
 }
 
@@ -606,7 +619,7 @@ export function getHud() {
   return activeHud;
 }
 
-/** 主动弹一条提示，供 main.js 报告引擎/加载类信息。 */
+/** 主动弹一条提示，供 main.js 报告引擎 / 加载类信息。 */
 export function toast(text, kind = "info", ttl = TOAST_TTL) {
   activeHud?.toast(text, kind, ttl);
 }

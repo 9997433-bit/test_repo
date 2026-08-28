@@ -85,25 +85,15 @@ describe("pure simulation contract", () => {
     );
   });
 
-  it("spends scrap and fills the requested socket when placing a tower", ({
-    skip,
-  }) => {
-    let before;
-    let result;
-    let after;
-    try {
-      const match = sim.createMatch(101);
-      before = viewOf(match);
-      result = sim.step(
-        match,
-        { place: { socket: 0, towerId: "rail" } },
-        1 / 60,
-      );
-      after = viewOf(match);
-    } catch (error) {
-      if (/unimplemented|not implemented/i.test(String(error))) skip();
-      throw error;
-    }
+  it("spends scrap and fills the requested socket when placing a tower", () => {
+    const match = sim.createMatch(101);
+    const before = viewOf(match);
+    const result = sim.step(
+      match,
+      { place: { socket: 0, towerId: "rail" } },
+      1 / 60,
+    );
+    const after = viewOf(match);
 
     expect(after.scrap).toBeLessThan(before.scrap);
     expect(after.sockets[0].towerId).toBe("rail");
@@ -115,12 +105,21 @@ describe("pure simulation contract", () => {
   it("produces identical enemy ids and positions for the same seed", () => {
     const first = sim.createMatch(0x5eed);
     const second = sim.createMatch(0x5eed);
+    let firstView = viewOf(first);
+    let secondView = viewOf(second);
 
-    advance(first, 80);
-    advance(second, 80);
+    // Fixed 1/60 steps avoid coupling determinism to a large dt. The frozen
+    // Round 2 spawn contract requires an enemy to be visible within 2 seconds.
+    for (let step = 0; step < 120 && firstView.enemies.length === 0; step += 1) {
+      sim.step(first, {}, 1 / 60);
+      sim.step(second, {}, 1 / 60);
+      firstView = viewOf(first);
+      secondView = viewOf(second);
+      expect(secondView).toEqual(firstView);
+    }
 
-    const firstEnemies = enemyPositions(viewOf(first));
-    const secondEnemies = enemyPositions(viewOf(second));
+    const firstEnemies = enemyPositions(firstView);
+    const secondEnemies = enemyPositions(secondView);
     expect(firstEnemies.length).toBeGreaterThan(0);
     expect(secondEnemies).toEqual(firstEnemies);
   });
@@ -201,10 +200,7 @@ describe("simulation isolation", () => {
 
     for (const file of roots.flatMap(sourceFiles)) {
       const source = readFileSync(file, "utf8");
-      expect(source, file).not.toMatch(
-        /\bfrom\s*["']@babylonjs|^\s*import\s*["']@babylonjs/m,
-      );
-      expect(source, file).not.toMatch(/\bdocument\s*\./);
+      expect(source, file).not.toMatch(/@babylonjs|\bBABYLON\b|\bdocument\b/);
     }
   });
 });

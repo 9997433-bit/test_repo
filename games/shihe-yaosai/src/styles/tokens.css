@@ -18,7 +18,9 @@
   --sh-magenta-glow: rgba(255, 61, 154, 0.4);
   --sh-violet: #8a5cff;
   --sh-heat: #ff6a3d;
+  --sh-heat-glow: rgba(255, 106, 61, 0.45);
   --sh-danger: #ff4d5e;
+  --sh-danger-glow: rgba(255, 77, 94, 0.5);
 
   /* 文本 */
   --sh-paper: #e8f4ff;

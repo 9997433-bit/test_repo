@@ -1,24 +1,35 @@
 /**
- * 蚀核要塞 输入层。
+ * 蚀核要塞 输入层 —— 唯一签名（Round 2 收敛，不再有第二种调用形态）。
  *
- *   createInput({ canvas, scene?, pickSocket? }) -> input
+ *   createInput({ canvas, scene, pickSocket }) -> input
  *   input.read() -> { place?, overclockSocket?, selectedSocket?, pause?, towerId? }
  *
+ * 参数只认一个选项对象；位置参数会抛 TypeError，好让误用当场暴露而不是静默半瘫。
+ *   canvas     必给才有指针交互；缺席时键盘仍可用。
+ *   scene      Babylon 场景，用来发射线。
+ *   pickSocket world 的 `pickSocket(scene, pickInfo)`，返回插座号或 null。
+ *   getView    可选：读当前 view 判断插座是否已有塔（有塔就只选中，不发注定被拒的建造）。
+ *   doc / win  可选：测试注入。
+ *
  * 键位：
- *   1..5      选塔 rail / prism / scatter / well / star
+ *   1..5      选塔 rail / prism / scatter / well / star（再按一次同一个键 = 解除武装）
  *   F         对当前选中插座过载
- *   Space     暂停 / 继续（沿边触发，只在按下那一帧给 pause:true）
- *   Esc       取消选中
- *   点击插座   选中它；插座为空则顺带下单建造当前选中的塔
+ *   Space     暂停 / 继续
+ *   Esc       解除武装并取消选中
+ *   点击插座   选中它；空插座且已武装则顺带下单建造
  *
  * 与 Babylon 相处的规矩：
  *   - 只在 canvas 上挂 passive 指针监听，不 preventDefault、不 stopPropagation，
  *     所以 ArcRotateCamera 的拖拽 / 滚轮照常工作；
- *   - 只有拖拽距离小于阈值才算「点」，避免转视角时误建造；
- *   - `pickSocket` 缺席时直接放弃射线，键盘仍然可用。
+ *   - 只有拖拽距离小于阈值才算「点」，避免转视角时误建造。
+ *
+ * read() 的语义（与 docs/API_CONTRACT.md §2.1 对齐）：
+ *   pause / selectedSocket 是**绝对置位**，每帧都给（sim 每步都按 `!!cmd.pause` 取值，
+ *   只在切换那一帧给 true 会导致下一帧立刻恢复运行）；
+ *   place / overclockSocket 是沿边意图，读走即清空。
  *
  * 与 HUD 的联系走 DOM 事件，main.js 不需要额外接线：
- *   监听 'sh-ui'   （HUD 的点击）
+ *   监听 'sh-ui'   （HUD 的点击：选塔 / 过载 / 暂停）
  *   派发 'sh-input'（选塔 / 暂停 / 选中插座 / 一句提示）
  */
 import { TOWER_ORDER, towerIdByIndex } from "../ui/catalog.js";
@@ -26,9 +37,8 @@ import { TOWER_ORDER, towerIdByIndex } from "../ui/catalog.js";
 const UI_EVENT = "sh-ui";
 const INPUT_EVENT = "sh-input";
 
-const TAP_MOVE_PX = 8;
+const TAP_MOVE_PX = 6;
 const TAP_MS = 700;
-const LOOK_SCALE = 0.005;
 
 const DIGIT_CODES = {
   Digit1: 0,
@@ -43,49 +53,8 @@ const DIGIT_CODES = {
   Numpad5: 4,
 };
 
-const OPTION_KEYS = [
-  "canvas",
-  "scene",
-  "pickSocket",
-  "towerId",
-  "dragRotate",
-  "listenUi",
-  "doc",
-  "win",
-  "getView",
-  "resolveSocket",
-];
-
-function isCanvasLike(value) {
-  return !!value && typeof value === "object" && (value.tagName === "CANVAS" || typeof value.getContext === "function");
-}
-
-function isSceneLike(value) {
-  if (!value || typeof value !== "object" || isCanvasLike(value)) return false;
-  return typeof value.pick === "function" || typeof value.render === "function" || typeof value.getEngine === "function";
-}
-
-/**
- * main.js 会按几种签名试着调用 createInput（`(canvas, scene, ctx)` / `(ctx)` / …），
- * 所以这里按形状认参数，而不是按位置认。
- */
-function normalizeOptions(args) {
-  const opts = {};
-  for (const arg of args) {
-    if (!arg || typeof arg !== "object") continue;
-    if (isCanvasLike(arg)) {
-      opts.canvas ??= arg;
-      continue;
-    }
-    if (isSceneLike(arg)) {
-      opts.scene ??= arg;
-      continue;
-    }
-    for (const key of OPTION_KEYS) {
-      if (opts[key] === undefined && arg[key] !== undefined) opts[key] = arg[key];
-    }
-  }
-  return opts;
+function isOptionsBag(value) {
+  return !!value && typeof value === "object" && typeof value.nodeType !== "number";
 }
 
 function isTypingTarget(node) {
@@ -104,34 +73,27 @@ function canvasPoint(event, canvas) {
 }
 
 /**
- * @param {...({canvas?:HTMLCanvasElement|null, scene?:object|null,
- *          pickSocket?:((scene:object|null, pickInfo:object|null)=>number|null)|null,
- *          towerId?:string, dragRotate?:boolean, listenUi?:boolean,
- *          doc?:Document|null, win?:Window|null}|HTMLCanvasElement|object)} args
- *   常规写法是 `createInput({ canvas, scene, pickSocket })`；
- *   位置参数（canvas / scene / 选项包，任意顺序）也认。
+ * @param {{canvas?: HTMLCanvasElement|null, scene?: object|null,
+ *          pickSocket?: ((scene: object|null, pickInfo: object|null) => number|null)|null,
+ *          getView?: (() => object)|null, towerId?: string|null,
+ *          doc?: Document|null, win?: Window|null}} [options]
  */
 export function createInput(...args) {
-  const options = normalizeOptions(args);
-  const {
-    canvas = null,
-    towerId = TOWER_ORDER[0],
-    listenUi = true,
-    dragRotate = null,
-  } = options;
+  const [options = {}] = args;
+  if (args.length > 1 || !isOptionsBag(options)) {
+    throw new TypeError("createInput 只接受一个选项对象：createInput({ canvas, scene, pickSocket })");
+  }
 
+  const canvas = options.canvas ?? null;
+  const getView = typeof options.getView === "function" ? options.getView : null;
   const doc = options.doc ?? (typeof document !== "undefined" ? document : null);
   const win = options.win ?? (typeof window !== "undefined" ? window : null);
 
   let scene = options.scene ?? null;
   let pickSocket = typeof options.pickSocket === "function" ? options.pickSocket : null;
-  const getView = typeof options.getView === "function" ? options.getView : null;
-  // docs/API_CONTRACT.md 的写法：main 直接注入 resolveSocket(clientX, clientY)，
-  // 由它自己去做 scene.pick + pickSocket。给了就优先用，省掉本模块碰 Babylon。
-  const resolveSocket = typeof options.resolveSocket === "function" ? options.resolveSocket : null;
 
   const state = {
-    towerId: TOWER_ORDER.includes(towerId) ? towerId : TOWER_ORDER[0],
+    towerId: TOWER_ORDER.includes(options.towerId) ? options.towerId : TOWER_ORDER[0],
     selectedSocket: null,
     paused: false,
     enabled: true,
@@ -144,16 +106,16 @@ export function createInput(...args) {
    */
   let rayLoading = null;
   function ensurePickingRay() {
-    if (rayLoading || resolveSocket || !scene || typeof scene.pick !== "function") return;
+    if (rayLoading || !scene || typeof scene.pick !== "function") return;
     rayLoading = import("@babylonjs/core/Culling/ray.js").catch((err) => {
       console.warn("[shihe-yaosai] Ray 副作用模块加载失败，插座拾取可能不可用", err);
     });
   }
 
-  /** 沿边触发的意图，read() 取走即清空。 */
-  const pending = { place: null, overclockSocket: null, pause: false, look: null };
+  /** 沿边意图，read() 取走即清空。 */
+  const pending = { place: null, overclockSocket: null };
 
-  const drag = { active: false, id: null, x0: 0, y0: 0, x: 0, y: 0, t0: 0, moved: false };
+  const drag = { active: false, id: null, x0: 0, y0: 0, t0: 0, moved: false };
 
   const listeners = [];
 
@@ -211,11 +173,16 @@ export function createInput(...args) {
     return true;
   }
 
-  function togglePause() {
-    state.paused = !state.paused;
-    pending.pause = true;
-    emit();
+  function setPaused(paused, notify = true) {
+    const next = !!paused;
+    if (state.paused === next) return state.paused;
+    state.paused = next;
+    if (notify) emit();
     return state.paused;
+  }
+
+  function togglePause() {
+    return setPaused(!state.paused);
   }
 
   /* ------------------------------------------------------------ 键盘 */
@@ -240,7 +207,9 @@ export function createInput(...args) {
 
     const index = digitIndex(event);
     if (index !== undefined) {
-      if (!event.repeat) selectTower(towerIdByIndex(index));
+      if (event.repeat) return;
+      const id = towerIdByIndex(index);
+      selectTower(state.towerId === id ? null : id);
       return;
     }
 
@@ -257,7 +226,6 @@ export function createInput(...args) {
     }
 
     if (code === "Escape" || key === "escape") {
-      // 一键取消：既解除武装，也放掉选中的插座。
       const changed = selectTower(null, false);
       if (!selectSocket(null) && changed) emit();
     }
@@ -265,15 +233,7 @@ export function createInput(...args) {
 
   /* ------------------------------------------------------------ 指针 */
 
-  function pickAt(x, y, clientX, clientY) {
-    if (resolveSocket) {
-      try {
-        const index = resolveSocket(clientX, clientY);
-        return Number.isInteger(index) && index >= 0 ? index : null;
-      } catch {
-        return null;
-      }
-    }
+  function pickAt(x, y) {
     if (!pickSocket) return null;
     let pickInfo = null;
     if (scene && typeof scene.pick === "function") {
@@ -292,7 +252,7 @@ export function createInput(...args) {
   }
 
   /**
-   * 点已经有塔的插座应该只是选中它（好接着过载 / 升级），而不是发一条注定被拒的建造。
+   * 点已经有塔的插座应该只是选中它（好接着过载），而不是发一条注定被拒的建造。
    * 拿不到 view 就照发，由模拟层去判 deny。
    */
   function socketOccupied(index) {
@@ -307,10 +267,6 @@ export function createInput(...args) {
     }
   }
 
-  function lookEnabled() {
-    return dragRotate === null ? scene === null : dragRotate === true;
-  }
-
   function onPointerDown(event) {
     if (!state.enabled || event.button > 0) return;
     const p = canvasPoint(event, canvas);
@@ -318,8 +274,6 @@ export function createInput(...args) {
     drag.id = event.pointerId;
     drag.x0 = p.x;
     drag.y0 = p.y;
-    drag.x = p.x;
-    drag.y = p.y;
     drag.t0 = event.timeStamp || Date.now();
     drag.moved = false;
   }
@@ -327,16 +281,7 @@ export function createInput(...args) {
   function onPointerMove(event) {
     if (!drag.active || event.pointerId !== drag.id) return;
     const p = canvasPoint(event, canvas);
-    const dx = p.x - drag.x;
-    const dy = p.y - drag.y;
-    drag.x = p.x;
-    drag.y = p.y;
     if (Math.abs(p.x - drag.x0) > TAP_MOVE_PX || Math.abs(p.y - drag.y0) > TAP_MOVE_PX) drag.moved = true;
-    if (drag.moved && lookEnabled()) {
-      const look = pending.look ?? (pending.look = { yaw: 0, pitch: 0 });
-      look.yaw += dx * LOOK_SCALE;
-      look.pitch += dy * LOOK_SCALE;
-    }
   }
 
   function endDrag() {
@@ -352,13 +297,13 @@ export function createInput(...args) {
     if (!tap || !state.enabled) return;
 
     const p = canvasPoint(event, canvas);
-    const socket = pickAt(p.x, p.y, event.clientX ?? p.x, event.clientY ?? p.y);
+    const socket = pickAt(p.x, p.y);
     if (socket === null) {
       selectSocket(null);
       return;
     }
     selectSocket(socket, false);
-    if (!socketOccupied(socket)) requestPlace(socket);
+    if (state.towerId !== null && !socketOccupied(socket)) requestPlace(socket);
     emit();
   }
 
@@ -369,7 +314,7 @@ export function createInput(...args) {
     if (!detail || typeof detail !== "object") return;
     switch (detail.action) {
       case "tower":
-        selectTower(detail.towerId, false);
+        selectTower(detail.towerId ?? null, false);
         break;
       case "overclock":
         requestOverclock(Number.isInteger(detail.socket) ? detail.socket : state.selectedSocket);
@@ -391,17 +336,21 @@ export function createInput(...args) {
     on(win ?? canvas, "pointerup", onPointerUp, { passive: true });
     on(win ?? canvas, "pointercancel", endDrag, { passive: true });
   }
-  if (listenUi) on(doc, UI_EVENT, onUiEvent);
+  on(doc, UI_EVENT, onUiEvent);
   ensurePickingRay();
 
   /* ------------------------------------------------------------ 出口 */
 
   const input = {
-    /** 取走这一帧的输入。沿边字段读完即清空，selectedSocket / towerId 是常驻状态。 */
+    /**
+     * 取走这一帧的输入。
+     * pause / selectedSocket 是绝对置位，每帧都给；place / overclockSocket 读完即清空。
+     * @returns {{place?: {socket: number, towerId: string}, overclockSocket?: number,
+     *            selectedSocket?: number|null, pause?: boolean, towerId?: string}}
+     */
     read() {
-      const out = {};
+      const out = { selectedSocket: state.selectedSocket, pause: state.paused };
       if (state.towerId !== null) out.towerId = state.towerId;
-      if (state.selectedSocket !== null) out.selectedSocket = state.selectedSocket;
       if (pending.place) {
         out.place = pending.place;
         pending.place = null;
@@ -410,18 +359,10 @@ export function createInput(...args) {
         out.overclockSocket = pending.overclockSocket;
         pending.overclockSocket = null;
       }
-      if (pending.pause) {
-        out.pause = true;
-        pending.pause = false;
-      }
-      if (pending.look) {
-        out.look = pending.look;
-        pending.look = null;
-      }
       return out;
     },
 
-    /** 只看不取，给 HUD 用。 */
+    /** 只看不取，给 HUD / main 显示用。 */
     peek() {
       return { towerId: state.towerId, selectedSocket: state.selectedSocket, paused: state.paused };
     },
@@ -438,19 +379,8 @@ export function createInput(...args) {
     selectSocket,
     requestPlace,
     requestOverclock,
+    setPaused,
     togglePause,
-    // docs/API_CONTRACT.md 用的别名
-    setArmedTower: (id) => selectTower(id ?? null),
-    queueOverclock: () => requestOverclock(),
-    get towerId() {
-      return state.towerId;
-    },
-    get selectedSocket() {
-      return state.selectedSocket;
-    },
-    get paused() {
-      return state.paused;
-    },
     setEnabled(enabled) {
       state.enabled = !!enabled;
     },

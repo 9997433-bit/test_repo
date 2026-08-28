@@ -1,8 +1,10 @@
-# 蚀核要塞 · 系统架构（ARCHITECTURE v1 · Round 1 冻结）
+# 蚀核要塞 · 系统架构（ARCHITECTURE v2 · Round 2 冻结）
 
-> 维护者：Fable-1 架构。配套文档：[`API_CONTRACT.md`](./API_CONTRACT.md)（冻结签名与数据模式，实现以该文件为准）。
+> 维护者：Fable-1 架构。配套文档：[`API_CONTRACT.md`](./API_CONTRACT.md)（冻结签名与数据模式，实现以该文件为准，当前 **v2**）。
 > 本文回答「系统长什么样、谁负责什么、每帧发生什么」；`API_CONTRACT.md` 回答「函数怎么签、字段怎么长」。
-> 标注 **[冻结]** 的内容 Round 1 内任何代理不得单方面更改；标注 **[可调]** 的内容由对应所有者在自己的可写路径内调整。
+> 标注 **[冻结]** 的内容任何代理不得单方面更改；标注 **[可调]** 的内容由对应所有者在自己的可写路径内调整。
+> **Round 2 冻结决议**（对应契约 v2 CHANGELOG）：getView 数值无 `-0`/`NaN`；首波 ≤2s 出怪；data 只走正式导出名；
+> `view.shots` 只由 combat 渲染；`createInput`/`syncHud` 单一签名；`SocketView.theta` 必备；frameEvents 由 main 聚合。
 
 ---
 
@@ -60,7 +62,7 @@
 | `tests/**` | `src/sim`、`src/data`（UI 测试可用 jsdom 加载 `src/ui`） | Babylon 运行时 |
 | `scripts/**` | `src/sim`、`src/data` | Babylon、DOM |
 
-数据流是**单向**的：`input.read()` → `sim.step()` → `sim.getView()` → `world / combat / ui` 消费。渲染侧永远不回写模拟；模拟永远不知道渲染存在。战斗表现层（combat）只把 `view.shots` 画成曳光/光束/抛物线，**不重复计算伤害**。
+数据流是**单向**的：`input.read()` → `sim.step()` → `sim.getView()` → `world / combat / ui` 消费。渲染侧永远不回写模拟；模拟永远不知道渲染存在。战斗表现层（combat）只把 `view.shots` 画成曳光/光束/抛物线，**不重复计算伤害**。**[R2 冻结] `view.shots` 由 `src/combat` 独占渲染：world 一律不画弹道（`world/shots.js` 通道停用/移除），否则同一条 shot 双画。**
 
 ## 4. 目录与所有权
 
@@ -85,7 +87,7 @@ games/shihe-yaosai/
 │   ├── combat/           # O3：view.shots 的视觉呈现
 │   ├── ui/               # O4：HUD 挂载与同步
 │   ├── input/            # O4：键鼠 → SimInput
-│   ├── data/             # F3：CONFIG/TOWERS/ENEMIES/WAVES/DAMAGE_MATRIX
+│   ├── data/             # F3：CONFIG/TOWERS/TOWER_ORDER/ENEMIES/WAVES/BOSS/ARMOR_MULT + 3 个查询函数（契约 §4.1）
 │   └── styles/           # F2：CSS
 ├── tests/                # GPT-sol-1：纯 sim 单测
 └── scripts/              # GPT-sol-2：probe.mjs / bench.mjs（Node 直跑 sim）
@@ -102,7 +104,7 @@ games/shihe-yaosai/
 3. match = createMatch(seed)         // seed 取 URL ?seed=，缺省 (Date.now() % 2**31)
 4. buildWorld(renderer.scene, () => getView(match))
 5. hud = mountHud(document, { onTowerSelect, onOverclock })
-6. inp = createInput(canvas, { resolveSocket })   // resolveSocket 内部走 scene.pick + pickSocket
+6. inp = createInput({ canvas, scene: renderer.scene, pickSocket })   // [R2 唯一签名] pickSocket 即 world 出口函数
 7. renderer.engine.runRenderLoop(frame)
 ```
 
@@ -122,13 +124,14 @@ view = getView(match)
 view.backend = renderer.backend      // [冻结] 唯一允许对 view 的改写：main 覆写 backend 字段
 syncWorld(renderer.scene, view)
 syncCombat(renderer.scene, view, frameEvents)
-syncHud(hud, view, frameEvents)
+syncHud(view, { events: frameEvents, backend: renderer.backend })   // [R2 唯一签名] 契约 §8
 renderer.scene.render()
 ```
 
 要点：
 
-- **事件必须按帧聚合**。一帧可能跑多个 sim 子步，`getView().events` 只镜像最近一次 `step` 的事件；HUD 弹条、击杀闪光等一律消费 `frameEvents`，否则会丢事件。**[冻结]**
+- **事件必须按帧聚合，聚合点在 main**。一帧可能跑多个 sim 子步，`getView().events` 只镜像最近一次 `step` 的事件；HUD 弹条、击杀闪光等一律消费 main 收齐的 `frameEvents`（syncHud 经 `extras.events`、syncCombat 经第三参），否则会丢事件。**[冻结，R2 重申]**
+- **禁止签名试探**（R2 新增，契约 §9.5）：main 按契约唯一签名直调 `createInput` / `syncHud` / `syncWorld` / `syncCombat`，Round 1 的多签名适配器删除；签名不符改实现，不加适配。**[冻结]**
 - `step` / `getView` 不可重入；渲染回调内串行调用。
 - 暂停不停帧：`view.paused === true` 时照常 `syncWorld/syncHud`（镜头可转、HUD 可点），只是模拟时间不前进。
 
@@ -172,6 +175,12 @@ Round 1 简化（已在简报冻结、契约 §3 有精确语义）：
 - 棱镜折光：直线光束，仅做距离判定（折射搜索半径 ≤18，最多 2 段），不做视线遮挡。
 - 波表：数据层写满 20 波 + Boss；模拟层至少跑通前 5 波即可交付 Round 1。
 
+Round 2 收紧（契约 v2 冻结，实现必须跟进）：
+
+- **getView 数值 JSON-safe**：无 `-0`/`NaN`/`Infinity`，坐标输出前归一化（`n + 0`；契约 §1）。
+- **首波 ≤2s 出怪**：默认波表下 `createMatch` 后模拟 2 秒内 `enemies.length ≥ 1`（契约 §3.8；`firstWaveDelay` 建议 1.5）。
+- **克制表正式名**：伤害公式走 `armorMultiplier` / `ARMOR_MULT`（契约 §3.7/§4.1），`DAMAGE_MATRIX` 与 `SIM_CONFIG` 等旧名/别名一律不认。
+
 ## 7. 空间与坐标约定 **[冻结]**
 
 所有空间量在**纯数学层**定义，sim 输出的一切坐标是普通 `{x,y,z}` 对象，与 Babylon 无关：
@@ -206,8 +215,8 @@ URL `?quality=high|mid|low` 覆盖自动档（main 解析后传入 `createRender
 职责切分 **[冻结]**：
 
 - **engine（O1）**：Engine/Scene、ArcRotateCamera（目标 `(0,4,0)`，初始半径 ≈95，beta 上限 ≈1.35，radius 限 `[40,160]` **[可调]**）、DefaultRenderingPipeline（Bloom）、GlowLayer、阴影光源 + ShadowGenerator、resize 监听、dispose。
-- **world（O2）**：星核（自发光 + 受击脉冲）、外环、24 插座、三层轨道示意环、塔实体（含过载/过热变色）、场景照明（半球光 + 核心点光）、拾取代理。敌人建议 thin instance / 实例化网格。
-- **combat（O3）**：只消费 `view.shots` + `frameEvents`，画曳光（tracer）、光束（beam）、散射（pellet）、抛物线（arc）、脉冲环（pulse）；对象池复用，上限 128。
+- **world（O2）**：星核（自发光 + 受击脉冲）、外环、24 插座、三层轨道示意环、塔实体（含过载/过热变色）、场景照明（半球光 + 核心点光）、拾取代理。敌人建议 thin instance / 实例化网格。**[R2 冻结] 不渲染 `view.shots`**——弹道视觉归 combat 独占，world 内的 shots 渲染通道停用/移除。
+- **combat（O3）**：`view.shots` 的**唯一渲染方 [R2 冻结]** + 消费 `frameEvents`，画曳光（tracer）、光束（beam）、散射（pellet）、抛物线（arc）、脉冲环（pulse）；对象池复用，上限 128。
 
 `scene.metadata` 命名空间 **[冻结]**，避免三方互踩：
 
@@ -244,19 +253,19 @@ world 构建网格时若发现 `scene.metadata.shEngine?.shadow` 存在，应把
 | Draw call（high 档） | < 150（敌人/弹道实例化） |
 | 目标帧率 | 桌面 WebGPU 60fps；WebGL2 mid 档 ≥ 45fps |
 
-`getView` 每次调用返回新鲜 JSON-pure 对象；O3 可做内部缓冲复用，但返回值必须满足 `structuredClone` 安全（无函数、无类实例、无 NaN/Infinity）。
+`getView` 每次调用返回新鲜 JSON-pure 对象；O3 可做内部缓冲复用，但返回值必须满足 `structuredClone` 安全（无函数、无类实例、无 NaN/Infinity，**R2 起额外禁 `-0`**——逐数满足 JSON round-trip `Object.is` 相等，契约 §1）。
 
 ## 12. 测试与验证
 
-- `npm test`（vitest，node 环境）：`tests/**` 只测纯 sim + data。契约 §14 列出了**保证可测的最小断言集**（形状、放置扣费、deny、确定性、漏敌败北、过载时序），`createMatch/step/getView` 必须绿。
+- `npm test`（vitest，node 环境）：`tests/**` 只测纯 sim + data。契约 §14 列出了**保证可测的最小断言集**（形状、数值 JSON-safe 无 `-0`、首波 ≤2s、放置扣费、deny、确定性、漏敌败北、过载时序），`createMatch/step/getView` 必须绿。R2 完成定义：`npm test` 全绿 + probe 5 波 leaks≤2 且 coreHp>0 + build exit 0。
 - `npm run probe`（GPT-sol-2）：Node 直跑 sim 的脚本化对局，输出 JSON 摘要（波数、击杀、剩余核血），用于无浏览器冒烟。
 - `npm run bench`：固定 seed 脚本化 20 波，统计 `step` 耗时分布。
 - 浏览器验收（F4）：`:4182` 可见环 + 核 + 三层轨道；能放 3 种塔过 5 波；WebGPU/WebGL2 均能亮。
 
 ## 13. Round 路线
 
-- **R1（本轮）**：目录可启动、可放塔（≥3 种）、可过 ≥5 波、双后端能亮、纯 sim 测试绿。
-- **R2（预留位已在契约中占好，不会破坏 R1 形状）**：升级/出售输入（`upgradeSocket`/`sellSocket`）、提前唤波（`callWave`）、轨炮穿透（`pierce`）、棱镜视线遮挡与角度判定、霰星/星弩落点结算、Boss `etch-lord` 特技（蚀脉冲致塔过热）。
+- **R1（已交付）**：目录可启动、可放塔（≥3 种）、可过 ≥5 波、双后端能亮、纯 sim 测试绿。
+- **R2（本轮，按 `round2/BRIEF.md` 靶向修缺陷，不新开玩法）**：完成定义 = `npm test` 全绿、`npm run probe` 5 波 leaks≤2 且 coreHp>0、`npm run build` exit 0；冻结决议 = getView 无 `-0`、首波 ≤2s、data 正式导出名、shots 只 combat 画、单一签名、`SocketView.theta`、frameEvents 聚合（契约 v2 CHANGELOG）。玩法预留位（`upgradeSocket`/`sellSocket`/`callWave`/`pierce`/棱镜视线遮挡/落点结算/Boss 特技）仍为 RESERVED，不强制实现。
 - **R3**：父调度器接 catalog / pages workflow，本目录不动。
 
 ## 14. 契约变更流程与已知风险
@@ -266,7 +275,7 @@ world 构建网格时若发现 `scene.metadata.shEngine?.shadow` 存在，应把
 **已知风险与既定裁决**：
 
 1. `view.backend`：sim 是纯层不知道渲染后端，冻结为 sim 返回 `'sim'`、main 覆写为真实后端（§5）。谁绕过 main 直接消费 `getView` 将看到 `'sim'`，属预期。
-2. 敌人渲染需要角度：简报的 enemy 视图「至少含」清单没有 θ，本契约将 `theta` 升格为**必备字段**（契约 §2），O2/O3 都按含 `theta` 实现。
+2. 渲染需要角度：简报的视图「至少含」清单没有 θ，契约将 `theta` 升格为**必备字段**——v1 冻结 `EnemyView.theta`，v2 起 `SocketView.theta` 同样必备（契约 §2.2），O2/O3 都按含 `theta` 实现，渲染层不得自行推导后回写。
 3. 棱镜折光的原文有歧义，契约 §3.6 给出唯一裁决（段1 塔→主目标全额；主目标 18 内存在另一棱镜则折出段2 打次目标，伤害 × `refractRatio`），实现以契约为准。
 4. 多子步丢事件：HUD/战斗闪光必须消费 `frameEvents` 聚合数组而非 `view.events`（§5）。
 5. Babylon 左手系朝向符号：由 world 层吸收（§7），sim 数据永不翻转。
