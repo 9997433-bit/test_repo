@@ -1,7 +1,11 @@
 # 蚀核要塞 · GDD（玩法数值篇）
 
-Fable-3 出品，Round 1 冻结。所有数值的唯一事实源是 `src/data/**`；本文与数据表不一致时，以数据表为准并回改本文。
+Fable-3 出品，Round 2 修订。所有数值的唯一事实源是 `src/data/**`；本文与数据表不一致时，以数据表为准并回改本文。
 `src/data` 为纯 ESM 常量 + 纯函数，可被 Node / vitest / sim 直接 import，零 Babylon、零 DOM。
+
+**Round 2 变更**（详见 §13）：新增 `CONFIG.firstWaveDelay = 0.5`（开局 2s 内必出怪）；
+`interWaveDelaySec` 更名 `interWaveDelay`（对齐 API_CONTRACT §CONFIG，值不变）；波 18/19/20 `hpMul` 微收紧。
+正式导出名冻结为：`CONFIG / TOWERS / ENEMIES / WAVES / BOSS / ARMOR_MULT / ARMOR_TYPES / ARMOR_INFO / TOWER_ORDER / armorMultiplier / towerCost / upgradeOptions`，sim 只读这些名字，不再有兼容别名。
 
 ## 1. 一句话与核心循环
 
@@ -32,7 +36,8 @@ Fable-3 出品，Round 1 冻结。所有数值的唯一事实源是 `src/data/**
 | 击杀赏金 | 每敌 `bounty`（见 §7），不随波次膨胀 |
 | 清波奖励 | 每波 `bonus` 20 → 80 递增（见 §8） |
 | 拆塔返还 | 已投入总额 × 0.7，向下取整 |
-| 波间隔 | 5 s |
+| 首波延迟 | 0.5 s（`CONFIG.firstWaveDelay`；加首组 delay 0 = 开局 0.5 s 首怪入场，冻结 ≤2 s） |
+| 波间隔 | 5 s（`CONFIG.interWaveDelay`，清波后到下一波） |
 | 全程总经济 | 180 + 赏金 3326 + 清波 846 = **4352** |
 
 开局 180 可立两塔（如 霰星 60 + 轨炮 70），第 2~3 波后立第三种塔——满足 Round 1「能放 3 种塔」验收。
@@ -93,6 +98,7 @@ Fable-3 出品，Round 1 冻结。所有数值的唯一事实源是 `src/data/**
 ## 8. 20 波表（`src/data/waves.js`）
 
 每波 = `{ wave, hpMul, bonus, groups[] }`；组 = `{ enemy, count, lane, delay, interval }`。出生角由 sim 用种子随机。
+组 `delay` 相对本波开始计；波 1 于开局 `CONFIG.firstWaveDelay`（0.5 s）后开始，首组 delay 0 → 首怪 0.5 s 入场。
 节奏设计：3/5/8/10/15/18/19/20 为考试波；4/7/11/17 为高数量低 HP 的蜂群「泄压波」（霰星的高光时刻）。
 
 | 波 | hpMul | 构成（数量×敌 @lane） | 总有效 HP | 赏金 | 清波 |
@@ -114,9 +120,11 @@ Fable-3 出品，Round 1 冻结。所有数值的唯一事实源是 `src/data/**
 | 15 | 1.75 | warden+oracle+brood, 6×veil@1 | 2367 | 186 | 54 |
 | 16 | 1.85 | 6×ram@0, 10×husk@2 | 2006 | 188 | 52 |
 | 17 | 1.95 | 24×wisp@0/1/2, 8×mote@0 | 704 | 168 | 54 |
-| 18 | 2.10 | 10×veil@1, 2×oracle@0, 4×ram@2 | 3932 | 280 | 58 |
-| 19 | 2.30 | 3×warden@0, 12×husk@1, 2×brood@2 | 4370 | 268 | 62 |
-| 20 | 2.50 | 2×warden+2×oracle+2×brood, 10×veil@1, 10×mote@0 | 6730 | 404 | 80 |
+| 18 | 2.15 | 10×veil@1, 2×oracle@0, 4×ram@2 | 4030 | 280 | 58 |
+| 19 | 2.40 | 3×warden@0, 12×husk@1, 2×brood@2 | 4560 | 268 | 62 |
+| 20 | 2.60 | 2×warden+2×oracle+2×brood, 10×veil@1, 10×mote@0 | 7000 | 404 | 80 |
+
+波 18/19/20 的 `hpMul` 为 Round 2 微收紧（原 2.10/2.30/2.50，终盘总有效 HP +2.5%~4.5%）；波 1–5 与 probe 基线未动。
 
 ## 9. Boss「蚀主」etch-lord（`src/data/waves.js` 的 `BOSS`）
 
@@ -141,10 +149,17 @@ Fable-3 出品，Round 1 冻结。所有数值的唯一事实源是 `src/data/**
 
 - **覆盖折减**：出生角随机时，单塔只罩环上一段弧（轨炮中程约 ±48°）。估算实效 DPS = 纸面 DPS × 0.4~0.6。
 - **前 5 波**：双塔起手（≈45 纸面 dps）打 84~480 HP 的波绰绰有余；第 5 波 warden(shell, 374 有效 hp) 需要 Ⅱ 级轨炮（60 dps 对 shell）+ 过载窗口，是第一场硬考试。
-- **验证**：`node /tmp` 级静态校验已跑通（导出完整性、护甲表每列有克有扛、波表引用合法、赏金/奖励合计）；动态胜率曲线由 Round 2 拿 O3 的 sim 回归后再调 `hpMul` 与塔价，本文口径不变。
+- **验证**：`node /tmp` 级静态校验已跑通（导出完整性、护甲表每列有克有扛、波表引用合法、赏金/奖励合计）；动态胜率曲线待 sim 回归后再调 `hpMul` 与塔价，本文口径不变。
 
-## 12. Round 1 范围备注
+## 12. 范围备注
 
-- 数据层 20 波 + Boss **已写全**；Round 1 sim 只跑 `WAVES.slice(0, 5)`，不需要动数据结构。
-- 棱镜折射 Round 1 只做距离判定（≤18、折 1 次、第 2 段 ×refractFalloff），无视线遮挡留给后续轮。
-- `upgradeOptions(towerId, level)` 现在每级返回单一选项（线性 Ⅰ→Ⅱ→Ⅲ）；接口是数组，Round 2 若加分支升级不破坏调用方。
+- 数据层 20 波 + Boss **已写全**；probe 基线只跑 `WAVES.slice(0, 5)`，后续波不改结构直接续跑。
+- 棱镜折射目前只做距离判定（≤18、折 1 次、第 2 段 ×refractFalloff），无视线遮挡留给后续轮。
+- `upgradeOptions(towerId, level)` 现在每级返回单一选项（线性 Ⅰ→Ⅱ→Ⅲ）；接口是数组，后续若加分支升级不破坏调用方。
+
+## 13. Round 2 变更记录（Fable-3）
+
+1. **首波节奏（冻结）**：新增 `CONFIG.firstWaveDelay = 0.5`。首怪入场时刻 = firstWaveDelay + 波 1 首组 delay(0) = **0.5 s ≤ 2 s**，满足 G1 契约测「同种子 80 步内必有敌人」。
+2. **命名对齐**：`CONFIG.interWaveDelaySec` → `CONFIG.interWaveDelay`（值仍 5，单位秒），与 `firstWaveDelay` 一起对齐 API_CONTRACT §CONFIG；sim 不得再读旧名或 `SIM_CONFIG/BALANCE/TOWER_TABLE` 等别名。
+3. **终盘微收紧**：波 18/19/20 `hpMul` 2.10/2.30/2.50 → **2.15/2.40/2.60**（总有效 HP 3932/4370/6730 → 4030/4560/7000）。波 1–17、Boss、塔价、赏金全部未动，5 波 probe 基线（混搭 5 塔）不受影响。
+4. **出口冻结**：正式导出名见文首；`ARMOR_INFO` 为 HUD 文案数据，非别名。

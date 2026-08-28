@@ -1,4 +1,4 @@
-// 蚀核要塞 · 全局配置（Fable-3 冻结，Round 1）
+// 蚀核要塞 · 全局配置（Fable-3，Round 2 修订）
 // 纯数据，禁止 import Babylon / DOM。
 
 export const CONFIG = {
@@ -14,7 +14,10 @@ export const CONFIG = {
   // —— Fable-3 数值扩展 ——
   ringRadius: 40, // 插座环半径（BRIEF 冻结「环半径逻辑 40」）
   waveCount: 20, // 常规波数；第 20 波后进 Boss「蚀主」
-  interWaveDelaySec: 5, // 波与波之间的备战间隔（秒）
+  // 波次节奏（单位秒；命名对齐 API_CONTRACT §CONFIG，sim 只读这两个正式名）。
+  // Round 2 冻结：firstWaveDelay + 首波组 delay(0) ≤ 2，保证开局 2s 内必出怪（G1 契约测）。
+  firstWaveDelay: 0.5, // 开局到第 1 波首怪入场的延迟
+  interWaveDelay: 5, // 清波后到下一波开始的备战间隔
   sellRefund: 0.7, // 拆塔返还比例（按已投入屑晶总额，向下取整）
 
   // 过载：F 键作用于当前选中塔。不耗屑晶，纯冷却循环。
