@@ -48,6 +48,7 @@ function makeSocket(i, cfg) {
     hp: 0,
     aim: null,
     beam: null,
+    beam2: null,
     fieldId: 0,
     kills: 0,
     damage: 0,
@@ -384,6 +385,7 @@ function attachShot(match, shot) {
     if (dropped && dropped.beam) {
       const owner = match.sockets[dropped.socket];
       if (owner && owner.beam === dropped) owner.beam = null;
+      if (owner && owner.beam2 === dropped) owner.beam2 = null;
     }
   }
   match.shots.push(shot);
@@ -403,6 +405,7 @@ function pushShot(match, socket, spec, points, extra) {
     beam: false,
     radius: 0,
     relay: null,
+    segment: 1,
     targetId: 0,
     overclocked: socket.overclockT > 0,
   };
@@ -411,40 +414,51 @@ function pushShot(match, socket, spec, points, extra) {
   return shot;
 }
 
-/** 棱镜光束是常驻实体：同一座塔持续开火时 id 不变，渲染层不必反复建/毁网格。 */
-function updateBeam(match, socket, spec, points, relayIndex, dt) {
-  let beam = socket.beam;
+/**
+ * 棱镜光束是常驻实体：同一座塔持续开火时 id 不变，渲染层不必反复建/毁网格。
+ * 契约 §3.6：段1 与段2 各是一条独立的 kind:'beam' ShotView（段2 的 relay = 折射塔插座号）。
+ */
+function updateBeam(match, socket, spec, key, from, to, targetId, relayIndex, dt) {
+  let beam = socket[key];
   if (!beam) {
     beam = {
       id: match.nextShotId++,
       kind: spec.shotKind,
       towerId: spec.id,
       socket: socket.i,
-      points,
+      points: [from, to],
       life: 0,
       age: 0,
       t: 0,
       beam: true,
       radius: 0,
-      relay: null,
-      targetId: 0,
+      relay: relayIndex,
+      segment: key === "beam" ? 1 : 2,
+      targetId,
       overclocked: false,
     };
-    socket.beam = beam;
+    socket[key] = beam;
     socket.shots += 1;
     attachShot(match, beam);
   }
-  beam.points = points;
+  beam.points = [from, to];
   beam.relay = relayIndex;
+  beam.targetId = targetId;
   beam.overclocked = socket.overclockT > 0;
   beam.t = (beam.t + dt * BEAM_SHIMMER) % 1;
 }
 
-function releaseBeam(match, socket) {
-  if (!socket.beam) return;
-  const idx = match.shots.indexOf(socket.beam);
+function releaseSegment(match, socket, key) {
+  const beam = socket[key];
+  if (!beam) return;
+  const idx = match.shots.indexOf(beam);
   if (idx >= 0) match.shots.splice(idx, 1);
-  socket.beam = null;
+  socket[key] = null;
+}
+
+function releaseBeam(match, socket) {
+  releaseSegment(match, socket, "beam");
+  releaseSegment(match, socket, "beam2");
 }
 
 function updateShots(match, dt) {
@@ -513,9 +527,9 @@ function fireBeam(match, socket, spec, mul, dt) {
 
   const tickDamage = spec.dps * dt * mul;
   applyDamage(match, target, tickDamage, spec.id, socket.i);
+  updateBeam(match, socket, spec, "beam", socket.muzzle, aPos, target.id, null, dt);
 
-  const points = [socket.muzzle, aPos];
-  let relayIndex = null;
+  let bent = false;
   if (spec.refractRange > 0) {
     let relay = null;
     let relayDist = Infinity;
@@ -531,12 +545,12 @@ function fireBeam(match, socket, spec, mul, dt) {
       const second = acquireTarget(match, relay.muzzle, spec, target.id);
       if (second) {
         applyDamage(match, second, tickDamage * spec.refractFalloff, spec.id, socket.i);
-        points.push(enemyPos(match, second));
-        relayIndex = relay.i;
+        updateBeam(match, socket, spec, "beam2", aPos, enemyPos(match, second), second.id, relay.i, dt);
+        bent = true;
       }
     }
   }
-  updateBeam(match, socket, spec, points, relayIndex, dt);
+  if (!bent) releaseSegment(match, socket, "beam2");
 }
 
 /** 坠井：射程内全体持续掉血；减速在 applySlow 里统一取最大值，不叠乘。 */
@@ -906,6 +920,7 @@ export function getView(match) {
       z: round4(Math.sin(e.theta) * e.radius),
       slow: round4(e.slow),
       slowed: e.slow < 1,
+      speed: round4(e.baseSpeed * e.slow),
       boss: !!e.boss,
     })),
     shots: match.shots.map((s) => ({
@@ -919,6 +934,8 @@ export function getView(match) {
       t: round4(Math.min(1, Math.max(0, s.t))),
       radius: round4(s.radius),
       relay: Number.isInteger(s.relay) ? s.relay : null,
+      segment: num0(s.segment === undefined ? 1 : s.segment),
+      refracted: Number.isInteger(s.relay),
       beam: !!s.beam,
       overclocked: !!s.overclocked,
     })),
