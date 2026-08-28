@@ -1,0 +1,41 @@
+/* 蚀核要塞 · 设计令牌 — 规范见 docs/ART_DIRECTION.md（3D 侧取色也以此为准） */
+:root {
+  /* 深空主题：原生控件与滚动条一律走暗色 */
+  color-scheme: dark;
+
+  /* 基底 · 深空金属 */
+  --sh-bg: #05060d;
+  --sh-bg-deep: #02030a;
+  --sh-steel: #232c3d;
+  --sh-panel: rgba(10, 17, 30, 0.78);
+  --sh-panel-hi: rgba(24, 38, 60, 0.85);
+  --sh-line: rgba(60, 240, 255, 0.28);
+  --sh-line-dim: rgba(60, 240, 255, 0.12);
+
+  /* 能量 hue（纪律：青=己方，品红=敌方/越界，紫=坠井专用，橙=过热专用，红=核心告警专用） */
+  --sh-cyan: #3cf0ff;
+  --sh-cyan-soft: rgba(60, 240, 255, 0.55);
+  --sh-cyan-glow: rgba(60, 240, 255, 0.35);
+  --sh-ice: #eafeff;
+  --sh-magenta: #ff3d9a;
+  --sh-magenta-glow: rgba(255, 61, 154, 0.4);
+  --sh-violet: #8a5cff;
+  --sh-heat: #ff6a3d;
+  --sh-heat-glow: rgba(255, 106, 61, 0.45);
+  --sh-danger: #ff4d5e;
+  --sh-danger-glow: rgba(255, 77, 94, 0.5);
+
+  /* 文本 */
+  --sh-paper: #e8f4ff;
+  --sh-muted: #8fa6c2;
+
+  /* 字体（仅系统栈，禁 webfont） */
+  --sh-font: "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --sh-mono: "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", monospace;
+
+  /* 尺寸 */
+  --sh-touch: 44px;
+  --sh-radius: 10px;
+  --sh-gap: 10px;
+  --sh-hud-pad: 14px;
+}

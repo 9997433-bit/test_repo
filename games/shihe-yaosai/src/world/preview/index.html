@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>蚀核要塞 · 世界层预览</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #04060c;
+        overflow: hidden;
+      }
+      #preview-canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        outline: none;
+        touch-action: none;
+      }
+      #preview-hud {
+        position: fixed;
+        left: 16px;
+        bottom: 14px;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #7fd4ff;
+        letter-spacing: 0.04em;
+        text-shadow: 0 0 8px rgba(0, 140, 200, 0.6);
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="preview-canvas"></canvas>
+    <div id="preview-hud">pickSocket → —</div>
+    <script type="module" src="./preview.js"></script>
+  </body>
+</html>
