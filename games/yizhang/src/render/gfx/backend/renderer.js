@@ -373,9 +373,11 @@ export class WebGLRenderer {
     mesh.material = bm;
     rec.material = material;
 
+    // 没有索引缓冲的几何（点精灵池、全屏三角形）必须显式声明，否则引擎直接跳过绘制
+    mesh.isUnIndexed = !node.geometry.index;
+
     if (node.isPoints) {
       bm.fillMode = BMaterial.PointFillMode;
-      mesh.isUnIndexed = true;
     } else if (node.isLineSegments) {
       bm.fillMode = BMaterial.LineListDrawMode;
     } else if (bm.fillMode !== BMaterial.TriangleFillMode) {
@@ -413,14 +415,16 @@ export class WebGLRenderer {
     if (rec.drawStart === start && rec.drawCount === count) return;
     rec.drawStart = start;
     rec.drawCount = count;
+    // 末位的 addToMesh 必须是 true —— SubMesh 是靠构造时自己挂到 mesh.subMeshes 上的，
+    // 不挂就等于这个网格一个可画的子网格都没有，引擎会安静地跳过它。
     mesh.subMeshes = [];
     if (count <= 0) {
       // 空绘制范围：留一个零长度的子网格，本帧什么都不画
-      new SubMesh(0, 0, 0, 0, 0, mesh, undefined, false, false);
+      new SubMesh(0, 0, 0, 0, 0, mesh, undefined, false, true);
       return;
     }
-    if (geo.index) new SubMesh(0, 0, total, start, count, mesh, undefined, true, false);
-    else new SubMesh(0, start, count, start, count, mesh, undefined, true, false);
+    if (geo.index) new SubMesh(0, 0, total, start, count, mesh, undefined, true, true);
+    else new SubMesh(0, start, count, start, count, mesh, undefined, true, true);
   }
 
   _syncInstances(node, rec, geoRec) {
@@ -488,23 +492,27 @@ export class WebGLRenderer {
 
   // ---------- 灯光 ----------
 
+  /**
+   * 一帧要渲好几棵适配层场景（主场景、全屏四边形场景），灯只挂在主场景上。
+   * 因此回收必须按「这盏灯是哪棵树带来的」算：全屏那趟没有灯，不代表主场景的灯该拆。
+   * 拆了会让 PBR 的灯光宏每帧翻一次，着色器永远编译不完 —— 画面就什么都不剩了。
+   */
   _syncLights(scene, live) {
     const seen = new Set();
     scene.traverse((node) => {
       if (!node.isLight) return;
-      const bl = this._syncLight(node);
+      const bl = this._syncLight(node, scene);
       if (bl) seen.add(bl);
     });
     for (const [src, bl] of this._lights) {
-      if (!seen.has(bl)) {
-        bl.dispose();
-        this._lights.delete(src);
-      }
+      if (bl._gfxOwner !== scene || seen.has(bl)) continue;
+      bl.dispose();
+      this._lights.delete(src);
     }
     this._syncShadows(live);
   }
 
-  _syncLight(node) {
+  _syncLight(node, owner) {
     let bl = this._lights.get(node);
     if (!bl) {
       if (node.isHemisphereLight) {
@@ -525,6 +533,7 @@ export class WebGLRenderer {
       this._lights.set(node, bl);
       node._backend = bl;
     }
+    bl._gfxOwner = owner;
 
     const c = node.color;
     bl.diffuse.set(c.r, c.g, c.b);
