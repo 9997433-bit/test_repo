@@ -88,6 +88,9 @@ export function progressMeets(glove, progress, dataModule) {
   if (!glove || !progress) return false;
   const spec = unlockSpecOf(glove, dataModule);
   if (!spec) return false;
+  // 生涯掌（scope:"career"）不发局内事件，单局进度里没有可判的量 —— 在这里就
+  // 挡掉，免得哪天有人给 career 规格补了 event 字段，结算板把它当「本局新解锁」报。
+  if (spec.scope === "career") return false;
 
   // 兜底掌表的 { req: {...} } 写法
   if (spec.req) {
@@ -129,6 +132,52 @@ export function newlyUnlocked(gloves, progress, save, dataModule) {
   for (const g of gloves) {
     if (owned.has(g.id) || isDefaultGlove(g)) continue;
     if (progressMeets(g, progress, dataModule)) out.push(g);
+  }
+  return out;
+}
+
+/**
+ * 生涯累计是否够解锁某只掌。`stat` 指的是存档 `stats` 里的累计字段名
+ * （src/core/storage.js DEFAULTS.stats），count 是门槛。
+ */
+export function careerMeets(glove, save, dataModule) {
+  const spec = unlockSpecOf(glove, dataModule);
+  if (!spec || spec.scope !== "career") return false;
+  if (typeof spec.stat !== "string" || !spec.stat) return false;
+  const stats = save && save.stats;
+  const value = stats && typeof stats === "object" ? stats[spec.stat] : undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) return false;
+  const count = Number.isFinite(spec.count) ? spec.count : 1;
+  return value >= count;
+}
+
+/**
+ * 生涯累计刚刚够门槛的掌。
+ *
+ * **必须拿结算之后的存档来问**：recordMatch 把这一局并进 stats 之后再判，
+ * 靠这一局刚好达标的掌才报得出来（次序见 main.js finishMatch 的注释）。
+ */
+export function newlyUnlockedCareer(gloves, save, dataModule) {
+  const out = [];
+  const owned = new Set((save && save.unlocked) || []);
+  for (const g of gloves || []) {
+    if (owned.has(g.id) || isDefaultGlove(g)) continue;
+    if (careerMeets(g, save, dataModule)) out.push(g);
+  }
+  return out;
+}
+
+/**
+ * 结算板该报的新掌：单局挑战 + 生涯累计，同一只掌只报一次。
+ * 两条路都走同一份「解锁：…」文案与同一次 unlockGlove 落盘，生涯掌不另开通道。
+ */
+export function newlyUnlockedAll(gloves, progress, save, dataModule) {
+  const out = newlyUnlocked(gloves, progress, save, dataModule);
+  const seen = new Set(out.map((g) => g.id));
+  for (const g of newlyUnlockedCareer(gloves, save, dataModule)) {
+    if (seen.has(g.id)) continue;
+    seen.add(g.id);
+    out.push(g);
   }
   return out;
 }

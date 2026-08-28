@@ -16,7 +16,14 @@ import { createLoop } from "./core/loop.js";
 import { hitFlashForEvents, hitStopForEvents } from "./core/juice.js";
 import { lerpView } from "./core/interp.js";
 import { createQualityProbe } from "./core/quality.js";
-import { loadSave, updateSave, recordMatch, unlockGlove, SAVE_KEY } from "./core/storage.js";
+import {
+  loadSave,
+  updateSave,
+  recordMatch,
+  recordPortalCrossing,
+  unlockGlove,
+  SAVE_KEY,
+} from "./core/storage.js";
 import { makeRng } from "./core/rng.js";
 import {
   SELF_ID,
@@ -29,8 +36,16 @@ import { feedLook, resolveLookMode, snapLook } from "./core/look.js";
 import { ENTRY, resolveEntry } from "./core/entry.js";
 import { normalizeSkinId, resolveSkins } from "./core/skins.js";
 import { unlockedIdsFor } from "./core/hub-flow.js";
-import { createUnlockChecker, newlyUnlocked, unlockTextOf } from "./core/unlocks.js";
+import { createUnlockChecker, newlyUnlockedAll, unlockTextOf } from "./core/unlocks.js";
 import { createProgressTracker } from "./core/progress.js";
+import {
+  STORY_TRIGGER,
+  createStoryDirector,
+  markSeenPatch,
+  seenIdsOf,
+  storyTextOf,
+  storyTriggerForEvent,
+} from "./core/story-flow.js";
 import * as fallbackSim from "./core/fallback/sim.js";
 import * as fallbackAi from "./core/fallback/ai.js";
 import { createRenderer as createFallbackRenderer } from "./core/fallback/render2d.js";
@@ -105,6 +120,9 @@ async function boot() {
   const personaById = (dataModule && dataModule.BOT_PERSONA_BY_ID) || null;
   // 皮肤表：data 给了就用真表，没给用 core/skins.js 的兜底表（默认 ash）。
   const skinTable = resolveSkins(dataModule);
+  // 掌语五拍（F1 的 src/data/story.js）。缺表就整只不放旁白 —— 但要在页脚报出来，
+  // 不许静默：没人说话和「说话的那只掌没接上」是两回事。
+  const storyTable = (dataModule && Array.isArray(dataModule.STORY) && dataModule.STORY) || [];
 
   const isUnlocked = createUnlockChecker(dataModule, { gloves });
 
@@ -121,6 +139,9 @@ async function boot() {
       text: `src/data 未导出 SKINS · 使用壳层兜底皮肤表（${skinTable.skins.length} 套，默认 ${skinTable.defaultId}）`,
       tone: "warn",
     });
+  }
+  if (mods.data.ok && !storyTable.length) {
+    degraded.push({ text: "src/data 未导出 STORY · 本局不放掌语", tone: "warn" });
   }
 
   let save = loadSave();
@@ -247,6 +268,46 @@ async function boot() {
   });
   const bootNode = document.getElementById("yz-boot");
   if (bootNode) bootNode.remove();
+
+  // ---------- 掌语 ----------
+  //
+  // 通道二选一：F2 把 `showLore` 开出来就走它（字条排队），没有就退到 HUD 中央
+  // 短讯一句一条。壳层这边只负责「什么时候放」，节奏与降级在 core/story-flow.js。
+  // 存档字段 `story.seen[]` 由这里落盘（storage.js 是 F1 的地，不动它的字段）。
+  const story = createStoryDirector({
+    story: storyTable,
+    getSeen: () => seenIdsOf(save),
+    markSeen: (id) => {
+      const patch = markSeenPatch(save, id);
+      if (patch) save = updateSave(patch);
+    },
+    showLore: typeof shell.showLore === "function" ? (beat) => shell.showLore(beat) : null,
+    toast: (text, ms) => shell.toast(text, ms),
+  });
+
+  /**
+   * 放一拍掌语。**永远不抛、永远不等** —— 这条路径挂在事件分派和进局路上，
+   * 一段旁白不许把 skipHub 直通裂岛或「再来一局」卡在半路（DISPATCH 红线）。
+   */
+  function fireStory(trigger) {
+    try {
+      return story.fire(trigger);
+    } catch (err) {
+      console.warn("[yizhang] 掌语分派抛错", err);
+      return null;
+    }
+  }
+
+  /** 领一拍但不上屏（结算板自己有位置贴）。同样不许抛。 */
+  function takeStory(trigger) {
+    try {
+      return story.take(trigger);
+    } catch (err) {
+      console.warn("[yizhang] 掌语分派抛错", err);
+      return null;
+    }
+  }
+
   shell.setNotes(degraded);
   setSpectator(true);
 
@@ -427,6 +488,12 @@ async function boot() {
         default:
           break;
       }
+
+      // 掌语挂在事件**之后**：这一拍要盖过该事件自己的提示（一辈子只放一次），
+      // 而且不许改上面任何一个 case 的行为。事件 → 时机词的映射表在
+      // core/story-flow.js，别在这个 switch 里再散着写第二份。
+      const trigger = storyTriggerForEvent(e, SELF_ID);
+      if (trigger) fireStory(trigger);
     }
 
     // 手感：本人参与的扇击命中给一记极短定格。同帧多段只停一次，
@@ -470,6 +537,10 @@ async function boot() {
     resultShown = false;
     audio.play("matchStart");
     shell.toast("裂 岛", 1200, true);
+    // 生涯计数：穿一次门 +1（unlock_raven 读这个数）。落盘的是 storage.js 的
+    // recordPortalCrossing —— 它只碰 stats.portalCrossings，不动别的累计字段。
+    save = recordPortalCrossing();
+    shell.setSave(save);
   }
 
   function enterHubFx() {
@@ -485,10 +556,16 @@ async function boot() {
     shell.setPhase(next);
   }
 
+  /**
+   * 判定这一局报哪些新掌。**必须在 recordMatch 之后调**：`save = loadSave()`
+   * 读回的是这一局已经并进去的累计数，生涯掌（scope:"career"）对照的就是它。
+   * 单局挑战与生涯累计走同一条 newlyUnlockedAll → unlockGlove → 「解锁：…」，
+   * 生涯掌不另开一套通知。
+   */
   function evaluateUnlocks(won) {
     tracker.finish(won);
     save = loadSave();
-    const fresh = newlyUnlocked(gloves, tracker.progress, save, dataModule);
+    const fresh = newlyUnlockedAll(gloves, tracker.progress, save, dataModule);
     for (const g of fresh) save = unlockGlove(g.id);
     if (fresh.length) shell.setSave(save);
     return fresh.map((g) => g.name);
@@ -515,8 +592,20 @@ async function boot() {
         ? `${nameOf(over.winnerId || players[0].id)} 先到 ${matchConfig.killsToWin} 杀`
         : "四分钟到，按击杀数结算";
 
-    recordMatch({ kills: (self && self.kills) || 0, deaths: (self && self.deaths) || 0, won });
+    // 次序是硬的，别对调：**先** recordMatch 把这一局并进生涯累计（含本局扇中
+    // 数 totalSlapHits），**再** evaluateUnlocks 判定。反过来的话，靠这一局才刚
+    // 好达标的生涯掌要等到下一局结束才报得出来。
+    recordMatch({
+      kills: (self && self.kills) || 0,
+      deaths: (self && self.deaths) || 0,
+      won,
+      slapHits: tracker.progress.slapHits,
+    });
     const unlocked = evaluateUnlocks(won);
+
+    // 首胜那一拍不走中央短讯 —— 结算板正压在上面，短讯看不见。领出来贴在板上
+    // （storyText 是可选字段，没有这一拍就整行不出现）。
+    const winBeat = won ? takeStory(STORY_TRIGGER.MATCH_FIRST_WIN) : null;
 
     // 「再来一局」到底沿用哪副掌，按钮下面那行小字要报出来 —— 用的就是按下去时
     // 那条取值链（core/entry.js），不另算一遍，免得写的和真进局的不是同一副。
@@ -526,6 +615,7 @@ async function boot() {
       won,
       reasonText,
       unlocked,
+      storyText: storyTextOf(winBeat),
       restartLoadout: { main: restartEntry.main, off: restartEntry.off },
       rows: players.map((p) => ({
         name: p.name || p.id,
@@ -551,6 +641,8 @@ async function boot() {
     rng = makeRng((Date.now() & 0xffff) ^ 0x5eed);
     tracker.reset();
     resultShown = false;
+    // 上一局没念完的句子到此为止：「再来一局」按下去就是新的一场，不许拖着旧旁白。
+    story.reset();
 
     // 缺省进安全区。只有 2D 备选台上的「直接进裂岛」才带 skipHub。
     const skipHub = loadout.skipHub === true;
@@ -595,6 +687,9 @@ async function boot() {
     loop.setPaused(false);
     audio.unlock();
     audio.play(skipHub ? "matchStart" : "uiSelect");
+    // 落在走道上才有「初来」这一拍。skipHub 直通裂岛的那条路一句不放 ——
+    // 掌语只挂在这里，不参与放行判断，进局不会被它挡住。
+    if (!skipHub && curView.phase === "hub") fireStory(STORY_TRIGGER.HUB_FIRST_ENTER);
     applyResize();
     startProbe();
   }
@@ -635,6 +730,7 @@ async function boot() {
     input.setEnabled(false);
     input.releasePointerLock();
     setSpectator(true);
+    story.reset();
     state = null;
     curView = null;
     prevView = null;
@@ -795,6 +891,15 @@ async function boot() {
     /** 手测/探针用：当前视角模式（locked = 固定人物视角）。 */
     get lookMode() {
       return input.getLookMode();
+    },
+    /** 手测/探针用：掌语走的哪条通道、放过哪几拍、还有几句排着。 */
+    get story() {
+      return { channel: story.channel, seen: seenIdsOf(save), pending: story.pending };
+    },
+    fireStory,
+    /** 手测/探针用：生涯累计（totalSlapHits / portalCrossings 等）。 */
+    get stats() {
+      return { ...(save.stats || {}) };
     },
     get phase() {
       return curView ? curView.phase : null;

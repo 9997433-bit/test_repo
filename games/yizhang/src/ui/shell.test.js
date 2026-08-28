@@ -99,6 +99,48 @@ describe("结算板", () => {
     shell.showResult({ ...RESULT, unlocked: ["磐石", "疾风"] });
     expect(root.querySelector(".yz-screen--frost .yz-heading").textContent).toBe("解锁：磐石、疾风");
   });
+
+  it("掌语是可选的：没有这一拍就整行不出现", () => {
+    const { shell, root } = mount();
+    shell.showResult(RESULT);
+    expect(root.querySelector('.yz-screen--frost [data-story]')).toBeNull();
+    shell.showResult({ ...RESULT, storyText: "" });
+    expect(root.querySelector('.yz-screen--frost [data-story]')).toBeNull();
+    // 空白串也不算一拍，别在板上留一条空行
+    shell.showResult({ ...RESULT, storyText: "   " });
+    expect(root.querySelector('.yz-screen--frost [data-story]')).toBeNull();
+  });
+
+  it("有掌语就贴在板上（结算这一刻中央短讯被板压着，看不见）", () => {
+    const { shell, root } = mount();
+    shell.showResult({ ...RESULT, storyText: "赢了。掌心还热着呢。" });
+    const line = root.querySelector('.yz-screen--frost [data-story]');
+    expect(line.textContent).toBe("赢了。掌心还热着呢。");
+    expect(line.classList.contains("yz-hintline")).toBe(true);
+    // 不许被当成第四个回程入口（快捷键与去处说明只认 data-entry）
+    expect(line.dataset.entry).toBeUndefined();
+  });
+
+  it("整拍台词直接给数组也贴得上", () => {
+    const { shell, root } = mount();
+    shell.showResult({ ...RESULT, storyText: ["赢了。", "", "胜负是浪，你是船。"] });
+    const line = root.querySelector('.yz-screen--frost [data-story]');
+    expect(line.textContent).toContain("赢了。");
+    expect(line.textContent).toContain("胜负是浪，你是船。");
+  });
+
+  it("掌语排在解锁行之后、回程按钮之前", () => {
+    const { shell, root } = mount();
+    shell.showResult({ ...RESULT, unlocked: ["铁茧"], storyText: "掌心还热着呢。" });
+    const body = root.querySelector(".yz-screen--frost .yz-panel");
+    const kids = [...body.children];
+    const unlockAt = kids.findIndex((n) => n.classList.contains("yz-heading"));
+    const storyAt = kids.findIndex((n) => n.dataset.story === "1");
+    const actionsAt = kids.findIndex((n) => n.classList.contains("yz-btn-stack"));
+    expect(unlockAt).toBeGreaterThan(-1);
+    expect(storyAt).toBeGreaterThan(unlockAt);
+    expect(actionsAt).toBeGreaterThan(storyAt);
+  });
 });
 
 describe("结算板：两个入口分得清去处", () => {

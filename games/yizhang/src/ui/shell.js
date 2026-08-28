@@ -488,6 +488,17 @@ export function createShell(opts) {
     });
     resultEntries = { restart: restart.btn, hub: hub.btn, menu: menuEntry.btn };
 
+    // 掌语（可选）：木棉在结算这一刻有话说才有这一行 —— 中央短讯那条通道这时被
+    // 结算板压着，看不见，所以这一拍直接贴在板上。没有就整行不出现。
+    const storyText = Array.isArray(payload.storyText)
+      ? payload.storyText.filter(Boolean).join("　")
+      : typeof payload.storyText === "string"
+        ? payload.storyText.trim()
+        : "";
+    const story = storyText
+      ? h("p", { class: "yz-hintline", dataset: { story: "1" }, text: storyText })
+      : null;
+
     // append 会把 null 变成字面量 "null" 贴到板上（没解锁新掌的那一局就中招），
     // 条件块必须先滤掉再进 DOM。
     const nodes = [
@@ -497,6 +508,7 @@ export function createShell(opts) {
       payload.unlocked && payload.unlocked.length
         ? h("p", { class: "yz-heading", text: `解锁：${payload.unlocked.join("、")}` })
         : null,
+      story,
       actions([restart.el, hub.el, menuEntry.el]),
     ];
     sheetBody.append(...nodes.filter(Boolean));
