@@ -799,3 +799,36 @@ Round 3 调度指令（父调度器 · 异掌 R3）将本轮验收目标收敛�
 - **W2 hit-stop 零余量哨兵**结转（§11.9；本轮 O3 已锁测化，哨兵照常保留）。
 
 **判定：打磨轮 Round 4 = PASS-WITH-WARNINGS**（判定表与命令原文见 ACCEPTANCE §13.9；复盘六项 6/6 销号、三件套全绿、冻结面零回退、红线零命中；WARNING 全部为环境性延后（真机 / 交互桌面）及既有哨兵（F3 已合入），无实现缺口）。
+
+## 13. 内容轮（P2 · 打击感 / 故事线 / 手套里程碑；look 目录 Round 5）验收记分
+
+### 13.1 P2 实测记分（内容轮 F4 终验席 @ 父分支 `eac8e29`，2026-08-28，全套命令实跑）
+
+**执行口径**：P2 内容轮的终验。父分支 **`cursor/yizhang-feel-db8d`**（自 main `7ba11f1` 拉出，打向 main），本轮由四席复盘驱动：一 P0（打不中——`invulnT` 无人递减，重生 / 过门后永久无敌，命中率 1.9%）+ 两 P1（受击 stun 从未下发 FJ-04 / 无血条下「打在人身上」零读数）+ 两 P2（零对白 → 五拍掌语 / 4 只跨局里程碑掌）。工作分支 `cursor/yizhang-p2-f4-db8d`（仅动本文件、`ACCEPTANCE.md` 与 round5 BRIEF，零 src）。九席中**八席已合入父分支**（O1 sim / O3 combat / F1 数据 / F2 HUD / F3 GDD / O4 壳 / G1 锁测 / G2 probe）；**O2 render 未合入**（分支 `cursor/yizhang-p2-o2-db8d` @ `8813c54` 待收，见 WARNING）。本环境仍无交互桌面与真机——桌面实机手测**未做**、如实标注不装绿，以 966 条单测 + 三 seed probe 硬门替代。命令原文见 ACCEPTANCE §14.1。
+
+**三件套实测**（勾选依据）：
+
+- `npm test`：**966/966（66 文件）**，退出码 0（Round 4 终验基线 842/57 → 966/66，零红零减量。新增 9 文件：`combat/hitstun-timing.test.js`（O3 stun 全时序）、`core/career-settle.test.js` + `core/story-flow.test.js`（O4）、`data/story.test.js`（F1）、`src/p2-g1.test.js`（G1 跨模块验收锁 4 组）、`ui/hud-impact.test.js` / `ui/hud-feel-css.test.js` / `ui/lore.test.js` / `ui/hub-progress.test.js`（F2）；行内扩充：`sim/sim.test.js` 无敌帧走完组（O1）、`combat/hit-feel-budget.test.js` heavy 标记组（O3）、`core/storage.test.js` stats 兼容组（F1）、`tests/glove-data.test.js` 生涯四掌组、`ui/shell.test.js` 结算 storyText 组等）。
+- `npm run probe`：**PASS** 退出码 0，3/3 固定 seed（`0x1a2b3c4d` / `0x5eed1234` / `0xc0ffee42`）。**本轮新增读数全过硬门（G2）**：`respawnSlapHits:1 / respawnSlapWhiffs:0`（三 seed 一致——重生等满 `invulnTime + ε` 后同一记掌**必须打中**，复盘 P0 的判决读数）、`portalInvulnExpirySeconds:1.000`（过门无敌到点归零；`beforeExpiryRemainingSeconds:0.0167 > 0` 同时证明无敌帧没被提前透支）。**命中经济复活的旁证**：`arenaKills` 20 / 18 / 16（Round 4 同 seed 同参基线 1 / 2 / 2——永久无敌把人踢出命中列表时的水平）。R4 读数全部复跑无回退：`cameraSnapMaxDist:7.1` / `modeSwitchCameraMaxDist:≤7.135` / `lookTurnMinAngleDeg:89.38°` / `noSnapFrameMaxDisplacement:≤0.450m` / `lockedForwardMinDot:1`（每 seed 3601 帧）/ `lockedCameraMaxBehindness:-7.1` / `freeStationaryMaxYawDeltaDeg:0` / `freeMoveMaxYawErrorDeg:0.00063` / `snappedFrames:2` / hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`；`wiredCombat:true`、`ai:"think"`、p99StepMs 0.101–0.113、purityFilesScanned 58、横幅 `MODEL_SLUG: yizhang-probe`。
+- `npm run build`：退出码 0；主 chunk 682.23kB / gzip 188.71kB（>500kB 警告既知，含 three），与 R4 终验同数——**本轮内容全走数据表 / 壳层 / HUD，主包零增重**。
+
+**复盘五项销号表（本轮记分主表）**：
+
+| # | 复盘项 | 席 | 判定 | 证据 |
+|---|---|---|---|---|
+| P0-1 | 打不中：`invulnT` 无人递减 → 重生 / 过门永久无敌 | O1 | **关** | `sim/step.js` `tickTimers` 对**活人**减 `invulnT`（头注明示与 `subStep` 死亡分支互斥、与 combat 侧分工——单点递减，无双减）；`combat/statuses.js` `simDrivenPlayer` 分支只把 combat 自发的无敌帧 `max` 上去、自己不减。锁测：`sim/sim.test.js`「重组的无敌帧会自己走完」「过门落地的无敌同样会结束」+ `p2-g1.test.js` 重生 / 过门 `invulnTime + ε` 后下一记可中；probe `respawnSlapHits 1/0 whiff`、`portalInvulnExpiry 1.000s`、arenaKills 1/2/2 → 20/18/16 |
+| P1-1 | 受击 stun 从未下发（FJ-04） | O3 | **关** | `combat/impact.js` `landHit` 只对 `kind === "slap"` 挂 `stun`（八掌主动技各带控制不叠双锁、被弹反那掌提前返回不挂）；时长 `HIT.hitstun 0.32` 与 `tuning.KNOCKBACK.hitstun` 同源、≤ `hitstunMax 0.5`、严格小于最快扇击冷却（无限连不成立，最坏留 0.18s 还手窗）；**只锁出招不锁位移**（`canAct=false`，击退照常送人出岛）。`hitstun-timing.test.js` 锁挂载 → 期间 → 到期清除全时序；`HIT_STOP.max 0.12` 原数未动 |
+| P1-2 | 打击读数：无血条下「打在人身上」不可见 | F2 | **关** | `ui/hud.js` `.yz-knock` 击退累积刻度（读 `view.knockScale` 归一 0..1、62% 起红区 `.is-hot`、挨掌瞬间 `.is-bump` 蹦一下、reset 清零）+ `.yz-reticle.is-hit` 准星命中脉冲（自己打中才亮、≤120ms 自摘、挨打与超时不脉冲）。`hud-impact.test.js` 13 例 + `hud-feel-css.test.js` CSS 合同反查 |
+| P2-1 | 故事线：零对白 → 木棉五拍掌语 | F1+O4+F2+F3 | **关** | `data/story.js` 五拍纯数据表（deepFreeze、trigger 词表五挂点、`once`、全线 ≤20 句单句 ≤18 字）；`core/story-flow.js` 分派 + `main.js` 挂点接线（初来只在**非 skipHub** 的走道落点放、首胜拍领去结算板 `storyText`、掌语不参与放行判断）；`ui/lore.js` 字条队列 ≤3 低干扰、无 `showLore` 退中央短讯；GDD §16 / §16.1 / §17 落文。`story.test.js` / `story-flow.test.js` / `lore.test.js` / `p2-g1.test.js`「skipHub 直通裂岛不挡岛上/结算拍」 |
+| P2-2 | 手套里程碑：4 只跨局生涯掌 | F1+O4+F2 | **关** | `data/gloves.js` 表尾 +4（`cocoon` 铁茧 / `raven` 渡鸦 / `victor` 常胜 / `tumbler` 不倒；skillId 全取现词表、数值全在首发 8 掌包络、识别色互异）；`data/unlocks.js` 4 行 `scope:"career"` 读存档 stats；`core/storage.js` stats +`totalSlapHits` / `portalCrossings`（老档缺字段补 0、结算不清生涯计数）；`main.js` **先 `recordMatch` 再 `evaluateUnlocks`**（次序注释钉死）+ `enterArena` 记 `recordPortalCrossing`；`ui/hub.js` `unlockProgressOf` 锁定提示缀「237/300」。`career-settle.test.js` / `p2-g1.test.js` career 组 / `glove-data.test.js` 扩充。**走道 `PEDESTALS` 仍 8 座**，新掌只上 2D 配掌台 |
+
+**冻结面复验（全零回退）**：`RENDER_YAW_OFFSET = 0`（`core/view.js`，换算实现唯一）；`HIT_STOP` 全表原数（dealt 0.08 / taken 0.065 / heavyBonus 0.035 / heavyPower 16 / **max 0.12 不动** / cooldown 0.22）；再来一局 ≠ 回安全区（`core/entry.js` `ENTRY.RESTART → skipHub:true`，p2-g1 复锁）；走道 8 座未扩（`data/hub.js` `PEDESTALS` 原样）；`lookMode` 缺省 locked（`storage.js` 老档清洗）；缺省 `phase:'hub'`；`QUALITY.low.bloom === false`（`render/config.js`）；隔离面 `git diff --name-only origin/main...HEAD` 全部落在 `games/yizhang/**` 与 `.agent_workspace/**`，本轮零 workflow 改动。
+
+**WARNING 清单（记录不否决）**：
+
+- **O2 render 未合入**（分支 `cursor/yizhang-p2-o2-db8d` @ `8813c54`，三提交待收）：其一，前摇画面与二次挥掌——现 `render/renderer.js` 的 `swing` / `slap` / `hit` 三个事件分支**都在 `playSlap`**，一记命中的掌观感上挥了两次（O2 的 `6debd89` 修的就是这条）；其二，4 生涯掌无专属战斗 VFX——`data/vfx.js` 零命中 `cocoon/raven/victor/tumbler`，`resolveGloveVfx` 兜底木棉形（`gloves.js` 头注已登记「战斗 VFX 条目留给 O2」，属登记过的缺口不属回归）；其三，相机冲击「自己打中」档上调未进。三条全是表现面增强，未合不回退任何既有行为（三件套全绿即证），故记 WARNING 不否决；**下轮第一动作应为收 O2**。
+- **GDD §4.1 / §17「表盘 HUD 尚未接线 / 还没上」已过时**：F2 的 `.yz-knock` 刻度已合入且正读 `view.players[].knockScale`（`hud.js` + `hud-impact.test.js` 在场）。失真方向是文档**少报已交付**（保守向，玩家照读不误导），归 F3 域下轮一行改正；F4 只动验收面、不越权代改 GDD。
+- **`HIT_STOP.heavyPower` 16→12 对齐结转**（§12.8 已登记）：combat 侧「这掌算不算重」已按 `HIT.heavyPowerThreshold 12` 判**一次**随命中记录 / 事件出门（`impact.js` `heavy` 字段，与 `KNOCKBACK.heavyPowerThreshold`、碎地同一条线）；juice 的重击定格档暂按 16 判，灰区 12..16 由 `hit-feel-budget.test.js` 锁死且已证明收拢后不越 0.12 顶。对齐动作归 O 席后续轮。
+- **桌面实机手测未做**（无交互桌面）：本轮表现面新增全部有 jsdom 锁测（HUD 刻度 / 脉冲 / 字条 / 结算 storyText），以 966 测 + 三 seed probe 硬门替代并如实标注，不假装手测；**真机触屏 DEFER** 照旧结转（§12.8）。
+
+**判定：内容轮 P2 = PASS-WITH-WARNINGS**（判定表与命令原文见 ACCEPTANCE §14.1；复盘五项 5/5 销号、三件套全绿、冻结面零回退、红线零命中；WARNING 中唯一的实现缺口是 O2 表现面三条——未合入不回退既有行为，已点名为下轮第一收口项，其余为文档滞后、登记过的对齐结转与环境性延后）。

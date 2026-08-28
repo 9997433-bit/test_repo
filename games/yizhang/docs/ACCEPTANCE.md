@@ -698,3 +698,31 @@ npm run build   # LG-03：退出码 0
 - WARNING 清单：**F3 GDD 已合入**（merge `ff12039`；§15.2 对照表保留登记、§15.6 保留读感，16≠60 复述已去重，§2 `CHARACTERS` 索引格已是一版）；**真机触屏 DEFER** 结转；**§13.4 桌面八步未做**（环境性，如实标注）；**W2 hit-stop 零余量哨兵**结转（本轮 O3 已锁测化）。
 - 修复指派：无实现缺口待派；F3 已合入；真机到位后按 §13.4 复跑销触屏 WARNING。
 - 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（零视觉改动 + 无桌面环境，如实标注）。
+
+## 14. 内容轮（P2 · 打击感 / 故事线 / 手套里程碑）验收判定
+
+### 14.1 异掌内容轮 P2 验收判定（F4 终验席）
+
+- 被验分支/commit：**`cursor/yizhang-feel-db8d` @ `eac8e29`**（九席中八席合入后：O1 invuln 单点递减 / O3 stun 下发 + heavy 标记 / F1 生涯四掌 + `story.js` + stats 扩档（merge `5efd4c7`）/ F2 HUD 刻度 · 脉冲 · 字条 · 里程碑进度（merge `a900961`）/ F3 GDD 玩家表述（merge `3132863`）/ O4 掌语五拍分派 + 生涯累计解锁 `e7ec9e9`（merge `4c0eab7`）/ G1 P2 跨模块锁测（merge `36d86ed`，story skipHub 锁测 `eac8e29` 打开）/ G2 probe 无敌过期断言 `5ea09e7`（merge `446c397`）；**O2 render 未合入** @ `8813c54`）。工作分支 `cursor/yizhang-p2-f4-db8d`（只动 `docs/SOTA_CHECKLIST.md`、本文件与 round5 BRIEF，零 src）。
+- 验收人/日期：Fable-5 终验席 / 2026-08-28（全套命令实跑：`npm ci` → `npm test` → `npm run probe` → `npm run build` → 静态检查与九席合入状态演算）。
+- 结论：**PASS-WITH-WARNINGS**（复盘五项 5/5 销号；WARNING 中唯一实现缺口是 O2 表现面三条（前摇二次挥掌 / 4 掌专属 VFX / 相机冲击上调）——未合入不回退既有行为，点名为下轮第一收口项；其余为 GDD 滞后一句、登记过的 heavyPower 对齐结转与环境性延后；无红线命中）。
+
+| 组 | 通过/总数 | FAIL 项（ID + 一句话现象） |
+|---|---|---|
+| 复盘销号（本轮主表） | 5/5 | 无（P0 invuln 递减 / P1 stun 下发 / P1 打击读数 / P2 五拍掌语 / P2 生涯四掌——逐项证据见 SOTA §13.1 销号表） |
+| 回归门（沿用 LG/HG） | 全绿 | 无（966≥842 零减量；三 seed probe 视角硬门全数复跑无回退；build 退出码 0 且主包零增重；隔离面仅 `games/yizhang/**` + `.agent_workspace/**`） |
+| 冻结面（DISPATCH 红线） | 8/8 | 无（yaw 偏移 0 / `HIT_STOP.max` 0.12 原数 / 再来一局 ≠ 回安全区 / 走道 8 座未扩 / `lookMode` 缺省 locked / 缺省 `phase:'hub'` / low bloom false / 无血条——打击读数走击退累积不上 HP 条） |
+| 红线否决（R/FR/HR/LR 及本轮商标 / 方块人） | 零命中 | 无 |
+
+**命令实测原文摘要**：
+
+- `npm test`：**Test Files 66 passed (66) / Tests 966 passed (966)**，退出码 0（R4 终验 842/57 → 966/66，零减量；新增 9 测试文件与行内扩充分解见 SOTA §13.1）。
+- `npm run probe`：退出码 0，`{"status":"pass","seedCount":3,"steps":3600,"kills":16,"arenaKills":16,"respawnSlapHits":1,"respawnSlapWhiffs":0,"portalInvulnExpiryMaxSeconds":1,"cameraSnapMaxDist":7.1,"modeSwitchCameraMaxDist":7.135,"lookTurnMinAngleDeg":89.38,"noSnapFrameMaxDisplacement":0.4498,"lockedForwardMinDot":1,"freeStationaryMaxYawDeltaDeg":0,"freeMoveMaxYawErrorDeg":0.00063,"p99StepMs":0.113,"ai":"think","wiredCombat":true,…}`；三 seed 逐条——`0x1a2b3c4d`：arenaKills 20、p99 0.113、botSlapAttempts 1755；`0x5eed1234`：arenaKills 18、p99 0.103、botSlapAttempts 1544；`0xc0ffee42`：arenaKills 16、p99 0.101、botSlapAttempts 1394；三条均 `respawn slap 1 hit(s)/0 whiff(s)`、`portal invuln 1.000s`（`invulnerabilityProbe` 五检查位全 1：重生带无敌 / 无敌会过期 / 过期后对扇必中 / 过门无敌撑到截止 / 到点归零）、hubJourney `equippedAtStep:51 / enteredArenaAtStep:227`、`snappedFrames:2`、`lockedTargets:3601`、purityFilesScanned 58；横幅 `MODEL_SLUG: yizhang-probe`。**判决性对照**：arenaKills 基线（R4 同 seed）1/2/2 → 本轮 20/18/16——复盘 P0「永久无敌把人踢出命中列表」修复后命中经济复活。
+- `npm run build`：退出码 0；主 chunk 682.23kB / gzip 188.71kB（与 R4 终验同数——内容全走数据表 / 壳层 / HUD，主包零增重；>500kB 警告既知，含 three）。
+- 静态面：`RENDER_YAW_OFFSET = 0`（`core/view.js` 唯一换算点）；`sim/step.js` `tickTimers` 是活人 `invulnT` 唯一递减点（与 `subStep` 死亡分支互斥、`combat/statuses.js` sim 驱动分支只 max 不减——**无双减**）；`impact.js` `landHit` 只对 slap 挂 `stun 0.32`（= `tuning.KNOCKBACK.hitstun`，≤0.5、< 最快冷却）；`HIT_STOP` 全表原数（max 0.12）；`data/hub.js` `PEDESTALS` 8 座原样；`data/unlocks.js` 4 行 `scope:"career"`、`storage.js` stats 老档补 0；`main.js` 先 `recordMatch` 再 `evaluateUnlocks` 次序注释钉死；隔离 `git diff --name-only origin/main...HEAD` 全落 `games/yizhang/**` + `.agent_workspace/**`（本轮零 workflow 改动）。
+
+**验证方式限定（诚实口径）**：本轮仍无交互桌面与真机——桌面实机手测**未做**，不假装；本轮表现面新增（HUD 刻度 / 准星脉冲 / 掌语字条 / 结算 storyText / 里程碑进度缀）全部有 jsdom 锁测在场，判定以 966 条单测 + 三 seed probe 硬门（重生对扇必中、过门无敌到点归零——复盘 P0 的两条判决读数已入探针常驻）替代并如实标注。
+
+- WARNING 清单：**O2 render 未合入**（`8813c54`：前摇 `slapStart` 起手 + 去二次 `playSlap` / 4 掌专属 VFX / clamp 内相机冲击上调——现状 `renderer.js` 的 swing / slap / hit 三分支都在 `playSlap`、`vfx.js` 四新掌零键兜底木棉；表现面缺口，未合不回退，**下轮第一收口项**）；**GDD §4.1 / §17「表盘 HUD 尚未接线」滞后**（F2 刻度已合入读 `view.knockScale`，保守向失真，归 F3 一行改正）；**`HIT_STOP.heavyPower` 16→12 对齐结转**（combat 侧 12 已单点判定随事件出门，juice 灰区 12..16 有锁）；**桌面实机手测未做 + 真机触屏 DEFER** 结转（环境性）。
+- 修复指派：O2 三提交待收（合入后按 `combat-vfx.test.js` / probe 复跑销号）；F3 下轮顺手改 GDD §4.1 / §17 两句；heavyPower 对齐归 O 席后续轮（动前先复算灰区收拢不越 0.12 顶——测试已备）。
+- 证据包：命令原文（上列）+ probe JSON 三 seed 全文随本轮验收 PR 描述提交；无截图（无交互桌面，如实标注；HUD 表现面证据 = F2 四个新测试文件 jsdom 锁测 27 例在场：`hud-impact` 11 / `lore` 9 / `hub-progress` 4 / `hud-feel-css` 3）。
