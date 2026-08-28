@@ -24,9 +24,13 @@ function distToRect(x, z, rect) {
 const R = HUB.interactRadius;
 
 describe("HUB 布局表（契约 §3.3 形状）", () => {
-  it("恰好 8 座，gloveId 唯一覆盖 8 掌，顺序 = GLOVES 图鉴顺序（硬约束 1）", () => {
+  it("恰好 8 座，gloveId 唯一覆盖首发 8 掌，顺序 = GLOVES 图鉴前缀（硬约束 1）", () => {
+    // P2 内容轮表尾追加了生涯 4 掌，但走道仍 8 座：新掌不上 3D 台座
+    //（GDD §12 / §5.1），台座序 = GLOVES 前 8 的图鉴序。
     expect(HUB.pedestals.length).toBe(8);
-    expect(HUB.pedestals.map((p) => p.gloveId)).toEqual(GLOVES.map((g) => g.id));
+    expect(HUB.pedestals.map((p) => p.gloveId)).toEqual(
+      GLOVES.slice(0, 8).map((g) => g.id),
+    );
   });
 
   it("字段齐全且 JSON 纯净（无 undefined / NaN / Infinity / 函数）", () => {

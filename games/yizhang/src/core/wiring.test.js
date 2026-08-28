@@ -104,7 +104,8 @@ describe("alignSkillIds", () => {
     expect(byId.meteor.skillId).toBe("meteorSlam");
     // 木棉无主动技：data 定稿为空串，align 视为无技能原样放行（也可是 "none"）。
     expect(["", "none"]).toContain(byId.cotton.skillId);
-    expect(remapped).toHaveLength(7);
+    // 12 掌里唯有木棉无技能：11 条被翻译（P2 追加的 4 掌复用首发 skillId 词表）。
+    expect(remapped).toHaveLength(11);
     // 原模块不能被就地改写
     expect(data.GLOVE_BY_ID.granite.skillId).toBe("quake_slam");
   });

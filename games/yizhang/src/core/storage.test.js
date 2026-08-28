@@ -117,6 +117,71 @@ describe("loadSave 的 lookMode 向后兼容", () => {
   });
 });
 
+describe("生涯累计 stats（P2 内容轮：totalSlapHits / portalCrossings）", () => {
+  it("空档默认两个累计字段都是 0", async () => {
+    const { loadSave } = await freshStorageModule(null);
+    const { stats } = loadSave();
+    expect(stats.totalSlapHits).toBe(0);
+    expect(stats.portalCrossings).toBe(0);
+  });
+
+  it("老档（无新字段）spread 补 0，且不动旧计数", async () => {
+    const legacy = {
+      version: 1,
+      stats: { matches: 7, kills: 21, deaths: 9, wins: 2, bestKills: 6 },
+    };
+    const { loadSave } = await freshStorageModule(legacy);
+    const { stats } = loadSave();
+    expect(stats.totalSlapHits).toBe(0);
+    expect(stats.portalCrossings).toBe(0);
+    expect(stats.matches).toBe(7);
+    expect(stats.kills).toBe(21);
+    expect(stats.bestKills).toBe(6);
+  });
+
+  it("recordMatch 累计 totalSlapHits，且保留 portalCrossings 等生涯字段", async () => {
+    const { recordMatch } = await freshStorageModule({
+      version: 1,
+      stats: {
+        matches: 1,
+        kills: 3,
+        deaths: 2,
+        wins: 0,
+        bestKills: 3,
+        totalSlapHits: 40,
+        portalCrossings: 5,
+      },
+    });
+    const next = recordMatch({ kills: 4, deaths: 1, won: true, slapHits: 18 });
+    expect(next.stats.matches).toBe(2);
+    expect(next.stats.wins).toBe(1);
+    expect(next.stats.bestKills).toBe(4);
+    expect(next.stats.totalSlapHits).toBe(58);
+    expect(next.stats.portalCrossings).toBe(5); // 结算一场不清生涯计数
+  });
+
+  it("recordMatch 吃老档（stats 缺新字段）不产出 NaN", async () => {
+    const { recordMatch } = await freshStorageModule({
+      version: 1,
+      stats: { matches: 0, kills: 0, deaths: 0, wins: 0, bestKills: 0 },
+    });
+    const next = recordMatch({ kills: 1, deaths: 0, won: false, slapHits: 9 });
+    expect(next.stats.totalSlapHits).toBe(9);
+    expect(next.stats.portalCrossings).toBe(0);
+  });
+
+  it("recordPortalCrossing 每次 +1 并落盘", async () => {
+    const { loadSave, recordPortalCrossing } = await freshStorageModule(null);
+    recordPortalCrossing();
+    const next = recordPortalCrossing();
+    expect(next.stats.portalCrossings).toBe(2);
+    expect(
+      JSON.parse(globalThis.localStorage.getItem("yizhang-save-v1")).stats.portalCrossings,
+    ).toBe(2);
+    expect(loadSave().stats.portalCrossings).toBe(2);
+  });
+});
+
 describe("updateSave", () => {
   it("换皮肤会落盘，且不碰 loadout", async () => {
     const { loadSave, updateSave } = await freshStorageModule({

@@ -1,8 +1,13 @@
-// 异掌 · 局内解锁挑战（存档 key `yizhang-save-v1` 由 UI/core 层负责，这里只定义规格）
-// event 是 sim 侧可机判的事件类型，params 为判定参数。全部单局内完成（scope: "match"）。
-
+// 异掌 · 解锁挑战（存档 key `yizhang-save-v1` 由 UI/core 层负责，这里只定义规格）
+//
+// 两种 scope：
+// - "match"  单局内完成：event 是 sim 侧可机判的事件类型，params 为判定参数。
+// - "career" 生涯累计（P2 内容轮）：不发局内事件，stat 指向存档 stats 的累计字段
+//   （src/core/storage.js DEFAULTS.stats），isGloveUnlocked 直接对照 count。
+//   core 的单局 progressMeets 不认识 career 规格（无 event ⇒ 落 default false），
+//   生涯掌不会被局内结算误报「本局新解锁」。
 /**
- * 事件类型约定（sim 结算时发出，挑战系统计数）：
+ * 事件类型约定（sim 结算时发出，挑战系统计数；仅 scope:"match" 用）：
  * - slap_hit        每次扇击命中
  * - kill            击杀（带 context: { afterDashSeconds, victimRimDistance, sinceLastKillSeconds, sinceTakenHitSeconds, victimWasAttacker }）
  * - match_win       胜场（带 context: { deaths }）
@@ -78,6 +83,48 @@ export const UNLOCKS = [
     scope: "match",
     event: "awaken",
     count: 2,
+    params: {},
+  },
+
+  // ---- 生涯累计解锁（P2 内容轮；stat = 存档 stats 字段名，见文件头注释）----
+  {
+    id: "unlock_cocoon",
+    gloveId: "cocoon",
+    name: "百炼成茧",
+    desc: "生涯累计命中 300 次扇击",
+    scope: "career",
+    stat: "totalSlapHits",
+    count: 300,
+    params: {},
+  },
+  {
+    id: "unlock_raven",
+    gloveId: "raven",
+    name: "掠门之羽",
+    desc: "生涯累计穿过传送门 20 次",
+    scope: "career",
+    stat: "portalCrossings",
+    count: 20,
+    params: {},
+  },
+  {
+    id: "unlock_victor",
+    gloveId: "victor",
+    name: "十胜成名",
+    desc: "生涯累计取得 10 场胜利",
+    scope: "career",
+    stat: "wins",
+    count: 10,
+    params: {},
+  },
+  {
+    id: "unlock_tumbler",
+    gloveId: "tumbler",
+    name: "屡仆屡起",
+    desc: "生涯累计打满 25 场对局",
+    scope: "career",
+    stat: "matches",
+    count: 25,
     params: {},
   },
 ];

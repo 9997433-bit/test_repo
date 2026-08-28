@@ -8,3 +8,4 @@ export { UNLOCKS, UNLOCK_BY_ID, UNLOCK_BY_GLOVE } from "./unlocks.js";
 export { HUB } from "./hub.js";
 export { SKINS, SKIN_BY_ID, DEFAULT_SKIN_ID, resolveSkin } from "./skins.js";
 export { GLOVE_VFX, GLOVE_VFX_BY_ID, GLOVE_VFX_BY_SKILL, resolveGloveVfx } from "./vfx.js";
+export { STORY, STORY_BY_ID } from "./story.js";
