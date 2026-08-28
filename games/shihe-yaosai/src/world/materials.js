@@ -8,8 +8,6 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { RawCubeTexture } from "@babylonjs/core/Materials/Textures/rawCubeTexture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 
-import { PALETTE } from "./constants.js";
-
 /** [r,g,b] -> Color3。 */
 export function color3(rgb) {
   return new Color3(rgb[0], rgb[1], rgb[2]);
@@ -149,7 +147,6 @@ export function createAdditive(scene, name, rgb, opts = {}) {
   mat.alpha = opts.alpha ?? 1;
   mat.alphaMode = Constants.ALPHA_ADD;
   mat.disableDepthWrite = true;
-  mat.freeze?.();
   return mat;
 }
 
@@ -168,6 +165,3 @@ export function createUnlitVertexColor(scene, name, opts = {}) {
   }
   return mat;
 }
-
-export const FOG_COLOR = color3(PALETTE.fog);
-export const BACKGROUND_COLOR = PALETTE.background;
