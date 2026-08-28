@@ -1,5 +1,7 @@
-// 蚀核要塞 · 波次与 Boss（Fable-3 冻结，Round 1）
-// 20 波数据完整；Round 1 sim 只需跑前 5 波（WAVES.slice(0, 5)），后续波不改结构直接续跑。
+// 蚀核要塞 · 波次与 Boss（Fable-3，Round 2 修订）
+// 20 波数据完整；probe 基线跑前 5 波（WAVES.slice(0, 5)），后续波不改结构直接续跑。
+// 首怪入场时刻 = CONFIG.firstWaveDelay + 波 1 首组 delay = 0.5 + 0 = 0.5s（Round 2 冻结 ≤2s）。
+// Round 2 微调：波 18/19/20 hpMul 2.1/2.3/2.5 → 2.15/2.4/2.6，收紧终盘；波 1–5 未动。
 //
 // 每波字段：
 //   wave     波号 1..20
@@ -97,17 +99,17 @@ export const WAVES = [
     { enemy: "wisp", count: 8, lane: 2, delay: 2, interval: 0.4 },
     { enemy: "mote", count: 8, lane: 0, delay: 4, interval: 0.7 },
   ] },
-  { wave: 18, hpMul: 2.1, bonus: 58, groups: [
+  { wave: 18, hpMul: 2.15, bonus: 58, groups: [
     { enemy: "veil", count: 10, lane: 1, delay: 0, interval: 1.0 },
     { enemy: "oracle", count: 2, lane: 0, delay: 4, interval: 5.0 },
     { enemy: "ram", count: 4, lane: 2, delay: 6, interval: 2.2 },
   ] },
-  { wave: 19, hpMul: 2.3, bonus: 62, groups: [
+  { wave: 19, hpMul: 2.4, bonus: 62, groups: [
     { enemy: "warden", count: 3, lane: 0, delay: 0, interval: 4.5 },
     { enemy: "husk", count: 12, lane: 1, delay: 1, interval: 0.7 },
     { enemy: "brood", count: 2, lane: 2, delay: 3, interval: 4.0 },
   ] },
-  { wave: 20, hpMul: 2.5, bonus: 80, groups: [
+  { wave: 20, hpMul: 2.6, bonus: 80, groups: [
     { enemy: "warden", count: 2, lane: 0, delay: 0, interval: 5.0 },
     { enemy: "oracle", count: 2, lane: 1, delay: 2, interval: 5.0 },
     { enemy: "brood", count: 2, lane: 2, delay: 4, interval: 5.0 },
@@ -116,7 +118,7 @@ export const WAVES = [
   ] },
 ];
 
-// Boss「蚀主」：第 20 波清完、interWaveDelaySec 后单独登场。
+// Boss「蚀主」：第 20 波清完、CONFIG.interWaveDelay 秒后单独登场。
 // 相位按当前血量百分比从上往下取第一条满足 hp/maxHp <= hpPct 的（1.0 相位即开场）。
 // 进入新相位时：切护甲、乘 speedMul（对基础 speed）、按 summon 出一组小怪。
 // 漏敌扣核 20 = 核满血也直接归零：Boss 必须拦下。
