@@ -1,61 +1,87 @@
 // 纯模拟核心：不引入渲染层，不触碰任何浏览器全局。
 // 固定步长推进，保证同 seed + 同输入序列 => 同结果。
+//
+// 数值全部来自 src/data 的正式出口（见 ./config.js），本文件只实现机制：
+//   hitscan(rail) / beam(prism) / burst(scatter) / aura(well) / missile(star)
+// 伤害在「开火 tick」即时结算（契约 §3.5），弹道与力场环纯属视觉。
 import { createRng, nextFloat, nextInt, nextRange } from "./rng.js";
-import { dist3, distPointSegment, lerpPoint, pathLengths, polar, round4, socketAngle, TAU } from "./geom.js";
-import { resolveConfig, resolveCounters, resolveEnemies, resolveTowers, resolveWaves, TOWER_IDS } from "./config.js";
+import { dist3, num0, pathLengths, polar, round4, socketAngle, TAU, wrapAngle } from "./geom.js";
+import {
+  MAX_SHOTS,
+  MUZZLE_Y,
+  SOCKET_HP,
+  THETA_SPREAD,
+  TOWER_IDS,
+  resolveConfig,
+  resolveCounters,
+  resolveEnemies,
+  resolveTowerLevels,
+  resolveTowers,
+  resolveWaves,
+} from "./config.js";
 
 export const FIXED_DT = 1 / 60;
+const MAX_DT = 0.1; // 契约 simMaxDt：单次 step 的 dtSec 上限
 const MAX_STEPS_PER_CALL = 900; // 单次 step 最多推进 15 秒模拟时间
-const SPLASH_FACTOR = 0.6;
-const SOCKET_MUZZLE_Y = 2.4;
-const SOCKET_HP = 100;
+
+// 纯视觉参数（不参与结算）
+const TRACER_SEC = 0.14; // 轨炮曳光存活
+const PELLET_SPEED = 70; // 霰星弹丸视觉速度
+const PULSE_SEC = 0.7; // 坠井脉冲环扩张时长
+const AURA_PULSE_SEC = 1.1; // 坠井多久放一次脉冲环
+const BEAM_SHIMMER = 2.5; // 棱镜光束的呼吸频率（周期/秒）
 
 function makeSocket(i, cfg) {
   const theta = socketAngle(i, cfg.socketCount);
-  const p = polar(theta, cfg.ringRadius, SOCKET_MUZZLE_Y);
+  const p = polar(theta, cfg.ringRadius, cfg.muzzleY);
   return {
     i,
     theta,
     x: p.x,
     y: p.y,
     z: p.z,
+    muzzle: { x: p.x, y: p.y, z: p.z },
     towerId: null,
+    level: 1,
     cooldown: 0,
     overclockT: 0,
     overheatT: 0,
-    hp: SOCKET_HP,
+    hp: 0,
+    aim: null,
+    beam: null,
+    beam2: null,
+    invested: 0,
+    fieldId: 0,
     kills: 0,
     damage: 0,
     shots: 0,
   };
 }
 
-/** 创建一局。options.waveCount 可裁剪波数（Round 1 冒烟只跑 5 波）。 */
+/** 创建一局。options.waveCount 可裁剪波数（冒烟只跑 5 波）。 */
 export function createMatch(seed = 1, options = {}) {
+  const opts = options && typeof options === "object" ? options : {};
   const cfg = resolveConfig();
-  const towers = resolveTowers();
-  const counters = resolveCounters();
-  const enemyTypes = resolveEnemies();
-  const requested = Number.isFinite(options.waveCount) ? Math.max(1, Math.round(options.waveCount)) : cfg.waveCount;
-  const waves = resolveWaves(requested);
+  const waves = resolveWaves(opts.waveCount);
 
   const sockets = [];
   for (let i = 0; i < cfg.socketCount; i += 1) sockets.push(makeSocket(i, cfg));
 
-  const match = {
+  return {
     seed,
     rng: createRng(seed),
     cfg,
-    towers,
-    counters,
-    enemyTypes,
+    towers: resolveTowers(),
+    towerLevels: resolveTowerLevels(),
+    counters: resolveCounters(),
+    enemyTypes: resolveEnemies(),
     waves,
     waveCount: waves.length,
     time: 0,
     tick: 0,
     accumulator: 0,
     phase: "prep",
-    phaseT: cfg.firstPrepSec,
+    phaseT: cfg.firstWaveSec,
     wave: 1,
     waveTime: 0,
     pending: [],
@@ -75,16 +101,29 @@ export function createMatch(seed = 1, options = {}) {
     nextEnemyId: 1,
     nextShotId: 1,
     nextFieldId: 1,
-    stats: { kills: 0, leaks: 0, placed: 0, denied: 0, damage: 0, spawned: 0, wavesCleared: 0 },
+    stats: { kills: 0, leaks: 0, placed: 0, upgraded: 0, sold: 0, denied: 0, damage: 0, spawned: 0, wavesCleared: 0 },
   };
-  return match;
+}
+
+// ---------------------------------------------------------------- 塔与等级
+
+/** 插座当前等级的完整数值（data 的 levels[k] 是整套数值，不做字段合并）。 */
+function specOf(match, socket) {
+  if (!socket.towerId) return null;
+  const levels = match.towerLevels[socket.towerId];
+  if (!levels) return null;
+  return levels[Math.min(levels.length, Math.max(1, socket.level)) - 1] || null;
+}
+
+/** 下一级数值；已满级返回 null。 */
+function nextLevelOf(match, socket) {
+  if (!socket.towerId) return null;
+  const levels = match.towerLevels[socket.towerId];
+  if (!levels || socket.level >= levels.length) return null;
+  return levels[socket.level];
 }
 
 // ---------------------------------------------------------------- 输入处理
-
-function towerSpec(match, towerId) {
-  return typeof towerId === "string" ? match.towers[towerId] || null : null;
-}
 
 function deny(match, events, reason, extra) {
   match.stats.denied += 1;
@@ -101,18 +140,81 @@ function tryPlace(match, place, events) {
   if (!Number.isInteger(idx) || idx < 0 || idx >= match.sockets.length) {
     return deny(match, events, "badSocket", { socket: place.socket, towerId });
   }
-  const spec = towerSpec(match, towerId);
+  const spec = typeof towerId === "string" ? match.towers[towerId] : null;
   if (!spec) return deny(match, events, "unknownTower", { socket: idx, towerId });
   const socket = match.sockets[idx];
   if (socket.towerId) return deny(match, events, "occupied", { socket: idx, towerId });
   if (match.scrap < spec.cost) return deny(match, events, "scrap", { socket: idx, towerId, cost: spec.cost });
+
   match.scrap -= spec.cost;
   socket.towerId = spec.id;
-  socket.cooldown = spec.cd * 0.35;
+  socket.level = 1;
+  socket.hp = SOCKET_HP;
+  socket.cooldown = spec.kind === "aura" ? 0 : spec.cd * 0.35;
   socket.overclockT = 0;
   socket.overheatT = 0;
+  socket.invested = spec.cost;
+  if (spec.kind === "aura" && socket.fieldId === 0) socket.fieldId = match.nextFieldId++;
   match.stats.placed += 1;
   events.push({ type: "place", socket: idx, towerId: spec.id, cost: spec.cost, t: round4(match.time) });
+}
+
+/**
+ * 升级：契约 §2 的 upgradeSocket。data 的 levels[k] 是整套数值，
+ * 升级即整体换成下一级（cost = levels[k].cost），不改朝向、不重置过载。
+ */
+function tryUpgrade(match, socketIndex, events) {
+  const idx = Math.round(Number(socketIndex));
+  if (match.over) return deny(match, events, "over", { socket: idx });
+  if (!Number.isInteger(idx) || idx < 0 || idx >= match.sockets.length) {
+    return deny(match, events, "badSocket", { socket: socketIndex });
+  }
+  const socket = match.sockets[idx];
+  if (!socket.towerId) return deny(match, events, "empty", { socket: idx });
+  const next = nextLevelOf(match, socket);
+  if (!next) return deny(match, events, "maxLevel", { socket: idx, towerId: socket.towerId });
+  if (match.scrap < next.cost) {
+    return deny(match, events, "scrap", { socket: idx, towerId: socket.towerId, cost: next.cost });
+  }
+
+  match.scrap -= next.cost;
+  socket.level = next.level;
+  socket.invested += next.cost;
+  match.stats.upgraded += 1;
+  events.push({
+    type: "upgrade",
+    socket: idx,
+    towerId: socket.towerId,
+    level: socket.level,
+    cost: next.cost,
+    t: round4(match.time),
+  });
+}
+
+/** 出售：按已投入总额 × CONFIG.sellRefund 向下取整返还（契约 §2 的 sellSocket）。 */
+function trySell(match, socketIndex, events) {
+  const idx = Math.round(Number(socketIndex));
+  if (match.over) return deny(match, events, "over", { socket: idx });
+  if (!Number.isInteger(idx) || idx < 0 || idx >= match.sockets.length) {
+    return deny(match, events, "badSocket", { socket: socketIndex });
+  }
+  const socket = match.sockets[idx];
+  if (!socket.towerId) return deny(match, events, "empty", { socket: idx });
+
+  const towerId = socket.towerId;
+  const refund = Math.floor(socket.invested * match.cfg.sellRefund);
+  releaseBeam(match, socket);
+  socket.towerId = null;
+  socket.level = 1;
+  socket.invested = 0;
+  socket.hp = 0;
+  socket.cooldown = 0;
+  socket.overclockT = 0;
+  socket.overheatT = 0;
+  socket.aim = null;
+  match.scrap += refund;
+  match.stats.sold += 1;
+  events.push({ type: "sell", socket: idx, towerId, refund, t: round4(match.time) });
 }
 
 function tryOverclock(match, socketIndex, events) {
@@ -126,65 +228,84 @@ function tryOverclock(match, socketIndex, events) {
   if (socket.overheatT > 0) return deny(match, events, "overheat", { socket: idx });
   if (socket.overclockT > 0) return deny(match, events, "busy", { socket: idx });
   socket.overclockT = match.cfg.overclockSec;
-  events.push({ type: "overclock", socket: idx, towerId: socket.towerId, sec: match.cfg.overclockSec, t: round4(match.time) });
+  events.push({
+    type: "overclock",
+    socket: idx,
+    towerId: socket.towerId,
+    sec: round4(match.cfg.overclockSec),
+    t: round4(match.time),
+  });
 }
 
 // ---------------------------------------------------------------- 敌人
 
 function enemyPos(match, e) {
-  return polar(e.theta, effectiveRadius(match, e), e.y);
-}
-
-function effectiveRadius(match, e) {
-  const r = e.radius + e.rOffset;
-  return r < 0 ? 0 : r;
+  return polar(e.theta, e.radius, e.y);
 }
 
 function spawnEnemy(match, entry, events) {
-  const base = match.enemyTypes[entry.kind] || match.enemyTypes.small;
-  const hp = Math.max(1, Math.round(base.hp * entry.hpScale));
-  const lane = entry.lane;
+  const base = match.enemyTypes[entry.kind];
+  if (!base) return;
+  const cfg = match.cfg;
+  const lane = base.lane !== null && base.lane !== undefined ? base.lane : entry.lane;
+  const laneIdx = lane >= 0 && lane < cfg.laneY.length ? lane : 0;
+  const hp = Math.max(1, Math.ceil(base.hp * entry.hpMul));
   const e = {
     id: match.nextEnemyId++,
     kind: base.kind,
-    lane,
+    name: base.name,
+    sizeClass: base.sizeClass,
+    scale: base.scale,
+    lane: laneIdx,
     theta: entry.theta,
-    thetaDrift: entry.thetaDrift,
-    radius: match.cfg.spawnRadius,
-    rOffset: 0,
-    y: match.cfg.laneY[lane] !== undefined ? match.cfg.laneY[lane] : 0,
+    drift: entry.drift,
+    radius: cfg.spawnRadius,
+    y: cfg.laneY[laneIdx],
     hp,
     maxHp: hp,
     armor: base.armor,
-    baseSpeed: base.speed * entry.speedScale,
-    speedMul: 1,
-    slowT: 0,
-    scrap: base.scrap,
+    speed0: base.speed,
+    baseSpeed: base.speed,
+    slow: 1,
+    bounty: base.bounty,
     leak: base.leak,
-    size: base.size,
+    boss: base.boss,
+    phases: base.phases,
+    phaseIndex: base.phases ? 0 : -1,
+    killedBy: null,
     wave: entry.wave,
   };
   match.enemies.push(e);
   match.stats.spawned += 1;
-  events.push({ type: "spawn", id: e.id, kind: e.kind, lane: e.lane, wave: e.wave, t: round4(match.time) });
+  events.push({
+    type: "spawn",
+    id: e.id,
+    kind: e.kind,
+    lane: e.lane,
+    wave: e.wave,
+    boss: e.boss,
+    t: round4(match.time),
+  });
 }
 
-function killEnemy(match, e, index, events, byTower, bySocket) {
-  match.enemies.splice(index, 1);
-  match.scrap += e.scrap;
+function creditKill(match, e, events) {
+  match.scrap += e.bounty;
   match.stats.kills += 1;
-  const credited = Number.isInteger(bySocket) ? match.sockets[bySocket] : null;
-  if (credited) credited.kills += 1;
+  const by = e.killedBy;
+  const socket = by && Number.isInteger(by.socket) ? match.sockets[by.socket] : null;
+  if (socket) socket.kills += 1;
+  const p = enemyPos(match, e);
   events.push({
     type: "kill",
     id: e.id,
     kind: e.kind,
     lane: e.lane,
-    scrap: e.scrap,
-    by: byTower || null,
-    x: round4(Math.cos(e.theta) * effectiveRadius(match, e)),
-    y: round4(e.y),
-    z: round4(Math.sin(e.theta) * effectiveRadius(match, e)),
+    scrap: e.bounty,
+    by: by ? by.towerId : null,
+    socket: by && Number.isInteger(by.socket) ? by.socket : null,
+    x: round4(p.x),
+    y: round4(p.y),
+    z: round4(p.z),
     t: round4(match.time),
   });
 }
@@ -193,7 +314,15 @@ function leakEnemy(match, e, index, events) {
   match.enemies.splice(index, 1);
   match.coreHp -= e.leak;
   match.stats.leaks += 1;
-  events.push({ type: "leak", id: e.id, kind: e.kind, lane: e.lane, damage: e.leak, coreHp: Math.max(0, match.coreHp), t: round4(match.time) });
+  events.push({
+    type: "leak",
+    id: e.id,
+    kind: e.kind,
+    lane: e.lane,
+    damage: e.leak,
+    coreHp: Math.max(0, round4(match.coreHp)),
+    t: round4(match.time),
+  });
   if (match.coreHp <= 0 && !match.over) {
     match.coreHp = 0;
     match.over = true;
@@ -203,60 +332,107 @@ function leakEnemy(match, e, index, events) {
   }
 }
 
-function damageEnemy(match, e, rawDmg, towerId, events) {
-  const table = match.counters[towerId] || { shell: 1, shield: 1, swarm: 1 };
-  const mul = typeof table[e.armor] === "number" ? table[e.armor] : 1;
-  const dealt = rawDmg * mul;
+function applyDamage(match, e, raw, towerId, socketIndex) {
+  if (e.hp <= 0 || !(raw > 0)) return 0;
+  const row = match.counters[towerId];
+  const mul = row && typeof row[e.armor] === "number" ? row[e.armor] : 1;
+  const dealt = raw * mul;
+  if (!(dealt > 0)) return 0;
   e.hp -= dealt;
   match.stats.damage += dealt;
+  const socket = match.sockets[socketIndex];
+  if (socket) socket.damage += dealt;
+  if (e.hp <= 0) {
+    e.hp = 0;
+    if (!e.killedBy) e.killedBy = { towerId, socket: socketIndex };
+  }
   return dealt;
+}
+
+function reapDead(match, events) {
+  let dead = false;
+  for (const e of match.enemies) {
+    if (e.hp <= 0) {
+      dead = true;
+      break;
+    }
+  }
+  if (!dead) return;
+  const alive = [];
+  for (const e of match.enemies) {
+    if (e.hp > 0) alive.push(e);
+    else creditKill(match, e, events);
+  }
+  match.enemies = alive;
+}
+
+/** 蚀主按血量百分比切相位：换护甲、提速、召唤小怪。 */
+function updateBossPhases(match, events) {
+  for (const e of match.enemies) {
+    if (!e.phases || e.hp <= 0) continue;
+    const pct = e.hp / e.maxHp;
+    let idx = 0;
+    for (let i = 0; i < e.phases.length; i += 1) {
+      if (pct <= e.phases[i].hpPct) idx = i;
+    }
+    if (idx === e.phaseIndex) continue;
+    e.phaseIndex = idx;
+    const phase = e.phases[idx];
+    e.armor = phase.armor;
+    e.baseSpeed = e.speed0 * phase.speedMul;
+    if (phase.summon && phase.summon.count > 0 && match.enemyTypes[phase.summon.kind]) {
+      enqueueSummon(match, phase.summon);
+    }
+    events.push({
+      type: "phase",
+      id: e.id,
+      kind: e.kind,
+      phase: idx + 1,
+      armor: e.armor,
+      t: round4(match.time),
+    });
+  }
+}
+
+function enqueueSummon(match, summon) {
+  const cfg = match.cfg;
+  const arc = socketAngle(nextInt(match.rng, cfg.socketCount), cfg.socketCount);
+  let seq = match.pending.length;
+  for (let k = 0; k < summon.count; k += 1) {
+    match.pending.push({
+      seq: seq++,
+      at: match.waveTime + k * summon.interval,
+      kind: summon.kind,
+      lane: summon.lane,
+      theta: wrapAngle(arc + (nextFloat(match.rng) - 0.5) * THETA_SPREAD),
+      drift: (nextFloat(match.rng) < 0.5 ? -1 : 1) * nextRange(match.rng, 0.01, 0.05),
+      hpMul: 1,
+      wave: match.wave,
+    });
+  }
+  match.pending.sort((a, b) => a.at - b.at || a.seq - b.seq);
 }
 
 // ---------------------------------------------------------------- 索敌
 
-function inRange(match, socket, spec, e) {
-  return dist3(socket, enemyPos(match, e)) <= spec.range;
+function inLane(spec, e) {
+  return !spec.lanes || spec.lanes.length === 0 || spec.lanes.indexOf(e.lane) >= 0;
 }
 
-function acquireTarget(match, socket, spec, excludeId) {
-  const list = match.enemies;
+/**
+ * 契约 §3.4：射程内取 radius 最小者，平局取 id 最小。
+ * targeting === 'maxHp' 时先比当前血量（星弩点名精英/Boss）。
+ */
+function acquireTarget(match, origin, spec, excludeId) {
   let best = null;
   let bestScore = 0;
-  for (let i = 0; i < list.length; i += 1) {
-    const e = list[i];
-    if (excludeId && e.id === excludeId) continue;
-    const p = enemyPos(match, e);
-    const d = dist3(socket, p);
-    if (d > spec.range) continue;
-    let score;
-    switch (spec.targeting) {
-      case "first": // 最靠近星核的先打
-        score = 1000 - effectiveRadius(match, e);
-        break;
-      case "nearest":
-        score = 1000 - d;
-        break;
-      case "cluster": {
-        // 周围同伴最多的目标，配合溅射
-        const r = Math.max(spec.splash, 6);
-        let n = 0;
-        for (let j = 0; j < list.length; j += 1) {
-          if (dist3(p, enemyPos(match, list[j])) <= r) n += 1;
-        }
-        score = n * 100 + (1000 - d) * 0.01;
-        break;
-      }
-      case "fastest":
-        score = e.baseSpeed * e.speedMul * 100 + (1000 - d) * 0.001;
-        break;
-      case "strongest":
-        score = e.hp + (1000 - effectiveRadius(match, e)) * 0.01;
-        break;
-      default:
-        score = 1000 - d;
-        break;
-    }
-    if (best === null || score > bestScore) {
+  for (const e of match.enemies) {
+    if (e.hp <= 0) continue;
+    if (excludeId !== null && e.id === excludeId) continue;
+    if (!inLane(spec, e)) continue;
+    if (dist3(origin, enemyPos(match, e)) > spec.range) continue;
+    const score = spec.targeting === "maxHp" ? e.hp : -e.radius;
+    if (best === null || score > bestScore || (score === bestScore && e.id < best.id)) {
       best = e;
       bestScore = score;
     }
@@ -264,245 +440,255 @@ function acquireTarget(match, socket, spec, excludeId) {
   return best;
 }
 
-// ---------------------------------------------------------------- 开火
+function aimAt(socket, point) {
+  socket.aim = Math.atan2(point.z - socket.z, point.x - socket.x);
+}
 
-function makeShot(match, socket, spec, points, hits, extra) {
-  const { segs, total } = pathLengths(points);
+// ---------------------------------------------------------------- 弹道（纯视觉）
+
+function shotLife(spec, total) {
+  switch (spec.shotKind) {
+    case "pellet":
+      return Math.max(0.08, total / PELLET_SPEED);
+    case "arc":
+      return spec.projectileSpeed > 0 ? Math.max(0.1, total / spec.projectileSpeed) : 0.4;
+    case "pulse":
+      return PULSE_SEC;
+    default:
+      return TRACER_SEC;
+  }
+}
+
+function attachShot(match, shot) {
+  while (match.shots.length >= MAX_SHOTS) {
+    const dropped = match.shots.shift();
+    if (dropped && dropped.beam) {
+      const owner = match.sockets[dropped.socket];
+      if (owner && owner.beam === dropped) owner.beam = null;
+      if (owner && owner.beam2 === dropped) owner.beam2 = null;
+    }
+  }
+  match.shots.push(shot);
+}
+
+function pushShot(match, socket, spec, points, extra) {
+  const { total } = pathLengths(points);
   const shot = {
     id: match.nextShotId++,
-    kind: spec.shotKind || spec.id,
+    kind: spec.shotKind,
     towerId: spec.id,
     socket: socket.i,
-    points: points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-    segs,
-    total: Math.max(total, 0.001),
-    speed: spec.projSpeed,
-    traveled: 0,
+    points,
+    life: shotLife(spec, total),
+    age: 0,
     t: 0,
-    hits,
-    homing: !!spec.homing,
+    beam: false,
+    radius: 0,
+    relay: null,
+    segment: 1,
+    targetId: 0,
     overclocked: socket.overclockT > 0,
   };
   if (extra) Object.assign(shot, extra);
-  match.shots.push(shot);
-  socket.shots += 1;
+  attachShot(match, shot);
   return shot;
 }
 
-/** 棱镜折光：主光束若经过另一座棱镜 18 单位内，折一次（共 2 段）。 */
-function prismPath(match, socket, spec, target) {
-  const start = { x: socket.x, y: socket.y, z: socket.z };
-  const targetPos = enemyPos(match, target);
-  const hits = [{ dist: dist3(start, targetPos), targetId: target.id, dmg: 0, splash: 0 }];
-  const points = [start, targetPos];
-  if (match.cfg.prismMaxSegments < 2) return { points, hits, relayId: null };
-
-  let relay = null;
-  let relayDist = Infinity;
-  for (let i = 0; i < match.sockets.length; i += 1) {
-    const s = match.sockets[i];
-    if (s.i === socket.i || s.towerId !== "prism") continue;
-    const d = distPointSegment(s, start, targetPos);
-    if (d <= match.cfg.prismBendRadius && d < relayDist) {
-      relay = s;
-      relayDist = d;
-    }
+/**
+ * 棱镜光束是常驻实体：同一座塔持续开火时 id 不变，渲染层不必反复建/毁网格。
+ * 契约 §3.6：段1 与段2 各是一条独立的 kind:'beam' ShotView（段2 的 relay = 折射塔插座号）。
+ */
+function updateBeam(match, socket, spec, key, from, to, targetId, relayIndex, dt) {
+  let beam = socket[key];
+  if (!beam) {
+    beam = {
+      id: match.nextShotId++,
+      kind: spec.shotKind,
+      towerId: spec.id,
+      socket: socket.i,
+      points: [from, to],
+      life: 0,
+      age: 0,
+      t: 0,
+      beam: true,
+      radius: 0,
+      relay: relayIndex,
+      segment: key === "beam" ? 1 : 2,
+      targetId,
+      overclocked: false,
+    };
+    socket[key] = beam;
+    socket.shots += 1;
+    attachShot(match, beam);
   }
-  if (!relay) return { points, hits, relayId: null };
-
-  // 折射优先打另一个目标；没有第二个目标时，折回主目标补一段弱光。
-  let second = acquireTarget(match, relay, spec, target.id);
-  if (!second && dist3(relay, targetPos) <= spec.range) second = target;
-  if (!second) return { points, hits, relayId: null };
-
-  const relayPos = { x: relay.x, y: relay.y, z: relay.z };
-  const secondPos = enemyPos(match, second);
-  const bent = [start, relayPos, secondPos];
-  const d1 = dist3(start, relayPos);
-  const d2 = dist3(relayPos, secondPos);
-  return {
-    points: bent,
-    hits: [
-      { dist: d1, targetId: target.id, dmg: 0, splash: 0 },
-      { dist: d1 + d2, targetId: second.id, dmg: 0, splash: 0, factor: match.cfg.prismRelayFactor },
-    ],
-    relayId: relay.i,
-  };
+  beam.points = [from, to];
+  beam.relay = relayIndex;
+  beam.targetId = targetId;
+  beam.overclocked = socket.overclockT > 0;
+  beam.t = (beam.t + dt * BEAM_SHIMMER) % 1;
 }
 
-function fire(match, socket, spec, events) {
-  const target = acquireTarget(match, socket, spec, null);
-  if (!target) return false;
-  const dmgMul = socket.overclockT > 0 ? match.cfg.overclockMul : 1;
-  const baseDmg = spec.dmg * dmgMul;
-  const start = { x: socket.x, y: socket.y, z: socket.z };
+function releaseSegment(match, socket, key) {
+  const beam = socket[key];
+  if (!beam) return;
+  const idx = match.shots.indexOf(beam);
+  if (idx >= 0) match.shots.splice(idx, 1);
+  socket[key] = null;
+}
 
-  if (spec.id === "prism") {
-    const path = prismPath(match, socket, spec, target);
-    for (const hit of path.hits) hit.dmg = baseDmg * (hit.factor || 1);
-    makeShot(match, socket, spec, path.points, path.hits, { relay: path.relayId, targetId: target.id });
-    return true;
+function releaseBeam(match, socket) {
+  releaseSegment(match, socket, "beam");
+  releaseSegment(match, socket, "beam2");
+}
+
+function updateShots(match, dt) {
+  for (let i = match.shots.length - 1; i >= 0; i -= 1) {
+    const shot = match.shots[i];
+    if (shot.beam) continue;
+    shot.age += dt;
+    if (shot.age >= shot.life) {
+      match.shots.splice(i, 1);
+      continue;
+    }
+    shot.t = shot.life > 0 ? shot.age / shot.life : 1;
   }
+}
 
-  const targetPos = enemyPos(match, target);
-  const hits = [
-    {
-      dist: dist3(start, targetPos),
-      targetId: target.id,
-      dmg: baseDmg,
-      splash: spec.splash,
-      field: spec.id === "well" ? { radius: spec.fieldRadius, sec: spec.fieldSec, slowMul: spec.slowMul, pullRate: spec.pullRate, pullMax: spec.pullMax } : null,
-    },
-  ];
-  makeShot(match, socket, spec, [start, targetPos], hits, { targetId: target.id });
+// ---------------------------------------------------------------- 开火
+
+function fireSingle(match, socket, spec, mul) {
+  const target = acquireTarget(match, socket.muzzle, spec, null);
+  if (!target) return false;
+  const pos = enemyPos(match, target);
+  aimAt(socket, pos);
+  applyDamage(match, target, spec.damage * mul, spec.id, socket.i);
+  pushShot(match, socket, spec, [socket.muzzle, pos], { targetId: target.id });
+  socket.shots += 1;
   return true;
 }
 
-// ---------------------------------------------------------------- 弹道推进
+/** 霰星：以主目标为中心，aoeRadius 内 radius 最小的至多 maxTargets 个各吃一次伤害。 */
+function fireBurst(match, socket, spec, mul) {
+  const primary = acquireTarget(match, socket.muzzle, spec, null);
+  if (!primary) return false;
+  const center = enemyPos(match, primary);
+  aimAt(socket, center);
 
-function impact(match, shot, hit, events) {
-  const point = shot.points[shot.points.length - 1];
-  const hitPoint = shot.hits.length > 1 && hit === shot.hits[0] ? shot.points[1] : point;
-  let primary = null;
-  let primaryIndex = -1;
-  for (let i = 0; i < match.enemies.length; i += 1) {
-    if (match.enemies[i].id === hit.targetId) {
-      primary = match.enemies[i];
-      primaryIndex = i;
-      break;
+  const hits = [];
+  for (const e of match.enemies) {
+    if (e.hp <= 0 || !inLane(spec, e)) continue;
+    const p = enemyPos(match, e);
+    if (e.id !== primary.id && dist3(center, p) > spec.aoeRadius) continue;
+    hits.push({ e, p });
+  }
+  hits.sort((a, b) => a.e.radius - b.e.radius || a.e.id - b.e.id);
+
+  const count = Math.min(hits.length, spec.maxTargets);
+  for (let i = 0; i < count; i += 1) {
+    applyDamage(match, hits[i].e, spec.damage * mul, spec.id, socket.i);
+    pushShot(match, socket, spec, [socket.muzzle, hits[i].p], { targetId: hits[i].e.id });
+  }
+  socket.shots += 1;
+  return true;
+}
+
+/**
+ * 棱镜：段1 打主目标，段2 经另一座棱镜折射后打次目标（伤害 × refractFalloff）。
+ * 折射判定为「主目标距另一座棱镜炮口 ≤ refractRange」，取最近者，只折一次。
+ */
+function fireBeam(match, socket, spec, mul, dt) {
+  const target = acquireTarget(match, socket.muzzle, spec, null);
+  if (!target) {
+    releaseBeam(match, socket);
+    return;
+  }
+  const aPos = enemyPos(match, target);
+  aimAt(socket, aPos);
+
+  const tickDamage = spec.dps * dt * mul;
+  applyDamage(match, target, tickDamage, spec.id, socket.i);
+  updateBeam(match, socket, spec, "beam", socket.muzzle, aPos, target.id, null, dt);
+
+  let bent = false;
+  if (spec.refractRange > 0) {
+    let relay = null;
+    let relayDist = Infinity;
+    for (const other of match.sockets) {
+      if (other.i === socket.i || other.towerId !== spec.id) continue;
+      const d = dist3(aPos, other.muzzle);
+      if (d <= spec.refractRange && d < relayDist) {
+        relay = other;
+        relayDist = d;
+      }
     }
-  }
-  const center = primary ? enemyPos(match, primary) : hitPoint;
-
-  if (primary) {
-    damageEnemy(match, primary, hit.dmg, shot.towerId, events);
-  }
-  if (hit.splash > 0) {
-    for (let i = 0; i < match.enemies.length; i += 1) {
-      const e = match.enemies[i];
-      if (primary && e.id === primary.id) continue;
-      if (dist3(center, enemyPos(match, e)) <= hit.splash) {
-        damageEnemy(match, e, hit.dmg * SPLASH_FACTOR, shot.towerId, events);
+    if (relay) {
+      const second = acquireTarget(match, relay.muzzle, spec, target.id);
+      if (second) {
+        applyDamage(match, second, tickDamage * spec.refractFalloff, spec.id, socket.i);
+        updateBeam(match, socket, spec, "beam2", aPos, enemyPos(match, second), second.id, relay.i, dt);
+        bent = true;
       }
     }
   }
-  if (hit.field) {
-    match.fields.push({
-      id: match.nextFieldId++,
-      x: center.x,
-      y: center.y,
-      z: center.z,
-      radius: hit.field.radius,
-      life: hit.field.sec,
-      maxLife: hit.field.sec,
-      slowMul: hit.field.slowMul,
-      pullRate: hit.field.pullRate,
-      pullMax: hit.field.pullMax,
-      socket: shot.socket,
-    });
+  if (!bent) releaseSegment(match, socket, "beam2");
+}
+
+/** 坠井：射程内全体持续掉血；减速在 applySlow 里统一取最大值，不叠乘。 */
+function fireAura(match, socket, spec, mul, dt) {
+  const tickDamage = spec.dps * dt * mul;
+  for (const e of match.enemies) {
+    if (e.hp <= 0 || !inLane(spec, e)) continue;
+    if (dist3(socket.muzzle, enemyPos(match, e)) > spec.range) continue;
+    applyDamage(match, e, tickDamage, spec.id, socket.i);
   }
-  // 死亡结算
-  for (let i = match.enemies.length - 1; i >= 0; i -= 1) {
-    if (match.enemies[i].hp <= 0) killEnemy(match, match.enemies[i], i, events, shot.towerId, shot.socket);
-  }
-  if (primaryIndex >= 0) {
-    const socket = match.sockets[shot.socket];
-    if (socket) socket.damage += hit.dmg;
+  socket.cooldown -= dt;
+  if (socket.cooldown <= 0) {
+    socket.cooldown = AURA_PULSE_SEC;
+    pushShot(match, socket, spec, [socket.muzzle, socket.muzzle], { radius: spec.range });
+    socket.shots += 1;
   }
 }
 
-function updateShots(match, dt, events) {
-  for (let i = match.shots.length - 1; i >= 0; i -= 1) {
-    const shot = match.shots[i];
-    if (shot.homing) {
-      const target = match.enemies.find((e) => e.id === shot.hits[0].targetId);
-      if (target) {
-        const p = enemyPos(match, target);
-        shot.points[shot.points.length - 1] = p;
-        const { segs, total } = pathLengths(shot.points);
-        shot.segs = segs;
-        shot.total = Math.max(total, 0.001);
-        shot.hits[0].dist = shot.total;
-      }
-    }
-    shot.traveled += shot.speed * dt;
-    shot.t = Math.min(1, shot.traveled / shot.total);
-    for (let h = 0; h < shot.hits.length; h += 1) {
-      const hit = shot.hits[h];
-      if (!hit.done && shot.traveled >= hit.dist) {
-        hit.done = true;
-        impact(match, shot, hit, events);
-      }
-    }
-    if (shot.traveled >= shot.total) {
-      for (const hit of shot.hits) {
-        if (!hit.done) {
-          hit.done = true;
-          impact(match, shot, hit, events);
-        }
-      }
-      match.shots.splice(i, 1);
-    }
-  }
-}
+// ---------------------------------------------------------------- 每 tick 阶段
 
-// ---------------------------------------------------------------- 塔与场
-
-function updateSockets(match, dt, events) {
+function updateTimers(match, dt, events) {
   for (const socket of match.sockets) {
     if (!socket.towerId) continue;
-    const spec = match.towers[socket.towerId];
-    if (!spec) continue;
     if (socket.overclockT > 0) {
       socket.overclockT -= dt;
       if (socket.overclockT <= 0) {
         socket.overclockT = 0;
         socket.overheatT = match.cfg.overheatSec;
-        events.push({ type: "overheat", socket: socket.i, towerId: socket.towerId, sec: match.cfg.overheatSec, t: round4(match.time) });
+        events.push({
+          type: "overheat",
+          socket: socket.i,
+          towerId: socket.towerId,
+          sec: round4(match.cfg.overheatSec),
+          t: round4(match.time),
+        });
       }
-    }
-    if (socket.overheatT > 0) {
+    } else if (socket.overheatT > 0) {
       socket.overheatT -= dt;
       if (socket.overheatT <= 0) {
         socket.overheatT = 0;
         socket.cooldown = 0;
         events.push({ type: "ready", socket: socket.i, towerId: socket.towerId, t: round4(match.time) });
       }
-      continue; // 过热期间完全停火
-    }
-    socket.cooldown -= dt;
-    if (socket.cooldown <= 0) {
-      if (fire(match, socket, spec, events)) socket.cooldown = spec.cd;
-      else socket.cooldown = 0;
     }
   }
 }
 
-function updateFields(match, dt) {
-  for (let i = match.fields.length - 1; i >= 0; i -= 1) {
-    const f = match.fields[i];
-    f.life -= dt;
-    if (f.life <= 0) match.fields.splice(i, 1);
-  }
-}
-
-function applyFields(match, dt) {
-  for (const e of match.enemies) {
-    let slow = 1;
-    let pulled = false;
-    const p = enemyPos(match, e);
-    for (const f of match.fields) {
-      if (dist3(p, f) <= f.radius) {
-        if (f.slowMul < slow) slow = f.slowMul;
-        // 坠井：降速为主，同时把轨道半径偏移微微往内拽
-        const limit = -Math.abs(f.pullMax);
-        e.rOffset = Math.max(limit, e.rOffset - f.pullRate * dt);
-        pulled = true;
-      }
+function applySlow(match) {
+  for (const e of match.enemies) e.slow = 1;
+  for (const socket of match.sockets) {
+    if (!socket.towerId || socket.overheatT > 0) continue;
+    const spec = specOf(match, socket);
+    if (!spec || spec.kind !== "aura" || spec.slowMul >= 1) continue;
+    for (const e of match.enemies) {
+      if (!inLane(spec, e)) continue;
+      if (dist3(socket.muzzle, enemyPos(match, e)) > spec.range) continue;
+      if (spec.slowMul < e.slow) e.slow = spec.slowMul;
     }
-    e.speedMul = slow;
-    e.slowT = slow < 1 ? 0.25 : Math.max(0, e.slowT - dt);
-    if (!pulled && e.rOffset < 0) e.rOffset = Math.min(0, e.rOffset + 0.25 * dt);
   }
 }
 
@@ -510,11 +696,62 @@ function moveEnemies(match, dt, events) {
   const leakR = match.cfg.coreRadius;
   for (let i = match.enemies.length - 1; i >= 0; i -= 1) {
     const e = match.enemies[i];
-    e.radius -= e.baseSpeed * e.speedMul * dt;
-    e.theta += e.thetaDrift * dt;
-    if (e.theta > TAU) e.theta -= TAU;
-    else if (e.theta < 0) e.theta += TAU;
-    if (effectiveRadius(match, e) <= leakR) leakEnemy(match, e, i, events);
+    if (e.hp <= 0) continue;
+    e.radius -= e.baseSpeed * e.slow * dt;
+    e.theta = wrapAngle(e.theta + e.drift * dt);
+    if (e.radius <= leakR) {
+      e.radius = leakR;
+      leakEnemy(match, e, i, events);
+    }
+  }
+}
+
+function updateTowers(match, dt) {
+  for (const socket of match.sockets) {
+    socket.aim = null;
+    if (!socket.towerId) {
+      releaseBeam(match, socket);
+      continue;
+    }
+    const spec = specOf(match, socket);
+    if (!spec) continue;
+    if (socket.overheatT > 0) {
+      releaseBeam(match, socket);
+      continue;
+    }
+    const mul = socket.overclockT > 0 ? match.cfg.overclockMul : 1;
+    if (spec.kind === "beam") {
+      fireBeam(match, socket, spec, mul, dt);
+      continue;
+    }
+    if (spec.kind === "aura") {
+      fireAura(match, socket, spec, mul, dt);
+      continue;
+    }
+    socket.cooldown -= dt;
+    if (socket.cooldown > 0) continue;
+    const fired = spec.kind === "burst" ? fireBurst(match, socket, spec, mul) : fireSingle(match, socket, spec, mul);
+    socket.cooldown = fired ? spec.cd : 0;
+  }
+}
+
+/** 坠井光环环：常驻可视化，id 跟插座绑定，渲染层可以增量更新。 */
+function updateFields(match) {
+  match.fields.length = 0;
+  for (const socket of match.sockets) {
+    if (!socket.towerId) continue;
+    const spec = specOf(match, socket);
+    if (!spec || spec.kind !== "aura") continue;
+    match.fields.push({
+      id: socket.fieldId,
+      socket: socket.i,
+      x: socket.x,
+      y: socket.y,
+      z: socket.z,
+      radius: spec.range,
+      slowMul: spec.slowMul,
+      active: socket.overheatT <= 0,
+    });
   }
 }
 
@@ -522,53 +759,45 @@ function moveEnemies(match, dt, events) {
 
 function buildWaveQueue(match, wave) {
   const rng = match.rng;
-  const flat = [];
-  for (const group of wave.spawns) {
-    for (let n = 0; n < group.count; n += 1) flat.push(group.kind);
-  }
-  // Fisher-Yates（Boss 固定压轴）
-  const boss = flat.filter((k) => k === "etch-lord");
-  const rest = flat.filter((k) => k !== "etch-lord");
-  for (let i = rest.length - 1; i > 0; i -= 1) {
-    const j = nextInt(rng, i + 1);
-    const tmp = rest[i];
-    rest[i] = rest[j];
-    rest[j] = tmp;
-  }
-  const order = rest.concat(boss);
-  const laneCount = match.cfg.laneY.length;
-  // 每波挑几条入侵弧，同弧敌人成团推进：既好看，也让溅射/折光有意义。
-  const arcCount = 2 + (wave.index % 3);
-  const arcs = [];
-  for (let i = 0; i < arcCount; i += 1) {
-    arcs.push(socketAngle(nextInt(rng, match.cfg.socketCount), match.cfg.socketCount));
-  }
+  const cfg = match.cfg;
   const queue = [];
-  for (let i = 0; i < order.length; i += 1) {
-    const lane = nextInt(rng, laneCount);
-    const arc = arcs[nextInt(rng, arcs.length)];
-    const jitter = nextRange(rng, -0.14, 0.14);
-    queue.push({
-      at: i * wave.interval,
-      kind: order[i],
-      lane,
-      theta: arc + jitter,
-      thetaDrift: (nextFloat(rng) < 0.5 ? -1 : 1) * nextRange(rng, 0.01, 0.05),
-      hpScale: wave.hpScale,
-      speedScale: wave.speedScale,
-      wave: wave.index,
-    });
+  let seq = 0;
+  for (const group of wave.groups) {
+    // 同组共用一段入侵弧：成团推进才让霰星溅射与棱镜折光有意义。
+    const arc = socketAngle(nextInt(rng, cfg.socketCount), cfg.socketCount);
+    for (let k = 0; k < group.count; k += 1) {
+      queue.push({
+        seq: seq++,
+        at: group.delay + k * group.interval,
+        kind: group.kind,
+        lane: group.lane,
+        theta: wrapAngle(arc + (nextFloat(rng) - 0.5) * THETA_SPREAD),
+        drift: (nextFloat(rng) < 0.5 ? -1 : 1) * nextRange(rng, 0.01, 0.05),
+        hpMul: wave.hpMul,
+        wave: wave.index,
+      });
+    }
   }
+  queue.sort((a, b) => a.at - b.at || a.seq - b.seq);
   return queue;
 }
 
 function startWave(match, events) {
   const wave = match.waves[match.wave - 1];
   match.phase = "wave";
+  match.phaseT = 0;
   match.waveTime = 0;
   match.pending = buildWaveQueue(match, wave);
   match.spawnedThisWave = 0;
-  events.push({ type: "wave", wave: wave.index, count: match.pending.length, boss: !!wave.boss, t: round4(match.time) });
+  events.push({
+    type: "waveStart",
+    wave: wave.index,
+    count: match.pending.length,
+    boss: wave.boss,
+    t: round4(match.time),
+  });
+  // 兼容 Round 1 消费方：'wave' 与 'waveStart' 同义。
+  events.push({ type: "wave", wave: wave.index, count: match.pending.length, boss: wave.boss, t: round4(match.time) });
 }
 
 function updateWaves(match, dt, events) {
@@ -585,25 +814,30 @@ function updateWaves(match, dt, events) {
 
   match.waveTime += dt;
   while (match.pending.length > 0 && match.pending[0].at <= match.waveTime) {
-    const entry = match.pending.shift();
-    spawnEnemy(match, entry, events);
+    spawnEnemy(match, match.pending.shift(), events);
     match.spawnedThisWave += 1;
   }
-  if (match.pending.length === 0 && match.enemies.length === 0) {
-    const wave = match.waves[match.wave - 1];
-    match.scrap += wave.bonus;
-    match.stats.wavesCleared += 1;
-    events.push({ type: "waveClear", wave: wave.index, bonus: wave.bonus, scrap: Math.round(match.scrap), t: round4(match.time) });
-    if (match.wave >= match.waveCount) {
-      match.over = true;
-      match.result = "win";
-      match.phase = "won";
-      events.push({ type: "win", wave: match.wave, coreHp: match.coreHp, t: round4(match.time) });
-    } else {
-      match.wave += 1;
-      match.phase = "prep";
-      match.phaseT = match.cfg.prepSec;
-    }
+  if (match.pending.length > 0 || match.enemies.length > 0) return;
+
+  const wave = match.waves[match.wave - 1];
+  match.scrap += wave.bonus;
+  match.stats.wavesCleared += 1;
+  events.push({
+    type: "waveClear",
+    wave: wave.index,
+    bonus: wave.bonus,
+    scrap: Math.round(match.scrap),
+    t: round4(match.time),
+  });
+  if (match.wave >= match.waveCount) {
+    match.over = true;
+    match.result = "win";
+    match.phase = "won";
+    events.push({ type: "win", wave: match.wave, coreHp: Math.max(0, round4(match.coreHp)), t: round4(match.time) });
+  } else {
+    match.wave += 1;
+    match.phase = "prep";
+    match.phaseT = match.cfg.interWaveSec;
   }
 }
 
@@ -612,12 +846,15 @@ function updateWaves(match, dt, events) {
 function tickSim(match, dt, events) {
   match.time += dt;
   match.tick += 1;
-  updateWaves(match, dt, events);
-  updateFields(match, dt);
-  applyFields(match, dt);
-  moveEnemies(match, dt, events);
-  updateSockets(match, dt, events);
-  updateShots(match, dt, events);
+  updateWaves(match, dt, events); // 1. 出怪
+  updateTimers(match, dt, events); // 2. 过载 / 过热计时
+  applySlow(match); // 3. 坠井减速（多井取最大，不叠乘）
+  moveEnemies(match, dt, events); // 4. 推进与漏敌
+  updateTowers(match, dt); // 5. 全塔结算伤害
+  updateBossPhases(match, events); // 6. 蚀主相位
+  reapDead(match, events); // 7. 统一结算击杀
+  updateShots(match, dt); // 8. 弹道老化（纯视觉）
+  updateFields(match); // 9. 力场环快照（纯视觉）
 }
 
 export function step(match, input = {}, dtSec = FIXED_DT) {
@@ -629,6 +866,8 @@ export function step(match, input = {}, dtSec = FIXED_DT) {
     match.selectedSocket = cmd.selectedSocket;
   }
   if (cmd.place) tryPlace(match, cmd.place, events);
+  if (Number.isFinite(cmd.upgradeSocket)) tryUpgrade(match, cmd.upgradeSocket, events);
+  if (Number.isFinite(cmd.sellSocket)) trySell(match, cmd.sellSocket, events);
   if (Number.isFinite(cmd.overclockSocket)) tryOverclock(match, cmd.overclockSocket, events);
 
   match.paused = !!cmd.pause;
@@ -637,8 +876,8 @@ export function step(match, input = {}, dtSec = FIXED_DT) {
     return { events };
   }
 
-  const dt = Number.isFinite(dtSec) && dtSec > 0 ? dtSec : 0;
-  match.accumulator += dt;
+  const raw = Number.isFinite(dtSec) && dtSec > 0 ? dtSec : 0;
+  match.accumulator += raw > MAX_DT ? MAX_DT : raw;
   let steps = 0;
   while (match.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_CALL) {
     match.accumulator -= FIXED_DT;
@@ -661,105 +900,160 @@ function viewPoint(p) {
   return { x: round4(p.x), y: round4(p.y), z: round4(p.z) };
 }
 
+const EMPTY_VIEW = {
+  backend: "sim",
+  time: 0,
+  tick: 0,
+  phase: "prep",
+  phaseT: 0,
+  status: "playing",
+  interWaveT: 0,
+  paused: false,
+  over: false,
+  result: null,
+  wave: 0,
+  waveCount: 0,
+  waveTotal: 0,
+  scrap: 0,
+  coreHp: 0,
+  coreMax: 0,
+  coreRadius: 0,
+  ringRadius: 0,
+  spawnRadius: 0,
+  laneY: [],
+  selectedSocket: null,
+  sockets: [],
+  enemies: [],
+  shots: [],
+  fields: [],
+  events: [],
+  stats: { kills: 0, leaks: 0, placed: 0, upgraded: 0, sold: 0, denied: 0, spawned: 0, wavesCleared: 0, damage: 0 },
+};
+
+/**
+ * 纯读快照。返回值恒为 JSON-pure：无 -0、无 NaN/Infinity、无 undefined、无类实例。
+ * 所有数字都过 round4 / num0，因为 `JSON.stringify(-0) === "0"` 会让 JSON 往返不相等。
+ */
 export function getView(match) {
-  if (!match || typeof match !== "object") {
-    return {
-      backend: "sim",
-      wave: 0,
-      waveCount: 0,
-      scrap: 0,
-      coreHp: 0,
-      coreMax: 0,
-      sockets: [],
-      enemies: [],
-      shots: [],
-      fields: [],
-      events: [],
-    };
-  }
+  if (!match || typeof match !== "object") return structuredCloneLike(EMPTY_VIEW);
+
   const cfg = match.cfg;
+  const status = match.result === "win" ? "won" : match.result === "lose" ? "lost" : "playing";
+
   return {
     backend: "sim",
     time: round4(match.time),
-    tick: match.tick,
+    tick: num0(match.tick),
     phase: match.phase,
     phaseT: round4(match.phaseT),
+    status,
+    interWaveT: match.phase === "prep" ? round4(match.phaseT) : 0,
     paused: !!match.paused,
     over: !!match.over,
-    result: match.result,
-    wave: match.wave,
-    waveCount: match.waveCount,
-    scrap: Math.round(match.scrap),
+    result: match.result === undefined ? null : match.result,
+    wave: num0(match.wave),
+    waveCount: num0(match.waveCount),
+    waveTotal: num0(match.waveCount),
+    scrap: num0(Math.round(match.scrap)),
     coreHp: Math.max(0, round4(match.coreHp)),
-    coreMax: match.coreMax,
-    coreRadius: cfg.coreRadius,
-    ringRadius: cfg.ringRadius,
-    spawnRadius: cfg.spawnRadius,
-    laneY: cfg.laneY.slice(),
-    selectedSocket: match.selectedSocket === undefined ? null : match.selectedSocket,
-    sockets: match.sockets.map((s) => ({
-      i: s.i,
-      towerId: s.towerId,
-      overclockT: round4(s.overclockT),
-      overheatT: round4(s.overheatT),
-      hp: s.hp,
-      cooldown: round4(Math.max(0, s.cooldown)),
-      range: s.towerId && match.towers[s.towerId] ? match.towers[s.towerId].range : 0,
-      theta: round4(s.theta),
-      x: round4(s.x),
-      y: round4(s.y),
-      z: round4(s.z),
-      kills: s.kills,
-    })),
-    enemies: match.enemies.map((e) => {
-      const r = effectiveRadius(match, e);
+    coreMax: round4(match.coreMax),
+    coreRadius: round4(cfg.coreRadius),
+    ringRadius: round4(cfg.ringRadius),
+    spawnRadius: round4(cfg.spawnRadius),
+    laneY: cfg.laneY.map(round4),
+    selectedSocket: Number.isInteger(match.selectedSocket) ? match.selectedSocket : null,
+    sockets: match.sockets.map((s) => {
+      const spec = specOf(match, s);
+      const next = nextLevelOf(match, s);
       return {
-        id: e.id,
-        lane: e.lane,
-        radius: round4(r),
-        y: round4(e.y),
-        hp: round4(Math.max(0, e.hp)),
-        maxHp: e.maxHp,
-        armor: e.armor,
-        kind: e.kind,
-        theta: round4(e.theta),
-        x: round4(Math.cos(e.theta) * r),
-        z: round4(Math.sin(e.theta) * r),
-        size: e.size,
-        slowed: e.speedMul < 1,
-        pull: round4(-e.rOffset),
+        i: num0(s.i),
+        towerId: s.towerId === undefined ? null : s.towerId,
+        level: num0(s.towerId ? s.level : 1),
+        maxLevel: num0(s.towerId && match.towerLevels[s.towerId] ? match.towerLevels[s.towerId].length : 1),
+        upgradeCost: next ? num0(next.cost) : 0,
+        refund: s.towerId ? num0(Math.floor(s.invested * cfg.sellRefund)) : 0,
+        overclockT: round4(Math.max(0, s.overclockT)),
+        overheatT: round4(Math.max(0, s.overheatT)),
+        overclocked: s.overclockT > 0,
+        overheat: s.overheatT > 0,
+        overheated: s.overheatT > 0,
+        hp: round4(s.hp),
+        cooldown: round4(Math.max(0, s.cooldown)),
+        cooldownT: round4(Math.max(0, s.cooldown)),
+        range: spec ? round4(spec.range) : 0,
+        theta: round4(s.theta),
+        aim: s.aim === null || s.aim === undefined ? null : round4(s.aim),
+        x: round4(s.x),
+        y: round4(s.y),
+        z: round4(s.z),
+        kills: num0(s.kills),
       };
     }),
+    enemies: match.enemies.map((e) => ({
+      id: num0(e.id),
+      lane: num0(e.lane),
+      radius: round4(e.radius),
+      y: round4(e.y),
+      hp: round4(Math.max(0, e.hp)),
+      maxHp: round4(e.maxHp),
+      armor: e.armor,
+      kind: e.kind,
+      sizeClass: e.sizeClass,
+      size: round4(e.scale),
+      scale: round4(e.scale),
+      theta: round4(e.theta),
+      x: round4(Math.cos(e.theta) * e.radius),
+      z: round4(Math.sin(e.theta) * e.radius),
+      slow: round4(e.slow),
+      slowed: e.slow < 1,
+      speed: round4(e.baseSpeed * e.slow),
+      boss: !!e.boss,
+    })),
     shots: match.shots.map((s) => ({
-      id: s.id,
+      id: num0(s.id),
       kind: s.kind,
       towerId: s.towerId,
-      socket: s.socket,
+      socket: num0(s.socket),
       from: viewPoint(s.points[0]),
       to: viewPoint(s.points[s.points.length - 1]),
       points: s.points.map(viewPoint),
-      t: round4(s.t),
+      t: round4(Math.min(1, Math.max(0, s.t))),
+      radius: round4(s.radius),
+      relay: Number.isInteger(s.relay) ? s.relay : null,
+      segment: num0(s.segment === undefined ? 1 : s.segment),
+      refracted: Number.isInteger(s.relay),
+      beam: !!s.beam,
       overclocked: !!s.overclocked,
     })),
     fields: match.fields.map((f) => ({
-      id: f.id,
+      id: num0(f.id),
+      socket: num0(f.socket),
       x: round4(f.x),
       y: round4(f.y),
       z: round4(f.z),
       radius: round4(f.radius),
-      t: round4(1 - f.life / f.maxLife),
+      slowMul: round4(f.slowMul),
+      active: !!f.active,
+      t: round4((match.time / AURA_PULSE_SEC) % 1),
     })),
     events: (match.events || []).map((e) => ({ ...e })),
     stats: {
-      kills: match.stats.kills,
-      leaks: match.stats.leaks,
-      placed: match.stats.placed,
-      denied: match.stats.denied,
-      spawned: match.stats.spawned,
-      wavesCleared: match.stats.wavesCleared,
+      kills: num0(match.stats.kills),
+      leaks: num0(match.stats.leaks),
+      placed: num0(match.stats.placed),
+      upgraded: num0(match.stats.upgraded),
+      sold: num0(match.stats.sold),
+      denied: num0(match.stats.denied),
+      spawned: num0(match.stats.spawned),
+      wavesCleared: num0(match.stats.wavesCleared),
       damage: round4(match.stats.damage),
     },
   };
 }
 
-export const TOWER_LIST = TOWER_IDS;
+function structuredCloneLike(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+export const TOWER_LIST = TOWER_IDS.slice();
+export { TAU, MUZZLE_Y };
