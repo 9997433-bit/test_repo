@@ -14,6 +14,22 @@ const LOOK_LABEL = { locked: "视角锁定", free: "自由视角" };
 /** 反馈停留时长：比 toast（1.6s）短，它是确认回执不是通知（§18.1）。 */
 const LOOK_FLASH_MS = 900;
 
+/**
+ * 击退累积的满刻：镜像 sim/constants.js 的 PHYSICS.knockScaleMax。
+ * view 快照只带每人的 knockScale（1 起步、挨打递增），不带上限，
+ * 所以这一侧钉一份常数；改 sim 上限时这里要跟着对表。
+ */
+const KNOCK_MAX = 3.2;
+
+/** 刻度进入「再挨一两掌就要飞」的红区阈值（0..1 归一后）。 */
+const KNOCK_HOT = 0.62;
+
+/** 挨打瞬间刻度蹦一下的时长：乱战里靠这一下能看见它在涨。 */
+const KNOCK_BUMP_MS = 180;
+
+/** 准星命中脉冲：≤120ms 的一瞬状态（不是常驻指示，free 模式也只有这一下）。 */
+const RETICLE_PULSE_MS = 110;
+
 function toggle(node, cls, on) {
   node.classList.toggle(cls, !!on);
 }
@@ -57,12 +73,18 @@ export function createHud() {
   // ---- 掌位坞 ----
   const meterFill = h("i", { class: "yz-meter-fill" });
   const meter = h("div", { class: "yz-meter" }, [meterFill]);
+  // 击退累积刻度（GDD 无血条，这是它的可读替代）：从空往满涨，读作
+  // 「再挨就要飞」，不是「还剩多少血」。填充量 --knock 由 view.knockScale
+  // 归一而来，右侧红区靠 .is-hot、挨打瞬间靠 .is-bump 蹦一下。
+  const knockFill = h("i", { class: "yz-knock-fill" });
+  const knockTicks = h("i", { class: "yz-knock-ticks" });
+  const knock = h("div", { class: "yz-knock", "aria-label": "击退累积" }, [knockFill, knockTicks]);
   const awakenTag = h("div", { class: "yz-awaken-tag", text: "掌 意 觉 醒" });
   const statusRow = h("div", { class: "yz-status-row" });
   const cardMain = gloveCard("1");
   const cardOff = gloveCard("2");
   const dockRow = h("div", { class: "yz-dock-row" }, [cardMain.el, cardOff.el]);
-  const dock = h("div", { class: "yz-glove-dock" }, [meter, awakenTag, statusRow, dockRow]);
+  const dock = h("div", { class: "yz-glove-dock" }, [meter, knock, awakenTag, statusRow, dockRow]);
 
   // ---- 中央与全屏反馈 ----
   const reticle = h("div", { class: "yz-reticle" });
@@ -99,6 +121,10 @@ export function createHud() {
   let noteTimer = 0;
   let flashTimer = 0;
   let lookTimer = 0;
+  let lastKnock = 0;
+  let knockBumpTimer = 0;
+  let lastCombo = 0;
+  let reticleTimer = 0;
 
   function setCard(card, glove, active, cd, cdMax) {
     card.el.dataset.glove = (glove && glove.id) || "";
@@ -135,11 +161,21 @@ export function createHud() {
     sticky: "黏附",
   };
 
+  function pulseReticle(ms = RETICLE_PULSE_MS) {
+    reticle.classList.add("is-hit");
+    clearTimeout(reticleTimer);
+    reticleTimer = setTimeout(() => reticle.classList.remove("is-hit"), Math.min(120, ms));
+  }
+
   return {
     el,
     pauseButton: pauseBtn,
     /** killfeed 挂到 #hud 里，位置由 hud.css 的 .yz-feed 负责。 */
     mountFeed(node) {
+      el.insertBefore(node, dock);
+    },
+    /** 掌语字条同样挂进 #hud（位置归 .yz-lore），与 .yz-center-note / toast 各占各的节点。 */
+    mountLore(node) {
       el.insertBefore(node, dock);
     },
     reset() {
@@ -159,6 +195,13 @@ export function createHud() {
       hitFlash.style.webkitBackdropFilter = "";
       for (const pip of pips) pip.classList.remove("is-filled");
       killCount.textContent = `0 / ${KILL_PIPS}`;
+      lastKnock = 0;
+      clearTimeout(knockBumpTimer);
+      knock.classList.remove("is-hot", "is-bump");
+      knock.style.setProperty("--knock", "0");
+      lastCombo = 0;
+      clearTimeout(reticleTimer);
+      reticle.classList.remove("is-hit");
     },
     /**
      * 受击一瞬去饱和 + 轻压暗（替代满屏红晕，滤镜里没有红色通道）。
@@ -214,6 +257,13 @@ export function createHud() {
       clearTimeout(lookTimer);
       lookTimer = setTimeout(() => lookFlash.classList.remove("is-on"), ms);
     },
+    /**
+     * 准星命中脉冲：打中人的一瞬 `.yz-reticle.is-hit` 亮 ≤120ms 就摘。
+     * 这是回执不是指示器 —— 常驻准星形态不变（locked 的两道短刻、free 的
+     * 裸点合同都照旧，见 §18 与 styles/hud.css），连击只重置计时不叠加。
+     * update() 里由 combo 递增 / 本人 hit 事件自动触发，也可单独调用。
+     */
+    pulseReticle,
     setToast(text, ms = 1600, gold = false) {
       centerNote.textContent = text;
       centerNote.hidden = false;
@@ -266,6 +316,37 @@ export function createHud() {
       const meterValue = awake ? 1 : Math.max(0, Math.min(1, self.meter || 0));
       meter.style.setProperty("--meter", meterValue.toFixed(3));
       meterFill.style.setProperty("--meter", meterValue.toFixed(3));
+
+      // 击退累积：knockScale 1 起步、挨打递增、落地回一点、重生清零 —— 全跟 view 走，
+      // 这里只做归一（0..1）与「涨了就蹦一下」。空着 = 安全，满了 = 一掌就飞。
+      const knockScale = Number.isFinite(self.knockScale) ? self.knockScale : 1;
+      const k = Math.max(0, Math.min(1, (knockScale - 1) / (KNOCK_MAX - 1)));
+      knock.style.setProperty("--knock", k.toFixed(3));
+      toggle(knock, "is-hot", k >= KNOCK_HOT);
+      if (k > lastKnock + 0.001) {
+        // 先摘再挂 + 强制回流，同名动画才会重新播一遍（乱战里连挨两掌都要看得见）
+        knock.classList.remove("is-bump");
+        void knock.offsetWidth;
+        knock.classList.add("is-bump");
+        clearTimeout(knockBumpTimer);
+        knockBumpTimer = setTimeout(() => knock.classList.remove("is-bump"), KNOCK_BUMP_MS);
+      }
+      lastKnock = k;
+
+      // 命中回执：combo 只在自己打中人时递增（sim/step.js），30Hz 采样抓增量最稳；
+      // 本帧事件里有自己的 hit 时也认，双保险取或，同帧多段只脉一次。
+      const combo = self.combo || 0;
+      let confirmed = combo > lastCombo;
+      if (!confirmed) {
+        for (const e of view.events || []) {
+          if (e.type === "hit" && e.playerId === selfId) {
+            confirmed = true;
+            break;
+          }
+        }
+      }
+      lastCombo = combo;
+      if (confirmed) pulseReticle();
 
       syncStatus(self, activeG);
 
