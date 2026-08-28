@@ -1,10 +1,17 @@
-// Opus-3 纯模拟。禁止 import Babylon / DOM。
-export function createMatch() {
-  throw new Error("sim not implemented");
-}
-export function step() {
-  return { events: [] };
-}
-export function getView() {
-  return { backend: "sim", wave: 0, scrap: 0, coreHp: 0, coreMax: 0, sockets: [], enemies: [], shots: [], events: [] };
-}
+// Opus-3 纯模拟。禁止引入渲染层与浏览器全局。
+// 冻结 API：createMatch(seed) / step(match, input, dtSec) / getView(match)
+export { createMatch, step, getView, FIXED_DT, TOWER_LIST } from "./match.js";
+export {
+  FALLBACK_CONFIG,
+  FALLBACK_TOWERS,
+  FALLBACK_ENEMIES,
+  FALLBACK_COUNTERS,
+  TOWER_IDS,
+  resolveConfig,
+  resolveTowers,
+  resolveCounters,
+  resolveEnemies,
+  resolveWaves,
+} from "./config.js";
+export { createRng, nextFloat, nextInt, hashSeed } from "./rng.js";
+export { polar, socketAngle, dist3, distPointSegment, TAU } from "./geom.js";
