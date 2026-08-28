@@ -37,4 +37,20 @@ describe("外观合同反查：两套 CSS 都认识 P2-F2 的新钩子", () => {
     // 击退刻度不改掌意条那份 --meter 合同
     expect(F2).toContain("var(--meter, 0)");
   });
+
+  it("P3 连击/命中反馈：连击读数与命中确认圈的钩子两套 CSS 都认识", () => {
+    for (const sel of [
+      ".yz-combo",
+      ".yz-combo.is-on",
+      ".yz-combo-num",
+      ".yz-combo-unit",
+      ".yz-hit-ring",
+      ".yz-hit-ring.is-on",
+    ]) {
+      expect(F2, sel).toContain(sel);
+      expect(FALLBACK, sel).toContain(sel);
+    }
+    // 确认圈是一瞬回执不是常驻：正装动画 ≤200ms 且停在透明（both 不闪回）
+    expect(F2).toContain("yz-hit-ring 180ms");
+  });
 });
