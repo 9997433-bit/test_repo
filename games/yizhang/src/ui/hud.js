@@ -30,6 +30,18 @@ const KNOCK_BUMP_MS = 180;
 /** 准星命中脉冲：≤120ms 的一瞬状态（不是常驻指示，free 模式也只有这一下）。 */
 const RETICLE_PULSE_MS = 110;
 
+/**
+ * 命中确认圈：点脉冲之上的加强档——同一瞬从准星外扩一圈细环，≤200ms 自摘。
+ * 与 .is-hit 同触发同性质（回执），free 模式不因此多出第二套常驻指示。
+ */
+const HIT_RING_MS = 180;
+
+/** 连击读数从几连起显：1 掌只是命中，2 掌起才叫「连」。 */
+const COMBO_SHOW_MIN = 2;
+
+/** 连击数字跳档时蹦一下的时长，与击退刻度的 bump 同节奏。 */
+const COMBO_BUMP_MS = 180;
+
 function toggle(node, cls, on) {
   node.classList.toggle(cls, !!on);
 }
@@ -88,6 +100,16 @@ export function createHud() {
 
   // ---- 中央与全屏反馈 ----
   const reticle = h("div", { class: "yz-reticle" });
+  // 命中确认圈：打中人的一瞬在点脉冲之上再外扩一圈细环（≤200ms 自摘）。
+  // 是回执不是指示器——free 模式的裸点合同（§18 LOOK-R2）不因此破例。
+  const hitRing = h("div", { class: "yz-hit-ring" });
+  // 连击读数：combo≥2 时准星斜上方的小板「N 连」，断连即收。只镜像
+  // view.combo（权威在 sim 的 comboWindow），不占中央短讯位、不盖准星。
+  const comboNum = h("span", { class: "yz-combo-num yz-num", text: "0" });
+  const comboEl = h("div", { class: "yz-plate yz-combo" }, [
+    comboNum,
+    h("span", { class: "yz-combo-unit", text: "连" }),
+  ]);
   // 视角模式一瞬反馈（§18.1）：常驻节点，JS 只写文本 + .is-on。文本是裸文本节点
   // （不套 span），键帽 <kbd> 由 [data-touch="1"] 的样式整枚收起、文本照常。
   const lookText = document.createTextNode(LOOK_LABEL.locked);
@@ -110,6 +132,8 @@ export function createHud() {
     top,
     dock,
     reticle,
+    hitRing,
+    comboEl,
     lookFlash,
     hitFlash,
     respawn,
@@ -125,6 +149,9 @@ export function createHud() {
   let knockBumpTimer = 0;
   let lastCombo = 0;
   let reticleTimer = 0;
+  let ringTimer = 0;
+  let shownCombo = 0;
+  let comboBumpTimer = 0;
 
   function setCard(card, glove, active, cd, cdMax) {
     card.el.dataset.glove = (glove && glove.id) || "";
@@ -165,6 +192,13 @@ export function createHud() {
     reticle.classList.add("is-hit");
     clearTimeout(reticleTimer);
     reticleTimer = setTimeout(() => reticle.classList.remove("is-hit"), Math.min(120, ms));
+    // 加强档确认圈：先摘再挂 + 强制回流让外扩动画重播（连击每掌都看得见），
+    // ≤200ms 自摘——与点脉冲一样是回执，不留常驻。
+    hitRing.classList.remove("is-on");
+    void hitRing.offsetWidth;
+    hitRing.classList.add("is-on");
+    clearTimeout(ringTimer);
+    ringTimer = setTimeout(() => hitRing.classList.remove("is-on"), HIT_RING_MS);
   }
 
   return {
@@ -202,6 +236,12 @@ export function createHud() {
       lastCombo = 0;
       clearTimeout(reticleTimer);
       reticle.classList.remove("is-hit");
+      clearTimeout(ringTimer);
+      hitRing.classList.remove("is-on");
+      shownCombo = 0;
+      clearTimeout(comboBumpTimer);
+      comboEl.classList.remove("is-on", "is-bump");
+      comboNum.textContent = "0";
     },
     /**
      * 受击一瞬去饱和 + 轻压暗（替代满屏红晕，滤镜里没有红色通道）。
@@ -347,6 +387,23 @@ export function createHud() {
       }
       lastCombo = combo;
       if (confirmed) pulseReticle();
+
+      // 连击读数：combo≥2 才亮（单掌只是命中，两掌起才叫「连」），断连
+      //（sim 过 comboWindow 清零）或出局即收——全镜像 view，这里不自己计时。
+      const comboOn = combo >= COMBO_SHOW_MIN && self.alive !== false;
+      if (comboOn) {
+        comboNum.textContent = String(combo);
+        if (shownCombo > 0 && combo > shownCombo) {
+          // 亮着时又续上一掌：数字蹦一下（先摘再挂 + 回流，连续跳档都看得见）
+          comboEl.classList.remove("is-bump");
+          void comboEl.offsetWidth;
+          comboEl.classList.add("is-bump");
+          clearTimeout(comboBumpTimer);
+          comboBumpTimer = setTimeout(() => comboEl.classList.remove("is-bump"), COMBO_BUMP_MS);
+        }
+      }
+      toggle(comboEl, "is-on", comboOn);
+      shownCombo = comboOn ? combo : 0;
 
       syncStatus(self, activeG);
 

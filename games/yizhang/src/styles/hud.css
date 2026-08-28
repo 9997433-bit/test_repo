@@ -586,6 +586,103 @@
   transition: none;
 }
 
+/* 命中确认圈（点脉冲之上的加强档）：打中人的同一瞬从准星向外扩一圈
+   极薄骨白细环，180ms 放大淡出后 JS 摘 .is-on。与 .is-hit 同为一瞬回执，
+   非常驻——free 模式的裸点合同（§18 LOOK-R2）不因此多出第二枚指示；
+   无发光，环色仍是骨白，动画结束停在透明（both）不闪回。 */
+.yz-hit-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 1px solid rgb(240 235 223 / 0.8);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.yz-hit-ring.is-on {
+  animation: yz-hit-ring 180ms var(--yz-ease) both;
+}
+
+@keyframes yz-hit-ring {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* 连击读数：combo≥2 时准星斜上方的小板「N 连」，断连由 JS 摘 .is-on。
+   不是中央大字 toast（.yz-center-note 照旧管开局/解锁），也不盖准星——
+   斜上错开 26px 起步；触屏横屏的掌位坞在底部中央、字幕位在坞上方，
+   这块小板留在屏幕中带，互不相扰。数字等宽、「连」字小一档降灰，
+   无金无发光；续上一掌时 .is-bump 蹦一下（与击退刻度同节奏）。 */
+.yz-combo {
+  position: absolute;
+  left: calc(50% + 26px);
+  bottom: calc(50% + 20px);
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 10px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition:
+    opacity var(--yz-t-fast) var(--yz-ease),
+    transform var(--yz-t-fast) var(--yz-ease),
+    visibility 0s linear var(--yz-t-fast);
+}
+
+.yz-combo.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition:
+    opacity var(--yz-t-fast) var(--yz-ease),
+    transform var(--yz-t-fast) var(--yz-ease),
+    visibility 0s;
+}
+
+.yz-combo-num {
+  font-size: var(--yz-fs-lg);
+  line-height: 1.2;
+  color: var(--yz-bone-100);
+}
+
+.yz-combo-unit {
+  font-family: var(--yz-font-display);
+  font-size: var(--yz-fs-xs);
+  letter-spacing: 0.18em;
+  color: var(--yz-text-dim);
+}
+
+.yz-combo.is-bump {
+  animation: yz-combo-bump 180ms var(--yz-ease);
+}
+
+@keyframes yz-combo-bump {
+  0% {
+    transform: scale(1);
+  }
+
+  35% {
+    transform: scale(1.14);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
 /* ---- 视角模式（LOOK-R1，合同见 ART_DIRECTION §18） ----
    状态钩子：#hud[data-look="locked"|"free"]——O4 随 input.getLookMode()
    贴的装饰镜像（权威仍在 input，ADR-38）。锁视角的常驻指示只有
