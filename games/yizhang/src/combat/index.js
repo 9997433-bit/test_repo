@@ -189,13 +189,17 @@ function cooldownsOf(attacker) {
   return attacker.cd;
 }
 
+// 上锁出招的状态：冻结（全锁）与受击硬直（只锁出招，位移照走）。
+const ACT_LOCK_KINDS = new Set(["freeze", "stun"]);
+
 function actorReady(attacker) {
   if (!attacker) return false;
   if (attacker.alive === false) return false;
   if (num(attacker.respawnT) > 0) return false;
   if (attacker.frozen === true) return false;
+  if (attacker.stunned === true) return false;
   const list = Array.isArray(attacker.statuses) ? attacker.statuses : [];
-  return !list.some((s) => s && s.kind === "freeze" && num(s.t) > 0);
+  return !list.some((s) => s && ACT_LOCK_KINDS.has(s.kind) && num(s.t) > 0);
 }
 
 export function canSlap(state, attacker, glove, now = clockOf(state)) {

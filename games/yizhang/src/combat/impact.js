@@ -216,6 +216,13 @@ export function landHit(state, attacker, target, cfg) {
   gainMeter(attacker, meterDealt);
   gainMeter(target, meterTaken);
 
+  // 受击硬直（FJ-04）：扇击命中挂 `stun`，只锁出招不锁位移。
+  // 只有扇击这条路走——八掌主动技各带自己的控制（冻结 / 减速 / 黏附 / 拉拽），
+  // 再叠一层硬直就是双重上锁。被弹反的那一掌已经在上面提前返回，不到这里。
+  if (kind === "slap" && HIT.hitstun > 0) {
+    applyStatus(target, "stun", HIT.hitstun, { srcId: attacker.id });
+  }
+
   if (Array.isArray(statuses)) {
     for (const s of statuses) {
       if (!s || !s.kind) continue;
@@ -238,6 +245,11 @@ export function landHit(state, attacker, target, cfg) {
     gloveId: gid,
     distance: num(dir.dist, 0),
     behind: behind > 1,
+    // 「这一记算不算重击」由 combat 一次判定后随记录出门，门槛 `HIT.heavyPowerThreshold`
+    // 与 `data/tuning.js` 的 KNOCKBACK.heavyPowerThreshold 同源（碎地走的也是这条线）。
+    // 下游想分轻重就读它，不必各自拿 power 再猜一遍门槛——`core/juice.js` 的 hit-stop
+    // 眼下还在自己按 16 判（O 席域，见 hit-feel-budget.test.js 的「应对齐」一节）。
+    heavy: mag >= HIT.heavyPowerThreshold,
     hitX: num(target.x),
     hitZ: num(target.z),
     attackerId: attacker.id,
@@ -249,6 +261,7 @@ export function landHit(state, attacker, target, cfg) {
     gloveId: gid,
     skillId,
     power: mag,
+    heavy: hit.heavy,
     impulse,
     t: num(now),
   });
