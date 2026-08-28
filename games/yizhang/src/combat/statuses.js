@@ -13,6 +13,7 @@ const SIM_STATUS_ID = {
   slow: "slow",
   sticky: "slow",
   freeze: "freeze",
+  stun: "stun",
   parryWindow: "parryWindow",
   invuln: "invuln",
 };
@@ -65,7 +66,7 @@ export function clearAllStatuses(player) {
  * 把当前状态折算成派生字段，sim / render / ai 都直接读这几个：
  *  - moveScale 0..1 移动速度倍率
  *  - canAct    能否扇击 / 放技能 / 冲刺
- *  - frozen / sticky / parrying / invulnerable 布尔快照
+ *  - frozen / stunned / sticky / parrying / invulnerable 布尔快照
  *  - knockbackTakenMul 受击退倍率（冻结时更飘）
  */
 export function refreshDerived(player) {
@@ -73,6 +74,7 @@ export function refreshDerived(player) {
   const list = Array.isArray(player.statuses) ? player.statuses : [];
   let moveScale = 1;
   let frozen = false;
+  let stunned = false;
   let sticky = false;
   let parrying = false;
   let invulnerable = num(player.invulnT) > 0;
@@ -90,6 +92,11 @@ export function refreshDerived(player) {
       case "freeze":
         frozen = true;
         break;
+      case "stun":
+        // 受击硬直只锁出招，moveScale 一点不动：击退位移与走位控制都归 kbT / 摩擦管，
+        // 与 `src/sim/physics.js` 的 statusMods（stun → canAct=false，canMove 照旧）同口径。
+        stunned = true;
+        break;
       case "parryWindow":
         parrying = true;
         break;
@@ -104,10 +111,11 @@ export function refreshDerived(player) {
   if (frozen) moveScale = 0;
   player.moveScale = Math.max(0, moveScale);
   player.frozen = frozen;
+  player.stunned = stunned;
   player.sticky = sticky;
   player.parrying = parrying;
   player.invulnerable = invulnerable;
-  player.canAct = !frozen && player.alive !== false;
+  player.canAct = !frozen && !stunned && player.alive !== false;
   player.canDash = player.canAct && !sticky;
   player.knockbackTakenMul = frozen ? 1.25 : 1;
   return player;

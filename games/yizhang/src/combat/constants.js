@@ -45,6 +45,15 @@ export const HIT = {
   frozenKnockbackMul: 1.25,
   behindMul: 1.15,
   behindAngleDeg: 100,
+  // 受击硬直（FJ-04）：扇击命中即给目标挂 `stun`。**只锁出招**（canAct=false），
+  // 位移与击退一概不锁——被扇飞那一段必须照常滑出去，否则谁也打不出岛。
+  // 与 `src/data/tuning.js` 的 `KNOCKBACK.hitstun` 同源（两边同数由 hitstun-timing.test.js 锁），
+  // 且必须 ≤ hitstunMax、小于最快扇击冷却，连段才不会变成无限连。
+  hitstun: 0.32,
+  hitstunMax: 0.5,
+  // 「重击」门槛：有效击退（命中记录的 `power`）≥ 此值算重击，写在命中记录与事件的 `heavy` 上。
+  // 与 `src/data/tuning.js` 的 `KNOCKBACK.heavyPowerThreshold` 同源（碎地也按同一条线，见 data/tiles.js）。
+  heavyPowerThreshold: 12,
   maxEvents: 512,
 };
 
@@ -70,12 +79,13 @@ export const ARENA = {
 export const STATUS_DEFAULT = {
   slow: { mag: 0.4, t: 2 },
   freeze: { mag: 1, t: 0.8 },
+  stun: { mag: 1, t: HIT.hitstun },
   sticky: { mag: 0.35, t: 1.2 },
   parryWindow: { mag: 1, t: 0.5 },
   invuln: { mag: 1, t: 1 },
 };
 
-export const STATUS_KINDS = ["slow", "freeze", "sticky", "parryWindow", "invuln"];
+export const STATUS_KINDS = ["slow", "freeze", "stun", "sticky", "parryWindow", "invuln"];
 
 /**
  * 八掌主动技数值。`awakened` 段在觉醒时浅覆盖同名键。
