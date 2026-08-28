@@ -20,7 +20,7 @@
 // 画面上模型真正的朝向。原样喂比生产更陡（少一层缓冲），所以这里绿了，实机只会更稳。
 
 import { describe, expect, it } from 'vitest';
-import { Vector3 } from 'three';
+import { Vector3 } from './gfx/index.js';
 import {
   BEHIND_LIMIT,
   BEHIND_SHELL,

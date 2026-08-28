@@ -18,7 +18,7 @@
 // 同一手法）：cameraRig 是真的，setLook / _followYaw / _followCamera 是真的。
 
 import { describe, expect, it } from 'vitest';
-import { Vector3 } from 'three';
+import { Vector3 } from './gfx/index.js';
 import {
   BASE_PITCH,
   LOCKED_YAW_SPAN,

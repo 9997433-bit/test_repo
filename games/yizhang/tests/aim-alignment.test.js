@@ -17,7 +17,7 @@
 // 真实 cameraRig 摆好的 three 相机的世界朝向。
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Vector3 } from "three";
+import { Vector3 } from "../src/render/gfx/index.js";
 
 import { feedLook, lookPayload } from "../src/core/look.js";
 import { cameraYawToSimYaw } from "../src/core/view.js";

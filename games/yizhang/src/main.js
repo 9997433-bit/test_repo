@@ -864,7 +864,7 @@ async function boot() {
         ...wiringStatus(sim, wired),
         unlockSource: isUnlocked.source,
         styleCount,
-        renderer: rendererIsFallback ? "fallback" : "three",
+        renderer: rendererIsFallback ? "fallback" : "babylon",
       };
     },
     get progress() {

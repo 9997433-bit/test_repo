@@ -24,8 +24,8 @@ import {
   TorusGeometry,
   Vector2,
   Vector3,
-} from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+} from './gfx/index.js';
+import { mergeGeometries } from './gfx/index.js';
 import { PALETTE } from './config.js';
 
 /** 材质分组键。每只掌最终只有这三个网格。 */

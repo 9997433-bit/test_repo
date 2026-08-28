@@ -36,7 +36,7 @@ import {
   ShaderMaterial,
   Vector2,
   Vector3,
-} from 'three';
+} from './gfx/index.js';
 import { BLOOM_LAYER, PALETTE, markOccluder } from './config.js';
 import { fbm, makeValueNoise2D, mulberry32, smoothstep } from './noise.js';
 
@@ -161,55 +161,36 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
   // 按世界 XZ 采样的宏观磨损，叠在平铺的岩壳贴图上。
   // 它同时干掉三个问题：贴图的重复感、顶点色被粗三角化摊平、以及
   // 「两百块同样的方板」——磨损是按世界坐标连续的，所以看不出格子的接缝在哪。
-  crustMat.onBeforeCompile = (shader) => {
-    shader.uniforms.uMacro = { value: textures.arenaMacro };
-    shader.uniforms.uMacroScale = { value: 1 / (R * 2.15) };
-    // 采样步长必须跟着贴图分辨率走：写死成 512 的话，低画质那张 128 的图
-    // 取样点会落在同一个纹素里，梯度恒为零，大尺度起伏在低配上就整个消失了。
-    shader.uniforms.uMacroTexel = {
-      value: 2 / (textures.arenaMacro?.image?.width ?? 512),
-    };
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\n varying vec3 vMacroPos;')
-      .replace(
-        '#include <worldpos_vertex>',
-        `#include <worldpos_vertex>
-         vec4 macroLocal = vec4(transformed, 1.0);
-         #ifdef USE_INSTANCING
-           macroLocal = instanceMatrix * macroLocal;
-         #endif
-         vMacroPos = (modelMatrix * macroLocal).xyz;`
-      );
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        '#include <common>\n uniform sampler2D uMacro;\n uniform float uMacroScale;\n uniform float uMacroTexel;\n varying vec3 vMacroPos;'
-      )
-      .replace(
-        '#include <map_fragment>',
-        `#include <map_fragment>
-         vec2 macroUv = vMacroPos.xz * uMacroScale + 0.5;
-         float macro = texture2D(uMacro, macroUv).r;
-         diffuseColor.rgb *= 0.72 + macro * 0.78;`
-      )
-      // 台面在几何上是一块块平板，平铺的法线贴图又细到亚像素，两者相加就是「一张砂纸」。
-      // 用宏观图自身的梯度推一个大尺度的法线扰动出来：起伏有好几米宽，跨得过好几块 tile，
-      // 在游戏距离上真的能被主光扫出明暗。
-      .replace(
-        '#include <normal_fragment_maps>',
-        `#include <normal_fragment_maps>
-         {
-           float e = uMacroTexel;
-           float hL = texture2D(uMacro, macroUv - vec2(e, 0.0)).r;
-           float hR = texture2D(uMacro, macroUv + vec2(e, 0.0)).r;
-           float hD = texture2D(uMacro, macroUv - vec2(0.0, e)).r;
-           float hU = texture2D(uMacro, macroUv + vec2(0.0, e)).r;
-           vec3 swell = normalize(vec3((hL - hR) * 1.6, 1.0, (hD - hU) * 1.6));
-           normal = normalize(normal + vec3(swell.x, 0.0, swell.z) * 0.45);
-         }`
-      );
+  crustMat.extension = {
+    key: 'crust-macro',
+    samplers: { uMacro: textures.arenaMacro },
+    floats: {
+      uMacroScale: 1 / (R * 2.15),
+      // 采样步长必须跟着贴图分辨率走：写死成 512 的话，低画质那张 128 的图
+      // 取样点会落在同一个纹素里，梯度恒为零，大尺度起伏在低配上就整个消失了。
+      uMacroTexel: 2 / (textures.arenaMacro?.image?.width ?? 512),
+    },
+    vertexDefinitions: 'varying vec3 vMacroPos;',
+    // worldPos 已经把逐实例矩阵算进去了，正是这块 tile 在世界里的落点
+    vertexWorldPos: 'vMacroPos = worldPos.xyz;',
+    fragmentDefinitions: 'varying vec3 vMacroPos;',
+    // 台面在几何上是一块块平板，平铺的法线贴图又细到亚像素，两者相加就是「一张砂纸」。
+    // 用宏观图自身的梯度推一个大尺度的法线扰动出来：起伏有好几米宽，跨得过好几块 tile，
+    // 在游戏距离上真的能被主光扫出明暗。
+    fragmentBeforeLights: `
+      vec2 macroUv = vMacroPos.xz * uMacroScale + 0.5;
+      float macro = texture2D(uMacro, macroUv).r;
+      surfaceAlbedo *= 0.72 + macro * 0.78;
+      {
+        float e = uMacroTexel;
+        float hL = texture2D(uMacro, macroUv - vec2(e, 0.0)).r;
+        float hR = texture2D(uMacro, macroUv + vec2(e, 0.0)).r;
+        float hD = texture2D(uMacro, macroUv - vec2(0.0, e)).r;
+        float hU = texture2D(uMacro, macroUv + vec2(0.0, e)).r;
+        vec3 swell = normalize(vec3((hL - hR) * 1.6, 1.0, (hD - hU) * 1.6));
+        normalW = normalize(normalW + vec3(swell.x, 0.0, swell.z) * 0.45);
+      }`,
   };
-  crustMat.customProgramCacheKey = () => 'crust-macro';
 
   const tileSideMat = track(
     new MeshStandardMaterial({
@@ -647,13 +628,13 @@ export function createIsland({ scene, quality, textures, arenaRadius = 20, seed 
       toneMapped: false,
     })
   );
-  decalMat.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aFade;\nvarying float vFade;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvFade = aFade;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vFade;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.a *= vFade;');
+  decalMat.extension = {
+    key: 'decal-fade',
+    attributes: ['aFade'],
+    vertexDefinitions: 'attribute float aFade;\nvarying float vFade;',
+    vertexMainBegin: 'vFade = aFade;',
+    fragmentDefinitions: 'varying float vFade;',
+    fragmentAlpha: 'alpha *= vFade;',
   };
   const decals = new InstancedMesh(decalGeo, decalMat, decalCapacity);
   decals.name = 'tile-damage';

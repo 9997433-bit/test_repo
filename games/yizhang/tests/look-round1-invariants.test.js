@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Scene, Vector3 } from "three";
+import { Scene, Vector3 } from "../src/render/gfx/index.js";
 
 import { feedLook, resolveLookMode } from "../src/core/look.js";
 import { cameraYawToSimYaw } from "../src/core/view.js";

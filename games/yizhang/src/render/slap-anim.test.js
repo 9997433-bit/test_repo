@@ -11,7 +11,7 @@
 // 链路（characters / cameraRig 都是真的，VFX 用探针替身记调用）。
 
 import { describe, expect, it } from 'vitest';
-import { Scene, Vector3 } from 'three';
+import { Scene, Vector3 } from './gfx/index.js';
 import { createMatch, getView, step } from '../sim/index.js';
 import { GLOVE_BY_ID } from '../data/gloves.js';
 import { createCamera } from './camera.js';

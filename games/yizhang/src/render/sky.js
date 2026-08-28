@@ -6,16 +6,17 @@
 import {
   BackSide,
   Color,
+  CubeTexture,
   DoubleSide,
   FogExp2,
   Mesh,
-  PMREMGenerator,
   PlaneGeometry,
-  Scene,
+  SRGBColorSpace,
   ShaderMaterial,
   SphereGeometry,
   Vector3,
-} from 'three';
+  linearToSrgb,
+} from './gfx/index.js';
 import { PALETTE } from './config.js';
 
 const SKY_VERT = /* glsl */ `
@@ -128,7 +129,95 @@ const CLOUD_FRAG = /* glsl */ `
   }
 `;
 
-export function createSky({ scene, renderer, quality, textures, sunDir }) {
+/**
+ * 环境球。取值与 SKY_FRAG 同一套渐变（天顶 / 中天 / 地平 / 暖霾 + 落日盘），只是
+ * 在 CPU 上逐方向算一遍烘成立方图 —— 粗糙度响应与天光颜色因此天然一致，而且不必
+ * 为了拿一张 IBL 先把天空整个渲一遍。
+ *
+ * 输出走 sRGB 编码：8 位通道存线性值会在暮色这种低亮度区段肉眼可见地断层。
+ */
+function bakeSkyEnvironment(sunDir, size = 32) {
+  const zenith = new Color(PALETTE.skyZenith);
+  const mid = new Color(PALETTE.skyMid);
+  const horizon = new Color(PALETTE.skyHorizon);
+  const warm = new Color(PALETTE.skyWarm);
+  const sun = new Color(PALETTE.sunDisc);
+  const sx = sunDir.x;
+  const sy = sunDir.y;
+  const sz = sunDir.z;
+
+  const smoothstep = (a, b, x) => {
+    const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  // 立方图六面的方向约定（+X, -X, +Y, -Y, +Z, -Z）
+  const dirOf = (face, s, t) => {
+    switch (face) {
+      case 0: return [1, -t, -s];
+      case 1: return [-1, -t, s];
+      case 2: return [s, 1, t];
+      case 3: return [s, -1, -t];
+      case 4: return [s, -t, 1];
+      default: return [-s, -t, -1];
+    }
+  };
+
+  const faces = [];
+  for (let f = 0; f < 6; f++) {
+    const data = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const s = (2 * (x + 0.5)) / size - 1;
+        const t = (2 * (y + 0.5)) / size - 1;
+        const d = dirOf(f, s, t);
+        const len = Math.hypot(d[0], d[1], d[2]) || 1;
+        const dx = d[0] / len;
+        const dy = d[1] / len;
+        const dz = d[2] / len;
+
+        const h = Math.min(1, Math.max(0, dy * 0.5 + 0.5));
+        const a = smoothstep(0.42, 0.62, h);
+        const b = smoothstep(0.58, 0.95, h);
+        let r = lerp(lerp(horizon.r, mid.r, a), zenith.r, b);
+        let g = lerp(lerp(horizon.g, mid.g, a), zenith.g, b);
+        let bl = lerp(lerp(horizon.b, mid.b, a), zenith.b, b);
+
+        const sunAmount = Math.max(0, dx * sx + dy * sy + dz * sz);
+        const band = Math.exp(-Math.pow(Math.max(dy, -0.35) * 3.4, 2));
+        const warmth = Math.pow(sunAmount, 3) * band * 0.85;
+        r = lerp(r, warm.r, warmth);
+        g = lerp(g, warm.g, warmth);
+        bl = lerp(bl, warm.b, warmth);
+
+        const disc = Math.pow(sunAmount, 220) * 1.6 + Math.pow(sunAmount, 14) * 0.12 * band;
+        r += sun.r * disc;
+        g += sun.g * disc;
+        bl += sun.b * disc;
+
+        const below = smoothstep(-0.25, 0.05, dy);
+        r = lerp(r * 0.72, r, below);
+        g = lerp(g * 0.72, g, below);
+        bl = lerp(bl * 0.72, bl, below);
+
+        const o = (y * size + x) * 4;
+        data[o] = Math.round(Math.min(1, Math.max(0, linearToSrgb(r))) * 255);
+        data[o + 1] = Math.round(Math.min(1, Math.max(0, linearToSrgb(g))) * 255);
+        data[o + 2] = Math.round(Math.min(1, Math.max(0, linearToSrgb(bl))) * 255);
+        data[o + 3] = 255;
+      }
+    }
+    faces.push(data);
+  }
+
+  const tex = new CubeTexture(faces, size);
+  tex.colorSpace = SRGBColorSpace;
+  tex.name = 'sky-environment';
+  return tex;
+}
+
+export function createSky({ scene, quality, textures, sunDir }) {
   const skyGeo = new SphereGeometry(900, 32, 20);
   const skyMat = new ShaderMaterial({
     vertexShader: SKY_VERT,
@@ -151,17 +240,11 @@ export function createSky({ scene, renderer, quality, textures, sunDir }) {
   skyMesh.frustumCulled = false;
   skyMesh.renderOrder = -1000;
 
-  // 环境球：从同一片天空烘 PMREM，粗糙度响应与天光颜色天然一致
-  const pmrem = new PMREMGenerator(renderer);
-  pmrem.compileEquirectangularShader();
-  const envScene = new Scene();
-  envScene.add(skyMesh);
-  const envRT = pmrem.fromScene(envScene, 0, 1, 2000);
-  envScene.remove(skyMesh);
-  pmrem.dispose();
+  // 环境球：与天穹同源的一张立方图（见 bakeSkyEnvironment）
+  const envTexture = bakeSkyEnvironment(sunDir.clone().normalize(), quality.name === 'low' ? 16 : 32);
 
   scene.add(skyMesh);
-  scene.environment = envRT.texture;
+  scene.environment = envTexture;
   scene.environmentIntensity = 0.45;
   scene.fog = new FogExp2(new Color(PALETTE.fog).getHex(), 0.0065);
 
@@ -207,7 +290,7 @@ export function createSky({ scene, renderer, quality, textures, sunDir }) {
   return {
     skyMesh,
     clouds,
-    envRT,
+    envTexture,
     update(time, cameraPos) {
       skyMesh.position.copy(cameraPos);
       for (const c of clouds) {
@@ -225,7 +308,7 @@ export function createSky({ scene, renderer, quality, textures, sunDir }) {
         c.geometry.dispose();
         c.material.dispose();
       }
-      envRT.dispose();
+      envTexture.dispose();
       scene.environment = null;
       scene.fog = null;
     },

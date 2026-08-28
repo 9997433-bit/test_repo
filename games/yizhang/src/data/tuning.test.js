@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
-import { Vector3 } from "three";
+import { Vector3 } from "../render/gfx/index.js";
 
 import { CAMERA, CHARACTERS, MOVEMENT } from "./tuning.js";
 import {

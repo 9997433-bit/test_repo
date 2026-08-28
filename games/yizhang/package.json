@@ -14,7 +14,7 @@
     "probe": "node scripts/probe.mjs"
   },
   "dependencies": {
-    "three": "^0.170.0"
+    "@babylonjs/core": "^8.56.2"
   },
   "devDependencies": {
     "jsdom": "^26.1.0",

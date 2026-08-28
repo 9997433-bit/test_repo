@@ -14,7 +14,7 @@
 // 所以这里给一份空贴图库 —— 材质允许 map 为 null，形状与状态照样能验。
 
 import { describe, expect, it } from 'vitest';
-import { Color, Scene, Vector3 } from 'three';
+import { Color, Scene, Vector3 } from './gfx/index.js';
 import * as sim from '../sim/index.js';
 import { GLOVES } from '../data/gloves.js';
 import { GLOVE_TINT, QUALITY } from './config.js';

@@ -42,8 +42,8 @@ import {
   Object3D,
   Vector2,
   Vector3,
-} from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+} from './gfx/index.js';
+import { mergeGeometries } from './gfx/index.js';
 import { BLOOM_LAYER, FALLBACK_TINT, OCCLUDER_LAYER, PALETTE, markOccluder } from './config.js';
 import { mulberry32, smoothstep } from './noise.js';
 import { resolveSkinLook, skinTable } from './skins.js';
