@@ -2,7 +2,7 @@
 //
 // 断言的还是那些「截图评审不一定拦得住」的硬约束：
 //
-//   · 八只掌各有一套战斗特效，分派表 8 键 8 值，没有两只共用
+//   · 十二只掌各有一套战斗特效，分派表 12 键 12 值，没有两只共用
 //   · 每套真的画出不一样的形（几何体 / 姿态 / 运动），不是同一片壳换个颜色
 //   · 技能按 skillId 分派，认不出才退回持掌
 //   · 池子有上限：连打不会把 drawcall 顶穿
@@ -16,7 +16,6 @@ import { SKILLS } from '../data/skills.js';
 import { BASE_PITCH, PITCH_LIMIT, createCamera } from './camera.js';
 import {
   COMBAT_VFX_KIND,
-  PENDING_VFX_KIND,
   SKILL_VFX_KIND,
   combatVfxKind,
   createCombatVfx,
@@ -33,14 +32,20 @@ function mount(tier = 'high') {
   return { scene, vfx };
 }
 
-/** 一次出掌画出来的「形」：用了哪副几何体、摆成什么姿态、第一帧长什么样。 */
+/**
+ * 一次出掌画出来的「形」：用了哪副几何体、摆成什么姿态、第一帧长什么样。
+ *
+ * 只数形体壳（uLife 是壳着色器独有的 uniform）——碎块那张 InstancedMesh 一直挂在
+ * 组里且默认可见，把它算进来的话「画出东西了吗」这一问永远是 yes。
+ */
 function shapeOf(vfx, kind) {
   const at = new Vector3(0, 1.2, 0);
   const dir = new Vector3(0, 0, -1);
   vfx.strike(kind, at, dir, 1);
   const live = [];
   vfx.group.traverse((o) => {
-    if (!o.isMesh || !o.visible || !o.parent?.visible) return;
+    if (!o.isMesh || !o.material?.uniforms?.uLife) return;
+    if (!o.visible || !o.parent?.visible) return;
     if (!o.parent?.parent?.visible) return;
     live.push(o);
   });
@@ -59,15 +64,17 @@ function shapeOf(vfx, kind) {
   return { sig, count: live.length };
 }
 
-describe('战斗特效：八掌各一套', () => {
-  it('分派表 8 键、8 个互不相同的值，键与掌表一一对上', () => {
-    // 分派表覆盖首发 8 掌；P2 表尾追加的生涯 4 掌暂无专形（combatVfxKind 认不出
-    // 退 fanwake）。形名占在 PENDING_VFX_KIND，SPEC 补齐后再并进 COMBAT 并改回全表对照。
+/** 首发 8 掌 = 技能词表的原主掌；生涯 4 掌复用它们的 skillId。 */
+const FOUNDING_IDS = ['cotton', 'granite', 'gale', 'frost', 'spring', 'afterimage', 'magnet', 'meteor'];
+const CAREER_IDS = ['cocoon', 'raven', 'victor', 'tumbler'];
+
+describe('战斗特效：十二掌各一套', () => {
+  it('分派表 12 键、12 个互不相同的值，键与掌表一一对上', () => {
     const keys = Object.keys(COMBAT_VFX_KIND);
     const values = Object.values(COMBAT_VFX_KIND);
-    expect(keys.length).toBe(8);
-    expect(new Set(values).size).toBe(8);
-    expect(keys.sort()).toEqual(GLOVES.slice(0, 8).map((g) => g.id).sort());
+    expect(keys.length).toBe(12);
+    expect(new Set(values).size).toBe(12);
+    expect(keys.sort()).toEqual(GLOVES.map((g) => g.id).sort());
     expect(COMBAT_VFX_KIND.cotton).toBe('fanwake');
     expect(COMBAT_VFX_KIND.granite).toBe('slab');
     expect(COMBAT_VFX_KIND.gale).toBe('gust');
@@ -76,6 +83,13 @@ describe('战斗特效：八掌各一套', () => {
     expect(COMBAT_VFX_KIND.afterimage).toBe('phase');
     expect(COMBAT_VFX_KIND.magnet).toBe('flux');
     expect(COMBAT_VFX_KIND.meteor).toBe('cinder');
+    // P3 收口：生涯四掌沿用占位时冻结的形名，正式并入
+    expect(COMBAT_VFX_KIND.cocoon).toBe('husk');
+    expect(COMBAT_VFX_KIND.raven).toBe('plume');
+    expect(COMBAT_VFX_KIND.victor).toBe('banner');
+    expect(COMBAT_VFX_KIND.tumbler).toBe('wobble');
+    // F1 冻结的是 victor，不是 O2 当初猜的 triumph
+    expect(COMBAT_VFX_KIND.triumph).toBeUndefined();
   });
 
   it('认不出的掌退回絮扇，不抛错也不留空', () => {
@@ -84,47 +98,22 @@ describe('战斗特效：八掌各一套', () => {
     expect(combatVfxKind(undefined)).toBe('fanwake');
   });
 
-  it('待接四掌：形名先占住，四条互异且不与现役重名', () => {
-    const pending = Object.entries(PENDING_VFX_KIND);
-    expect(pending.length).toBe(4);
-    const shapes = pending.map(([, kind]) => kind);
-    expect(new Set(shapes).size).toBe(4);
-    for (const kind of shapes) {
-      expect(Object.values(COMBAT_VFX_KIND), kind).not.toContain(kind);
-      expect(Object.values(SKILL_VFX_KIND), kind).not.toContain(kind);
-    }
-    // F1 冻结 id = cocoon/raven/victor/tumbler；O2 曾猜常胜 = triumph
-    expect(Object.keys(PENDING_VFX_KIND).sort()).toEqual(
-      ['cocoon', 'raven', 'tumbler', 'victor']
-    );
-    expect(PENDING_VFX_KIND.victor).toBe('banner');
-    expect(PENDING_VFX_KIND.triumph).toBeUndefined();
-  });
-
-  it('待接四掌已进掌表，占位键对得上；专形尚未并进 COMBAT（strike 退絮扇）', () => {
-    const live = new Set(GLOVES.map((g) => g.id));
-    const careerIds = GLOVES.slice(8).map((g) => g.id);
-    expect(careerIds).toEqual(['cocoon', 'raven', 'victor', 'tumbler']);
-    let aligned = 0;
-    for (const [gloveId, kind] of Object.entries(PENDING_VFX_KIND)) {
-      expect(live.has(gloveId), gloveId).toBe(true);
-      aligned += 1;
-      // 占位未接线：COMBAT 没有这条，combatVfxKind 仍退 fanwake
-      if (COMBAT_VFX_KIND[gloveId] == null) {
-        expect(combatVfxKind(gloveId), gloveId).toBe('fanwake');
-        continue;
-      }
-      // 一旦并进 COMBAT，就必须是预留形名，且 SPEC 真能画出东西
-      expect(COMBAT_VFX_KIND[gloveId], gloveId).toBe(kind);
+  it('生涯四掌不再退絮扇：各有专形，且 SPEC 真画得出东西', () => {
+    expect(GLOVES.slice(8).map((g) => g.id)).toEqual(CAREER_IDS);
+    for (const gloveId of CAREER_IDS) {
+      const kind = combatVfxKind(gloveId);
+      expect(kind, gloveId).toBe(COMBAT_VFX_KIND[gloveId]);
+      expect(kind, gloveId).not.toBe('fanwake');
       const { vfx } = mount('high');
+      // 认得出这条 kind：SPEC 缺条目时 strike 会静默退回絮扇，那就等于没并进来
+      expect(vfx.kinds, gloveId).toContain(kind);
       expect(shapeOf(vfx, kind).count, gloveId).toBeGreaterThan(0);
       vfx.dispose();
     }
-    expect(aligned).toBe(4);
   });
 
   it('技能按 skillId 分派：掌表里每个非空 skillId 都有一条', () => {
-    // P2 追加的 4 掌复用首发 skillId 词表：非空 skillId 去重后仍是 7 个
+    // 生涯 4 掌复用首发 skillId 词表：非空 skillId 去重后仍是 7 个
     const skillIds = GLOVES.map((g) => g.skillId).filter(Boolean);
     expect(new Set(skillIds).size).toBe(7); // 词表 7 技，木棉无主动技
     for (const id of skillIds) {
@@ -132,20 +121,27 @@ describe('战斗特效：八掌各一套', () => {
       expect(SKILLS[id], id).toBeTruthy(); // 与 src/data/skills.js 对得上
     }
     expect(Object.keys(SKILL_VFX_KIND).length).toBe(7);
-    // 每只掌的技能与它的扇击同源：形一致、量不同（追加掌暂无专形，先跳过——
-    // 它们的技能形沿用词表原主掌的形，出掌本身由 combatVfxKind 兜底 fanwake）
-    for (const g of GLOVES) {
-      if (!g.skillId || !COMBAT_VFX_KIND[g.id]) continue;
+    // 词表原主掌的技能与它的扇击同源：形一致、量不同
+    for (const g of GLOVES.filter((glove) => FOUNDING_IDS.includes(glove.id))) {
+      if (!g.skillId) continue;
       expect(SKILL_VFX_KIND[g.skillId], g.id).toBe(COMBAT_VFX_KIND[g.id]);
+    }
+    // 生涯四掌借的是别人的技能：扇击有自己的形，技能落回词表原主掌的形。
+    // 这两件事不许混为一谈——技能形跟着 skillId 走，不跟着持掌走。
+    const owner = { coil_counter: 'spring', wind_rush: 'gale', iron_pull: 'magnet', quake_slam: 'granite' };
+    for (const g of GLOVES.filter((glove) => CAREER_IDS.includes(glove.id))) {
+      expect(SKILL_VFX_KIND[g.skillId], g.id).toBe(COMBAT_VFX_KIND[owner[g.skillId]]);
+      expect(skillVfxKind(g.skillId, g.id), g.id).not.toBe(COMBAT_VFX_KIND[g.id]);
     }
     // 认不出的 skillId 退回持掌，而不是退回默认掌
     expect(skillVfxKind('未知技能', 'meteor')).toBe('cinder');
     expect(skillVfxKind(null, 'frost')).toBe('rime');
+    expect(skillVfxKind(null, 'tumbler')).toBe('wobble');
   });
 
   it('每掌画出来的形互不相同，不是同一片壳换个颜色', () => {
     const shapes = new Map();
-    for (const g of GLOVES.slice(0, 8)) {
+    for (const g of GLOVES) {
       const { vfx } = mount('high');
       const kind = COMBAT_VFX_KIND[g.id];
       const shape = shapeOf(vfx, kind);
@@ -153,8 +149,20 @@ describe('战斗特效：八掌各一套', () => {
       shapes.set(kind, shape.sig);
       vfx.dispose();
     }
-    expect(shapes.size).toBe(8);
-    expect(new Set(shapes.values()).size).toBe(8);
+    expect(shapes.size).toBe(12);
+    expect(new Set(shapes.values()).size).toBe(12);
+  });
+
+  it('低档砍的是层数不是形：十二套在 low 档仍各画各的', () => {
+    const sigs = new Set();
+    for (const g of GLOVES) {
+      const { vfx } = mount('low');
+      const shape = shapeOf(vfx, COMBAT_VFX_KIND[g.id]);
+      expect(shape.count, g.id).toBe(1); // 低档一律单层
+      sigs.add(shape.sig);
+      vfx.dispose();
+    }
+    expect(sigs.size).toBe(12);
   });
 
   it('出掌之后场景里真的有东西在动，跑完自己收干净', () => {
