@@ -1,0 +1,17 @@
+{
+  "name": "test_repo",
+  "version": "1.0.0",
+  "description": "Minimal Node.js web app used to validate the Cloud Agent development environment.",
+  "main": "index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
