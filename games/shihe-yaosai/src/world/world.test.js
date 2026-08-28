@@ -84,7 +84,7 @@ describe("towerId 归一", () => {
 
 describe("view 归一", () => {
   it("空 view 也能得到 24 个插座", () => {
-    const view = normalizeView(undefined, { muzzleOf: () => ({ x: 0, y: 0, z: 0 }) });
+    const view = normalizeView(undefined);
     expect(view.sockets).toHaveLength(SOCKET_COUNT);
     expect(view.sockets.every((s) => s.kind === null)).toBe(true);
     expect(view.enemies).toEqual([]);
@@ -92,20 +92,35 @@ describe("view 归一", () => {
   });
 
   it("敌人缺 y 时回落到轨道高度，lane 越界会被夹住", () => {
-    const view = normalizeView(
-      { enemies: [{ lane: 1, theta: 0.5, radius: 30 }, { lane: 99, theta: 1, r: 20 }] },
-      { muzzleOf: () => ({ x: 0, y: 0, z: 0 }) }
-    );
+    const view = normalizeView({ enemies: [{ lane: 1, theta: 0.5, radius: 30 }, { lane: 99, theta: 1, r: 20 }] });
     expect(view.enemies[0].y).toBe(LANE_Y[1]);
     expect(view.enemies[1].lane).toBe(LANE_Y.length - 1);
     expect(view.enemies[1].radius).toBe(20);
   });
 
+  it("敌人位置优先信 view 里的 theta，缺极坐标才从 x/z 反算", () => {
+    const theta = 1.1;
+    const view = normalizeView({
+      enemies: [
+        // theta 与 x/z 打架时以 theta 为准
+        { id: 1, lane: 0, theta, radius: 30, x: 0, z: 0 },
+        { id: 2, lane: 0, x: Math.cos(theta) * 26, z: Math.sin(theta) * 26 },
+        { id: 3, lane: 0, theta, y: 4 },
+      ],
+    });
+    expect(view.enemies[0].theta).toBeCloseTo(theta, 9);
+    expect(view.enemies[0].radius).toBe(30);
+    expect(view.enemies[1].theta).toBeCloseTo(theta, 9);
+    expect(view.enemies[1].radius).toBeCloseTo(26, 9);
+    // 只有 y 不是位置，别被当成原点上的一个点
+    expect(view.enemies[2].theta).toBeCloseTo(theta, 9);
+    expect(view.enemies[2].y).toBe(4);
+  });
+
   it("过热可以来自布尔位，也可以来自 heat/heatMax", () => {
-    const view = normalizeView(
-      { sockets: [{ towerId: "rail", overheated: true }, { towerId: "rail", heat: 10, heatMax: 10 }] },
-      { muzzleOf: () => ({ x: 0, y: 0, z: 0 }) }
-    );
+    const view = normalizeView({
+      sockets: [{ towerId: "rail", overheated: true }, { towerId: "rail", heat: 10, heatMax: 10 }],
+    });
     expect(view.sockets[0].overheat).toBe(true);
     expect(view.sockets[1].overheat).toBe(true);
     expect(view.sockets[2].overheat).toBe(false);
@@ -265,20 +280,24 @@ describe("场景搭建", () => {
     syncWorld(scene, { coreHp: 10, coreMax: 10, sockets: [] });
   });
 
-  it("弹道拖影只在 view.shots 有内容时开启", () => {
-    const tracer = scene.getMeshByName("shot-tracers");
-    expect(tracer.isEnabled()).toBe(false);
+  it("世界层不画弹道：view.shots 既不建网格也不进归一化结果", () => {
+    expect(scene.getMeshByName("shot-tracers")).toBeNull();
 
-    syncWorld(scene, {
+    const before = scene.meshes.length;
+    const normalized = syncWorld(scene, {
       coreHp: 10,
       coreMax: 10,
+      enemies: [{ id: 1, lane: 0, theta: 0.4, radius: 30, hp: 3, hpMax: 3 }],
       shots: [{ socket: 5, to: { x: 0, y: 4, z: 0 } }, { from: { x: 1, y: 1, z: 1 }, to: { x: 9, y: 4, z: 3 } }],
     });
-    expect(tracer.isEnabled()).toBe(true);
-    expect(tracer.thinInstanceCount).toBe(2);
 
-    syncWorld(scene, { coreHp: 10, coreMax: 10, shots: [] });
-    expect(tracer.isEnabled()).toBe(false);
+    expect(normalized.shots).toBeUndefined();
+    expect(scene.meshes.length).toBe(before);
+    expect(scene.meshes.some((mesh) => /shot|tracer/i.test(mesh.name))).toBe(false);
+    // 弹道被忽略不代表这一帧被丢掉：敌人照常上场。
+    expect([...getWorld(scene).enemies.pools.values()].reduce((sum, pool) => sum + pool.count, 0)).toBe(1);
+
+    syncWorld(scene, { coreHp: 10, coreMax: 10, enemies: [] });
   });
 
   it("对残缺 view 保持沉默而不是抛错", () => {

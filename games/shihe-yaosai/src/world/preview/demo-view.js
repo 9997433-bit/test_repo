@@ -1,8 +1,9 @@
 // Opus-2 世界 · 预览用假 view 源。
 //
 // 仅供 src/world/preview 这个开发页使用：世界层需要一份「长得像 getView() 输出」的
-// 数据才能被单独看见，而真正的 view 由 sim / combat 产出。这里的数字没有任何玩法含义，
+// 数据才能被单独看见，而真正的 view 由 sim 产出。这里的数字没有任何玩法含义，
 // 也不会被 src/main.js 引用。
+// 不造 shots：世界层不画弹道，预览页也就不需要假曳光。
 
 import { LANE_Y, SOCKET_COUNT, TAU } from "../constants.js";
 
@@ -60,22 +61,6 @@ export function demoView(time, opts = {}) {
     });
   }
 
-  // 拖影只是为了让预览页能看到这条通道确实通着，配对方式没有玩法含义。
-  const shots = [];
-  for (let i = 0; i < LAYOUT.length; i += 1) {
-    if ((i + Math.floor(t * 3)) % 3 !== 0) continue;
-    const target = enemies[(i * 7 + Math.floor(t * 4)) % enemies.length];
-    shots.push({
-      socket: LAYOUT[i].socket,
-      to: {
-        x: Math.cos(target.theta) * target.radius,
-        y: LANE_Y[target.lane],
-        z: Math.sin(target.theta) * target.radius,
-      },
-      life: 0.5 + 0.5 * Math.sin(t * 9 + i),
-    });
-  }
-
   return {
     backend: "preview",
     wave: 3 + Math.floor(t / 12),
@@ -84,7 +69,7 @@ export function demoView(time, opts = {}) {
     coreMax: CORE_MAX,
     sockets,
     enemies,
-    shots,
+    // 没有 shots：弹道由 src/combat 画，预览页只看世界层。
     events: [],
     hoverSocket: opts.hover ?? null,
     selectedSocket: opts.selected ?? null,

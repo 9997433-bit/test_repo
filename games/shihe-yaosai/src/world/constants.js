@@ -57,7 +57,6 @@ export const NAMES = {
   turretGlow: (i) => `socket-${i}-turret-glow`,
   laneRing: (lane) => `lane-ring-${lane}`,
   enemy: (shape, lane) => `enemy-${shape}-lane${lane}`,
-  shots: "shot-tracers",
   skyDome: "sky-dome",
   skyStars: "sky-stars",
   sun: "world-sun",
@@ -102,7 +101,6 @@ export const PALETTE = {
   ],
 
   overheat: [1.0, 0.4, 0.09],
-  shot: [0.5, 0.82, 1.0],
 };
 
 /** 每种炮塔的发光色与基础发光强度。 */

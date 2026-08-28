@@ -1,9 +1,10 @@
 // Opus-2 世界 · view 归一化。
-// 世界层不产生任何玩法数值，只把 sim/combat 给出的 JSON 读成渲染需要的形状，
+// 世界层不产生任何玩法数值，只把 sim 给出的 JSON 读成渲染需要的形状，
 // 并且对字段缺失、别名、越界一律做防御，让渲染永远不会因为上游改字段而炸掉。
+// view.shots 不在这里出现：弹道由 src/combat 独占，世界层连读都不读。
 
 import { SOCKET_COUNT, TURRET_KINDS, ENEMY_SHAPES, LANE_Y } from "./constants.js";
-import { laneIndex, laneHeight, normalizeAngle, wrapSocket } from "./polar.js";
+import { laneIndex, laneHeight, normalizeAngle, worldToPolar, wrapSocket } from "./polar.js";
 
 function num(value, fallback = 0) {
   const n = typeof value === "number" ? value : Number(value);
@@ -138,16 +139,41 @@ function readSocket(raw, index) {
   };
 }
 
+/**
+ * 环向位置。契约里 theta 必备，所以它永远优先；
+ * 只有上游整段没给极坐标时，才从笛卡尔位置反算，免得敌人全堆在原点。
+ */
+function readEnemyPolar(raw) {
+  const thetaRaw = firstDefined(raw, ["theta", "angle", "a", "phi"]);
+  const radiusRaw = firstDefined(raw, ["radius", "r", "dist", "distance"]);
+  if (thetaRaw !== undefined && radiusRaw !== undefined) {
+    return { theta: normalizeAngle(num(thetaRaw, 0)), radius: Math.max(0, num(radiusRaw, 0)) };
+  }
+
+  const point = readVec3(firstDefined(raw, ["pos", "position", "p"])) ?? readPlanarPoint(raw);
+  if (thetaRaw === undefined && radiusRaw === undefined && !point) return null;
+
+  const polar = point ? worldToPolar(point.x, point.y, point.z) : null;
+  return {
+    theta: thetaRaw !== undefined ? normalizeAngle(num(thetaRaw, 0)) : polar ? polar.theta : 0,
+    radius: radiusRaw !== undefined ? Math.max(0, num(radiusRaw, 0)) : polar ? polar.radius : 0,
+  };
+}
+
+/** 只有 x 与 z 都在时才当成一个平面点；单独的 y 是高度，不是位置。 */
+function readPlanarPoint(raw) {
+  if (raw.x === undefined || raw.z === undefined) return null;
+  return { x: num(raw.x), y: num(raw.y), z: num(raw.z) };
+}
+
 function readEnemy(raw, order) {
   if (!raw || typeof raw !== "object") return null;
 
   const lane = laneIndex(firstDefined(raw, ["lane", "laneIndex", "ring", "track"]));
-  const thetaRaw = firstDefined(raw, ["theta", "angle", "a", "phi"]);
-  const radiusRaw = firstDefined(raw, ["radius", "r", "dist", "distance"]);
-  if (thetaRaw === undefined && radiusRaw === undefined) return null;
+  const polar = readEnemyPolar(raw);
+  if (!polar) return null;
 
-  const theta = normalizeAngle(num(thetaRaw, 0));
-  const radius = Math.max(0, num(radiusRaw, 0));
+  const { theta, radius } = polar;
   const yRaw = firstDefined(raw, ["y", "height"]);
   const y = yRaw === undefined ? laneHeight(lane) : num(yRaw, laneHeight(lane));
 
@@ -176,27 +202,12 @@ function readEnemy(raw, order) {
   };
 }
 
-function readShot(raw, sockets) {
-  if (!raw || typeof raw !== "object") return null;
-
-  let from = readVec3(firstDefined(raw, ["from", "a", "origin", "start", "muzzle", "src"]));
-  const to = readVec3(firstDefined(raw, ["to", "b", "target", "end", "hit", "dst"]));
-  if (!from) {
-    const socketIdx = firstDefined(raw, ["socket", "socketIndex", "fromSocket"]);
-    if (socketIdx !== undefined) from = sockets.muzzleOf(wrapSocket(num(socketIdx, 0)));
-  }
-  if (!from || !to) return null;
-
-  const life = num(firstDefined(raw, ["life", "t", "age", "alpha"]), 1);
-  return { from, to, intensity: Math.min(1, Math.max(0.05, life)) };
-}
-
 /**
  * 把 getView() 的任意形状读成渲染层的稳定结构。
+ * 输出里没有 shots：曳光归 src/combat，世界层画了就会和它重影。
  * @param {*} view
- * @param {{muzzleOf:(i:number)=>{x:number,y:number,z:number}}} helpers
  */
-export function normalizeView(view, helpers) {
+export function normalizeView(view) {
   const src = view && typeof view === "object" ? view : {};
   const coreMax = Math.max(1e-6, num(firstDefined(src, ["coreMax", "coreHpMax", "coreMaxHp"]), 1));
   const coreHpRaw = firstDefined(src, ["coreHp", "core", "hp"]);
@@ -213,15 +224,6 @@ export function normalizeView(view, helpers) {
     if (enemy) enemies.push(enemy);
   }
 
-  const shotsSrc = Array.isArray(src.shots) ? src.shots : [];
-  const shots = [];
-  if (helpers && typeof helpers.muzzleOf === "function") {
-    for (let i = 0; i < shotsSrc.length; i += 1) {
-      const shot = readShot(shotsSrc[i], helpers);
-      if (shot) shots.push(shot);
-    }
-  }
-
   const hoverRaw = firstDefined(src, ["hoverSocket", "hoveredSocket", "hover"]);
   const selectedRaw = firstDefined(src, ["selectedSocket", "selection", "activeSocket"]);
 
@@ -233,7 +235,6 @@ export function normalizeView(view, helpers) {
     paused: truthyFlag(src.paused),
     sockets,
     enemies,
-    shots,
     hoverSocket: hoverRaw === undefined ? null : wrapSocket(num(hoverRaw, 0)),
     selectedSocket: selectedRaw === undefined ? null : wrapSocket(num(selectedRaw, 0)),
     laneY: LANE_Y,
