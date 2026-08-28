@@ -69,10 +69,13 @@ function applyCommonState(bm, src) {
 class GfxExtensionPlugin extends MaterialPluginBase {
   constructor(material, ext, resolve) {
     const define = `GFX_${String(ext.key).toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
-    super(material, `gfx-${ext.key}`, 210, { [define]: true });
+    // 登记要等到字段都摆好再做：_addPlugin 会当场回调 getCustomCode，
+    // 而那时候 super() 还没返回，this._ext 还是 undefined。
+    super(material, `gfx-${ext.key}`, 210, { [define]: true }, false);
     this._ext = ext;
     this._define = define;
     this._resolve = resolve;
+    this._pluginManager._addPlugin(this);
     this._enable(true);
   }
 
@@ -120,8 +123,13 @@ class GfxExtensionPlugin extends MaterialPluginBase {
       if (ext.vertexWorldPos) out.CUSTOM_VERTEX_UPDATE_WORLDPOS = ext.vertexWorldPos;
       return out;
     }
+    // getSamplers 只是把名字登记进绑定表，GLSL 里的声明得插件自己写。
+    const declarations = Object.keys(ext.samplers ?? {})
+      .map((name) => `uniform sampler2D ${name};`)
+      .join('\n');
     const out = {};
-    if (ext.fragmentDefinitions) out.CUSTOM_FRAGMENT_DEFINITIONS = ext.fragmentDefinitions;
+    const defs = [declarations, ext.fragmentDefinitions].filter(Boolean).join('\n');
+    if (defs) out.CUSTOM_FRAGMENT_DEFINITIONS = defs;
     if (ext.fragmentAlpha) out.CUSTOM_FRAGMENT_UPDATE_ALPHA = ext.fragmentAlpha;
     if (ext.fragmentBeforeLights) out.CUSTOM_FRAGMENT_BEFORE_LIGHTS = ext.fragmentBeforeLights;
     return out;

@@ -8,6 +8,12 @@
 //
 // 实例化同理：Babylon 的瘦实例把每实例矩阵拆成 world0..world3 四个 vec4 属性，
 // 按列拼回去就是原本那个 `instanceMatrix`（两边的矩阵在内存里本来就是同一串数）。
+//
+// 名字接的时候要绕一道存取函数，不能直接 `#define modelMatrix world`：引擎认死
+// `world` 这个 uniform 名，而调用方的着色器里「world」是个很自然的局部变量名
+// （`vec4 world = modelMatrix * vec4(position, 1.0);` 就是原样照抄 three 的写法）。
+// 宏在函数体里展开就会撞上那个局部量，`mat3(modelMatrix)` 于是变成拿 vec4 造 mat3。
+// 存取函数在全局作用域里读 uniform，谁在自己函数里遮蔽同名变量都影响不到它。
 
 const BUILTIN_ATTRIBUTES = ['position', 'normal', 'uv'];
 
@@ -17,11 +23,14 @@ uniform mat4 world;
 uniform mat4 view;
 uniform mat4 projection;
 uniform vec3 cameraPosition;
-#define modelMatrix world
-#define viewMatrix view
-#define projectionMatrix projection
-#define modelViewMatrix (view*world)
-#define normalMatrix mat3(world)
+mat4 gfxWorld() { return world; }
+mat4 gfxView() { return view; }
+mat4 gfxProjection() { return projection; }
+#define modelMatrix gfxWorld()
+#define viewMatrix gfxView()
+#define projectionMatrix gfxProjection()
+#define modelViewMatrix (gfxView()*gfxWorld())
+#define normalMatrix mat3(gfxWorld())
 attribute vec3 position;
 attribute vec3 normal;
 attribute vec2 uv;
@@ -31,13 +40,15 @@ const VERTEX_INSTANCING = `attribute vec4 world0;
 attribute vec4 world1;
 attribute vec4 world2;
 attribute vec4 world3;
-#define instanceMatrix mat4(world0,world1,world2,world3)
+mat4 gfxInstanceMatrix() { return mat4(world0,world1,world2,world3); }
+#define instanceMatrix gfxInstanceMatrix()
 `;
 
 const FRAGMENT_PREAMBLE = `precision highp float;
 uniform mat4 view;
 uniform vec3 cameraPosition;
-#define viewMatrix view
+mat4 gfxView() { return view; }
+#define viewMatrix gfxView()
 `;
 
 const DECL_RE = /^\s*(attribute|uniform)\s+((?:lowp|mediump|highp)\s+)?([A-Za-z_][\w]*)\s+([A-Za-z_][\w]*)\s*(\[[^\]]*\])?\s*;/;
