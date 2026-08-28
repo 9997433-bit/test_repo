@@ -542,6 +542,7 @@
     gap: 6px;
     padding: 6px;
     overflow-x: auto;
+    overscroll-behavior-x: contain; /* 坞站横滑不外溢成页面手势 */
     scrollbar-width: none;
   }
   .sh-dock::-webkit-scrollbar { display: none; }

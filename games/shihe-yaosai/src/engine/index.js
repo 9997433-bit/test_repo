@@ -1,6 +1,7 @@
 // Opus-1 引擎：WebGPU 优先，WebGL2 回退。
 // 约定见 round1/BRIEF.md：createRenderer(canvas) -> { engine, scene, backend, setQuality, dispose }
 // 本模块只负责画布、后端、灯光、氛围与后处理档位；网格由 world / combat 代理构建。
+// 辉光层（GlowLayer）也归这里，见 ./glow.js：全场只留引擎这一层，档位切换才有唯一落点。
 
 import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.js";
@@ -14,10 +15,11 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js";
-import { GlowLayer } from "@babylonjs/core/Layers/glowLayer.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { RawCubeTexture } from "@babylonjs/core/Materials/Textures/rawCubeTexture.js";
 import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration.js";
+
+import { createGlowController, glowSpecFor } from "./glow.js";
 
 // 场景组件副作用：没有它阴影不会被渲染、球谐属性不存在。
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent.js";
@@ -39,6 +41,7 @@ export const PALETTE = {
   rim: [1.0, 0.36, 0.72],
 };
 
+// 辉光那几个数字在 ./glow.js 的 GLOW_TIERS 里，档位映射见 glowSpecFor()。
 const PRESETS = {
   high: {
     scaleFor: (dpr) => 1 / Math.min(Math.max(dpr, 1), 2),
@@ -49,10 +52,6 @@ const PRESETS = {
     bloomScale: 0.6,
     fxaa: true,
     samples: 4,
-    glow: true,
-    glowIntensity: 0.9,
-    glowBlurKernel: 32,
-    glowTextureSize: 512,
     shadows: true,
     shadowMapSize: 1024,
     shadowBlurKernel: 24,
@@ -66,10 +65,6 @@ const PRESETS = {
     bloomScale: 0.5,
     fxaa: true,
     samples: 1,
-    glow: true,
-    glowIntensity: 0.72,
-    glowBlurKernel: 16,
-    glowTextureSize: 256,
     shadows: false,
     shadowMapSize: 0,
     shadowBlurKernel: 0,
@@ -79,7 +74,6 @@ const PRESETS = {
     postprocess: false,
     fxaa: false,
     samples: 1,
-    glow: false,
     shadows: false,
     shadowMapSize: 0,
     shadowBlurKernel: 0,
@@ -259,9 +253,9 @@ function createProceduralEnvironment(scene) {
  * @param {HTMLCanvasElement} canvas 画布，index.html 中 id="sh-canvas"
  * @param {{ quality?: 'high'|'mid'|'low', backend?: 'webgpu'|'webgl2' }} [options]
  * @returns {Promise<{ engine: any, scene: any, backend: 'webgpu'|'webgl2', quality: string,
- *   camera: any, activeCamera: any, setQuality: (tier: string) => string,
+ *   camera: any, activeCamera: any, glow: any, setQuality: (tier: string) => string,
  *   useCamera: (camera: any) => any, registerShadowCaster: (mesh: any) => void,
- *   resize: () => void, dispose: () => void }>}
+ *   excludeFromGlow: (mesh: any) => void, resize: () => void, dispose: () => void }>}
  */
 export async function createRenderer(canvas, options = {}) {
   const target = canvas || (typeof document !== "undefined" ? document.getElementById("sh-canvas") : null);
@@ -329,8 +323,9 @@ export async function createRenderer(canvas, options = {}) {
   rimLight.shadowEnabled = false;
 
   let pipeline = null;
-  let glow = null;
   let shadowGenerator = null;
+  // 辉光层只有这一个出处：兄弟模块自建的层会在换档 / 帧末被摘掉。
+  const glow = createGlowController(scene);
   let quality = normalizeTier(options.quality || readOverride("q") || readOverride("quality") || "high");
   let disposed = false;
   let ready = false;
@@ -339,6 +334,8 @@ export async function createRenderer(canvas, options = {}) {
   let flushHandle = null;
   let fallbackCamera = camera;
   let adopting = false;
+  let glowLayerCount = 0;
+  let glowSweepHandle = null;
 
   const shadowCasters = new Set();
 
@@ -349,6 +346,40 @@ export async function createRenderer(canvas, options = {}) {
     if (tier && !disposed) applyQuality(tier);
   }
 
+  function countEffectLayers() {
+    return Array.isArray(scene.effectLayers) ? scene.effectLayers.length : 0;
+  }
+
+  /**
+   * 摘除别处新建的辉光层。放在帧外执行：帧中途销毁后处理纹理会让 WebGPU 报
+   * "Destroyed texture used in a submit"，和换档推迟是同一个原因。
+   */
+  function sweepGlow() {
+    glowSweepHandle = null;
+    if (disposed) return;
+    glow.reconcile();
+    if (scene.metadata?.shihe) scene.metadata.shihe.glow = glow.layer;
+    glowLayerCount = countEffectLayers();
+  }
+
+  /**
+   * 每帧一次 O(1) 的层数比对：数目没动就什么都不做。
+   * 兄弟模块在引擎起来之后才建辉光层（例如 buildWorld 默认自带一层）时，
+   * 这里保证下一帧就回到「只有引擎那一层」。
+   */
+  function guardGlow() {
+    if (disposed) return;
+    const count = countEffectLayers();
+    if (count === glowLayerCount) return;
+    glowLayerCount = count;
+    if (glowSweepHandle === null) glowSweepHandle = setTimeout(sweepGlow, 0);
+  }
+
+  /** world / combat 登记不该起辉光的网格（天穹、星点）；换档重建后自动补回。 */
+  function excludeFromGlow(meshes) {
+    glow.exclude(meshes);
+  }
+
   function teardownPost() {
     if (pipeline) {
       try {
@@ -357,14 +388,6 @@ export async function createRenderer(canvas, options = {}) {
         /* ignore */
       }
       pipeline = null;
-    }
-    if (glow) {
-      try {
-        glow.dispose();
-      } catch {
-        /* ignore */
-      }
-      glow = null;
     }
   }
 
@@ -444,19 +467,8 @@ export async function createRenderer(canvas, options = {}) {
       scene.imageProcessingConfiguration.applyByPostProcess = false;
     }
 
-    if (preset.glow) {
-      try {
-        glow = new GlowLayer("sh-glow", scene, {
-          mainTextureFixedSize: preset.glowTextureSize,
-          blurKernelSize: preset.glowBlurKernel,
-          mainTextureSamples: 1,
-        });
-        glow.intensity = preset.glowIntensity;
-      } catch (err) {
-        console.warn("[shihe-yaosai/engine] 辉光层创建失败", err);
-        glow = null;
-      }
-    }
+    glow.apply(glowSpecFor(tier));
+    glowLayerCount = countEffectLayers();
 
     if (preset.shadows) {
       if (!shadowGenerator || shadowGenerator.mapSize !== preset.shadowMapSize) {
@@ -484,7 +496,7 @@ export async function createRenderer(canvas, options = {}) {
     if (scene.metadata && scene.metadata.shihe) {
       scene.metadata.shihe.quality = tier;
       scene.metadata.shihe.pipeline = pipeline;
-      scene.metadata.shihe.glow = glow;
+      scene.metadata.shihe.glow = glow.layer;
       scene.metadata.shihe.shadowGenerator = shadowGenerator;
     }
     return tier;
@@ -582,6 +594,7 @@ export async function createRenderer(canvas, options = {}) {
     shadowGenerator: null,
     environmentTexture,
     registerShadowCaster,
+    excludeFromGlow,
     setQuality,
     useCamera,
   };
@@ -596,6 +609,7 @@ export async function createRenderer(canvas, options = {}) {
   });
   const endObserver = engine.onEndFrameObservable.add(() => {
     inFrame = false;
+    guardGlow();
   });
 
   // 别人（world / 调试面板）直接改 activeCamera 时也要重建管线；useCamera 走自己的路径。
@@ -642,12 +656,15 @@ export async function createRenderer(canvas, options = {}) {
     if (flushHandle !== null) clearTimeout(flushHandle);
     flushHandle = null;
     pendingTier = null;
+    if (glowSweepHandle !== null) clearTimeout(glowSweepHandle);
+    glowSweepHandle = null;
     if (typeof window !== "undefined") window.removeEventListener("resize", queueResize);
     if (observer) observer.disconnect();
     if (cameraObserver) scene.onActiveCameraChanged?.remove(cameraObserver);
     engine.onBeginFrameObservable.remove(beginObserver);
     engine.onEndFrameObservable.remove(endObserver);
     teardownPost();
+    glow.dispose();
     teardownShadows();
     shadowCasters.clear();
     try {
@@ -674,9 +691,13 @@ export async function createRenderer(canvas, options = {}) {
       return scene.activeCamera;
     },
     notes,
+    get glow() {
+      return glow.layer;
+    },
     setQuality,
     useCamera,
     registerShadowCaster,
+    excludeFromGlow,
     resize,
     dispose,
   };

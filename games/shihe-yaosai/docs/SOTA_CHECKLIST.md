@@ -128,3 +128,20 @@ ID 前缀：`GL` 隔离红线 · `YQ` 引擎 · `HM` 画面 · `WF` 玩法 · `C
 - **本轮未测条目（不判 PASS / FAIL，Round 2 全量复测）**：所有依赖浏览器 / GPU 的 L1 项 —— YQ-3 / YQ-4 / YQ-5 / YQ-6（low 档实效）/ HM-1 / HM-2 / HM-3 / HM-6（过载变色），以及 GL-2 的 `:4182` 实访、WF-3 / WF-4 / WF-5 / WF-7 的浏览器侧半边。渲染侧当前仅有代码审查与模块自测证据（world.test 24 绿），按本清单画面诚实原则，**不以未实跑的画面记分**。
 - **GL 红线**：本轮未做全量 `rg` 复扫；CONCLUSION 合入记录未报越界路径 / CDN / 跨游戏引用，GL-1…GL-7 暂记「无违例报告、待 Round 2 复扫确认」，不记 PASS。GL-8：10/10 子代理回执均声明模型 slug（见 CONCLUSION 分工表），记 PASS。
 - **判定依据**：§7 Round 1 过门要求所列 L1 项全绿；CS-1 两红即门未过，另有多项 L1 因无 GPU 环境未测。判 REJECT，缺陷与复测项全部带入 Round 2（对应 CONCLUSION「Round 2 攻坚重点」：消灭 `-0`、首波 ≤2s、data 正式导出名、删双签名、shots 只 combat 画、`npm test` 全绿、probe 5 波 leaks≤2）。
+
+### Round 2 · 判定：REJECT（L2 门未过：CS-2 红，GPU 侧 L1 项仍悬置；回写于 2026-08-28，Round 3 开局）
+
+- **被验对象**：分支 `cursor/shihe-yaosai-f69e` Round 2 合入态（提交 `aefe80e`，父 PR #50）。实测数据来源：`.agent_workspace/shihe-yaosai/round2/CONCLUSION.md` 记录的本机实跑基线。本轮验收仍为**无头环境**，浏览器 / GPU 侧继续零实跑证据，**悬置待父机浏览器实测**（Round 3 必须在父机 `:4182` 真机完成放塔、过载、漏敌 toast、后端徽标与回退验证）。
+- **三条命令实跑摘要（R2 结束态）**：
+  - `npm test`：**84/84 全绿**，退出码 0 → **CS-1 PASS**。Round 1 两红已消（`-0` 除净、首怪 1.53s 入场且 view JSON 纯净）；确定性、过载 ×2.2/4s/3s、棱镜两段 beam、升级/出售断言齐备，G1 契约测全绿。
+  - `npm run probe`：**FAIL** —— 布防太弱（塔挤 0/3/6 插座），**17 漏、第 3 波即败**，P0 门槛 `leaks ≤ 2` 未达，退出码非 0 → **CS-2 FAIL**（本轮唯一无头侧红项）。旁证：`sim smoke --waves=5`（seed=7）用分散布局 **5 波 0 漏通关**，说明数值成立、纯属 probe 布局问题。修法已冻结：照抄 smoke 的均匀 5 塔布局（插座 0/4/8/12/16/20 循环 rail/prism/scatter/well/star），**禁止改门槛放水**。
+  - `npm run build`：退出码 0，主 chunk 1.85 MB / gzip 472 kB（>500 kB 警告继续记包体预算；如需 manualChunks 由父调度器改共享只读的 `vite.config.js`，子代理不动）→ **CS-3 退出码档 PASS**；`dist/` 外链 `rg` 复查本轮仍未留存记录，连同 GL-4 列入 Round 3 复扫。
+- **附加实测**：`sim smoke --waves=5` seed=7 **0 漏通关**，记为 WF-8 模拟档与数值可行性旁证，**不替代 CS-2**；**CS-4 PASS**（test / probe / smoke 全部纯 Node）；XN-1 的 `p99StepMs` 本轮未单独留存，Round 3 复记。
+- **本轮已修并复核（模拟 / 代码层）**：JSON `-0` 与首波（CS-1）、data 只读正式导出名（除 Round 1 别名警告风险）、world 删 `shots.js` 不再双画弹道（O2）、主循环单签名 + frameEvents（O1/O4）、过载数值断言（WF-5 模拟档）、棱镜折光两段 beam（WF-7 模拟档）、漏敌/胜负 toast 与过热橙/漏敌红接线（代码审查档，浏览器实效待测）。
+- **未过条目（含现象）**：
+  - **CS-2**：probe 17 漏、第 3 波败北，退出码非 0。
+- **本轮仍未测条目（不判 PASS / FAIL，全部悬置待父机浏览器实测）**：YQ-3 / YQ-4 / YQ-5 / YQ-6（low 档实效）/ HM-1 / HM-2 / HM-3 / HM-6（过载变色）、GL-2 的 `:4182` 实访，以及 WF-3 / WF-4 / WF-5 / WF-7 的浏览器侧半边与 WF-8 的 HUD 波次计数。**新增风险**：engine 与 world 各建一层 **GlowLayer**，high / mid 档可能过亮，威胁 HM-2 / HM-5 判定 —— Round 3 world 删自建层后一并实测。
+- **L2 项状态**：WF-9 / WF-10 / CS-5 / CS-6 模拟侧已有断言证据（84 测含确定性、升级、20 波 + Boss 路径）；YQ-6 全档 / YQ-7 / HM-4 / HM-5 / HM-7 / XN-2 依赖浏览器，悬置同上。
+- **GL 红线**：本轮仍未做全量 `rg` 复扫；CONCLUSION 未报越界路径 / CDN / 跨游戏引用，GL-1…GL-7 维持「无违例报告、待复扫确认」，不记 PASS。GL-8 记 PASS（10/10 子代理回执均声明模型 slug）。
+- **判定依据**：§7 Round 2 过门 = L0/L1 复测全绿 + 全部 L2 项全绿。CS-2 一票红即门未过，且 GPU 侧 L1 项零实跑证据，按画面诚实原则不以未实跑画面记分。判 **REJECT**。**L3 条目（HM-8 / WF-11 / CS-7 / XN-3 / XN-4 / XN-5）本轮一律不判、不宣称**，全部留待 Round 3 实证后再记。
+- **Round 3 复测清单**：① probe 换分散布局 → CS-2 绿（5 波 `leaks ≤ 2` 且退出码 0）；② 父机 `:4182` 浏览器全量补测上列悬置 L1 项（含 WebGL2 回退与后端徽标两态）；③ world 去自建 GlowLayer 后复验 HM-2 / HM-5；④ GL-1…GL-7 全量 `rg` 复扫 + `dist/` 外链复查；⑤ 棱镜折射 / 过载伤害补测（G1）后复跑 `npm test` 保持全绿。

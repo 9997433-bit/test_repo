@@ -69,6 +69,7 @@
 补充规则：
 
 - 灯光预算：1 盏主方向光 + 星核 1 盏点光即可，其余亮度全靠 emissive。
+- **GlowLayer 只归 engine**：发光晕染由 `src/engine` 的唯一一层 GlowLayer 统一负责；world / 场景侧只设 emissive，**禁止自建 GlowLayer**（Round 2 曾出现 engine+world 双层叠加，high/mid 档整体过亮，见 round2/CONCLUSION）。
 - 阴影只在 high 档开（见第 5 节），投影体只算塔与敌人，环不投影。
 - 所有材质参数集中可调（供 `setQuality` 降档时统一压 emissive / 关阴影）。
 
@@ -117,6 +118,8 @@
 | low | 关全部后处理 | emissive 保持纯色高亮（无晕），弹道退化为纯色线 / 点 | 不变 |
 
 **HUD 的发光全部是 CSS（text-shadow / box-shadow），零 GPU 后处理成本，三档一致。** 低档画面「亮但不晕」，依旧可读。
+
+表中的 Glow 指 **engine 的单一 GlowLayer**（见 §2 补充规则）——三档的开 / 关都只作用于这一层，world 侧无第二层可关。发光强度验收一律按「engine 单层 + §2 emissive 数值」，不得靠叠层提亮。
 
 诚实条款（对外承诺口径，禁止越线宣传）：
 

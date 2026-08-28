@@ -131,9 +131,17 @@ function waveToast(event) {
   return { text: isNum(wave) ? `第 ${wave} 波来袭` : "新一波来袭", kind: "info", ttl: 1600 };
 }
 
+/** 后端标识归一化：非字符串 / 空白串 → null，其余去空白并小写。 */
+function backendId(backend) {
+  if (typeof backend !== "string") return null;
+  const id = backend.trim().toLowerCase();
+  return id === "" ? null : id;
+}
+
 function backendLabel(backend) {
-  if (typeof backend !== "string" || backend === "") return "—";
-  return BACKEND_LABEL[backend.toLowerCase()] ?? backend;
+  const id = backendId(backend);
+  if (!id) return "—";
+  return BACKEND_LABEL[id] ?? backend.trim();
 }
 
 /* -------------------------------------------------------------- DOM 骨架 */
@@ -460,7 +468,9 @@ function createHud(host) {
   }
 
   function syncBackend(backend) {
-    const id = typeof backend === "string" && backend ? backend.toLowerCase() : null;
+    const id = backendId(backend);
+    // 样式钩子先落地：main.js 自己写了后端标签（backendOwned=false）的那条路上，
+    // .sh-backend 的文本归 main，is-webgpu/is-webgl2 仍旧由这里挂。
     setAttr(refs.backend, "data-backend", id);
     setClass(refs.backend, "is-webgpu", id === "webgpu");
     setClass(refs.backend, "is-webgl2", id === "webgl2" || id === "webgl");
@@ -508,7 +518,9 @@ function createHud(host) {
     if (typeof ex.quality === "string" && QUALITY_TIERS.includes(ex.quality) && ex.quality !== state.quality) {
       paintQuality(ex.quality);
     }
-    syncBackend(ex.backend ?? v.backend);
+    // extras.backend 是渲染器的真实后端，优先于 view.backend（sim 恒返回 'sim'）；
+    // 只有 extras 没给或给了空白串才退回 view。
+    syncBackend(backendId(ex.backend) ? ex.backend : v.backend);
 
     // 选中插座与暂停以 sim 的 view 为准，view 没给（引导期 / sim 掉线）才留用 'sh-input' 的值。
     if (isNum(v.selectedSocket) || v.selectedSocket === null) state.selectedSocket = v.selectedSocket;

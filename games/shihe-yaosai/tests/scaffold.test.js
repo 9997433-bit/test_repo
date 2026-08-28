@@ -37,6 +37,18 @@ function expectJsonPure(value) {
   }
 }
 
+function expectNoNegativeZero(value) {
+  const pending = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === "number") {
+      expect(Object.is(current, -0)).toBe(false);
+    } else if (current !== null && typeof current === "object") {
+      pending.push(...Object.values(current));
+    }
+  }
+}
+
 function advance(match, count, dtSec = 0.1) {
   const events = [];
   for (let i = 0; i < count; i += 1) {
@@ -74,6 +86,36 @@ describe("pure simulation contract", () => {
 
     const match = sim.createMatch(0x51a7);
     expectJsonPure(viewOf(match));
+  });
+
+  it("spawns the first enemy no later than two seconds", () => {
+    const match = sim.createMatch(0x2);
+    let firstSpawn;
+
+    for (let tick = 0; tick < 120 && !firstSpawn; tick += 1) {
+      const { events } = sim.step(match, {}, 1 / 60);
+      firstSpawn = events.find((event) => event.type === "spawn");
+    }
+
+    expect(firstSpawn).toBeDefined();
+    expect(firstSpawn.t).toBeLessThanOrEqual(2);
+    expect(viewOf(match).enemies.length).toBeGreaterThan(0);
+  });
+
+  it("does not expose negative zero anywhere in active JSON views", () => {
+    const match = sim.createMatch(0x51a7);
+    sim.step(
+      match,
+      { place: { socket: 13, towerId: "prism" } },
+      1 / 60,
+    );
+
+    for (let tick = 0; tick < 180; tick += 1) {
+      sim.step(match, {}, 1 / 60);
+      const view = viewOf(match);
+      expectNoNegativeZero(view);
+      expect(JSON.parse(JSON.stringify(view))).toEqual(view);
+    }
   });
 
   it("creates exactly 24 indexed sockets", () => {
@@ -122,6 +164,91 @@ describe("pure simulation contract", () => {
     const secondEnemies = enemyPositions(secondView);
     expect(firstEnemies.length).toBeGreaterThan(0);
     expect(secondEnemies).toEqual(firstEnemies);
+  });
+
+  it("emits a second prism beam segment through another prism in getView", () => {
+    const match = sim.createMatch(1);
+    sim.step(
+      match,
+      { place: { socket: 13, towerId: "prism" } },
+      1 / 60,
+    );
+    sim.step(
+      match,
+      { place: { socket: 14, towerId: "prism" } },
+      1 / 60,
+    );
+    let relayBeam;
+    let view;
+
+    // This fixed seed and adjacent socket pair deterministically align with
+    // the first-wave cluster while both enemies remain in prism range.
+    for (let tick = 0; tick < 240 && !relayBeam; tick += 1) {
+      sim.step(match, {}, 0.1);
+      view = viewOf(match);
+      relayBeam = view.shots.find(
+        (shot) =>
+          shot.kind === "beam" &&
+          shot.beam &&
+          shot.refracted &&
+          shot.segment === 2,
+      );
+    }
+
+    expect(relayBeam).toMatchObject({
+      towerId: "prism",
+      socket: 14,
+      relay: 13,
+      segment: 2,
+    });
+    const firstSegment = view.shots.find(
+      (shot) =>
+        shot.kind === "beam" &&
+        shot.socket === relayBeam.socket &&
+        shot.segment === 1,
+    );
+    expect(firstSegment).toBeDefined();
+    expect(relayBeam.from).toEqual(firstSegment.to);
+  });
+
+  it("multiplies prism hit-point damage while overclock is active", () => {
+    const normal = sim.createMatch(1);
+    const overclocked = sim.createMatch(1);
+    for (const match of [normal, overclocked]) {
+      sim.step(
+        match,
+        { place: { socket: 13, towerId: "prism" } },
+        1 / 60,
+      );
+    }
+    sim.step(normal, {}, 1 / 60);
+    sim.step(overclocked, { overclockSocket: 13 }, 1 / 60);
+
+    let normalEnemy;
+    let overclockedEnemy;
+    let overclockedView;
+    for (let tick = 0; tick < 180 && !normalEnemy; tick += 1) {
+      sim.step(normal, {}, 1 / 60);
+      sim.step(overclocked, {}, 1 / 60);
+      const normalView = viewOf(normal);
+      overclockedView = viewOf(overclocked);
+      if (normalView.stats.damage > 0) {
+        normalEnemy = normalView.enemies.find((enemy) => enemy.id === 1);
+        overclockedEnemy = overclockedView.enemies.find(
+          (enemy) => enemy.id === 1,
+        );
+      }
+    }
+
+    expect(normalEnemy).toBeDefined();
+    expect(overclockedEnemy).toBeDefined();
+    expect(overclockedView.sockets[13].overclocked).toBe(true);
+    const normalHpDrop = normalEnemy.maxHp - normalEnemy.hp;
+    const overclockedHpDrop = overclockedEnemy.maxHp - overclockedEnemy.hp;
+    expect(overclockedHpDrop / normalHpDrop).toBeCloseTo(
+      data.CONFIG.overclock.multiplier,
+      3,
+    );
   });
 
   it("reduces coreHp when an enemy leaks", () => {

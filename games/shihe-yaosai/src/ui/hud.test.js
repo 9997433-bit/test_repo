@@ -141,6 +141,39 @@ describe("syncHud(view, extras)", () => {
     expect(document.querySelector(".sh-backend").classList.contains("is-webgl2")).toBe(true);
   });
 
+  it("keeps the badge hooks on extras.backend even though the view still says sim", () => {
+    // main.js 每帧传 { backend: renderer.backend }，而 view.backend 在覆写前是 'sim'。
+    hud.destroy();
+    const root = skeleton();
+    document.getElementById("sh-backend").textContent = "WebGPU · high";
+    hud = mountHud(root);
+
+    syncHud(view({ backend: "sim" }), { backend: " WebGPU " });
+    const backend = document.querySelector(".sh-backend");
+    expect(backend.getAttribute("data-backend")).toBe("webgpu");
+    expect(backend.classList.contains("is-webgpu")).toBe(true);
+    expect(backend.classList.contains("is-webgl2")).toBe(false);
+    expect(backend.textContent).toBe("WebGPU · high");
+
+    // 换后端要把上一档的钩子摘干净。
+    syncHud(view({ backend: "sim" }), { backend: "webgl2" });
+    expect(backend.getAttribute("data-backend")).toBe("webgl2");
+    expect(backend.classList.contains("is-webgpu")).toBe(false);
+    expect(backend.classList.contains("is-webgl2")).toBe(true);
+  });
+
+  it("falls back to view.backend when extras.backend is blank", () => {
+    syncHud(view({ backend: "webgpu" }), { backend: "   " });
+    const backend = document.querySelector(".sh-backend");
+    expect(backend.getAttribute("data-backend")).toBe("webgpu");
+    expect(backend.classList.contains("is-webgpu")).toBe(true);
+
+    syncHud(view({ backend: "sim" }), {});
+    expect(backend.getAttribute("data-backend")).toBe("sim");
+    expect(backend.classList.contains("is-webgpu")).toBe(false);
+    expect(backend.textContent).toBe("SIM");
+  });
+
   it("mirrors paused straight from the view", () => {
     syncHud(view({ paused: true }));
     expect(hudEl().getAttribute("data-paused")).toBe("1");

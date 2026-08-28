@@ -4,7 +4,7 @@
 // Round 1 那套「按几种签名轮流试着调」的适配器已经删干净：兄弟模块全部落地，这里只认一种调用形式。
 //   createRenderer(canvas, { quality })
 //   createMatch(seed) / step(match, input, dt) / getView(match)
-//   buildWorld(scene) / syncWorld(scene, view) / pickSocket(scene, pickInfo)
+//   buildWorld(scene, options) / syncWorld(scene, view) / pickSocket(scene, pickInfo)
 //   createInput({ canvas, scene, pickSocket })
 //   mountHud(root) / syncHud(view, { backend, quality, events })
 //   syncCombat(scene, view)
@@ -169,12 +169,13 @@ async function boot() {
   const match = createMatch(seed);
 
   // ---- 世界层 ----
-  // buildWorld(scene) 不传 getView：世界层的 autoSync 因此不启用，
-  // 每帧只由本文件调一次 syncWorld，同一帧不会被画两遍。
+  // 不传 getView：世界层的 autoSync 因此不启用，每帧只由本文件调一次 syncWorld，
+  // 同一帧不会被画两遍。glow:false 同理——辉光层归引擎（契约 §5），
+  // 世界再建一层会让 high/mid 两层泛光叠加而过曝。
   let world = null;
   let animateFallback = null;
   try {
-    world = buildWorld(scene);
+    world = buildWorld(scene, { glow: false });
   } catch (err) {
     reportBroken("world", err);
     try {
@@ -183,6 +184,10 @@ async function boot() {
       console.warn(`${TAG} 占位信标也没建起来，只剩空场景`, beaconErr);
     }
   }
+
+  // 天穹与星点不参与辉光，否则整片背景被泛光糊成一层灰雾。登记一次即可，
+  // 引擎换档重建辉光层时会自己补回去。
+  if (world?.sky) renderer.excludeFromGlow([world.sky.dome, world.sky.stars]);
 
   // world 若自带相机就让它接管：引擎释放兜底相机，并把后处理重挂到新相机上。
   const worldCamera = world?.camera ?? scene.cameras.find((cam) => cam !== renderer.camera) ?? null;

@@ -1,4 +1,4 @@
-# 蚀核要塞 · API 契约（API_CONTRACT v2 · Round 2 冻结）
+# 蚀核要塞 · API 契约（API_CONTRACT v2.1 · Round 2 冻结 + Round 3 补丁）
 
 > 维护者：Fable-1 架构。系统视角见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。
 > 本文是 10 个代理并行实现的**唯一真源**。签名、字段名、枚举值、事件名、理由码全部冻结；
@@ -7,6 +7,9 @@
 > **v2 变更点速览**（详见 CHANGELOG）：getView 数值 JSON-safe（无 `-0`/`NaN`）；首波 ≤2s 出怪；
 > data 正式导出名（`ARMOR_MULT` 取代 `DAMAGE_MATRIX`，不设 `SIM_CONFIG` 别名）；shots 只由 combat 渲染；
 > `createInput` / `syncHud` 收敛为单一签名；`SocketView.theta` 升格必备；frameEvents 由 main 聚合。
+> **v2.1（Round 3 补丁）速览**：只加法不改 v2 语义——GlowLayer 全项目仅由 engine 创建一层（world 禁自建，§5/§6）；
+> 确认 shots=combat 独占已落地（`world/shots.js` 已删，world 连读都不读，§6/§7）；
+> `npm run probe` 由 `src/sim/bot.mjs` 共用确定性 bot 驱动（与 `sim smoke` 同一只手）；R2 收官测试基线 **84/84** 全绿，R3 只增不减。
 
 **用语**：`MUST` 必须；`SHOULD` 建议；`RESERVED` 本轮占位、实现方 MUST 容忍其存在且可静默忽略。
 类型用 TypeScript 风格书写，实际代码为 ESM JavaScript + JSDoc（`@typedef` 照抄本文即可）。
@@ -389,6 +392,10 @@ interface Renderer {
 
 默认档 **[冻结]**：`opts.quality` 缺省时 webgpu→`high`、webgl2→`mid`；main 负责解析 URL `?quality=` 后传入。
 
+**GlowLayer 归属 [v2.1 冻结]**：全项目**只允许 engine 创建 GlowLayer**（句柄挂 `scene.metadata.shEngine.glow`）。
+world / combat / ui MUST NOT 自建 GlowLayer；world 内残留的自建通道（`attachGlow`）必须移除或永久停用——
+双层 GlowLayer 叠加会让 high/mid 档整体过亮（Round 2 结论已知缺陷 #2）。发光需求一律走自发光材质，由 engine 的那一层统一拾取。
+
 ## 6. `src/world`（O2 实现）
 
 ```ts
@@ -397,6 +404,7 @@ interface Renderer {
  * getView 仅用于初始布局读数，MUST NOT 调 step。句柄写 scene.metadata.shWorld。
  * 每个可拾取的插座网格 MUST 置 mesh.metadata = { ...原值, shSocket: i } [冻结]。
  * 若 scene.metadata.shEngine?.shadow 存在，注册投/受影者。
+ * [v2.1 冻结] MUST NOT 自建 GlowLayer——发光层归 engine 独占（§5），world 的 attachGlow 通道移除/停用。
  */
 function buildWorld(scene: unknown, getView: () => MatchView): void;
 
@@ -407,6 +415,8 @@ function buildWorld(scene: unknown, getView: () => MatchView): void;
  * [v2 冻结] world MUST NOT 渲染 view.shots——弹道/光束/脉冲视觉由 src/combat 独占（§7）。
  *           world 内残留的 shots 渲染通道（如 world/shots.js）必须移除或永久停用，
  *           否则同一条 shot 会被画两遍（Round 1 已知双画风险）。
+ * [v2.1 确认] 已落地：world/shots.js 已删除，normalizeView 归一化时即丢弃 shots 字段（world 连读都不读），
+ *            并有 world 侧单测断言不建任何 shot 网格。
  */
 function syncWorld(scene: unknown, view: MatchView): void;
 
@@ -425,7 +435,7 @@ function pickSocket(scene: unknown, pickInfo: unknown): SocketIndex | null;
  * kind 视觉 [冻结]：tracer=曳光线段 beam=粗光束 pellet=飞行粒(from→to 按 t 插值)
  *                  arc=抛物线弹(视觉加高) pulse=扩张环(半径= shot.radius × t)。
  * MUST NOT 计算伤害或改动 view。未知 kind 忽略。
- * [v2 冻结] src/combat 是 view.shots 的**唯一**渲染方（world 禁画，§6）。
+ * [v2 冻结] src/combat 是 view.shots 的**唯一**渲染方（world 禁画，§6）。[v2.1 确认] 已落地。
  */
 function syncCombat(scene: unknown, view: MatchView, events?: SimEvent[]): void;
 ```
@@ -563,6 +573,15 @@ O4 可在 dock 内自造子元素（建议 `button.sh-dock-item[data-tower=<Towe
 
 ### CHANGELOG
 
+- **v2.1**（Round 3 补丁，只加法、不改 v2 任何签名/字段语义；来源：`.agent_workspace/shihe-yaosai/round2/CONCLUSION.md`）：
+  1. §5/§6：**GlowLayer 归 engine 独占**——全项目仅 engine 创建一层（`scene.metadata.shEngine.glow`）；
+     world 自建 GlowLayer 通道（`attachGlow`）移除/停用，消除 R2 结论缺陷 #2（high/mid 双层过亮）。
+  2. §6/§7：**确认** v2 弹道独占裁决已落地：`world/shots.js` 已删除，world 归一化即丢弃 `shots`，
+     `src/combat` 为 `view.shots` 唯一渲染方（world 侧单测把关）。
+  3. 工具链：`npm run probe` MUST 经 **`src/sim/bot.mjs`** 的共用确定性 bot（`createBot` / `botInput` / `BOT_DT`）驱动，
+     与 `sim smoke` 同一只手、同一分散布局；门槛维持 **5 波 leaks≤2 且 coreHp>0、exit 0**，禁止改门槛放水。
+     bot.mjs 位于 `src/sim` 内，遵守 sim 层禁 Babylon/DOM 铁律，scripts 依 §import 白名单引用合法。
+  4. 测试基线：Round 2 收官 `npm test` **84/84 全绿**（vitest）；R3 起测试只增不减，回归以 84 为底线。
 - **v2**（Round 2）：靶向修 Round 1 遗留缺陷（来源：`.agent_workspace/shihe-yaosai/round1/CONCLUSION.md` + `round2/BRIEF.md`），不新开玩法：
   1. §1/§3.1/§14.1a：getView 数值 JSON-safe——除 NaN/Infinity 外**禁 `-0`**，逐数满足 round-trip `Object.is` 相等。
   2. §3.8/§4.2/§14.1b：首波时序冻结——默认波表下首敌 MUST 于 t ≤ 2s 入场（`firstWaveDelay` 建议 1.5）。

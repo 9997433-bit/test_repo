@@ -1,10 +1,13 @@
-# 蚀核要塞 · 系统架构（ARCHITECTURE v2 · Round 2 冻结）
+# 蚀核要塞 · 系统架构（ARCHITECTURE v2 · Round 2 冻结 · Round 3 补丁）
 
-> 维护者：Fable-1 架构。配套文档：[`API_CONTRACT.md`](./API_CONTRACT.md)（冻结签名与数据模式，实现以该文件为准，当前 **v2**）。
+> 维护者：Fable-1 架构。配套文档：[`API_CONTRACT.md`](./API_CONTRACT.md)（冻结签名与数据模式，实现以该文件为准，当前 **v2.1**）。
 > 本文回答「系统长什么样、谁负责什么、每帧发生什么」；`API_CONTRACT.md` 回答「函数怎么签、字段怎么长」。
 > 标注 **[冻结]** 的内容任何代理不得单方面更改；标注 **[可调]** 的内容由对应所有者在自己的可写路径内调整。
 > **Round 2 冻结决议**（对应契约 v2 CHANGELOG）：getView 数值无 `-0`/`NaN`；首波 ≤2s 出怪；data 只走正式导出名；
 > `view.shots` 只由 combat 渲染；`createInput`/`syncHud` 单一签名；`SocketView.theta` 必备；frameEvents 由 main 聚合。
+> **Round 3 补丁**（对应契约 v2.1 CHANGELOG，只加法）：shots=combat 独占**已确认落地**（`world/shots.js` 已删）；
+> **GlowLayer 全项目仅 engine 创建一层**（world 自建通道停用）；`npm run probe` 由 `src/sim/bot.mjs` 共用 bot 驱动；
+> R2 收官测试基线 **84/84 全绿**，R3 只增不减。
 
 ---
 
@@ -62,7 +65,7 @@
 | `tests/**` | `src/sim`、`src/data`（UI 测试可用 jsdom 加载 `src/ui`） | Babylon 运行时 |
 | `scripts/**` | `src/sim`、`src/data` | Babylon、DOM |
 
-数据流是**单向**的：`input.read()` → `sim.step()` → `sim.getView()` → `world / combat / ui` 消费。渲染侧永远不回写模拟；模拟永远不知道渲染存在。战斗表现层（combat）只把 `view.shots` 画成曳光/光束/抛物线，**不重复计算伤害**。**[R2 冻结] `view.shots` 由 `src/combat` 独占渲染：world 一律不画弹道（`world/shots.js` 通道停用/移除），否则同一条 shot 双画。**
+数据流是**单向**的：`input.read()` → `sim.step()` → `sim.getView()` → `world / combat / ui` 消费。渲染侧永远不回写模拟；模拟永远不知道渲染存在。战斗表现层（combat）只把 `view.shots` 画成曳光/光束/抛物线，**不重复计算伤害**。**[R2 冻结] `view.shots` 由 `src/combat` 独占渲染：world 一律不画弹道（`world/shots.js` 通道停用/移除），否则同一条 shot 双画。** **[R3 确认] 已落地：`world/shots.js` 已删除，`world/view.js` 归一化时即丢弃 `shots` 字段（world 连读都不读），并有 world 单测断言不建任何 shot 网格。**
 
 ## 4. 目录与所有权
 
@@ -83,14 +86,14 @@ games/shihe-yaosai/
 │   ├── main.js           # O1 装配层
 │   ├── engine/           # O1：createRenderer / 质量档 / 相机 / 后处理
 │   ├── world/            # O2：星核、环、插座、轨道、塔实体
-│   ├── sim/              # O3：纯模拟（createMatch/step/getView）
-│   ├── combat/           # O3：view.shots 的视觉呈现
+│   ├── sim/              # O3：纯模拟（createMatch/step/getView；bot.mjs = smoke/probe 共用确定性 bot）
+│   ├── combat/           # O3：view.shots 的视觉呈现（唯一渲染方）
 │   ├── ui/               # O4：HUD 挂载与同步
 │   ├── input/            # O4：键鼠 → SimInput
 │   ├── data/             # F3：CONFIG/TOWERS/TOWER_ORDER/ENEMIES/WAVES/BOSS/ARMOR_MULT + 3 个查询函数（契约 §4.1）
 │   └── styles/           # F2：CSS
 ├── tests/                # GPT-sol-1：纯 sim 单测
-└── scripts/              # GPT-sol-2：probe.mjs / bench.mjs（Node 直跑 sim）
+└── scripts/              # GPT-sol-2：probe.mjs / bench.mjs（Node 直跑 sim；probe 经 src/sim/bot.mjs 驱动）
 ```
 
 ## 5. 运行时装配与帧循环 **[冻结]**
@@ -214,8 +217,8 @@ URL `?quality=high|mid|low` 覆盖自动档（main 解析后传入 `createRender
 
 职责切分 **[冻结]**：
 
-- **engine（O1）**：Engine/Scene、ArcRotateCamera（目标 `(0,4,0)`，初始半径 ≈95，beta 上限 ≈1.35，radius 限 `[40,160]` **[可调]**）、DefaultRenderingPipeline（Bloom）、GlowLayer、阴影光源 + ShadowGenerator、resize 监听、dispose。
-- **world（O2）**：星核（自发光 + 受击脉冲）、外环、24 插座、三层轨道示意环、塔实体（含过载/过热变色）、场景照明（半球光 + 核心点光）、拾取代理。敌人建议 thin instance / 实例化网格。**[R2 冻结] 不渲染 `view.shots`**——弹道视觉归 combat 独占，world 内的 shots 渲染通道停用/移除。
+- **engine（O1）**：Engine/Scene、ArcRotateCamera（目标 `(0,4,0)`，初始半径 ≈95，beta 上限 ≈1.35，radius 限 `[40,160]` **[可调]**）、DefaultRenderingPipeline（Bloom）、GlowLayer（**[R3 冻结] 全项目唯一创建点**，句柄在 `scene.metadata.shEngine.glow`）、阴影光源 + ShadowGenerator、resize 监听、dispose。
+- **world（O2）**：星核（自发光 + 受击脉冲）、外环、24 插座、三层轨道示意环、塔实体（含过载/过热变色）、场景照明（半球光 + 核心点光）、拾取代理。敌人建议 thin instance / 实例化网格。**[R2 冻结] 不渲染 `view.shots`**——弹道视觉归 combat 独占，world 内的 shots 渲染通道停用/移除（**[R3 确认] 已落地**）。**[R3 冻结] 不自建 GlowLayer**——发光层归 engine 独占，world 的 `attachGlow` 自建通道移除/停用，否则 high/mid 双层叠加过亮（R2 结论缺陷 #2）；发光需求走自发光材质，由 engine 的 GlowLayer 统一拾取。
 - **combat（O3）**：`view.shots` 的**唯一渲染方 [R2 冻结]** + 消费 `frameEvents`，画曳光（tracer）、光束（beam）、散射（pellet）、抛物线（arc）、脉冲环（pulse）；对象池复用，上限 128。
 
 `scene.metadata` 命名空间 **[冻结]**，避免三方互踩：
@@ -257,16 +260,16 @@ world 构建网格时若发现 `scene.metadata.shEngine?.shadow` 存在，应把
 
 ## 12. 测试与验证
 
-- `npm test`（vitest，node 环境）：`tests/**` 只测纯 sim + data。契约 §14 列出了**保证可测的最小断言集**（形状、数值 JSON-safe 无 `-0`、首波 ≤2s、放置扣费、deny、确定性、漏敌败北、过载时序），`createMatch/step/getView` 必须绿。R2 完成定义：`npm test` 全绿 + probe 5 波 leaks≤2 且 coreHp>0 + build exit 0。
-- `npm run probe`（GPT-sol-2）：Node 直跑 sim 的脚本化对局，输出 JSON 摘要（波数、击杀、剩余核血），用于无浏览器冒烟。
+- `npm test`（vitest，node 环境）：`tests/**` 只测纯 sim + data。契约 §14 列出了**保证可测的最小断言集**（形状、数值 JSON-safe 无 `-0`、首波 ≤2s、放置扣费、deny、确定性、漏敌败北、过载时序），`createMatch/step/getView` 必须绿。R2 完成定义：`npm test` 全绿 + probe 5 波 leaks≤2 且 coreHp>0 + build exit 0。**[R3 基线] R2 收官实测 84/84 全绿；R3 起测试只增不减，回归以 84 为底线。**
+- `npm run probe`（GPT-sol-2）：Node 直跑 sim 的脚本化对局，输出 JSON 摘要（波数、击杀、剩余核血），用于无浏览器冒烟。**[R3 确认] probe 由 `src/sim/bot.mjs` 的共用确定性 bot（`createBot`/`botInput`/`BOT_DT`）驱动，与 `sim smoke` 同一只手、同一分散布局；门槛 5 波 leaks≤2 且 coreHp>0、exit 0，禁止改门槛放水。**
 - `npm run bench`：固定 seed 脚本化 20 波，统计 `step` 耗时分布。
 - 浏览器验收（F4）：`:4182` 可见环 + 核 + 三层轨道；能放 3 种塔过 5 波；WebGPU/WebGL2 均能亮。
 
 ## 13. Round 路线
 
 - **R1（已交付）**：目录可启动、可放塔（≥3 种）、可过 ≥5 波、双后端能亮、纯 sim 测试绿。
-- **R2（本轮，按 `round2/BRIEF.md` 靶向修缺陷，不新开玩法）**：完成定义 = `npm test` 全绿、`npm run probe` 5 波 leaks≤2 且 coreHp>0、`npm run build` exit 0；冻结决议 = getView 无 `-0`、首波 ≤2s、data 正式导出名、shots 只 combat 画、单一签名、`SocketView.theta`、frameEvents 聚合（契约 v2 CHANGELOG）。玩法预留位（`upgradeSocket`/`sellSocket`/`callWave`/`pierce`/棱镜视线遮挡/落点结算/Boss 特技）仍为 RESERVED，不强制实现。
-- **R3**：父调度器接 catalog / pages workflow，本目录不动。
+- **R2（已交付，按 `round2/BRIEF.md` 靶向修缺陷，不新开玩法）**：完成定义 = `npm test` 全绿、`npm run probe` 5 波 leaks≤2 且 coreHp>0、`npm run build` exit 0；冻结决议 = getView 无 `-0`、首波 ≤2s、data 正式导出名、shots 只 combat 画、单一签名、`SocketView.theta`、frameEvents 聚合（契约 v2 CHANGELOG）。收官实测：`npm test` **84/84 全绿**、build exit 0；probe 因布局过弱仍红，转 R3。玩法预留位（`callWave`/`pierce`/棱镜视线遮挡/落点结算/Boss 特技）仍为 RESERVED，不强制实现。
+- **R3（本轮，按 `round2/CONCLUSION.md` 冲刺，契约 v2.1 补丁）**：probe 5 波 leaks≤2 且 exit 0（经 `src/sim/bot.mjs` 共用 bot 的分散布局，禁改门槛）；world 移除自建 GlowLayer（发光归 engine 独占）；`:4182` 浏览器整包验收（放塔 + 过载 + 漏敌 toast）；测试在 84 基线上只增不减。catalog / pages workflow 归父调度器，本目录不碰其它游戏、不碰 `.github`。
 
 ## 14. 契约变更流程与已知风险
 

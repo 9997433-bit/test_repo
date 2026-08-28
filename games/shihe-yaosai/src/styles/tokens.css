@@ -1,5 +1,8 @@
 /* 蚀核要塞 · 设计令牌 — 规范见 docs/ART_DIRECTION.md（3D 侧取色也以此为准） */
 :root {
+  /* 深空主题：原生控件与滚动条一律走暗色 */
+  color-scheme: dark;
+
   /* 基底 · 深空金属 */
   --sh-bg: #05060d;
   --sh-bg-deep: #02030a;
