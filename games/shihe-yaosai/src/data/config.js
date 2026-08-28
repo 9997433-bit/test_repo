@@ -14,10 +14,13 @@ export const CONFIG = {
   // —— Fable-3 数值扩展 ——
   ringRadius: 40, // 插座环半径（BRIEF 冻结「环半径逻辑 40」）
   waveCount: 20, // 常规波数；第 20 波后进 Boss「蚀主」
-  // 波次节奏（单位秒；命名对齐 API_CONTRACT §CONFIG，sim 只读这两个正式名）。
+  // 波次节奏（单位秒；命名对齐 API_CONTRACT §CONFIG，契约建议值 firstWaveDelay=1.5 / interWaveDelay=5）。
   // Round 2 冻结：firstWaveDelay + 首波组 delay(0) ≤ 2，保证开局 2s 内必出怪（G1 契约测）。
-  firstWaveDelay: 0.5, // 开局到第 1 波首怪入场的延迟
-  interWaveDelay: 5, // 清波后到下一波开始的备战间隔
+  // Round 3 勘误（非手感重调）：sim 目前不读 firstWaveDelay（自持常量 FIRST_WAVE_SEC=1.5），
+  // interWaveDelay 也仍经旧名 interWaveDelaySec 兜底取 5。此处 0.5 → 1.5 只为对齐实测行为
+  // （首怪 1.53s ≤ 2s）；O1 回接正式名后行为不变。详见 docs/GDD.md §14。
+  firstWaveDelay: 1.5, // 开局到第 1 波开始的备战时长（= sim FIRST_WAVE_SEC 的实测值）
+  interWaveDelay: 5, // 清波后到下一波开始的备战间隔（与 sim 兜底值一致，行为无差）
   sellRefund: 0.7, // 拆塔返还比例（按已投入屑晶总额，向下取整）
 
   // 过载：F 键作用于当前选中塔。不耗屑晶，纯冷却循环。
