@@ -589,9 +589,12 @@ export class YizhangRenderer {
           }
         }
         if (target) this.characters.playHit(e.targetId, dir, power);
-        // 命中反馈：自己挨打最震，自己打中次之，别人互殴只有一点点
-        const scale = localHit ? 0.55 : localActed ? 0.34 : 0.12;
-        this.cameraRig.impulse(scale * power, localHit ? 2.6 : 1.2);
+        // 命中反馈：自己挨打最震，自己打中次之，别人互殴只有一点点。
+        // 「自己打中」这档要吃满 camera.js 那条 clamp（shake ≤ 1.4）又不撞上去：
+        // 单记最重的 power 是 2.6（view.js 的 eventPower），0.46 × 2.6 ≈ 1.2 还没削顶，
+        // 一掌比一掌重仍然读得出来。挨打那档故意留在会削顶的位置 —— 最重的一记就该顶死
+        const scale = localHit ? 0.55 : localActed ? 0.46 : 0.12;
+        this.cameraRig.impulse(scale * power, localHit ? 2.6 : localActed ? 2 : 1.2);
         break;
       }
 

@@ -1,10 +1,11 @@
-// 出掌动画的接线：谁起手、谁只是修正。
+// 出掌动画的接线：谁起手、谁只是修正、镜头分几档。
 //
-// 这一套盯的是两件「截图看不出来、跑起来却很别扭」的事：
+// 这一套盯的是三件「截图看不出来、跑起来却很别扭」的事：
 //
 //   · 前摇有画面：sim 一发 `slapStart` 动画就起手，不是等判定结束的 `slap` 才动
 //   · 一记掌只起手一次：同一 tick 里 `hit` 排在 `slap` 前面，后到的 `slap` 若再
 //     playSlap 一次，slapT 归零 → 整段前摇重放，`hit` 算出来的击退侧也被冲掉
+//   · 命中的镜头冲击分三档，且「自己打中」那一档没被 camera 的 clamp 削顶
 //
 // three 的场景图在 node 里是纯 JS；WebGL 上下文起不来，所以渲染器只装配事件那条
 // 链路（characters / cameraRig 都是真的，VFX 用探针替身记调用）。
@@ -296,5 +297,65 @@ describe('没有前摇事件的路子照样起手', () => {
     r._handleEvent(ev('hit', { actorId: 'p0', targetId: 'b0', power: 1.5 }));
     expect(c.slapT).toBe(mid);
     expect(c.slapSide).toBe(-1);
+  });
+});
+
+describe('命中的镜头冲击：三档，且自打命中那档没被削顶', () => {
+  /** 打一记，回收镜头状态。`who` 决定这一记跟本地玩家什么关系。 */
+  function hitOnce(who, power) {
+    const { r, characters } = rigged();
+    characters.reconcile(
+      [renderPlayer('p0'), renderPlayer('b0', { x: 0, z: -2 }), renderPlayer('b1', { x: 3, z: -2 })],
+      'p0'
+    );
+    const pair =
+      who === 'taken'
+        ? { actorId: 'b0', targetId: 'p0' }
+        : who === 'dealt'
+          ? { actorId: 'p0', targetId: 'b0' }
+          : { actorId: 'b0', targetId: 'b1' };
+    r._handleEvent(ev('hit', { ...pair, power }));
+    return r.cameraRig.state;
+  }
+
+  it('自己挨打最震 > 自己打中 > 别人互殴，fov 冲击同序', () => {
+    const taken = hitOnce('taken', 1);
+    const dealt = hitOnce('dealt', 1);
+    const other = hitOnce('other', 1);
+
+    expect(taken.shake).toBeGreaterThan(dealt.shake);
+    expect(dealt.shake).toBeGreaterThan(other.shake);
+    expect(taken.fovKick).toBeGreaterThan(dealt.fovKick);
+    expect(dealt.fovKick).toBeGreaterThan(other.fovKick);
+  });
+
+  it('自己打中：最重的一记也还在 clamp 之内，分量读得出来', () => {
+    // view 的 eventPower 把 power 夹在 0.3..2.6，2.6 就是单记最重
+    const light = hitOnce('dealt', 0.3);
+    const heavy = hitOnce('dealt', 2.6);
+
+    expect(heavy.shake).toBeGreaterThan(light.shake);
+    // 削顶了的话最重那记会等于 clamp 值，分量差就读不出来了
+    expect(heavy.shake).toBeLessThan(1.4);
+    expect(heavy.fovKick).toBeLessThan(6.5);
+    // 但也别客气到没手感：自己打中的最重一记该吃掉这条 clamp 的大半
+    expect(heavy.shake / 1.4).toBeGreaterThan(0.75);
+  });
+
+  it('自己打中的 fov 冲击追得上自己挨打，不再是聊胜于无的一档', () => {
+    const taken = hitOnce('taken', 1);
+    const dealt = hitOnce('dealt', 1);
+    expect(dealt.fovKick / taken.fovKick).toBeGreaterThan(0.7);
+    expect(dealt.fovKick).toBeLessThan(taken.fovKick);
+  });
+
+  it('clamp 还在：连打不会把震幅顶穿', () => {
+    const { r, characters } = rigged();
+    characters.reconcile([renderPlayer('p0'), renderPlayer('b0', { x: 0, z: -2 })], 'p0');
+    for (let i = 0; i < 40; i++) {
+      r._handleEvent(ev('hit', { actorId: 'p0', targetId: 'b0', power: 2.6 }));
+    }
+    expect(r.cameraRig.state.shake).toBe(1.4);
+    expect(r.cameraRig.state.fovKick).toBe(6.5);
   });
 });
