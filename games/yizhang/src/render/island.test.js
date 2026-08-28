@@ -5,7 +5,7 @@
 // 程序化贴图要 canvas，这里给一份 map 全为 null 的贴图库，材质吃 null 照样能建。
 
 import { describe, expect, it } from 'vitest';
-import { Scene } from 'three';
+import { Scene } from './gfx.js';
 import { OCCLUDER_LAYER, QUALITY } from './config.js';
 import { createIsland } from './island.js';
 

@@ -36,7 +36,7 @@ import {
   ShaderMaterial,
   Vector2,
   Vector3,
-} from 'three';
+} from './gfx.js';
 import { BLOOM_LAYER, PALETTE, markOccluder } from './config.js';
 import { fbm, makeValueNoise2D, mulberry32, smoothstep } from './noise.js';
 

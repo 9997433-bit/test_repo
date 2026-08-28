@@ -38,7 +38,7 @@ import {
   ShaderMaterial,
   TorusGeometry,
   Vector2,
-} from 'three';
+} from './gfx.js';
 import { BLOOM_LAYER, PALETTE, markOccluder } from './config.js';
 import { bakeByMaterial, createPalmFactory } from './hub-palm.js';
 import { createHubVfx } from './hub-vfx.js';

@@ -19,7 +19,7 @@ import {
   RepeatWrapping,
   SRGBColorSpace,
   UnsignedByteType,
-} from 'three';
+} from './gfx.js';
 import { contrast, fbm, makeValueNoise2D, mulberry32, ridged, smoothstep } from './noise.js';
 
 function makeCanvas(size) {

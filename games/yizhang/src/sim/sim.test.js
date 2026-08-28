@@ -71,12 +71,13 @@ beforeEach(() => {
 });
 
 describe("依赖与纯净性", () => {
-  it("sim 不 import three，也不碰 DOM", () => {
+  it("sim 不 import three / Babylon，也不碰 DOM", () => {
     const files = readdirSync(HERE).filter((f) => f.endsWith(".js") && !f.endsWith(".test.js"));
     expect(files.length).toBeGreaterThan(5);
     for (const f of files) {
       const src = readFileSync(join(HERE, f), "utf8");
       expect(src, `${f} 不能 import three`).not.toMatch(/from\s+["']three/);
+      expect(src, `${f} 不能 import Babylon`).not.toMatch(/@babylonjs/);
       expect(src, `${f} 不能用 document`).not.toMatch(/\bdocument\./);
       expect(src, `${f} 不能用 window`).not.toMatch(/\bwindow\./);
       expect(src, `${f} 不能用 requestAnimationFrame`).not.toMatch(/requestAnimationFrame/);

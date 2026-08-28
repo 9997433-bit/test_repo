@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "异掌 · 第三人称浮空擂台，双掌换装扇人下岛 — 独立目录 WebGL 网页游戏",
+  "description": "异掌 · 第三人称浮空擂台，双掌换装扇人下岛 — 独立目录 Babylon.js 8 网页游戏",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 4181",
     "build": "vite build",
@@ -14,7 +14,7 @@
     "probe": "node scripts/probe.mjs"
   },
   "dependencies": {
-    "three": "^0.170.0"
+    "@babylonjs/core": "8.56.2"
   },
   "devDependencies": {
     "jsdom": "^26.1.0",

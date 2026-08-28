@@ -10,7 +10,7 @@
 //   · 镜头俯角：renderer 的 setLook/setPitch 一路走到 camera 的机位高度
 
 import { describe, expect, it } from 'vitest';
-import { Scene, Vector3 } from 'three';
+import { Scene, Vector3 } from './gfx.js';
 import { GLOVES } from '../data/gloves.js';
 import { SKILLS } from '../data/skills.js';
 import { BASE_PITCH, PITCH_LIMIT, createCamera } from './camera.js';
