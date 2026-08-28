@@ -17,7 +17,7 @@ SOTA 级可玩 3D 环轨塔防《蚀核要塞》：三层轨道、五塔、过�
 |-------|------|------|
 | 1 初始构建与基线探索 | 完成 | `round1/CONCLUSION.md`：30/32 测，probe 5 波 8 漏 |
 | 2 靶向重构与深度优化 | 完成 | `round2/CONCLUSION.md`：84/84 测；probe 仍 17 漏 |
-| 3 SOTA 打磨与最终验收 | 进行中 | `round3/BRIEF.md` |
+| 3 SOTA 打磨与最终验收 | 完成 | `round3/CONCLUSION.md`：109/109，probe 0 漏 |
 
 ## 云端并发
 
