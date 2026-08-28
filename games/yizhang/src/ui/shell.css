@@ -248,6 +248,32 @@ html[data-yz-fallback] .is-awakened .yz-meter-fill {
   background: var(--yz-gold-300);
 }
 
+/* 击退累积刻度（兜底版）：同一份 --knock 钩子，素条无刻痕材质 */
+html[data-yz-fallback] .yz-knock {
+  position: relative;
+  width: 200px;
+  height: 5px;
+  border: 1px solid var(--yz-steel-700);
+  border-radius: 4px;
+  background: rgb(8 12 20 / 0.55);
+  overflow: hidden;
+}
+
+html[data-yz-fallback] .yz-knock-fill {
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  width: calc((100% - 2px) * var(--knock, 0));
+  background: var(--yz-steel-500);
+}
+
+html[data-yz-fallback] .yz-knock.is-hot {
+  border-color: #a5524a;
+}
+
+html[data-yz-fallback] .yz-knock.is-hot .yz-knock-fill {
+  background: #a5524a;
+}
+
 html[data-yz-fallback] .yz-awaken-tag {
   display: none;
   font-size: 11px;
@@ -283,6 +309,12 @@ html[data-yz-fallback] .yz-reticle {
   margin: -2px 0 0 -2px;
   border-radius: 50%;
   background: rgb(240 235 223 / 0.45);
+}
+
+/* 命中回执：≤120ms 的一瞬提亮，非常驻 */
+html[data-yz-fallback] .yz-reticle.is-hit {
+  background: rgb(240 235 223 / 0.95);
+  box-shadow: 0 0 0 3px rgb(240 235 223 / 0.22);
 }
 
 html[data-yz-fallback] .yz-hit-flash {
@@ -331,6 +363,34 @@ html[data-yz-fallback] .yz-center-note {
 
 html[data-yz-fallback] .yz-center-note.is-gold {
   color: var(--yz-gold-300);
+}
+
+/* 掌语字条（兜底版）：底部字幕位，一次一句 */
+html[data-yz-fallback] .yz-lore {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b) + 96px);
+  transform: translateX(-50%);
+  max-width: min(72vw, 560px);
+  pointer-events: none;
+}
+
+html[data-yz-fallback] .yz-lore-item {
+  padding: 4px 16px;
+  font-size: 12px;
+  line-height: 1.7;
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: var(--yz-text-dim);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 220ms ease, visibility 0s linear 220ms;
+}
+
+html[data-yz-fallback] .yz-lore-item.is-on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 220ms ease, visibility 0s;
 }
 
 /* ---- 触控（扇击 ≥72dp，安全区留白） ---- */

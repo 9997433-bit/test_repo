@@ -454,6 +454,81 @@
   animation: yz-sweep 1.6s linear infinite;
 }
 
+/* ---- 击退累积刻度 ----
+   GDD 无血条的可读替代：从空往满涨的「起飞表」，不是从满往空掉的命条。
+   钩子：.yz-knock 上 --knock(0..1)（JS 由 view.knockScale 归一）、
+   .is-hot（红区）、.is-bump（挨打瞬间蹦一下）。
+   面色随填充量从钢灰连续混向绛红 —— 危险色留给「快飞了」，克制使用。 */
+.yz-knock {
+  position: relative;
+  display: block;
+  width: 200px;
+  height: 5px;
+  border: 1px solid var(--yz-steel-700);
+  border-radius: var(--yz-r1);
+  background: rgb(8 12 20 / 0.55);
+  overflow: hidden;
+}
+
+.yz-knock-fill {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 1px;
+  width: calc((100% - 2px) * var(--knock, 0));
+  border-radius: var(--yz-r1);
+  background: color-mix(
+    in oklab,
+    var(--yz-danger) calc(var(--knock, 0) * 100%),
+    var(--yz-steel-500)
+  );
+  transition: width var(--yz-t-fast) linear, background var(--yz-t-fast) linear;
+}
+
+/* 四分位刻痕压在填充之上：读作刻度尺，别读作血条 */
+.yz-knock-ticks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(25% - 1px),
+    rgb(8 12 20 / 0.85) calc(25% - 1px),
+    rgb(8 12 20 / 0.85) 25%
+  );
+}
+
+/* 红区：框沿转绛红 + 明度呼吸（与 .yz-timer.is-low 同一支呼吸，不新造节奏） */
+.yz-knock.is-hot {
+  border-color: var(--yz-danger);
+  animation: yz-breathe 1.2s var(--yz-ease) infinite;
+}
+
+/* 挨打瞬间蹦一下：乱战里靠这一下看见「又涨了」。极短、无发光。 */
+.yz-knock.is-bump {
+  animation: yz-knock-bump 180ms var(--yz-ease);
+}
+
+.yz-knock.is-hot.is-bump {
+  animation: yz-knock-bump 180ms var(--yz-ease), yz-breathe 1.2s var(--yz-ease) infinite;
+}
+
+@keyframes yz-knock-bump {
+  0% {
+    transform: scaleY(1);
+  }
+
+  35% {
+    transform: scaleY(1.9);
+    filter: brightness(1.35);
+  }
+
+  100% {
+    transform: scaleY(1);
+  }
+}
+
 .yz-awaken-tag {
   display: none;
   font-family: var(--yz-font-display);
@@ -495,6 +570,20 @@
   margin: -2px 0 0 -2px;
   border-radius: 50%;
   background: rgb(240 235 223 / 0.45);
+  transition:
+    background var(--yz-t-fast) var(--yz-ease),
+    box-shadow var(--yz-t-fast) var(--yz-ease),
+    transform var(--yz-t-fast) var(--yz-ease);
+}
+
+/* 命中回执（≤120ms 一瞬状态，JS 挂 .is-hit 后自摘）：点提亮放大 + 一圈
+   极薄骨白细环。瞬亮缓灭 —— 亮的一下不走过渡，摘掉后 120ms 内落回微点。
+   这不是常驻指示：free 模式的裸点合同照旧（§18 LOOK-R2），锁刻也不动。 */
+.yz-reticle.is-hit {
+  background: rgb(240 235 223 / 0.95);
+  box-shadow: 0 0 0 3px rgb(240 235 223 / 0.22);
+  transform: scale(1.4);
+  transition: none;
 }
 
 /* ---- 视角模式（LOOK-R1，合同见 ART_DIRECTION §18） ----
@@ -663,6 +752,47 @@
   border-color: var(--yz-gold-700);
 }
 
+/* ---- 掌语字条（世界观短句，字幕位） ----
+   常驻节点 .yz-lore > .yz-plate.yz-lore-item：JS 写文本 + .is-on，一次只亮
+   一句、队列 ≤3（ui/lore.js）。低干扰：小字、骨白灰、无金无发光，比
+   .yz-center-note 矮一档；与战斗 toast / 中央短讯不共节点也不同位。 */
+.yz-lore {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--yz-inset-b) + 96px);
+  transform: translateX(-50%);
+  max-width: min(72vw, 560px);
+  pointer-events: none;
+}
+
+.yz-lore-item {
+  padding: var(--yz-s-h) var(--yz-s2);
+  font-family: var(--yz-font-display);
+  font-size: var(--yz-fs-sm);
+  line-height: 1.7;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+  text-align: center;
+  color: var(--yz-text-dim);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition:
+    opacity var(--yz-t-med) var(--yz-ease),
+    transform var(--yz-t-med) var(--yz-ease),
+    visibility 0s linear var(--yz-t-med);
+}
+
+.yz-lore-item.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition:
+    opacity var(--yz-t-med) var(--yz-ease),
+    transform var(--yz-t-med) var(--yz-ease),
+    visibility 0s;
+}
+
 /* ---- 顶部提示（画质切换 / 掌意觉醒 / 台面塌块）----
    常驻节点，JS 改文本并加 .is-on（约 1.4~1.8s 后移除）。
    [data-on] 为旧 shell 钩子别名。 */
@@ -705,6 +835,11 @@
   align-items: center;
 }
 
+/* 触屏横屏坞占了底部中央：字幕位抬高到坞上方 */
+[data-touch="1"] .yz-lore {
+  bottom: calc(var(--yz-inset-b) + 176px);
+}
+
 /* ---- 竖屏：坞缩小上移左侧，掌意条到顶带下方居中 ---- */
 @media (orientation: portrait) {
   [data-touch="1"] .yz-glove-dock {
@@ -715,8 +850,14 @@
     align-items: flex-start;
   }
 
-  [data-touch="1"] .yz-glove-dock .yz-meter {
+  [data-touch="1"] .yz-glove-dock .yz-meter,
+  [data-touch="1"] .yz-glove-dock .yz-knock {
     width: min(44vw, 180px);
+  }
+
+  /* 竖屏坞回了左上，底部中央重新空出来：字幕位落回原高 */
+  [data-touch="1"] .yz-lore {
+    bottom: calc(var(--yz-inset-b) + 96px);
   }
 
   [data-touch="1"] .yz-glove-card {
@@ -741,7 +882,8 @@
 
 /* ---- 横屏手机（竖向 ≤480px）：HUD 整体收一档 ---- */
 @media (max-height: 480px) {
-  .yz-meter {
+  .yz-meter,
+  .yz-knock {
     width: 160px;
   }
 
