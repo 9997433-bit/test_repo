@@ -13,11 +13,11 @@
 //
 // 世界层不计算任何玩法数值，只消费 getView() 给出的 JSON。
 // 弹道不归世界层：view.shots 一律由 src/combat 绘制，这里连读都不读，避免同一发子弹被画两遍。
+// 辉光层也不归世界层：GlowLayer 由 src/engine 按质量档建立与销毁，这里只借用它排除天空。
 
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { GlowLayer } from "@babylonjs/core/Layers/glowLayer.js";
 // scene.pick 依赖 Ray 的副作用注册，pickSocket 走无参分支时必须先装上。
 import "@babylonjs/core/Culling/ray.js";
 
@@ -44,6 +44,7 @@ import { buildEnemies, syncEnemies } from "./enemies.js";
 const WORLDS = new WeakMap();
 
 const DEFAULTS = {
+  // glow 只决定「要不要认领引擎的辉光层做天空排除」，世界层自己不建层。
   glow: true,
   sky: true,
   environment: true,
@@ -78,18 +79,68 @@ function ensureCamera(scene, opts) {
   return camera;
 }
 
-function attachGlow(scene, opts, world) {
-  if (!opts.glow) return null;
-  // NullEngine 之类没有后处理能力的后端会在这里抛，视觉层可以缺席但世界不能塌。
-  try {
-    const glow = new GlowLayer(NAMES.glow, scene, { mainTextureFixedSize: 512, blurKernelSize: 56 });
-    glow.intensity = 0.85;
-    if (world.sky?.dome) glow.addExcludedMesh(world.sky.dome);
-    if (world.sky?.stars) glow.addExcludedMesh(world.sky.stars);
-    return glow;
-  } catch {
-    return null;
+const GLOW_EFFECT_NAME = "GlowLayer";
+
+function isGlowLayer(layer) {
+  if (!layer || typeof layer.addExcludedMesh !== "function" || typeof layer.removeExcludedMesh !== "function") {
+    return false;
   }
+  const effect = layer.getEffectName?.();
+  return effect === undefined || effect === GLOW_EFFECT_NAME;
+}
+
+/** 找出引擎挂在这个场景上的辉光层；没有引擎（预览页、NullEngine 测试）就返回 null。 */
+function findSceneGlow(scene) {
+  // scene.effectLayers 在销毁时会被 removeEffectLayer 摘掉，用它校验句柄是否还活着。
+  const layers = Array.isArray(scene.effectLayers) ? scene.effectLayers : null;
+  const engineGlow = scene.metadata?.shihe?.glow ?? scene.metadata?.shEngine?.glow ?? null;
+  if (isGlowLayer(engineGlow) && (!layers || layers.includes(engineGlow))) return engineGlow;
+  if (layers) {
+    for (const layer of layers) {
+      if (isGlowLayer(layer)) return layer;
+    }
+  }
+  return null;
+}
+
+/** 松开对辉光层的引用：只撤回自己加的排除项，绝不销毁别人的层。 */
+function releaseGlow(world) {
+  const layer = world.glow;
+  if (layer) {
+    for (const mesh of world.glowExcluded) {
+      try {
+        layer.removeExcludedMesh(mesh);
+      } catch {
+        // 层可能已经被引擎换档销毁，排除项跟着它一起没了，无需处理。
+      }
+    }
+  }
+  world.glow = null;
+  world.glowExcluded = [];
+}
+
+/**
+ * 借用引擎的辉光层，把天穹与星点排除在外——否则整片背景会被辉光糊成灰白。
+ * 引擎换质量档会重建 GlowLayer，所以每帧比对一次句柄，换了就重新排除。
+ */
+function adoptGlow(world) {
+  const layer = world.options.glow ? findSceneGlow(world.scene) : null;
+  if (layer === world.glow) return layer;
+
+  releaseGlow(world);
+  if (!layer) return null;
+
+  for (const mesh of [world.sky?.dome, world.sky?.stars]) {
+    if (!mesh) continue;
+    try {
+      layer.addExcludedMesh(mesh);
+      world.glowExcluded.push(mesh);
+    } catch {
+      // 正在被销毁的层会抛，下一帧重新认领即可。
+    }
+  }
+  world.glow = layer;
+  return layer;
 }
 
 /**
@@ -117,6 +168,7 @@ export function buildWorld(scene, getView, options) {
     lastView: null,
     env: null,
     glow: null,
+    glowExcluded: [],
   };
 
   if (opts.environment) {
@@ -137,7 +189,7 @@ export function buildWorld(scene, getView, options) {
   world.sockets = buildSockets(scene, root);
   world.enemies = buildEnemies(scene, root);
   world.camera = ensureCamera(scene, opts);
-  world.glow = attachGlow(scene, opts, world);
+  adoptGlow(world);
 
   WORLDS.set(scene, world);
   if (!scene.metadata || typeof scene.metadata !== "object") scene.metadata = {};
@@ -151,6 +203,7 @@ export function buildWorld(scene, getView, options) {
     const dt = Number.isFinite(deltaMs) && deltaMs > 0 ? Math.min(deltaMs / 1000, 0.1) : 1 / 60;
     world.clock += dt;
     world.frame += 1;
+    adoptGlow(world);
     if (world.options.autoSync && world.getView) {
       syncWorld(scene, world.getView());
     }
@@ -234,7 +287,8 @@ export function disposeWorld(scene) {
 
   if (world.observer) scene.onBeforeRenderObservable.remove(world.observer);
   disposeSockets(world.sockets);
-  world.glow?.dispose();
+  // 辉光层是引擎的资产，世界只退还排除项。
+  releaseGlow(world);
   world.root.dispose(false, true);
   if (world.lights) {
     world.lights.hemi.dispose();

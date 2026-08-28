@@ -63,7 +63,6 @@ export const NAMES = {
   hemi: "world-hemi",
   coreLight: "core-light",
   camera: "world-camera",
-  glow: "world-glow",
 };
 
 /** 全局配色（线性 0..1 三元组，转 Color3 时直接展开）。 */

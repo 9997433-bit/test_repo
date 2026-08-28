@@ -44,6 +44,8 @@ const state = {
   selected: params.get("selected") === null ? null : numberParam("selected", 0),
 };
 
+// 这页没有 src/engine，因此场上没有辉光层可认领：glow 开关在这里只是个空挡，
+// 正式启动链路里的辉光由引擎按质量档创建。
 const world = buildWorld(
   scene,
   () => demoView(state.time, { hp: state.hp, hover: state.hover, selected: state.selected }),
