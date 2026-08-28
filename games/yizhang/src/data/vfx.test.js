@@ -25,9 +25,23 @@ function collectBlends(node, gloveId, path, out) {
 }
 
 describe("GLOVE_VFX 战斗特效表", () => {
-  it("八掌一一对应，数组顺序 = GLOVES 图鉴顺序，BY_ID 同一对象", () => {
-    expect(GLOVE_VFX.map((v) => v.gloveId)).toEqual(GLOVES.map((g) => g.id));
+  it("覆盖首发 8 掌，数组顺序 = GLOVES 图鉴前缀，BY_ID 同一对象", () => {
+    // P2 表尾追加的生涯 4 掌暂无专属条目（归 O2，GDD §14）：出场走
+    // resolveGloveVfx 兜底木棉，见下面的专项断言。
+    expect(GLOVE_VFX).toHaveLength(8);
+    expect(GLOVE_VFX.map((v) => v.gloveId)).toEqual(
+      GLOVES.slice(0, GLOVE_VFX.length).map((g) => g.id),
+    );
     for (const v of GLOVE_VFX) expect(GLOVE_VFX_BY_ID[v.gloveId]).toBe(v);
+  });
+
+  it("P2 追加掌暂缺专属条目：resolve 必须兜底木棉，不许返回 undefined", () => {
+    const appended = GLOVES.slice(GLOVE_VFX.length);
+    expect(appended.length).toBeGreaterThan(0);
+    for (const g of appended) {
+      expect(GLOVE_VFX_BY_ID[g.id], g.id).toBeUndefined();
+      expect(resolveGloveVfx(g.id), g.id).toBe(GLOVE_VFX_BY_ID.cotton);
+    }
   });
 
   it("识别色直引 gloves.color（不许出现第三份色源）；点缀占比 ∈ (0, 0.2]", () => {
@@ -64,7 +78,8 @@ describe("GLOVE_VFX 战斗特效表", () => {
   });
 
   it("技能分派：skill.skillId = §3.1 右列 handler id；木棉无主动技留空", () => {
-    for (const g of GLOVES) {
+    // 只对照有专属条目的首发 8 掌；追加掌复用同一批 skillId，命中同一条 BY_SKILL。
+    for (const g of GLOVES.filter((glove) => GLOVE_VFX_BY_ID[glove.id])) {
       const v = GLOVE_VFX_BY_ID[g.id];
       if (g.id === "cotton") {
         expect(v.skill).toBeNull();
@@ -79,7 +94,7 @@ describe("GLOVE_VFX 战斗特效表", () => {
       expect(v.skill.residue.kind, g.id).toBeTruthy();
       expect(GLOVE_VFX_BY_SKILL[handlerId]).toBe(v);
     }
-    expect(Object.keys(GLOVE_VFX_BY_SKILL)).toHaveLength(GLOVES.length - 1);
+    expect(Object.keys(GLOVE_VFX_BY_SKILL)).toHaveLength(GLOVE_VFX.length - 1);
   });
 
   it("分身必须描述残影：保留姿态、边缘先散、去饱和、有寿命（禁蓝色光柱）", () => {

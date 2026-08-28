@@ -60,11 +60,13 @@ function shapeOf(vfx, kind) {
 
 describe('战斗特效：八掌各一套', () => {
   it('分派表 8 键、8 个互不相同的值，键与掌表一一对上', () => {
+    // 分派表覆盖首发 8 掌；P2 表尾追加的生涯 4 掌暂无专形（combatVfxKind 认不出
+    // 退 fanwake，见下一条），O2 接手新掌视觉时补键、改回全表对照。
     const keys = Object.keys(COMBAT_VFX_KIND);
     const values = Object.values(COMBAT_VFX_KIND);
     expect(keys.length).toBe(8);
     expect(new Set(values).size).toBe(8);
-    expect(keys.sort()).toEqual(GLOVES.map((g) => g.id).sort());
+    expect(keys.sort()).toEqual(GLOVES.slice(0, 8).map((g) => g.id).sort());
     expect(COMBAT_VFX_KIND.cotton).toBe('fanwake');
     expect(COMBAT_VFX_KIND.granite).toBe('slab');
     expect(COMBAT_VFX_KIND.gale).toBe('gust');
@@ -82,16 +84,18 @@ describe('战斗特效：八掌各一套', () => {
   });
 
   it('技能按 skillId 分派：掌表里每个非空 skillId 都有一条', () => {
+    // P2 追加的 4 掌复用首发 skillId 词表：非空 skillId 去重后仍是 7 个
     const skillIds = GLOVES.map((g) => g.skillId).filter(Boolean);
-    expect(skillIds.length).toBe(7); // 木棉无主动技
+    expect(new Set(skillIds).size).toBe(7); // 词表 7 技，木棉无主动技
     for (const id of skillIds) {
       expect(SKILL_VFX_KIND[id], id).toBeTruthy();
       expect(SKILLS[id], id).toBeTruthy(); // 与 src/data/skills.js 对得上
     }
     expect(Object.keys(SKILL_VFX_KIND).length).toBe(7);
-    // 每只掌的技能与它的扇击同源：形一致、量不同
+    // 每只掌的技能与它的扇击同源：形一致、量不同（追加掌暂无专形，先跳过——
+    // 它们的技能形沿用词表原主掌的形，出掌本身由 combatVfxKind 兜底 fanwake）
     for (const g of GLOVES) {
-      if (!g.skillId) continue;
+      if (!g.skillId || !COMBAT_VFX_KIND[g.id]) continue;
       expect(SKILL_VFX_KIND[g.skillId], g.id).toBe(COMBAT_VFX_KIND[g.id]);
     }
     // 认不出的 skillId 退回持掌，而不是退回默认掌
@@ -101,7 +105,7 @@ describe('战斗特效：八掌各一套', () => {
 
   it('八套画出来的形互不相同，不是同一片壳换个颜色', () => {
     const shapes = new Map();
-    for (const g of GLOVES) {
+    for (const g of GLOVES.slice(0, 8)) {
       const { vfx } = mount('high');
       const kind = COMBAT_VFX_KIND[g.id];
       const shape = shapeOf(vfx, kind);

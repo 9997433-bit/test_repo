@@ -300,6 +300,11 @@ describe("技能 id 两套词表都认", () => {
       afterimage: "blinkSwap",
       magnet: "magnetPull",
       meteor: "meteorSlam",
+      // P2 内容轮表尾追加的生涯 4 掌：只复用首发 skillId 词表，不造新 handler
+      cocoon: "parry",
+      raven: "dashSlap",
+      victor: "magnetPull",
+      tumbler: "groundPound",
     };
 
     for (const glove of GLOVES) {

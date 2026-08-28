@@ -197,7 +197,11 @@ describe('展示掌：手指朝上', () => {
   });
 
   it('八只掌体格各不相同，左右排是左右手', () => {
-    expect(Object.keys(PALM_SHAPE).sort()).toEqual(GLOVES.map((g) => g.id).sort());
+    // 台座只摆首发 8 掌（GDD §12，P2 追加掌不上 3D 台座）：体格表对照走道 8 掌，
+    // 追加掌若上台由 DEFAULT_SHAPE 兜底，届时 O2 补形再改回全表对照。
+    expect(Object.keys(PALM_SHAPE).sort()).toEqual(
+      GLOVES.slice(0, 8).map((g) => g.id).sort(),
+    );
     const bulks = new Set(Object.values(PALM_SHAPE).map((s) => s.bulk));
     expect(bulks.size).toBeGreaterThan(4);
 
@@ -214,10 +218,14 @@ describe('展示掌：手指朝上', () => {
 
 describe('idle 特效：一掌一种，认得出是谁', () => {
   it('八只掌各占一种特效，没有两只共用', () => {
-    const kinds = GLOVES.map((g) => idleVfxKind(g.id));
+    // idle 特效只属于台座上的首发 8 掌（P2 追加掌不上台座，认不出照旧退 fluff）
+    const onPedestals = GLOVES.slice(0, 8);
+    const kinds = onPedestals.map((g) => idleVfxKind(g.id));
     expect(kinds.length).toBe(8);
     expect(new Set(kinds).size).toBe(8);
-    expect(Object.keys(IDLE_VFX_KIND).sort()).toEqual(GLOVES.map((g) => g.id).sort());
+    expect(Object.keys(IDLE_VFX_KIND).sort()).toEqual(
+      onPedestals.map((g) => g.id).sort(),
+    );
     expect(IDLE_VFX_KIND.cotton).toBe('fluff');
     expect(IDLE_VFX_KIND.granite).toBe('grit');
     expect(IDLE_VFX_KIND.gale).toBe('streak');

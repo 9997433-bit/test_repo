@@ -10,15 +10,16 @@ Fable-3 出品。本文只做一件事：把 DESIGN_SEED 定下的核心循环�
 
 | 文件 | 导出 | 内容 |
 | --- | --- | --- |
-| `src/data/gloves.js` | `GLOVES` `GLOVE_BY_ID` `MATCH` `isGloveUnlocked` | 8 掌 + 契约对局常量 + 解锁判定 |
+| `src/data/gloves.js` | `GLOVES` `GLOVE_BY_ID` `MATCH` `isGloveUnlocked` | 12 掌（首发 8 + P2 生涯 4，§5.1）+ 契约对局常量 + 解锁判定 |
 | `src/data/tuning.js` | `MOVEMENT` `KNOCKBACK` `METER` `RULES` `CAMERA` `CHARACTERS` | 运动 / 击退 / 掌意 / 规则扩展 / 机位与角色渲染对照登记（§15） |
 | `src/data/skills.js` | `SKILLS` `SKILL_IDS` `SKILL_COMBAT_ALIASES` | 7 个主动技参数 + data→combat id 完整映射（§6） |
 | `src/data/tiles.js` | `TILE` | 台面碎裂（方格拓扑，对齐 sim） |
 | `src/data/bots.js` | `BOT_PERSONAS` | 3 种 Bot 人格（含互异 `skinId`） |
-| `src/data/unlocks.js` | `UNLOCKS` | 局内解锁挑战 |
+| `src/data/unlocks.js` | `UNLOCKS` | 局内解锁挑战 + 生涯累计解锁（§9.1） |
 | `src/data/hub.js` | `HUB` | 安全区大厅布局：8 座坐标/朝向、交互半径、走道 AABB、传送门（§12） |
 | `src/data/skins.js` | `SKINS` `SKIN_BY_ID` `DEFAULT_SKIN_ID` `resolveSkin` | 6 套皮肤真表（契约 §3.2 枚举组合，§13） |
-| `src/data/vfx.js` | `GLOVE_VFX` `GLOVE_VFX_BY_ID` `GLOVE_VFX_BY_SKILL` `resolveGloveVfx` | 每掌战斗 VFX 参数表（§14） |
+| `src/data/vfx.js` | `GLOVE_VFX` `GLOVE_VFX_BY_ID` `GLOVE_VFX_BY_SKILL` `resolveGloveVfx` | 每掌战斗 VFX 参数表（§14；P2 追加掌暂缺条目，resolve 兜底木棉） |
+| `src/data/story.js` | `STORY` `STORY_BY_ID` | 五拍旁白（P2 内容轮，木棉短句，§16） |
 
 ---
 
@@ -110,6 +111,30 @@ W(P) = 0.16·P + max(0, 0.95·P − 6.5) / 2.2
 - **磁掌**：power 10 中上，代价是 0.96 移速与 0.22 前摇；核心是 `iron_pull` 把龟台心的人拉进掌距。
 - **陨掌**：中重甲。`sky_fall` 是全游戏唯一 AoE 清场 + 最长技能冷却 11s，落地自硬直 0.5s 给足惩罚窗。
 
+### 5.1 P2 内容轮追加：生涯四掌（表尾 append，前 8 掌顺序与数值一字未动）
+
+四只掌走 §9.1 的**生涯累计解锁**（不占单局挑战位），设计纪律三条（`tests/glove-data.test.js` 逐条锁死）：
+
+1. **词表复用**：`skillId` 与觉醒 `special` 只从首发 8 掌词表里取——combat handler、VFX 分派、Bot 行为**零新增语义**即可进局；新掌的差异全部表达在数值配比里。
+2. **包络约束**：全部数值（range/power/cd/前后摇/移速/技能 cd/觉醒倍率）落在首发 8 掌的 min–max 包络内，不越级、不造新极值——首发表的平衡结论（§5「贴栏人人能杀 / 台心无一掌秒」）自动继承。
+3. **识别色互异**：与全表 12 色两两不同（苔铁绿 / 鸦青 / 绯粉 / 茄紫，四色都避开首发 8 掌的色相带）。
+
+| 掌 | 职能 | power | range | 角度 | cd | 前摇 | 后摇 | 移速 | D | W | 技能（复用） | 觉醒 special（复用） |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 铁茧 cocoon | 重守·反制 | 13 | 2.8 | 80° | 1.00 | 0.34 | 0.34 | 0.90 | 7.7 | **4.7** | `coil_counter` (10s) | `counter_launch` |
+| 渡鸦 raven | 游猎·切入 | 8 | 2.4 | 90° | 0.55 | 0.14 | 0.21 | 1.06 | 4.7 | 1.8 | `wind_rush` (7s) | `rush_steer` |
+| 常胜 victor | 压制·强制接近 | 10.5 | 2.7 | 80° | 0.80 | 0.24 | 0.28 | 0.98 | 6.2 | 3.3 | `iron_pull` (9s) | `dual_pull` |
+| 不倒 tumbler | 站桩·连击 | 11 | 2.7 | 90° | 0.85 | 0.26 | 0.30 | 0.95 | 6.5 | 3.6 | `quake_slam` (8s) | `combo3` |
+
+各掌一句话意图：
+
+- **铁茧**：磐石与弹簧之间的缺口——想要重掌威胁又想反制读心的人用它；power 13 换 0.34s 前摇与 0.90 移速，反击窗对面是 10s 技能冷却（全表反制位最贵）。
+- **渡鸦**：疾风的姊妹掌，「渡」既是穿门也是掠边——power 8 比疾风裸 7.5 略高、但角度 90 < 95、冷却 0.55 > 0.50：少一分下限容错，多一分单掌斩杀（W 1.8 > 1.5）。
+- **常胜**：磁掌换了脾气——拉人参数同源（`iron_pull`/`dual_pull`），power 10.5 > 磁掌 10（W 3.3 > 3.0，**拉到就多半送走**），代价是角度 80° < 85° 与前摇 0.24 > 0.22：锥更窄、出手更慢，拉完那一掌必须瞄正。
+- **不倒**：站桩换装位——`quake_slam`（8s，比磐石 7s 略慢）守脚下，觉醒 `combo3` 奖励原地对扇；0.95 移速追不了人，价值全在「你过来打我」的那块台面上。
+
+**本轮不做的两件事**（走道与视觉，均已在对应段登记）：新掌不上 3D 台座（走道仍 8 座，§12）；战斗 VFX 专属条目留给 O2（`resolveGloveVfx` 兜底木棉，§14）。
+
 ## 6. 主动技数值（`skills.js`）
 
 | 技能 | 掌 | cd | 关键数字 | 出岛判据 |
@@ -185,11 +210,11 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 - `collapseDelaySeconds 0.6`：HP≤0 先抖 0.6s 警示再塌。sim 现为瞬时判碎，接线前由渲染做塌落表演。
 - `zoneMaxCollapsedFraction 0.75`：每象限最多塌 75%，保通行走廊。
 
-## 9. 局内解锁挑战（`unlocks.js`）
+## 9. 解锁挑战（`unlocks.js`）
 
-木棉默认解锁，其余 7 掌全部**单局内**可判定（事件规格见文件头注释），难度即教学梯度。
+木棉默认解锁，首发其余 7 掌全部**单局内**可判定（`scope:"match"`，事件规格见文件头注释），难度即教学梯度；P2 追加的生涯 4 掌走**跨局累计**（`scope:"career"`，§9.1）。
 
-判定唯一入口是数据层的 `isGloveUnlocked(id, progress)`（`gloves.js` 导出、`data/index.js` 转发；UI/core 读完存档调这里，不要自己比对）：`unlock: "default"`（木棉）恒 true，未知 id 恒 false；其余按 `UNLOCKS` 对 `progress` 判定，兼容三种形状——存档的 `{ unlocked: GloveId[] }`、扁平旗标 `{ [unlockId 或 gloveId]: true }`、挑战计数 `{ challenges: { [unlockId]: n } }`（n ≥ 该挑战 `count` 即解锁）。
+判定唯一入口是数据层的 `isGloveUnlocked(id, progress)`（`gloves.js` 导出、`data/index.js` 转发；UI/core 读完存档调这里，不要自己比对）：`unlock: "default"`（木棉）恒 true，未知 id 恒 false；其余按 `UNLOCKS` 对 `progress` 判定，兼容四种形状——存档的 `{ unlocked: GloveId[] }`、扁平旗标 `{ [unlockId 或 gloveId]: true }`、挑战计数 `{ challenges: { [unlockId]: n } }`（n ≥ 该挑战 `count` 即解锁）、生涯累计 `{ stats: {...} }`（仅 career 规格按 `spec.stat` 对照，见 §9.1）。
 
 | 掌 | 挑战 | 教的是 |
 | --- | --- | --- |
@@ -202,6 +227,26 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 | 陨掌 | 掌意如虹：单局 2 次觉醒 | 掌意经济 |
 
 存档由 UI/core 层写 `localStorage` key `yizhang-save-v1`；数据层只定义规格。Bot 不受解锁限制。
+
+### 9.1 生涯累计解锁（P2 内容轮，`scope:"career"`）
+
+单局挑战教技巧，生涯解锁奖励**坚持**——四只 P2 掌（§5.1）不考单局爆发，只看攒了多少：
+
+| 掌 | 挑战 | `stat`（存档 stats 字段） | `count` |
+| --- | --- | --- | --- |
+| 铁茧 cocoon | 百炼成茧 | `totalSlapHits` | 300 |
+| 渡鸦 raven | 掠门之羽 | `portalCrossings` | 20 |
+| 常胜 victor | 十胜成名 | `wins` | 10 |
+| 不倒 tumbler | 屡仆屡起 | `matches` | 25 |
+
+机制对照（与 `scope:"match"` 的分工）：
+
+- **计数来源是存档 stats**（`src/core/storage.js` 的 `DEFAULTS.stats`），不是局内事件流。`totalSlapHits` / `portalCrossings` 是 P2 新增累计字段：`recordMatch` 先 spread 再覆写（结算一场不清生涯计数），穿门走 `recordPortalCrossing()`；老档缺字段由 `loadSave` 的 stats spread 补 0，不清档、不升版本。
+- **判定仍走 `isGloveUnlocked`**：career 规格按 `spec.stat` 直接读 `progress.stats`，达 `count` 即解锁；`{ unlocked: [...] }` 名单等旧通路依然优先兼容。
+- **core 的单局结算不误报**：career 规格没有 `event` 字段，`progressMeets` 认不出（落 default false）——「本局新解锁」弹报只属于单局挑战；生涯掌达标后由菜单/走道下一次读档时点亮。
+- **接线状态**：`recordMatch` 的 `slapHits` 入参与 `recordPortalCrossing()` 已就位（storage 域），main.js 结算/过门处的调用属 UI/core 域，随下一轮接线；接线前四掌照常可经 `unlocked` 名单或 stats 手动达标点亮。
+
+阈值推导：一局 240s 约命中 12–20 掌 → 300 命中 ≈ 18–25 局，与「场次 25」同带；「穿门 20」≈ 每局一次过门；「胜 10」按对 Bot 胜率 40–60% ≈ 17–25 局——四条都落在**同一个投入带**（≈ 20 局上下），先到哪只看玩法偏好，不制造「最后一只掌远得离谱」的断崖。
 
 ## 10. Bot 人格（`bots.js`）
 
@@ -232,6 +277,8 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 ## 12. 安全区大厅与走道选掌（`hub.js`，HUB-R1，ADR-30）
 
 布局唯一来源是 `src/data/hub.js` 的 `HUB`（契约 §3.3）：sim 经 `installData` / `installHubLayout` 接管后快照进 `state.hub.layout`，render/ui 从 `view.hub` 读，**任何模块不得硬编码第二份坐标**。坐标与 O1 `sim/hub.js` 内置默认表逐字段对齐——data 表缺席时行为不变，落地后 `deps.usingDataHub === true`，唯一的表内差异是 `pedestals` 数组顺序改为 GLOVES 图鉴顺序（契约硬约束 1；O1 默认表按排交错，坐标相同）。
+
+**P2 内容轮批注：走道仍 8 座**。掌表已扩到 12（§5.1），但生涯 4 掌**本轮不上 3D 台座**——台座序 = GLOVES 图鉴**前 8**（`src/data/hub.test.js` 锁前缀对照）。生涯掌解锁后经 2D 选掌网格进配装；要给它们加座位（第五排 / 门侧对排）属布局改版，先过契约 §3.3 再动表。
 
 **空间总览**：安全区与裂岛共用世界坐标。裂岛 = 原点半径 20 圆盘；走道整体在 z ≈ −120，安全区最近点（zone 北缘 z = −98）距裂岛圆心 98m，远大于「半径 20 + 2m 缓冲」的 22m 红线（硬约束 3）。走道沿 −Z 推进：出生 +Z 端 → 两排台掌 → 传送门 −Z 端，与 yaw = 0 → −Z 同向，开局镜头即面向走道纵深（ADR-17）。
 
@@ -315,6 +362,8 @@ Round 1 存在三套拓扑（F1 十二板 / F3 环扇 72 块 / O1 方格）。Ro
 大厅 idle 特效已可辨（ART §13.4，O2 已渲染）；本表管**裂岛里的扇击与技能**——Round 1 里它们还是一套通用壳。`src/data/vfx.js` 导出 `GLOVE_VFX`（数组，GLOVES 图鉴顺序）/ `GLOVE_VFX_BY_ID` / `GLOVE_VFX_BY_SKILL` / `resolveGloveVfx`，`data/index.js` 已转发。渲染域的**每掌一形分派词**（大厅 idle 八词 × 战斗八词）登记在 §14.3，与实现同词。
 
 **消费方式（O2 分派）**：扇击事件带 gloveId → `GLOVE_VFX_BY_ID[gloveId].slap`；技能事件线上的 `skillId` 是 §3.1 右列 handler id → `GLOVE_VFX_BY_SKILL[skillId]`（表内 `skill.skillId` 就登记为 handler id，木棉无主动技不在此表）；分身残影读 `view.combat.ghosts`（O1 导出），视觉规格取 afterimage 的 `skill.ghosts`；未知/缺省 gloveId `resolveGloveVfx` 回落木棉（与 `createMatch` 同一约定）。
+
+**P2 内容轮批注：追加掌暂缺专属条目，条目归 O2**。生涯 4 掌（§5.1）本轮**不进本表**——`GLOVE_VFX` 仍 8 条（GLOVES 图鉴前缀，`src/data/vfx.test.js` 锁前缀对照 + 兜底断言）：它们的扇击经 `resolveGloveVfx` 落**木棉**的絮扇壳，技能因复用首发 skillId 天然命中 `GLOVE_VFX_BY_SKILL` 原主掌的形（渡鸦疾冲 = 疾风的 `rushWake`，以此类推）——缺的只是「一掌一形」的专属识别，不缺表演。O2 补条目时按 §14.2 四条纪律逐掌过（burst/trail/residue 三列继续互异、识别色 ≤ 0.2、additive 仍只给真高温），渲染分派词表（§14.3 的 `COMBAT_VFX_KIND` / `IDLE_VFX_KIND` / `PALM_SHAPE` / `GLOVE_TINT` 四张 render 镜像）同步补键。
 
 **职责边界**：判定几何（`slapRange`/`slapAngleDeg`/技能半径）的唯一事实源仍是 `gloves.js`/combat，O2 按 gloveId 自取——本表**不复制战斗数字**，只带视觉参数（形状关键词、粒子数、寿命秒、高度米、贴花种类）；识别色 `ident` 直接引用 `GLOVE_BY_ID[id].color`，不产生第三份色源（HUD/样式仍走 tokens.css，ART §1.3 注）。
 
@@ -453,5 +502,19 @@ locked ↔ free 换的是「机位绕谁转」（§14-35 选源），角色还�
 ### 15.7 重获指针锁的那一下，左键不扇（打磨轮 LOOK-R4 O4 已合入，`input/index.js`）
 
 暂停、失焦、结算都会把鼠标指针锁还给系统；玩家回来点一下画布重新抓锁，浏览器只当它是一次普通左键。修掉之前，这一下既申请了锁又扇了一巴掌——大厅里被 `inHub` 挡着看不出来，裂岛里就是一记空挥、白吃一次冷却（复盘 P1）。现在这一下**整只吞掉**：边沿不补、按住位也不置位（否则锁一到手那一帧就成了「按住连扇」，白挥只是从一下变成一串），它只干一件事——把锁抓回来。吞的判据与真正去申请锁的条件**逐字一致**：想要锁（设置「指针锁定」开着）、此刻没锁、环境支持锁；少一条都算正常左键，照常扇击兼拖拽——玩家关了指针锁定、或浏览器没这个 API 时，行为一分不变。
+
+## 16. 五拍旁白（`story.js`，P2 内容轮）
+
+说话的只有木棉——教学掌兼引路人，短句、不训话。`src/data/story.js` 导出 `STORY`（5 拍，深冻结）/ `STORY_BY_ID`，`data/index.js` 已转发；每拍 `id / trigger / lines / once` 四字段，全部 `once: true`（每份存档只放一次，已放列表归存档层，本表不管状态）。
+
+| 拍 | id | trigger | 句数 |
+| --- | --- | --- | --- |
+| 初来 | `arrive` | `hub_first_enter` 第一次进走道 | 3 |
+| 拾掌 | `first_glove` | `glove_first_pickup` 第一次选定主掌 | 3 |
+| 过门 | `portal` | `portal_first_cross` 第一次穿门 | 3 |
+| 首杀或首坠 | `first_blood` | `first_kill_or_fall` 首杀**或**首坠，先到先触发（共用一拍，输赢都有话说） | 3 |
+| 首胜 | `first_win` | `match_first_win` 第一次胜场 | 4 |
+
+**纪律**（`src/data/story.test.js` 锁死）：全线合计 ≤ 20 句（现 16）、单句 ≤ 18 字——旁白是佐料不是主菜，一拍三四句就闭嘴。触发词只登记语义，事件接线（何时命中 trigger、上屏样式、已放列表落档）归 UI/core 域，随下一轮接线；接线前本表是纯登记，不影响任何现有流程。
 
 ——完。实现方（Opus-1/3）如需新增字段，在 `src/data` 内追加并同步本文；不要在 sim/combat 里写裸数字。
