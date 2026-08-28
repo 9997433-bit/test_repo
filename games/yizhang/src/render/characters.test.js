@@ -12,7 +12,7 @@
 // 所以这里给一份 map 全为 null 的贴图库 —— 材质吃 null，形状与状态照样能验。
 
 import { describe, expect, it } from 'vitest';
-import { Scene, Vector3 } from 'three';
+import { Scene, Vector3 } from './gfx.js';
 import * as sim from '../sim/index.js';
 import { GLOVES } from '../data/gloves.js';
 import { BOT_PERSONAS } from '../data/bots.js';

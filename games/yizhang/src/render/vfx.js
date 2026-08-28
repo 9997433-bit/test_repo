@@ -26,7 +26,7 @@ import {
   ShaderMaterial,
   SphereGeometry,
   Vector3,
-} from 'three';
+} from './gfx.js';
 import { PALETTE } from './config.js';
 import { mulberry32 } from './noise.js';
 import { emitParticle, flushParticles, makeParticleSystem, swapRemove } from './particles.js';

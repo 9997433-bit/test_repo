@@ -16,7 +16,7 @@ import {
   Float32BufferAttribute,
   Points,
   ShaderMaterial,
-} from 'three';
+} from './gfx.js';
 import { PALETTE } from './config.js';
 
 export const PARTICLE_VERT = /* glsl */ `

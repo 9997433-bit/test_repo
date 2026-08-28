@@ -16,7 +16,7 @@
 //    只是「慢一点」，快速转身时它会慢到镜头绕去正脸，而 locked 承诺的就是绕不到正脸。
 //    自由视角（free）不传这个参数：那边本来就该能看到角色侧面。
 
-import { PerspectiveCamera, Vector3 } from 'three';
+import { PerspectiveCamera, Vector3 } from './gfx.js';
 
 const BASE_FOV = 54;
 const TAU = Math.PI * 2;

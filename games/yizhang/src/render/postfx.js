@@ -33,7 +33,7 @@ import {
   ShaderMaterial,
   Vector2,
   WebGLRenderTarget,
-} from 'three';
+} from './gfx.js';
 import { OCCLUDER_LAYER } from './config.js';
 
 const FS_VERT = /* glsl */ `

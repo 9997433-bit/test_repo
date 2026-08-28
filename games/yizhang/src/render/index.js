@@ -8,7 +8,7 @@
 //
 // 模块级函数操作「当前活动渲染器」，同时 createRenderer 会把实例返回，
 // 需要同页多实例或想显式持有时可以直接用实例上的同名方法。
-// Three.js 只出现在本目录，sim / combat / ai / data 不会看见它。
+// Babylon.js 8 只出现在本目录（经 ./gfx 适配），sim / combat / ai / data 不会看见它。
 //
 // 输入是 sim.getView() 的原样快照（可以先被 core/interp 插值过）。渲染实际读到的字段
 // 列在 ./view.js 头部；那里同时是唯一解析 view 的地方。要点：

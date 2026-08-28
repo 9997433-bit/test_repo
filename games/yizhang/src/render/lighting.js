@@ -6,7 +6,7 @@
 //  - 边缘光用来分离主体，替代廉价发光描边（手册 §5.4 / §2-4）
 //  - 裂缝的暖黄 emissive 有一盏真实点光作依据，不是凭空发光
 
-import { DirectionalLight, HemisphereLight, PointLight, Vector3 } from 'three';
+import { DirectionalLight, HemisphereLight, PointLight, Vector3 } from './gfx.js';
 import { PALETTE } from './config.js';
 
 export function createLighting({ scene, quality, sunDir }) {

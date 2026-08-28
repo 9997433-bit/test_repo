@@ -6,7 +6,7 @@
 // 而不必依赖截图评审（SOTA R-03 / 风险图 K-5）。
 
 import { describe, expect, it } from 'vitest';
-import { Scene, Vector2 } from 'three';
+import { Scene, Vector2 } from './gfx.js';
 import { QUALITY, QUALITY_TIERS } from './config.js';
 import { createPost } from './postfx.js';
 

@@ -1,5 +1,5 @@
 // 异掌 · 入口。职责：装配（模块探测 → 依赖注入 → 降级）、主循环、事件转音效/播报、存档。
-// 这里不写玩法规则，也不碰 Three.js；规则在 src/sim + src/combat，画面在 src/render。
+// 这里不写玩法规则，也不碰 Babylon.js；规则在 src/sim + src/combat，画面在 src/render。
 //
 // 开局路线（Round 1 起）：装配完直接进**安全区**，相机就在走道里的角色身后。
 // createMatch 缺省 `phase:'hub'`，这里不传 skipHub；2D 的 `.yz-home` 配掌板降为

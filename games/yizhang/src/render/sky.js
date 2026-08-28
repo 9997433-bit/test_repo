@@ -15,7 +15,7 @@ import {
   ShaderMaterial,
   SphereGeometry,
   Vector3,
-} from 'three';
+} from './gfx.js';
 import { PALETTE } from './config.js';
 
 const SKY_VERT = /* glsl */ `

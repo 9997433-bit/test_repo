@@ -11,7 +11,7 @@ import {
   Scene,
   Vector3,
   WebGLRenderer,
-} from 'three';
+} from './gfx.js';
 import { GLOBAL_DPR_CAP, QUALITY, resolveTier } from './config.js';
 import { BASE_PITCH, CAMERA_SNAP_TELEPORT, PITCH_LIMIT, createCamera } from './camera.js';
 import { createCharacters } from './characters.js';
