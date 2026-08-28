@@ -3,9 +3,12 @@
 Fable-3 出品，Round 2 修订。所有数值的唯一事实源是 `src/data/**`；本文与数据表不一致时，以数据表为准并回改本文。
 `src/data` 为纯 ESM 常量 + 纯函数，可被 Node / vitest / sim 直接 import，零 Babylon、零 DOM。
 
-**Round 2 变更**（详见 §13）：新增 `CONFIG.firstWaveDelay = 0.5`（开局 2s 内必出怪）；
+**Round 2 变更**（详见 §13）：新增 `CONFIG.firstWaveDelay`（开局 2s 内必出怪；Round 3 勘误后取 1.5）；
 `interWaveDelaySec` 更名 `interWaveDelay`（对齐 API_CONTRACT §CONFIG，值不变）；波 18/19/20 `hpMul` 微收紧。
 正式导出名冻结为：`CONFIG / TOWERS / ENEMIES / WAVES / BOSS / ARMOR_MULT / ARMOR_TYPES / ARMOR_INFO / TOWER_ORDER / armorMultiplier / towerCost / upgradeOptions`，sim 只读这些名字，不再有兼容别名。
+
+**Round 3 备注**（详见 §14）：无手感重调，波表 / 塔价 / 克制表 / Boss 全部未动。5 波冒烟（`createBot` 自动打）
+0 漏通关；`npm run probe` 仍红，修法冻结为 probe 改用 `createBot` 落塔，禁止聚簇轨炮式固定布局。
 
 ## 1. 一句话与核心循环
 
@@ -25,8 +28,9 @@ Fable-3 出品，Round 2 修订。所有数值的唯一事实源是 `src/data/**
 | 轨道高度 | y = 0 / 4 / 9 | lane 0 下 / 1 中 / 2 上 |
 
 塔的射程按 **3D 直线距离**结算，因此射程同时决定「角度覆盖宽度」和「径向覆盖深度」：
-环上塔到同角度敌人的距离 = `√((40−r)² + laneY²)`。射程 30 的轨炮可以从出生打到 r≈10；
-射程 14 的霰星只罩外带 r≈26..54。**没有塔能罩到核旁最后 2~8 个单位**——漏不漏在外圈就决定了。
+炮口高 2.4（sim `MUZZLE_Y`），环上塔到同角度敌人的距离 = `√((40−r)² + (laneY−2.4)²)`。
+射程 30 的轨炮可以从出生打到 r≈10；射程 14 的霰星只罩外带 r≈26..54。
+**只有射程 ≥34 的塔（星弩、Ⅲ 级轨炮）能罩到核旁 r=8**；其余塔离核最后 ≈2~18 个单位罩不到——漏不漏在外圈就决定了。
 
 ## 3. 资源与经济
 
@@ -36,7 +40,7 @@ Fable-3 出品，Round 2 修订。所有数值的唯一事实源是 `src/data/**
 | 击杀赏金 | 每敌 `bounty`（见 §7），不随波次膨胀 |
 | 清波奖励 | 每波 `bonus` 20 → 80 递增（见 §8） |
 | 拆塔返还 | 已投入总额 × 0.7，向下取整 |
-| 首波延迟 | 0.5 s（`CONFIG.firstWaveDelay`；加首组 delay 0 = 开局 0.5 s 首怪入场，冻结 ≤2 s） |
+| 首波延迟 | 1.5 s（`CONFIG.firstWaveDelay`；加首组 delay 0 = 开局 ≈1.5 s 首怪入场（实测 1.53 s），冻结 ≤2 s） |
 | 波间隔 | 5 s（`CONFIG.interWaveDelay`，清波后到下一波） |
 | 全程总经济 | 180 + 赏金 3326 + 清波 846 = **4352** |
 
@@ -98,7 +102,7 @@ Fable-3 出品，Round 2 修订。所有数值的唯一事实源是 `src/data/**
 ## 8. 20 波表（`src/data/waves.js`）
 
 每波 = `{ wave, hpMul, bonus, groups[] }`；组 = `{ enemy, count, lane, delay, interval }`。出生角由 sim 用种子随机。
-组 `delay` 相对本波开始计；波 1 于开局 `CONFIG.firstWaveDelay`（0.5 s）后开始，首组 delay 0 → 首怪 0.5 s 入场。
+组 `delay` 相对本波开始计；波 1 于开局 `CONFIG.firstWaveDelay`（1.5 s）后开始，首组 delay 0 → 首怪 ≈1.5 s 入场。
 节奏设计：3/5/8/10/15/18/19/20 为考试波；4/7/11/17 为高数量低 HP 的蜂群「泄压波」（霰星的高光时刻）。
 
 | 波 | hpMul | 构成（数量×敌 @lane） | 总有效 HP | 赏金 | 清波 |
@@ -148,7 +152,7 @@ Fable-3 出品，Round 2 修订。所有数值的唯一事实源是 `src/data/**
 ## 11. 平衡账（Round 1 静态预算）
 
 - **覆盖折减**：出生角随机时，单塔只罩环上一段弧（轨炮中程约 ±48°）。估算实效 DPS = 纸面 DPS × 0.4~0.6。
-- **前 5 波**：双塔起手（≈45 纸面 dps）打 84~480 HP 的波绰绰有余；第 5 波 warden(shell, 374 有效 hp) 需要 Ⅱ 级轨炮（60 dps 对 shell）+ 过载窗口，是第一场硬考试。
+- **前 5 波**：双塔起手（≈45 纸面 dps）打 84~480 HP 的波绰绰有余；第 5 波 warden(shell, 375 有效 hp) 需要 Ⅱ 级轨炮（60 dps 对 shell）+ 过载窗口，是第一场硬考试。
 - **验证**：`node /tmp` 级静态校验已跑通（导出完整性、护甲表每列有克有扛、波表引用合法、赏金/奖励合计）；动态胜率曲线待 sim 回归后再调 `hpMul` 与塔价，本文口径不变。
 
 ## 12. 范围备注
@@ -159,7 +163,23 @@ Fable-3 出品，Round 2 修订。所有数值的唯一事实源是 `src/data/**
 
 ## 13. Round 2 变更记录（Fable-3）
 
-1. **首波节奏（冻结）**：新增 `CONFIG.firstWaveDelay = 0.5`。首怪入场时刻 = firstWaveDelay + 波 1 首组 delay(0) = **0.5 s ≤ 2 s**，满足 G1 契约测「同种子 80 步内必有敌人」。
-2. **命名对齐**：`CONFIG.interWaveDelaySec` → `CONFIG.interWaveDelay`（值仍 5，单位秒），与 `firstWaveDelay` 一起对齐 API_CONTRACT §CONFIG；sim 不得再读旧名或 `SIM_CONFIG/BALANCE/TOWER_TABLE` 等别名。
+1. **首波节奏（冻结）**：新增 `CONFIG.firstWaveDelay = 0.5`。首怪入场时刻 = firstWaveDelay + 波 1 首组 delay(0) = **0.5 s ≤ 2 s**，满足 G1 契约测「同种子 80 步内必有敌人」。（Round 3 勘误：sim 实为 1.5 s 备战，字段已回改 1.5，见 §14。）
+2. **命名对齐**：`CONFIG.interWaveDelaySec` → `CONFIG.interWaveDelay`（值仍 5，单位秒），与 `firstWaveDelay` 一起对齐 API_CONTRACT §CONFIG；sim 不得再读旧名或 `SIM_CONFIG/BALANCE/TOWER_TABLE` 等别名。（Round 3 勘误：sim 仍经旧名兜底，见 §14。）
 3. **终盘微收紧**：波 18/19/20 `hpMul` 2.10/2.30/2.50 → **2.15/2.40/2.60**（总有效 HP 3932/4370/6730 → 4030/4560/7000）。波 1–17、Boss、塔价、赏金全部未动，5 波 probe 基线（混搭 5 塔）不受影响。
 4. **出口冻结**：正式导出名见文首；`ARMOR_INFO` 为 HUD 文案数据，非别名。
+
+## 14. Round 3 备注（Fable-3）
+
+无手感重调：波表、塔价、克制表、Boss、经济全部未动；本轮只做「注释错 vs 代码」的勘误与验收记录。正式导出名不变（见文首），未加任何别名。
+
+1. **冒烟基线（绿）**：`node src/sim/smoke.mjs --waves=5 --seed=7` 通过——**5 波 0 漏通关**，核 20/20，
+   首怪 1.53 s，过载 ×2.2 探针全过。打法来自 `src/sim/bot.mjs` 的 `createBot`/`botInput`（价值评分自动摊塔）。
+2. **probe 修法（冻结给 G2）**：`npm run probe` 仍红（exit 1）——固定布局开局 180 屑晶只铺得起挤在
+   0/3/6 一段弧的 rail/prism/scatter，17 漏、波 3 灭核。**probe 落塔必须改用 `createBot`（与冒烟同一只手），
+   禁止手写聚簇轨炮 / 固定循环布局**；`leaks ≤ 2` 门槛不放水。
+3. **勘误（注释错 vs 代码，非重调）**：
+   - `CONFIG.firstWaveDelay` 0.5 → **1.5**：sim 自 Round 1 起用自持常量 `FIRST_WAVE_SEC = 1.5`，从未读过本字段；
+     回改后数据 = 实测行为（首怪 1.53 s ≤ 2 s，API_CONTRACT 建议值即 1.5），O1 回接正式名后行为不变。
+   - `CONFIG.interWaveDelay = 5`：sim 仍经旧名 `interWaveDelaySec` 兜底取 5，值一致、行为无差；回接正式名记 O1 Round 3 账上。
+   - §11 波 5 warden 有效 hp 374 → **375**（`ceil(340 × 1.1)`，JS 浮点 374.00000000000006 进位；§8 波 5 总 835 本就按 375 计）。
+   - §2 射程口径补炮口高：距离 = `√((40−r)² + (laneY−2.4)²)`（sim `MUZZLE_Y = 2.4`）；星弩 Ⅰ / 轨炮 Ⅲ（射程 34）实际可罩到核旁 r=8。

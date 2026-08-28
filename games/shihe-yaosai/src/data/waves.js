@@ -1,6 +1,6 @@
 // 蚀核要塞 · 波次与 Boss（Fable-3，Round 2 修订）
 // 20 波数据完整；probe 基线跑前 5 波（WAVES.slice(0, 5)），后续波不改结构直接续跑。
-// 首怪入场时刻 = CONFIG.firstWaveDelay + 波 1 首组 delay = 0.5 + 0 = 0.5s（Round 2 冻结 ≤2s）。
+// 首怪入场时刻 = CONFIG.firstWaveDelay + 波 1 首组 delay = 1.5 + 0 = 1.5s（实测 1.53s；Round 2 冻结 ≤2s）。
 // Round 2 微调：波 18/19/20 hpMul 2.1/2.3/2.5 → 2.15/2.4/2.6，收紧终盘；波 1–5 未动。
 //
 // 每波字段：
