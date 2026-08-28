@@ -4,7 +4,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { resolveSlap } from "./combat/index.js";
 import { makePlayer, makeState, stepSim } from "./combat/testkit.js";
-import { GLOVE_BY_ID, isGloveUnlocked } from "./data/index.js";
+import { ENTRY, skipHubFor } from "./core/entry.js";
+import {
+  STORY_TRIGGER,
+  createStoryDirector,
+  pickBeat,
+  storyTriggerForEvent,
+} from "./core/story-flow.js";
+import { GLOVE_BY_ID, STORY, isGloveUnlocked } from "./data/index.js";
 import {
   ZERO_INPUT,
   createMatch,
@@ -104,7 +111,30 @@ describe("P2-G1：扇击硬直只封动作，不封位移", () => {
 });
 
 describe("P2-G1：story 不阻断直进 / 再来一局", () => {
-  it.skip("O4 尚未合入测试基线：skipHub 与再来一局的 story 流程锁待 O4 合入后启用", () => {});
+  it("skipHub 直通裂岛，大厅三拍未放也不挡岛上/结算拍", () => {
+    const state = createMatch({ seed: 203, botCount: 1, skipHub: true });
+    expect(state.phase).toBe("arena");
+    expect(skipHubFor(ENTRY.RESTART)).toBe(true);
+    expect(skipHubFor(ENTRY.HUB)).toBe(false);
+
+    // 拍 1–3 是走道挂点；skipHub 从不发它们。拍 4–5 按 trigger 独立取，不挡。
+    const seen = [];
+    expect(pickBeat(STORY, STORY_TRIGGER.FIRST_KILL_OR_FALL, seen).id).toBe("first_blood");
+    expect(pickBeat(STORY, STORY_TRIGGER.MATCH_FIRST_WIN, seen).id).toBe("first_win");
+    expect(storyTriggerForEvent({ type: "ko", killerId: "p0", victimId: "b0" }, "p0")).toBe(
+      STORY_TRIGGER.FIRST_KILL_OR_FALL,
+    );
+
+    const director = createStoryDirector({ story: STORY, toast: () => {} });
+    const blood = director.fire(STORY_TRIGGER.FIRST_KILL_OR_FALL);
+    expect(blood).not.toBeNull();
+    expect(typeof blood.then).toBe("undefined");
+    expect(blood.id).toBe("first_blood");
+    // 「再来一局」清掉没念完的句子，下一场立刻能领首胜拍
+    director.reset();
+    expect(director.pending).toEqual([]);
+    expect(director.take(STORY_TRIGGER.MATCH_FIRST_WIN).id).toBe("first_win");
+  });
 });
 
 describe("P2-G1：生涯四掌只按存档 stats 里程碑解锁", () => {
