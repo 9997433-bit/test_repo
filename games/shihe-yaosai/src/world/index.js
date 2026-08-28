@@ -3,14 +3,16 @@
 // 蚀核要塞的场景层：全部几何、材质、灯光都在运行时程序化生成，
 // 没有任何下载模型 / 贴图 / CDN 资源，也不引用仓库内其它游戏。
 //
-// 对外只有五个入口：
+// 对外只有六个入口：
 //   buildWorld(scene, getView?)  搭场景，可选地每帧自取 view
 //   syncWorld(scene, view)       把一帧 view 画出来
 //   pickSocket(scene, pickInfo)  命中测试 -> 插座下标
 //   socketWorldPos(i)            插座世界坐标
+//   socketMuzzle(i)              插座炮口位置（combat 画曳光的起点口径）
 //   polarToWorld(radius, θ, y)   极坐标换算
 //
 // 世界层不计算任何玩法数值，只消费 getView() 给出的 JSON。
+// 弹道不归世界层：view.shots 一律由 src/combat 绘制，这里连读都不读，避免同一发子弹被画两遍。
 
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera.js";
@@ -38,7 +40,6 @@ import { buildDeck, buildLaneRings, syncLaneRings } from "./deck.js";
 import { buildCore, syncCore } from "./core.js";
 import { buildSockets, disposeSockets, socketMuzzle, syncSockets } from "./sockets.js";
 import { buildEnemies, syncEnemies } from "./enemies.js";
-import { buildShots, syncShots } from "./shots.js";
 
 const WORLDS = new WeakMap();
 
@@ -51,10 +52,8 @@ const DEFAULTS = {
   autoSync: true,
 };
 
-const VIEW_HELPERS = { muzzleOf: socketMuzzle };
-
 /** 场景还没喂过 view 时先用它渲染一帧，避免开局黑屏。 */
-const IDLE_VIEW = { coreHp: 1, coreMax: 1, sockets: [], enemies: [], shots: [] };
+const IDLE_VIEW = { coreHp: 1, coreMax: 1, sockets: [], enemies: [] };
 
 function readOptions(getView, options) {
   const fn = typeof getView === "function" ? getView : null;
@@ -137,7 +136,6 @@ export function buildWorld(scene, getView, options) {
   world.core = buildCore(scene, root);
   world.sockets = buildSockets(scene, root);
   world.enemies = buildEnemies(scene, root);
-  world.shots = buildShots(scene, root);
   world.camera = ensureCamera(scene, opts);
   world.glow = attachGlow(scene, opts, world);
 
@@ -163,6 +161,7 @@ export function buildWorld(scene, getView, options) {
 
 /**
  * 用一帧 view 刷新世界。view 的字段缺失、别名、越界都会被容错处理。
+ * view.shots 被刻意忽略：曳光 / 光束 / 力场归 src/combat 的 syncCombat。
  * @param {import("@babylonjs/core/scene.js").Scene} scene
  * @param {object} view getView() 的返回值
  * @returns {object|null} 归一化后的 view，场景未搭建时返回 null
@@ -171,14 +170,13 @@ export function syncWorld(scene, view) {
   const world = getWorld(scene);
   if (!world) return null;
 
-  const normalized = normalizeView(view, VIEW_HELPERS);
+  const normalized = normalizeView(view);
   world.lastView = normalized;
 
   syncCore(world.core, normalized.coreRatio, world.clock);
   syncSockets(scene, world.sockets, normalized, world.clock);
   syncLaneRings(world.laneRings, world.clock, normalized);
   syncEnemies(world.enemies, normalized, world.clock);
-  syncShots(world.shots, normalized);
 
   return normalized;
 }
@@ -256,6 +254,8 @@ export function disposeWorld(scene) {
 export {
   polarToWorld,
   socketWorldPos,
+  // combat 画曳光时需要和世界层同一套炮口口径，别再各算各的。
+  socketMuzzle,
   socketTheta,
   socketYaw,
   nearestSocket,
